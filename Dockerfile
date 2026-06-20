@@ -1,4 +1,3 @@
-// [BOTÓN DE COPIAR]
 # CAPA 1: Dependencias (Se congela en caché a menos que instales algo nuevo)
 FROM node:22-alpine AS deps
 WORKDIR /app
