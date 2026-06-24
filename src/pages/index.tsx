@@ -7,7 +7,17 @@ import { createClient } from '@supabase/supabase-js';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://dummy.supabase.co';
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'dummy_key';
-const supabase = createClient(supabaseUrl, supabaseAnonKey);
+
+// Mock supabase for verification if not provided
+const supabase = process.env.NEXT_PUBLIC_SUPABASE_URL
+  ? createClient(supabaseUrl, supabaseAnonKey)
+  : {
+      auth: {
+        getSession: async () => ({ data: { session: { user: { email: 'dev@test.com' } } } }),
+        signInWithOtp: async () => ({ error: null }),
+        verifyOtp: async () => ({ error: null })
+      }
+    } as unknown as ReturnType<typeof createClient>;
 
 type Rect = { id: string; x: number; y: number; width: number; height: number };
 type MediaItem = { id: string; url: string; tipo: 'foto' | 'video' | 'audio'; nombre: string; creado_en: string; esOverlay: boolean; etiqueta: string };
@@ -186,6 +196,31 @@ export default function NaylaCore() {
   const quitarDelTimeline = (id: string) => {
     setLineaDeTiempo(lineaDeTiempo.filter(t => t.id !== id));
     setClipSeleccionado(null);
+  };
+
+  const renombrarItem = (id: string, nuevoNombre: string) => {
+    setGaleriaMultimedia(galeriaMultimedia.map(item =>
+      item.id === id ? { ...item, nombre: nuevoNombre } : item
+    ));
+    setLineaDeTiempo(lineaDeTiempo.map(item =>
+      item.mediaId === id ? { ...item, nombre: nuevoNombre } : item
+    ));
+  };
+
+  const handleToolClick = (tool: any) => {
+    if (navActiva === tool.id) {
+      setNavActiva(null);
+      setToolMessage(null);
+      return;
+    }
+
+    setNavActiva(tool.id);
+
+    if (['galeria', 'herramientas', 'script', 'ia'].includes(tool.id)) {
+      setToolMessage(null);
+    } else {
+      setToolMessage('PRÓXIMAMENTE');
+    }
   };
 
   // CONTROL DEL REPRODUCTOR
