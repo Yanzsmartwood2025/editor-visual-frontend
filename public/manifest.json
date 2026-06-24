@@ -1,4 +1,3 @@
-// [BOTÓN DE COPIAR]
 {
   "name": "Nayla Core Editor",
   "short_name": "NAYLA",
@@ -11,8 +10,7 @@
     {
       "src": "/assets/imagenes/Icono-intro.jpeg",
       "sizes": "512x512",
-      "type": "image/jpeg",
-      "purpose": "any maskable"
+      "type": "image/jpeg"
     }
   ]
 }

@@ -264,15 +264,56 @@ export default function NaylaCore() {
   `;
 
   if (!session) {
+    if (showIntro) {
+      return (
+        <div style={{ minHeight: '100vh', backgroundColor: '#000000', display: 'flex', justifyContent: 'center', alignItems: 'center', animation: 'fadeOut 1s ease-in-out 2s forwards' }}>
+          <style>{`
+            @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+            @keyframes fadeOut { from { opacity: 1; } to { opacity: 0; } }
+          `}</style>
+          <img src="/assets/imagenes/Icono-intro.jpeg" alt="NAYLA" style={{ width: '150px', height: '150px', borderRadius: '24px', objectFit: 'cover', animation: 'fadeIn 1s ease-in-out' }} />
+        </div>
+      );
+    }
+
     return (
-      <div style={{ minHeight: '100vh', backgroundColor: '#000000', color: '#ffffff', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', fontFamily: 'system-ui, sans-serif' }}>
+      <div style={{ minHeight: '100vh', backgroundColor: '#000000', color: '#ffffff', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', fontFamily: 'system-ui, sans-serif', overflow: 'hidden' }}>
         <Head><title>NAYLA - AUTENTICACIÓN</title></Head>
         <style>{globalStyles}</style>
-        <div style={{ width: '100%', maxWidth: '400px', border: '1px solid #262626', backgroundColor: '#050505', padding: '2.5rem', borderRadius: '24px', textAlign: 'center' }}>
+
+        {/* FORMULARIO DE CORREO (SIEMPRE EN EL CENTRO) */}
+        <div style={{ width: '100%', maxWidth: '400px', border: '1px solid #262626', backgroundColor: '#050505', padding: '2.5rem', borderRadius: '24px', textAlign: 'center', transition: 'opacity 0.3s', opacity: otpEnviado ? 0.5 : 1 }}>
           <h1 style={{ fontSize: '1rem', letterSpacing: '4px', margin: '0 0 2rem 0', textTransform: 'uppercase' }}>NAYLA</h1>
-          <form onSubmit={!otpEnviado ? handleEmailAuth : handleOtpVerify}>
-            <input type={!otpEnviado ? "email" : "text"} placeholder={!otpEnviado ? "CORREO MAESTRO" : "CÓDIGO 000000"} value={!otpEnviado ? emailInput : otpInput} onChange={(e) => !otpEnviado ? setEmailInput(e.target.value) : setOtpInput(e.target.value)} style={{ width: '100%', padding: '1rem', backgroundColor: '#0a0a0a', border: '1px solid #404040', borderRadius: '16px', color: '#ffffff', fontSize: '0.8rem', marginBottom: '1rem', textAlign: 'center', outline: 'none' }} />
-            <button type="submit" disabled={authLoading} className="neon-btn nav-btn" style={{ width: '100%' }}>{authLoading ? 'PROCESANDO...' : (!otpEnviado ? 'SOLICITAR ACCESO' : 'INGRESAR')}</button>
+          <form onSubmit={handleEmailAuth}>
+            <input type="email" placeholder="CORREO MAESTRO" value={emailInput} onChange={(e) => setEmailInput(e.target.value)} disabled={otpEnviado} style={{ width: '100%', padding: '1rem', backgroundColor: '#0a0a0a', border: '1px solid #404040', borderRadius: '16px', color: '#ffffff', fontSize: '0.8rem', marginBottom: '1rem', textAlign: 'center', outline: 'none' }} />
+            <button type="submit" disabled={authLoading || otpEnviado} className="neon-btn nav-btn" style={{ width: '100%' }}>{authLoading && !otpEnviado ? 'PROCESANDO...' : 'SOLICITAR ACCESO'}</button>
+          </form>
+        </div>
+
+        {/* BOTTOM SHEET PARA OTP */}
+        <div style={{
+          position: 'fixed',
+          bottom: otpEnviado ? 0 : '-100%',
+          left: 0,
+          right: 0,
+          backgroundColor: '#000000',
+          borderTop: '1px solid #ffffff',
+          borderLeft: '1px solid #ffffff',
+          borderRight: '1px solid #ffffff',
+          borderTopLeftRadius: '24px',
+          borderTopRightRadius: '24px',
+          padding: '2.5rem',
+          transition: 'bottom 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          zIndex: 100
+        }}>
+          <div style={{ width: '40px', height: '4px', backgroundColor: '#ffffff', borderRadius: '2px', marginBottom: '2rem', opacity: 0.5 }} />
+          <h2 style={{ fontSize: '0.9rem', letterSpacing: '2px', margin: '0 0 1.5rem 0', textTransform: 'uppercase' }}>CÓDIGO DE ACCESO</h2>
+          <form onSubmit={handleOtpVerify} style={{ width: '100%', maxWidth: '350px' }}>
+            <input type="text" placeholder="CÓDIGO 000000" value={otpInput} onChange={(e) => setOtpInput(e.target.value)} style={{ width: '100%', padding: '1rem', backgroundColor: '#0a0a0a', border: '1px solid #ffffff', borderRadius: '16px', color: '#ffffff', fontSize: '1rem', marginBottom: '1rem', textAlign: 'center', outline: 'none', letterSpacing: '4px' }} />
+            <button type="submit" disabled={authLoading} className="neon-btn nav-btn" style={{ width: '100%', backgroundColor: '#ffffff', color: '#000000', fontWeight: 'bold' }}>{authLoading ? 'VERIFICANDO...' : 'INGRESAR'}</button>
           </form>
         </div>
       </div>
@@ -335,8 +376,8 @@ export default function NaylaCore() {
                 {currentRect && isDrawing && <div style={{ position: 'absolute', left: `${currentRect.x}px`, top: `${currentRect.y}px`, width: `${currentRect.width}px`, height: `${currentRect.height}px`, border: '1px dashed #ffffff', backgroundColor: 'transparent', pointerEvents: 'none', borderRadius: '8px' }} />}
               </>
             ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', height: '100%', justifyContent: 'center', alignItems: 'center', color: '#404040' }}>
-                <p style={{ margin: 0, fontSize: '0.85rem', letterSpacing: '2px', fontWeight: 'bold' }}>MONITOR VACÍO</p>
+              <div style={{ display: 'flex', flexDirection: 'column', height: '100%', justifyContent: 'center', alignItems: 'center' }}>
+                <img src="/assets/imagenes/Icono-intro.jpeg" alt="NAYLA LOGO" style={{ width: '80px', height: '80px', borderRadius: '16px', opacity: 0.5, filter: 'grayscale(100%)' }} />
               </div>
             )}
           </div>
