@@ -70,8 +70,12 @@ export default function NaylaCore() {
     try {
       const { error } = await supabase.auth.signInWithOtp({ email: emailInput, options: { shouldCreateUser: true } });
       if (error) throw error;
+      console.log('Envío OTP exitoso, cambiando estado a enviado');
       setOtpEnviado(true);
-    } catch (err) { setMessage(`Error crítico de transmisión.`); } finally { setAuthLoading(false); }
+    } catch (err) {
+      console.error('Error enviando OTP:', err);
+      setMessage(`Error crítico de transmisión.`);
+    } finally { setAuthLoading(false); }
   };
 
   const handleOtpVerify = async (e: React.FormEvent) => {
@@ -81,7 +85,21 @@ export default function NaylaCore() {
     try {
       const { error } = await supabase.auth.verifyOtp({ email: emailInput, token: otpInput, type: 'email' });
       if (error) throw error;
-    } catch (err) { setMessage(`Código incorrecto.`); } finally { setAuthLoading(false); }
+    } catch (err) {
+      console.error('Error verificando OTP:', err);
+      setMessage(`Código incorrecto.`);
+    } finally { setAuthLoading(false); }
+  };
+
+  const handlePasteCode = async () => {
+    try {
+      const text = await navigator.clipboard.readText();
+      if (text) {
+        setOtpInput(text.trim());
+      }
+    } catch (err) {
+      console.error('Error al pegar del portapapeles:', err);
+    }
   };
 
   // SUBIDA MASIVA
@@ -286,7 +304,8 @@ export default function NaylaCore() {
           <h1 style={{ fontSize: '1rem', letterSpacing: '4px', margin: '0 0 2rem 0', textTransform: 'uppercase' }}>NAYLA</h1>
           <form onSubmit={handleEmailAuth}>
             <input type="email" placeholder="CORREO MAESTRO" value={emailInput} onChange={(e) => setEmailInput(e.target.value)} disabled={otpEnviado} style={{ width: '100%', padding: '1rem', backgroundColor: '#0a0a0a', border: '1px solid #404040', borderRadius: '16px', color: '#ffffff', fontSize: '0.8rem', marginBottom: '1rem', textAlign: 'center', outline: 'none' }} />
-            <button type="submit" disabled={authLoading || otpEnviado} className="neon-btn nav-btn" style={{ width: '100%' }}>{authLoading && !otpEnviado ? 'PROCESANDO...' : 'SOLICITAR ACCESO'}</button>
+            <button type="submit" disabled={authLoading || otpEnviado} className="neon-btn nav-btn" style={{ width: '100%', marginBottom: '1rem' }}>{authLoading && !otpEnviado ? 'PROCESANDO...' : 'SOLICITAR ACCESO'}</button>
+            {message && !otpEnviado && <p style={{ color: '#ff4444', fontSize: '0.8rem', margin: 0 }}>{message}</p>}
           </form>
         </div>
 
@@ -310,10 +329,15 @@ export default function NaylaCore() {
           zIndex: 100
         }}>
           <div style={{ width: '40px', height: '4px', backgroundColor: '#ffffff', borderRadius: '2px', marginBottom: '2rem', opacity: 0.5 }} />
+          {otpEnviado && <p style={{ color: '#00ffcc', fontSize: '0.8rem', marginBottom: '1rem', letterSpacing: '1px', fontWeight: 'bold' }}>CÓDIGO ENVIADO — REVISA TU CORREO</p>}
           <h2 style={{ fontSize: '0.9rem', letterSpacing: '2px', margin: '0 0 1.5rem 0', textTransform: 'uppercase' }}>CÓDIGO DE ACCESO</h2>
           <form onSubmit={handleOtpVerify} style={{ width: '100%', maxWidth: '350px' }}>
-            <input type="text" placeholder="CÓDIGO 000000" value={otpInput} onChange={(e) => setOtpInput(e.target.value)} style={{ width: '100%', padding: '1rem', backgroundColor: '#0a0a0a', border: '1px solid #ffffff', borderRadius: '16px', color: '#ffffff', fontSize: '1rem', marginBottom: '1rem', textAlign: 'center', outline: 'none', letterSpacing: '4px' }} />
-            <button type="submit" disabled={authLoading} className="neon-btn nav-btn" style={{ width: '100%', backgroundColor: '#ffffff', color: '#000000', fontWeight: 'bold' }}>{authLoading ? 'VERIFICANDO...' : 'INGRESAR'}</button>
+            <input type="text" inputMode="numeric" placeholder="CÓDIGO 000000" value={otpInput} onChange={(e) => setOtpInput(e.target.value)} style={{ width: '100%', padding: '1rem', backgroundColor: '#0a0a0a', border: '1px solid #ffffff', borderRadius: '16px', color: '#ffffff', fontSize: '1rem', marginBottom: '1rem', textAlign: 'center', outline: 'none', letterSpacing: '4px' }} />
+            <div style={{ display: 'flex', gap: '10px', marginBottom: '1rem' }}>
+              <button type="button" onClick={handlePasteCode} className="neon-btn nav-btn" style={{ flex: 1, padding: '0.8rem' }}>PEGAR CÓDIGO</button>
+              <button type="submit" disabled={authLoading} className="neon-btn nav-btn" style={{ flex: 1, backgroundColor: '#ffffff', color: '#000000', fontWeight: 'bold', padding: '0.8rem' }}>{authLoading ? 'VERIFICANDO...' : 'INGRESAR'}</button>
+            </div>
+            {message && otpEnviado && <p style={{ color: '#ff4444', fontSize: '0.8rem', margin: 0, textAlign: 'center' }}>{message}</p>}
           </form>
         </div>
       </div>
