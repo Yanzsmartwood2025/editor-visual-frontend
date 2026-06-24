@@ -1,3 +1,4 @@
+
 // @ts-nocheck
 /* eslint-disable */
 import React, { useState, useEffect, useRef } from 'react';
@@ -12,6 +13,36 @@ type Rect = { id: string; x: number; y: number; width: number; height: number };
 type MediaItem = { id: string; url: string; tipo: 'foto' | 'video' | 'audio'; nombre: string; creado_en: string; esOverlay: boolean; etiqueta: string };
 type TimelineItem = { id: string; mediaId: string; tipo: 'foto' | 'video' | 'audio'; nombre: string; etiqueta: string; url: string };
 
+
+
+
+
+
+
+
+const TOOLS = [
+  { id: 'galeria', nombre: 'BODEGA', icon: <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>, active: true },
+  { id: 'cortar', nombre: 'CORTAR', icon: <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><line x1="20" y1="4" x2="8.12" y2="15.88"/><line x1="14.47" y1="14.48" x2="20" y2="20"/><line x1="8.12" y1="8.12" x2="12" y2="12"/></svg>, active: false },
+  { id: 'dividir', nombre: 'DIVIDIR', icon: <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="2" x2="12" y2="22"/><line x1="4" y1="12" x2="8" y2="12"/><line x1="16" y1="12" x2="20" y2="12"/></svg>, active: false },
+  { id: 'borrar', nombre: 'BORRAR', icon: <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>, active: false },
+  { id: 'volumen', nombre: 'VOLUMEN', icon: <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>, active: false },
+  { id: 'velocidad', nombre: 'VELOCIDAD', icon: <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>, active: false },
+  { id: 'girar', nombre: 'GIRAR', icon: <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><polyline points="3 3 3 8 8 8"/></svg>, active: false },
+  { id: 'duplicar', nombre: 'DUPLICAR', icon: <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>, active: false },
+  { id: 'inverso', nombre: 'INVERSO', icon: <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><polyline points="21 3 21 8 16 8"/></svg>, active: false },
+  { id: 'congelacion', nombre: 'CONGELACIÓN', icon: <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2v20M2 12h20M4.93 4.93l14.14 14.14M19.07 4.93L4.93 19.07"/></svg>, active: false },
+  { id: 'mascara', nombre: 'MÁSCARA', icon: <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>, active: false },
+  { id: 'opacidad', nombre: 'OPACIDAD', icon: <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="2" x2="12" y2="22"/><line x1="12" y1="12" x2="22" y2="12"/></svg>, active: false },
+  { id: 'filtro', nombre: 'FILTRO', icon: <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>, active: false },
+  { id: 'efecto', nombre: 'EFECTO', icon: <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M10 3.2A1.2 1.2 0 0 0 8 4v16a1.2 1.2 0 0 0 2 1.2M14 3.2A1.2 1.2 0 0 1 16 4v16a1.2 1.2 0 0 1-2 1.2M6 8H4M6 16H4M20 8h-2M20 16h-2"/></svg>, active: false },
+  { id: 'texto', nombre: 'TEXTO', icon: <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="4 7 4 4 20 4 20 7"/><line x1="9" y1="20" x2="15" y2="20"/><line x1="12" y1="4" x2="12" y2="20"/></svg>, active: false },
+  { id: 'audio', nombre: 'AUDIO', icon: <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>, active: false },
+  { id: 'lona', nombre: 'LONA/RATIO', icon: <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="21" x2="9" y2="9"/></svg>, active: false },
+  { id: 'herramientas', nombre: 'DELOGO IA ⚡', icon: <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>, active: true },
+  { id: 'script', nombre: 'SCRIPT 💻', icon: <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>, active: true },
+  { id: 'ia', nombre: 'SUPERVISOR IA', icon: <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="11" width="18" height="10" rx="2"/><circle cx="12" cy="5" r="2"/><path d="M12 7v4"/><line x1="8" y1="16" x2="8" y2="16"/><line x1="16" y1="16" x2="16" y2="16"/></svg>, active: true },
+];
+
 export default function NaylaCore() {
   const [session, setSession] = useState(null);
   const [emailInput, setEmailInput] = useState('');
@@ -23,8 +54,15 @@ export default function NaylaCore() {
   // ESTADOS DE INTERFAZ
   const [menuUsuarioAbierto, setMenuUsuarioAbierto] = useState(false);
   const [fotoUsuarioUrl, setFotoUsuarioUrl] = useState('/assets/imagenes/Icono-intro.jpeg');
-  const [navActiva, setNavActiva] = useState<string | null>('herramientas'); 
+  const [navActiva, setNavActiva] = useState<string | null>(null);
   const [codigoJsInput, setCodigoJsInput] = useState('// Inyecta comandos JS aquí\nNaylaEngine.unir("V1", "V2");');
+
+
+  const [toolMessage, setToolMessage] = useState<string | null>(null);
+
+
+
+
   
   // MEMORIA DE EDICIÓN
   const [galeriaMultimedia, setGaleriaMultimedia] = useState<MediaItem[]>([]);
@@ -267,10 +305,27 @@ export default function NaylaCore() {
 
     .nav-btn { font-size: 0.7rem; font-weight: bold; padding: 0.8rem 1.2rem; border-radius: 100px; cursor: pointer; text-transform: uppercase; white-space: nowrap; }
 
-    .tool-btn { background: transparent; border: none; color: #a3a3a3; display: flex; flex-direction: column; align-items: center; gap: 6px; font-size: 0.65rem; cursor: pointer; transition: 0.2s; min-width: 60px; }
+    /* REDISEÑO CAPCUT BARRAS Y HERRAMIENTAS */
+    .tool-btn {
+      background: transparent; border: none; color: #a3a3a3;
+      display: flex; flex-direction: column; align-items: center; gap: 6px;
+      font-size: 0.65rem; cursor: pointer; transition: 0.2s; min-width: 60px;
+    }
     .tool-btn:hover { color: #ffffff; }
-    .tool-icon { width: 45px; height: 45px; display: flex; justify-content: center; align-items: center; border-radius: 12px; }
-    .tool-btn:active .tool-icon { background: #ffffff; color: #000000; box-shadow: 0 0 15px rgba(255, 255, 255, 0.7); }
+    .tool-icon {
+      width: 45px; height: 45px; display: flex; justify-content: center; align-items: center;
+      border-radius: 12px; transition: all 0.2s ease;
+      border: 1px solid transparent;
+    }
+    .tool-btn.active .tool-icon, .tool-btn:active .tool-icon {
+      background: #ffffff; color: #000000;
+      box-shadow: 0 0 15px rgba(255, 255, 255, 0.7);
+      border-color: #ffffff;
+    }
+    .tool-btn.active span, .tool-btn:active span {
+      color: #ffffff;
+      font-weight: bold;
+    }
 
     /* TIMELINE CONTINUO */
     .filmstrip-container { display: flex; height: 60px; overflow-x: auto; padding: 0 50%; gap: 0; align-items: center; }
@@ -279,7 +334,25 @@ export default function NaylaCore() {
     .clip-block:last-child { border-top-right-radius: 8px; border-bottom-right-radius: 8px; border-right: none; }
     .clip-block.selected { border: 2px solid #ffffff; z-index: 10; box-shadow: 0 0 15px rgba(255,255,255,0.4); border-radius: 8px; }
     .audio-block { height: 35px; border-radius: 8px; flex-shrink: 0; min-width: 120px; display: flex; align-items: center; justify-content: center; color: #fff; font-size: 0.65rem; cursor: pointer; margin-right: 2px; border: 1px solid #404040; }
-  `;
+
+    /* LAYOUT TOOLBAR */
+    .toolbar-container {
+      display: flex; gap: 10px; overflow-x: auto; padding: 15px;
+      background-color: #050505; border-top: 1px solid #1a1a1a;
+      min-height: 85px; position: relative; z-index: 100;
+      align-items: center;
+    }
+    .panel-container {
+      background-color: #050505;
+      border-top: 1px solid #1a1a1a;
+      padding: 15px;
+      position: absolute;
+      bottom: 85px; /* Empuja hacia arriba justo por encima de la barra */
+      left: 0; right: 0;
+      z-index: 90;
+      box-shadow: 0 -5px 20px rgba(0,0,0,0.8);
+    }
+`;
 
   if (!session) {
     if (showIntro) {
@@ -380,7 +453,7 @@ export default function NaylaCore() {
         <section style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '10px', backgroundColor: '#050505' }}>
           <div ref={containerRef} onPointerDown={handlePointerDown} onPointerMove={handlePointerMove} onPointerUp={handlePointerUp} onPointerLeave={handlePointerUp} 
             style={{ 
-              aspectRatio: canvasRatio, height: '100%', maxHeight: '40vh', 
+              aspectRatio: canvasRatio, height: '45vh', maxHeight: '45vh', minHeight: '45vh',
               backgroundColor: '#0a0a0a', borderRadius: '16px', overflow: 'hidden', position: 'relative',
               border: '1px solid #1a1a1a', touchAction: 'none'
             }}>
@@ -440,64 +513,82 @@ export default function NaylaCore() {
           </div>
         </section>
 
-        {/* MÓDULOS DE NAYLA (BOTONES DE MENÚ INFERIOR) */}
-        <div style={{ padding: '15px', backgroundColor: '#050505', paddingBottom: '30px' }}>
-          <div style={{ display: 'flex', gap: '10px', overflowX: 'auto', paddingBottom: '15px', borderBottom: '1px solid #1a1a1a', marginBottom: '15px' }}>
-            <button className={`neon-btn nav-btn ${navActiva === 'galeria' ? 'active' : ''}`} onClick={() => setNavActiva('galeria')}>
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg> BODEGA MÚLTIPLE
-            </button>
-            <button className={`neon-btn nav-btn ${navActiva === 'herramientas' ? 'active' : ''}`} onClick={() => setNavActiva('herramientas')}>
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg> SCRIPT & SUPRESIÓN
-            </button>
-            <button className={`neon-btn nav-btn ${navActiva === 'ia' ? 'active' : ''}`} onClick={() => setNavActiva('ia')}>
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="10" rx="2"/><circle cx="12" cy="5" r="2"/><path d="M12 7v4"/><line x1="8" y1="16" x2="8" y2="16"/><line x1="16" y1="16" x2="16" y2="16"/></svg> SUPERVISOR IA
-            </button>
-          </div>
-
-          {navActiva === 'galeria' && (
-            <div style={{ padding: '0' }}>
-              <div style={{ display: 'flex', gap: '10px', marginBottom: '1.5rem' }}>
-                <label className="neon-btn" style={{ flex: 1, padding: '1rem', borderStyle: 'dashed', borderRadius: '12px', fontSize: '0.75rem', cursor: 'pointer' }}>+ SUBIR VIDEO/FOTO <input type="file" multiple accept="video/*,image/*" onChange={(e) => handleSubirMultimedia(e, 'video')} style={{ display: 'none' }} /></label>
-                <label className="neon-btn" style={{ flex: 1, padding: '1rem', borderStyle: 'dashed', borderRadius: '12px', fontSize: '0.75rem', cursor: 'pointer' }}>+ SUBIR AUDIO <input type="file" multiple accept="audio/*" onChange={(e) => handleSubirMultimedia(e, 'audio')} style={{ display: 'none' }} /></label>
+        {/* PANELES DESPLEGABLES (ENCIMA DE LA BARRA DE HERRAMIENTAS) */}
+        {navActiva && (
+          <div className="panel-container">
+            {toolMessage && (
+              <div style={{ textAlign: 'center', padding: '2rem', color: '#a3a3a3', fontSize: '1rem', letterSpacing: '2px' }}>
+                {toolMessage}
               </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
-                {galeriaMultimedia.map(item => (
-                  <div key={item.id} className="neon-btn" style={{ justifyContent: 'space-between', padding: '1rem', borderRadius: '16px', borderStyle: 'solid' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '15px', flex: 1 }}>
-                      <span style={{ fontSize: '0.8rem', backgroundColor: '#262626', padding: '4px 8px', borderRadius: '6px', color: '#fff', fontWeight: 'bold' }}>{item.etiqueta}</span>
-                      <input type="text" value={item.nombre} onChange={(e) => renombrarItem(item.id, e.target.value)} className="rename-input" />
-                    </div>
-                    <div style={{ display: 'flex', gap: '10px' }}>
-                      <button className="neon-btn nav-btn active" onClick={() => agregarAlTimeline(item)} style={{ padding: '6px 12px', fontSize: '0.65rem' }}>+ PISTA</button>
-                      <button onClick={() => eliminarDeGaleria(item.id)} style={{ background: 'none', border: 'none', color: '#ff4444', cursor: 'pointer' }}>✕</button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
+            )}
 
-          {/* LAS HERRAMIENTAS DE MÁSCARA Y BORRAR LOGO RECUPERADAS */}
-          {navActiva === 'herramientas' && (
-            <div style={{ padding: '0' }}>
-              <p style={{ fontSize: '0.75rem', color: '#ffffff', fontWeight: 'bold', marginBottom: '1rem', letterSpacing: '1px' }}>SUPRESIÓN DE MARCA DE AGUA (DELOGO)</p>
-              <div style={{ backgroundColor: '#0a0a0a', padding: '1.5rem', borderRadius: '16px', border: '1px dashed #404040', marginBottom: '2rem' }}>
-                <p style={{ fontSize: '0.7rem', color: '#a3a3a3', marginBottom: '1rem' }}>1. Selecciona un video en la pista.<br/>2. Dibuja un rectángulo blanco sobre el logo en el monitor.<br/>3. Elige el motor de procesamiento.</p>
-                <div style={{ display: 'flex', gap: '10px' }}>
-                  <button onClick={() => processVideo('local')} disabled={isProcessing} className="neon-btn nav-btn" style={{ flex: 1 }}>
-                    {isProcessing ? 'PROCESANDO...' : 'BORRAR LOGO (LOCAL)'}
-                  </button>
-                  <button onClick={() => processVideo('nube')} disabled={isProcessing} className="neon-btn nav-btn" style={{ flex: 1 }}>
-                    {isProcessing ? 'PROCESANDO...' : 'BORRAR LOGO (APIS)'}
-                  </button>
+            {!toolMessage && navActiva === 'galeria' && (
+              <div style={{ padding: '0', maxHeight: '35vh', overflowY: 'auto' }}>
+                <div style={{ display: 'flex', gap: '10px', marginBottom: '1.5rem' }}>
+                  <label className="neon-btn" style={{ flex: 1, padding: '1rem', borderStyle: 'dashed', borderRadius: '12px', fontSize: '0.75rem', cursor: 'pointer' }}>+ SUBIR VIDEO/FOTO <input type="file" multiple accept="video/*,image/*" onChange={(e) => handleSubirMultimedia(e, 'video')} style={{ display: 'none' }} /></label>
+                  <label className="neon-btn" style={{ flex: 1, padding: '1rem', borderStyle: 'dashed', borderRadius: '12px', fontSize: '0.75rem', cursor: 'pointer' }}>+ SUBIR AUDIO <input type="file" multiple accept="audio/*" onChange={(e) => handleSubirMultimedia(e, 'audio')} style={{ display: 'none' }} /></label>
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
+                  {galeriaMultimedia.map(item => (
+                    <div key={item.id} className="neon-btn" style={{ justifyContent: 'space-between', padding: '1rem', borderRadius: '16px', borderStyle: 'solid' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '15px', flex: 1 }}>
+                        <span style={{ fontSize: '0.8rem', backgroundColor: '#262626', padding: '4px 8px', borderRadius: '6px', color: '#fff', fontWeight: 'bold' }}>{item.etiqueta}</span>
+                        <input type="text" value={item.nombre} onChange={(e) => renombrarItem(item.id, e.target.value)} style={{ background: 'transparent', border: 'none', color: '#fff', outline: 'none', width: '100%' }} />
+                      </div>
+                      <div style={{ display: 'flex', gap: '10px' }}>
+                        <button className="neon-btn nav-btn active" onClick={() => agregarAlTimeline(item)} style={{ padding: '6px 12px', fontSize: '0.65rem' }}>+ PISTA</button>
+                        <button onClick={() => eliminarDeGaleria(item.id)} style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer', fontSize: '1rem' }}>✕</button>
+                      </div>
+                    </div>
+                  ))}
                 </div>
               </div>
+            )}
 
-              <p style={{ fontSize: '0.75rem', color: '#ffffff', fontWeight: 'bold', marginBottom: '1rem', letterSpacing: '1px' }}>SCRIPT MANUAL</p>
-              <textarea value={codigoJsInput} onChange={(e) => setCodigoJsInput(e.target.value)} style={{ width: '100%', height: '80px', backgroundColor: '#0a0a0a', border: '1px solid #262626', borderRadius: '12px', color: '#00ffcc', padding: '1rem', fontFamily: 'monospace', outline: 'none' }} />
-            </div>
-          )}
+            {!toolMessage && navActiva === 'herramientas' && (
+              <div style={{ padding: '0', maxHeight: '35vh', overflowY: 'auto' }}>
+                <p style={{ fontSize: '0.75rem', color: '#ffffff', fontWeight: 'bold', marginBottom: '1rem', letterSpacing: '1px' }}>SUPRESIÓN DE MARCA DE AGUA (DELOGO)</p>
+                <div style={{ backgroundColor: '#0a0a0a', padding: '1.5rem', borderRadius: '16px', border: '1px dashed #404040', marginBottom: '1rem' }}>
+                  <p style={{ fontSize: '0.7rem', color: '#a3a3a3', marginBottom: '1rem' }}>1. Selecciona un video en la pista.<br/>2. Dibuja un rectángulo blanco sobre el logo en el monitor.<br/>3. Elige el motor de procesamiento.</p>
+                  <div style={{ display: 'flex', gap: '10px' }}>
+                    <button onClick={() => processVideo('local')} disabled={isProcessing} className="neon-btn nav-btn" style={{ flex: 1 }}>
+                      {isProcessing ? 'PROCESANDO...' : 'BORRAR LOGO (LOCAL)'}
+                    </button>
+                    <button onClick={() => processVideo('nube')} disabled={isProcessing} className="neon-btn nav-btn" style={{ flex: 1 }}>
+                      {isProcessing ? 'PROCESANDO...' : 'BORRAR LOGO (APIS)'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
 
+            {!toolMessage && navActiva === 'script' && (
+              <div style={{ padding: '0', maxHeight: '35vh', overflowY: 'auto' }}>
+                <p style={{ fontSize: '0.75rem', color: '#ffffff', fontWeight: 'bold', marginBottom: '1rem', letterSpacing: '1px' }}>SCRIPT MANUAL</p>
+                <textarea value={codigoJsInput} onChange={(e) => setCodigoJsInput(e.target.value)} style={{ width: '100%', height: '80px', backgroundColor: '#0a0a0a', border: '1px solid #262626', borderRadius: '12px', color: '#00ffcc', padding: '1rem', fontFamily: 'monospace', outline: 'none' }} />
+              </div>
+            )}
+
+            {!toolMessage && navActiva === 'ia' && (
+              <div style={{ padding: '0', maxHeight: '35vh', overflowY: 'auto' }}>
+                <div style={{ textAlign: 'center', padding: '2rem', color: '#a3a3a3', fontSize: '1rem', letterSpacing: '2px' }}>
+                  SUPERVISOR IA (En desarrollo)
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* BARRA DE HERRAMIENTAS INFERIOR (SCROLL HORIZONTAL ESTILO CAPCUT) */}
+        <div className="toolbar-container">
+          {TOOLS.map((tool) => (
+            <button key={tool.id} className={`tool-btn ${navActiva === tool.id ? 'active' : ''}`} onClick={() => handleToolClick(tool)}>
+              <div className="tool-icon">
+                {tool.icon}
+              </div>
+              <span>{tool.nombre}</span>
+            </button>
+          ))}
         </div>
       </div>
     </div>
