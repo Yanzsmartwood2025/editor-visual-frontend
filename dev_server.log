@@ -1,0 +1,138 @@
+npm warn Unknown project config "auto-install-peers". This will stop working in the next major version of npm. See `npm help npmrc` for supported config options.
+
+> template-next-pages@0.1.0 dev
+> next dev
+
+▲ Next.js 16.2.3 (Turbopack)
+- Local:         http://localhost:3000
+- Network:       http://192.168.0.2:3000
+✓ Ready in 512ms
+
+ GET / 200 in 2.7s (next.js: 2.6s, application-code: 54ms)
+[browser] 'TypeError: supabase.auth.onAuthStateChange is not a function\n' +
+  '    at NaylaCore.useEffect (src/pages/index.tsx:98:54)\n' +
+  '   96 | ...\n' +
+  '   97 | ...\n' +
+  '>  98 | ...{ data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {\n' +
+  '      |                                               ^\n' +
+  '   99 | ...ession(session);\n' +
+  '  100 | ...session) cargarDatosUsuario(session.user.id);\n' +
+  '  101 | ...'
+
+The above error occurred in the <NaylaCore> component.
+
+React will try to recreate this component tree from scratch using the error boundary you provided, PagesDevOverlayErrorBoundary.
+
+[browser] Error al cargar los datos del usuario: TypeError: supabase.from is not a function
+    at cargarDatosUsuario (src/pages/index.tsx:114:10)
+    at NaylaCore.useEffect (src/pages/index.tsx:95:20)
+  112 |       // Cargar Bodega
+  113 |       const { data: galeriaData, error: galeriaError } = await supabase
+> 114 |         .from('galeria_multimedia')
+      |          ^
+  115 |         .select('*')
+  116 |         .eq('user_id', userId)
+  117 |         .order('creado_en', { ascending: true }); (src/pages/index.tsx:150:15)
+ GET / 200 in 22ms (next.js: 7ms, application-code: 15ms)
+[browser] 'TypeError: supabase.auth.onAuthStateChange is not a function\n' +
+  '    at NaylaCore.useEffect (src/pages/index.tsx:98:54)\n' +
+  '   96 | ...\n' +
+  '   97 | ...\n' +
+  '>  98 | ...{ data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {\n' +
+  '      |                                               ^\n' +
+  '   99 | ...ession(session);\n' +
+  '  100 | ...session) cargarDatosUsuario(session.user.id);\n' +
+  '  101 | ...'
+
+The above error occurred in the <NaylaCore> component.
+
+React will try to recreate this component tree from scratch using the error boundary you provided, PagesDevOverlayErrorBoundary.
+
+[browser] Error al cargar los datos del usuario: TypeError: supabase.from is not a function
+    at cargarDatosUsuario (src/pages/index.tsx:114:10)
+    at NaylaCore.useEffect (src/pages/index.tsx:95:20)
+  112 |       // Cargar Bodega
+  113 |       const { data: galeriaData, error: galeriaError } = await supabase
+> 114 |         .from('galeria_multimedia')
+      |          ^
+  115 |         .select('*')
+  116 |         .eq('user_id', userId)
+  117 |         .order('creado_en', { ascending: true }); (src/pages/index.tsx:150:15)
+ GET / 200 in 21ms (next.js: 4ms, application-code: 17ms)
+[browser] 'TypeError: supabase.auth.onAuthStateChange is not a function\n' +
+  '    at NaylaCore.useEffect (src/pages/index.tsx:98:54)\n' +
+  '   96 | ...\n' +
+  '   97 | ...\n' +
+  '>  98 | ...{ data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {\n' +
+  '      |                                               ^\n' +
+  '   99 | ...ession(session);\n' +
+  '  100 | ...session) cargarDatosUsuario(session.user.id);\n' +
+  '  101 | ...'
+
+The above error occurred in the <NaylaCore> component.
+
+React will try to recreate this component tree from scratch using the error boundary you provided, PagesDevOverlayErrorBoundary.
+
+[browser] Error al cargar los datos del usuario: TypeError: supabase.from is not a function
+    at cargarDatosUsuario (src/pages/index.tsx:114:10)
+    at NaylaCore.useEffect (src/pages/index.tsx:95:20)
+  112 |       // Cargar Bodega
+  113 |       const { data: galeriaData, error: galeriaError } = await supabase
+> 114 |         .from('galeria_multimedia')
+      |          ^
+  115 |         .select('*')
+  116 |         .eq('user_id', userId)
+  117 |         .order('creado_en', { ascending: true }); (src/pages/index.tsx:150:15)
+ GET / 200 in 16ms (next.js: 4ms, application-code: 12ms)
+[browser] 'TypeError: supabase.auth.onAuthStateChange is not a function\n' +
+  '    at NaylaCore.useEffect (src/pages/index.tsx:98:54)\n' +
+  '   96 | ...\n' +
+  '   97 | ...\n' +
+  '>  98 | ...{ data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {\n' +
+  '      |                                               ^\n' +
+  '   99 | ...ession(session);\n' +
+  '  100 | ...session) cargarDatosUsuario(session.user.id);\n' +
+  '  101 | ...'
+
+The above error occurred in the <NaylaCore> component.
+
+React will try to recreate this component tree from scratch using the error boundary you provided, PagesDevOverlayErrorBoundary.
+
+[browser] Error al cargar los datos del usuario: TypeError: supabase.from is not a function
+    at cargarDatosUsuario (src/pages/index.tsx:114:10)
+    at NaylaCore.useEffect (src/pages/index.tsx:95:20)
+  112 |       // Cargar Bodega
+  113 |       const { data: galeriaData, error: galeriaError } = await supabase
+> 114 |         .from('galeria_multimedia')
+      |          ^
+  115 |         .select('*')
+  116 |         .eq('user_id', userId)
+  117 |         .order('creado_en', { ascending: true }); (src/pages/index.tsx:150:15)
+✓ Compiled in 40ms
+ GET / 200 in 59ms (next.js: 40ms, application-code: 19ms)
+[browser] Error al cargar los datos del usuario: TypeError: supabase.from is not a function
+    at cargarDatosUsuario (src/pages/index.tsx:115:10)
+    at NaylaCore.useEffect (src/pages/index.tsx:96:20)
+  113 |       // Cargar Bodega
+  114 |       const { data: galeriaData, error: galeriaError } = await supabase
+> 115 |         .from('galeria_multimedia')
+      |          ^
+  116 |         .select('*')
+  117 |         .eq('user_id', userId)
+  118 |         .order('creado_en', { ascending: true }); (src/pages/index.tsx:151:15)
+✓ Compiled in 40ms
+ GET / 200 in 63ms (next.js: 43ms, application-code: 19ms)
+[extract-meta-video] HTML fetched successfully. Length: 184590
+[extract-meta-video] Fallo en la extracción. No se encontró ninguna URL de fbcdn.net terminada en .mp4 en el HTML.
+[extract-meta-video] HTML Snippet (primeros 500 chars): <!DOCTYPE html><html class="optimisticai_d4925249-module__omuUYW__variable optimisticmono_9b82a078-module__K58pLa__variable light antialiased" data-style="default" data-accent-color="blue"><head><meta charSet="utf-8"/><meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2"/><link rel="preload" as="image" href="/images/cot_logo_static/orbit.png"/><link rel="stylesheet" href="/_next/static/chunks/3pbflxytk2yb4.css" nonce="YzExMDlmOWMtMDRiMy00OWMwLThiMzgtMjQwYzYxYWQ3NzR
+ POST /api/extract-meta-video 404 in 312ms (next.js: 42ms, application-code: 271ms)
+[browser] Error: No se pudo encontrar la URL del video en la página.
+    at procesarEnlaceIndividual (src/pages/index.tsx:454:15)
+    at async handleExtraerDesdeEnlace (src/pages/index.tsx:516:7)
+  452 |
+  453 |       if (!resApi.ok || !dataApi.videoUrl) {
+> 454 |         throw new Error(dataApi.error || `No se pudo extraer: ${url}`);
+      |               ^
+  455 |       }
+  456 |
+  457 |       const finalMediaUrl = dataApi.videoUrl; (src/pages/index.tsx:494:15)

@@ -13,8 +13,21 @@ const supabase = process.env.NEXT_PUBLIC_SUPABASE_URL
       auth: {
         getSession: async () => ({ data: { session: { user: { email: 'dev@test.com' } } } }),
         signInWithOtp: async () => ({ error: null }),
-        verifyOtp: async () => ({ error: null })
-      }
+        verifyOtp: async () => ({ error: null }),
+        onAuthStateChange: () => ({ data: { subscription: { unsubscribe: () => {} } } })
+      },
+      from: () => ({
+        select: () => ({
+          eq: () => ({
+            order: async () => ({ data: [], error: null }),
+            single: async () => ({ data: null, error: null })
+          })
+        }),
+        insert: async () => ({ error: null }),
+        delete: () => ({ eq: () => ({ eq: async () => ({ error: null }) }) }),
+        update: () => ({ eq: () => ({ eq: async () => ({ error: null }) }) }),
+        upsert: async () => ({ error: null })
+      })
     } as unknown as ReturnType<typeof createClient>;
 
 type Rect = { id: string; x: number; y: number; width: number; height: number };
@@ -71,7 +84,7 @@ export default function NaylaCore() {
   const [showIntro, setShowIntro] = useState(true);
   const [videoFile, setVideoFile] = useState<File | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
-  const [videoTerminado, setVideoTerminado] = useState<string | null>(null);
+  const [mediaActivaUrl, setMediaActivaUrl] = useState<string | null>(null);
   const [videoResultadoUrl, setVideoResultadoUrl] = useState<string | null>(null);
   const [videoMetadata, setVideoMetadata] = useState({ width: 1080, height: 1920 });
   const [isPlaying, setIsPlaying] = useState(false);
@@ -87,6 +100,7 @@ export default function NaylaCore() {
   const [showEnlaceInput, setShowEnlaceInput] = useState(false);
   const [enlaceInput, setEnlaceInput] = useState('');
   const [extrayendoVideo, setExtrayendoVideo] = useState(false);
+  const [queueProgress, setQueueProgress] = useState(0);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -138,10 +152,11 @@ export default function NaylaCore() {
 
       if (!proyectoError && proyectoData && proyectoData.linea_de_tiempo) {
         setLineaDeTiempo(proyectoData.linea_de_tiempo);
-        // Si hay clips, establecer el primero que sea video/foto como videoTerminado
+        // Si hay clips, establecer el primero que sea video/foto como mediaActivaUrl
         const clipsVisuales = proyectoData.linea_de_tiempo.filter((c: any) => c.tipo === 'video' || c.tipo === 'foto');
-        if (clipsVisuales.length > 0 && !videoTerminado) {
-          setVideoTerminado(clipsVisuales[0].url);
+        if (clipsVisuales.length > 0 && !mediaActivaUrl) {
+          setMediaActivaUrl(clipsVisuales[0].url);
+          setClipSeleccionado(clipsVisuales[0].id);
         }
       }
     } catch (err) {
@@ -289,9 +304,10 @@ export default function NaylaCore() {
         if (error) console.error('Error insertando en base de datos:', error);
       }
 
-      if (tipo === 'video' && !videoTerminado) {
+      if (tipo === 'video' && !mediaActivaUrl) {
         setVideoFile(files[0]);
-        setVideoTerminado(nuevosItems[0].url);
+        setMediaActivaUrl(nuevosItems[0].url);
+        setClipSeleccionado(nuevosItems[0].id); // Marcar como seleccionado
         setVideoResultadoUrl(null);
       }
     } catch (err) {
@@ -344,7 +360,14 @@ export default function NaylaCore() {
     const nuevo: TimelineItem = { id: Date.now().toString(), mediaId: item.id, tipo: item.tipo, nombre: item.nombre, etiqueta: item.etiqueta, url: item.url };
     const nuevaLinea = [...lineaDeTiempo, nuevo];
     setLineaDeTiempo(nuevaLinea);
-    if (item.tipo === 'video' || item.tipo === 'foto') { setVideoTerminado(item.url); setVideoResultadoUrl(null); setRects([]); }
+    // Removemos el cambio automático de media activa al agregar a la timeline
+    // Para que el reproductor siga mostrando lo que estaba reproduciendo, a menos que sea el primero
+    if (!mediaActivaUrl && (item.tipo === 'video' || item.tipo === 'foto')) {
+        setMediaActivaUrl(item.url);
+        setClipSeleccionado(nuevo.id);
+        setVideoResultadoUrl(null);
+        setRects([]);
+    }
     sincronizarLineaDeTiempo(nuevaLinea);
   };
 
@@ -389,80 +412,120 @@ export default function NaylaCore() {
     }
   };
 
+  const handleVideoEnded = () => {
+    if (!clipSeleccionado) return;
+    const currentIndex = lineaDeTiempo.findIndex(t => t.id === clipSeleccionado);
+    if (currentIndex !== -1 && currentIndex < lineaDeTiempo.length - 1) {
+      // Es un clip de la línea de tiempo y hay uno siguiente
+      const nextClip = lineaDeTiempo[currentIndex + 1];
+      if (nextClip.tipo === 'video' || nextClip.tipo === 'foto') {
+        setClipSeleccionado(nextClip.id);
+        setMediaActivaUrl(nextClip.url);
+        setVideoResultadoUrl(null);
+        // Play is handled automatically in a useEffect or by the user hitting play again if we don't want autoplay
+        // But for "reproducción de corrido" we should autoplay:
+        setTimeout(() => {
+          if (videoRef.current) {
+            videoRef.current.play().catch(e => console.log('Autoplay prevent', e));
+            setIsPlaying(true);
+          }
+        }, 100);
+      }
+    }
+  };
+
   const handleDescargar = () => {
-    const url = videoResultadoUrl || videoTerminado;
+    const url = videoResultadoUrl || mediaActivaUrl;
     if (!url) return alert('No hay ningún video cargado para descargar.');
     const a = document.createElement('a'); a.href = url; a.download = `Nayla_Export_${calidadExportacion}_${Date.now()}.mp4`; a.click();
   };
 
-  const handleExtraerDesdeEnlace = async () => {
-    if (!enlaceInput || !enlaceInput.includes('meta.ai')) {
-      alert('Por favor ingresa un enlace válido de Meta AI.');
-      return;
-    }
-
-    setExtrayendoVideo(true);
+  const procesarEnlaceIndividual = async (url: string, index: number) => {
     try {
-      // 1. Llamar a nuestra API Route ligera para obtener la URL de la CDN
       const resApi = await fetch('/api/extract-meta-video', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url: enlaceInput })
+        body: JSON.stringify({ url })
       });
 
       const dataApi = await resApi.json();
 
       if (!resApi.ok || !dataApi.videoUrl) {
-        throw new Error(dataApi.error || 'No se pudo encontrar el video en el enlace.');
+        throw new Error(dataApi.error || `No se pudo extraer: ${url}`);
       }
 
-      // Para Meta AI usamos la URL directa de la CDN para ahorrar storage (Opción B)
       const finalMediaUrl = dataApi.videoUrl;
 
-      // 3. Insertar el resultado en la galeriaMultimedia (Bodega) y Supabase
-      const countVideo = galeriaMultimedia.filter(item => item.tipo === 'video').length + 1;
-      const nuevoItem: MediaItem = {
-        id: Date.now().toString(),
-        url: finalMediaUrl,
-        tipo: 'video',
-        nombre: `Meta_Video_${countVideo}.mp4`,
-        creado_en: new Date().toLocaleTimeString(),
-        esOverlay: false,
-        etiqueta: `V${countVideo}`
-      };
+      // Obtener un snapshot actualizado del contador basado en un timestamp y la galeria
+      // Usamos una función updater para evitar problemas de race conditions con múltiples setState
+      setGaleriaMultimedia(prev => {
+        const countVideo = prev.filter(item => item.tipo === 'video').length + 1;
+        const id = Date.now().toString() + index;
+        const nuevoItem: MediaItem = {
+          id,
+          url: finalMediaUrl,
+          tipo: 'video',
+          nombre: `Meta_Video_${countVideo}.mp4`,
+          creado_en: new Date().toLocaleTimeString(),
+          esOverlay: false,
+          etiqueta: `V${countVideo}`
+        };
 
-      const nuevaGaleria = [...galeriaMultimedia, nuevoItem];
-      setGaleriaMultimedia(nuevaGaleria);
-
-      // Comportamiento por defecto: si es el primer video, ponerlo en el monitor principal
-      if (!videoTerminado) {
-        setVideoTerminado(nuevoItem.url);
-        setVideoResultadoUrl(null);
-      }
-
-      setEnlaceInput('');
-      setShowEnlaceInput(false);
-
-      if (session) {
-        const { error: insertError } = await supabase
-          .from('galeria_multimedia')
-          .insert([{
-            ...nuevoItem,
-            user_id: session.user.id
-          }]);
-
-        if (insertError) {
-          console.error('Error insertando en Supabase:', insertError);
-          // Silencioso de cara al usuario, el estado local ya lo tiene.
+        if (session) {
+          supabase
+            .from('galeria_multimedia')
+            .insert([{ ...nuevoItem, user_id: session.user.id }])
+            .then(({ error }) => {
+              if (error) console.error('Error insertando en Supabase:', error);
+            });
         }
-      }
 
-    } catch (err: any) {
+        // Si es el primer video de todos
+        if (prev.length === 0 || !prev.find(i => i.tipo === 'video')) {
+          setMediaActivaUrl(nuevoItem.url);
+          setClipSeleccionado(nuevoItem.id);
+          setVideoResultadoUrl(null);
+        }
+
+        return [...prev, nuevoItem];
+      });
+
+    } catch (err) {
       console.error(err);
-      alert('Error extrayendo video: ' + err.message);
-    } finally {
-      setExtrayendoVideo(false);
     }
+  };
+
+  const handleExtraerDesdeEnlace = async () => {
+    if (!enlaceInput) return;
+
+    // Parsear los enlaces, separando por espacios, comas o saltos de línea
+    const urlsBrutas = enlaceInput.split(/[\s,]+/).filter(u => u.trim() !== '');
+    const urls = urlsBrutas.filter(u => u.includes('meta.ai'));
+
+    if (urls.length === 0) {
+      alert('No se encontraron enlaces válidos de Meta AI en el texto.');
+      return;
+    }
+
+    setExtrayendoVideo(true);
+    setQueueProgress(0);
+
+    const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+    for (let i = 0; i < urls.length; i++) {
+      await procesarEnlaceIndividual(urls[i], i);
+      setQueueProgress(Math.round(((i + 1) / urls.length) * 100));
+
+      // Respiro de 5 segundos entre requests, excepto para el último
+      if (i < urls.length - 1) {
+        await delay(5000);
+      }
+    }
+
+    setExtrayendoVideo(false);
+    setEnlaceInput('');
+    setShowEnlaceInput(false);
+    setTimeout(() => setQueueProgress(0), 1000); // Limpiar progreso despues de 1s
   };
 
   const processVideo = async (motorElegido: 'nube' | 'local') => {
@@ -481,7 +544,7 @@ export default function NaylaCore() {
   };
 
   const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (!videoTerminado || !containerRef.current || resizingInfo || draggingInfo) return;
+    if (!mediaActivaUrl || !containerRef.current || resizingInfo || draggingInfo) return;
     const c = containerRef.current.getBoundingClientRect();
     setStartPos({ x: e.clientX - c.left, y: e.clientY - c.top });
     setIsDrawing(true);
@@ -489,7 +552,7 @@ export default function NaylaCore() {
   };
 
   const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (!videoTerminado || !containerRef.current) return;
+    if (!mediaActivaUrl || !containerRef.current) return;
     const c = containerRef.current.getBoundingClientRect();
     const cx = Math.max(0, Math.min(e.clientX - c.left, c.width));
     const cy = Math.max(0, Math.min(e.clientY - c.top, c.height));
@@ -619,10 +682,18 @@ export default function NaylaCore() {
         <section style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '10px', backgroundColor: '#050505' }}>
           <div ref={containerRef} onPointerDown={handlePointerDown} onPointerMove={handlePointerMove} onPointerUp={handlePointerUp} onPointerLeave={handlePointerUp}
             style={{ aspectRatio: canvasRatio, height: '42vh', maxHeight: '42vh', minHeight: '42vh', backgroundColor: '#0a0a0a', borderRadius: '16px', overflow: 'hidden', position: 'relative', border: '1px solid #1a1a1a', touchAction: 'none' }}>
-            {(videoResultadoUrl || videoTerminado) ? (
+            {(videoResultadoUrl || mediaActivaUrl) ? (
               <>
                 {/* FIX AUDIO: removido muted */}
-                <video ref={videoRef} src={videoResultadoUrl || videoTerminado} loop playsInline onLoadedMetadata={(e) => setVideoMetadata({ width: e.currentTarget.videoWidth, height: e.currentTarget.videoHeight })} style={{ width: '100%', height: '100%', objectFit: 'contain', pointerEvents: 'none' }} />
+                <video
+                  ref={videoRef}
+                  src={videoResultadoUrl || mediaActivaUrl}
+                  loop={!clipSeleccionado || lineaDeTiempo.findIndex(t => t.id === clipSeleccionado) === -1} // Solo loop si NO es del timeline
+                  playsInline
+                  onLoadedMetadata={(e) => setVideoMetadata({ width: e.currentTarget.videoWidth, height: e.currentTarget.videoHeight })}
+                  onEnded={handleVideoEnded}
+                  style={{ width: '100%', height: '100%', objectFit: 'contain', pointerEvents: 'none' }}
+                />
                 {!videoResultadoUrl && rects.map((r) => (
                   <div key={r.id} onPointerDown={(e) => { e.stopPropagation(); if (!containerRef.current) return; const c = containerRef.current.getBoundingClientRect(); setDraggingInfo({ id: r.id, offsetX: (e.clientX - c.left) - r.x, offsetY: (e.clientY - c.top) - r.y }); }}
                     style={{ position: 'absolute', left: `${r.x}px`, top: `${r.y}px`, width: `${r.width}px`, height: `${r.height}px`, border: '1px solid #fff', backgroundColor: 'rgba(255,255,255,0.1)', pointerEvents: 'auto', cursor: 'move', borderRadius: '8px' }}>
@@ -658,7 +729,16 @@ export default function NaylaCore() {
               style={{ width: '40px', height: '60px', minWidth: '40px', borderRadius: '10px', flexShrink: 0, marginRight: hayClips ? '6px' : '0', borderStyle: 'dashed', cursor: 'pointer', fontSize: '1.4rem', transition: 'margin 0.3s ease' }}>+</div>
             {pistaVideo.map((clip) => (
               <div key={clip.id}
-                onClick={(e) => { e.stopPropagation(); setClipSeleccionado(clip.id); }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setClipSeleccionado(clip.id);
+                  setMediaActivaUrl(clip.url);
+                  setVideoResultadoUrl(null);
+                  if (videoRef.current) {
+                    videoRef.current.play().catch(e => console.log('Autoplay prevent', e));
+                    setIsPlaying(true);
+                  }
+                }}
                 className={`clip-block ${clipSeleccionado === clip.id ? 'selected' : ''}`}>
                 {clip.tipo === 'video'
                   ? <video src={clip.url} style={{ width: '100%', height: '100%', objectFit: 'cover' }} muted playsInline />
@@ -689,22 +769,27 @@ export default function NaylaCore() {
             {!toolMessage && navActiva === 'galeria' && (
               <div style={{ maxHeight: '35vh' }}>
                 {showEnlaceInput && (
-                  <div style={{ display: 'flex', gap: '10px', marginBottom: '1rem', alignItems: 'center' }}>
-                    <input
-                      type="text"
-                      placeholder="Pega el enlace de meta.ai/share aquí..."
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '1rem' }}>
+                    <textarea
+                      placeholder="Pega uno o varios enlaces de meta.ai/share aquí (separados por saltos de línea o comas)..."
                       value={enlaceInput}
                       onChange={(e) => setEnlaceInput(e.target.value)}
-                      style={{ flex: 1, padding: '0.8rem', backgroundColor: '#0a0a0a', border: '1px solid #404040', borderRadius: '8px', color: '#fff', outline: 'none' }}
+                      rows={3}
+                      style={{ width: '100%', padding: '0.8rem', backgroundColor: '#0a0a0a', border: '1px solid #404040', borderRadius: '8px', color: '#fff', outline: 'none', resize: 'vertical' }}
                     />
                     <button
                       onClick={handleExtraerDesdeEnlace}
                       disabled={extrayendoVideo || !enlaceInput}
                       className="neon-btn nav-btn"
-                      style={{ padding: '0.8rem 1.2rem', backgroundColor: extrayendoVideo ? '#404040' : '#fff', color: extrayendoVideo ? '#a3a3a3' : '#000', fontWeight: 'bold' }}
+                      style={{ padding: '0.8rem 1.2rem', backgroundColor: extrayendoVideo ? '#404040' : '#fff', color: extrayendoVideo ? '#a3a3a3' : '#000', fontWeight: 'bold', width: '100%' }}
                     >
-                      {extrayendoVideo ? 'EXTRAYENDO...' : 'EXTRAER'}
+                      {extrayendoVideo ? 'PROCESANDO ENLACES EN COLA...' : 'PROCESAR ENLACES EN COLA'}
                     </button>
+                    {(extrayendoVideo || queueProgress > 0) && (
+                      <div style={{ width: '100%', backgroundColor: '#262626', height: '8px', borderRadius: '4px', overflow: 'hidden', marginTop: '4px' }}>
+                        <div style={{ height: '100%', width: `${queueProgress}%`, backgroundColor: '#00ffcc', transition: 'width 0.3s ease' }} />
+                      </div>
+                    )}
                   </div>
                 )}
                 <div style={{ display: 'flex', flexDirection: 'row', gap: '10px', overflowX: 'auto', paddingBottom: '10px', alignItems: 'stretch' }}>
@@ -729,7 +814,17 @@ export default function NaylaCore() {
                         <button onClick={() => eliminarDeGaleria(item.id)} style={{ background: 'none', border: 'none', color: '#ff4444', cursor: 'pointer', fontSize: '1rem', padding: '0', lineHeight: '1' }}>✕</button>
                       </div>
 
-                      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', width: '100%', overflow: 'hidden' }}>
+                      <div
+                        onClick={() => {
+                          setMediaActivaUrl(item.url);
+                          setClipSeleccionado(item.id);
+                          setVideoResultadoUrl(null);
+                          if (item.tipo === 'video' && videoRef.current) {
+                            videoRef.current.play().catch(e => console.log('Autoplay prevent', e));
+                            setIsPlaying(true);
+                          }
+                        }}
+                        style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', width: '100%', overflow: 'hidden', cursor: 'pointer' }}>
                         {item.tipo === 'video' && <div style={{ fontSize: '2rem', color: '#a3a3a3' }}>▶️</div>}
                         {item.tipo === 'audio' && <div style={{ fontSize: '2rem', color: '#a3a3a3' }}>🎵</div>}
                         {item.tipo === 'foto' && <img src={item.url} style={{ width: '100%', height: '40px', objectFit: 'cover', borderRadius: '4px' }} alt={item.nombre} />}

@@ -1,0 +1,90 @@
+--- src/pages/index.tsx
++++ src/pages/index.tsx
+@@ -71,7 +71,7 @@
+   const [videoFile, setVideoFile] = useState<File | null>(null);
+   const [isProcessing, setIsProcessing] = useState(false);
+-  const [videoTerminado, setVideoTerminado] = useState<string | null>(null);
++  const [mediaActivaUrl, setMediaActivaUrl] = useState<string | null>(null);
+   const [videoResultadoUrl, setVideoResultadoUrl] = useState<string | null>(null);
+   const [videoMetadata, setVideoMetadata] = useState({ width: 1080, height: 1920 });
+   const [isPlaying, setIsPlaying] = useState(false);
+@@ -139,8 +139,8 @@
+       if (!proyectoError && proyectoData && proyectoData.linea_de_tiempo) {
+         setLineaDeTiempo(proyectoData.linea_de_tiempo);
+-        // Si hay clips, establecer el primero que sea video/foto como videoTerminado
++        // Si hay clips, establecer el primero que sea video/foto como mediaActivaUrl
+         const clipsVisuales = proyectoData.linea_de_tiempo.filter((c: any) => c.tipo === 'video' || c.tipo === 'foto');
+-        if (clipsVisuales.length > 0 && !videoTerminado) {
+-          setVideoTerminado(clipsVisuales[0].url);
++        if (clipsVisuales.length > 0 && !mediaActivaUrl) {
++          setMediaActivaUrl(clipsVisuales[0].url);
+         }
+       }
+@@ -288,9 +288,9 @@
+       if (error) console.error('Error insertando en base de datos:', error);
+     }
+
+-      if (tipo === 'video' && !videoTerminado) {
++      if (tipo === 'video' && !mediaActivaUrl) {
+         setVideoFile(files[0]);
+-        setVideoTerminado(nuevosItems[0].url);
++        setMediaActivaUrl(nuevosItems[0].url);
+         setVideoResultadoUrl(null);
+       }
+     } catch (err) {
+@@ -330,7 +330,7 @@
+     const nuevaLinea = [...lineaDeTiempo, nuevo];
+     setLineaDeTiempo(nuevaLinea);
+-    if (item.tipo === 'video' || item.tipo === 'foto') { setVideoTerminado(item.url); setVideoResultadoUrl(null); setRects([]); }
++    if (item.tipo === 'video' || item.tipo === 'foto') { setMediaActivaUrl(item.url); setClipSeleccionado(nuevo.id); setVideoResultadoUrl(null); setRects([]); }
+     sincronizarLineaDeTiempo(nuevaLinea);
+   };
+
+@@ -389,7 +389,7 @@
+
+   const handleDescargar = () => {
+-    const url = videoResultadoUrl || videoTerminado;
++    const url = videoResultadoUrl || mediaActivaUrl;
+     if (!url) return alert('No hay ningún video cargado para descargar.');
+     const a = document.createElement('a'); a.href = url; a.download = `Nayla_Export_${calidadExportacion}_${Date.now()}.mp4`; a.click();
+   };
+@@ -434,8 +434,8 @@
+       setGaleriaMultimedia(nuevaGaleria);
+
+       // Comportamiento por defecto: si es el primer video, ponerlo en el monitor principal
+-      if (!videoTerminado) {
+-        setVideoTerminado(nuevoItem.url);
++      if (!mediaActivaUrl) {
++        setMediaActivaUrl(nuevoItem.url);
+         setVideoResultadoUrl(null);
+       }
+
+@@ -470,14 +470,14 @@
+
+   const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+-    if (!videoTerminado || !containerRef.current || resizingInfo || draggingInfo) return;
++    if (!mediaActivaUrl || !containerRef.current || resizingInfo || draggingInfo) return;
+     const c = containerRef.current.getBoundingClientRect();
+     setStartPos({ x: e.clientX - c.left, y: e.clientY - c.top });
+     setIsDrawing(true);
+     setCurrentRect({ id: Date.now().toString(), x: e.clientX - c.left, y: e.clientY - c.top, width: 0, height: 0 });
+   };
+
+   const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+-    if (!videoTerminado || !containerRef.current) return;
++    if (!mediaActivaUrl || !containerRef.current) return;
+     const c = containerRef.current.getBoundingClientRect();
+     const cx = Math.max(0, Math.min(e.clientX - c.left, c.width));
+     const cy = Math.max(0, Math.min(e.clientY - c.top, c.height));
+@@ -620,9 +620,9 @@
+         <section style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '10px', backgroundColor: '#050505' }}>
+           <div ref={containerRef} onPointerDown={handlePointerDown} onPointerMove={handlePointerMove} onPointerUp={handlePointerUp} onPointerLeave={handlePointerUp}
+             style={{ aspectRatio: canvasRatio, height: '42vh', maxHeight: '42vh', minHeight: '42vh', backgroundColor: '#0a0a0a', borderRadius: '16px', overflow: 'hidden', position: 'relative', border: '1px solid #1a1a1a', touchAction: 'none' }}>
+-            {(videoResultadoUrl || videoTerminado) ? (
++            {(videoResultadoUrl || mediaActivaUrl) ? (
+               <>
+                 {/* FIX AUDIO: removido muted */}
+-                <video ref={videoRef} src={videoResultadoUrl || videoTerminado} loop playsInline onLoadedMetadata={(e) => setVideoMetadata({ width: e.currentTarget.videoWidth, height: e.currentTarget.videoHeight })} style={{ width: '100%', height: '100%', objectFit: 'contain', pointerEvents: 'none' }} />
++                <video ref={videoRef} src={videoResultadoUrl || mediaActivaUrl} loop playsInline onLoadedMetadata={(e) => setVideoMetadata({ width: e.currentTarget.videoWidth, height: e.currentTarget.videoHeight })} style={{ width: '100%', height: '100%', objectFit: 'contain', pointerEvents: 'none' }} />
+                 {!videoResultadoUrl && rects.map((r) => (
+                   <div key={r.id} onPointerDown={(e) => { e.stopPropagation(); if (!containerRef.current) return; const c = containerRef.current.getBoundingClientRect(); setDraggingInfo({ id: r.id, offsetX: (e.clientX - c.left) - r.x, offsetY: (e.clientY - c.top) - r.y }); }}
