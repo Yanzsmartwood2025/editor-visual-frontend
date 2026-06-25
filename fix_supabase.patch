@@ -1,0 +1,10 @@
+--- src/pages/index.tsx
++++ src/pages/index.tsx
+@@ -14,7 +14,12 @@
+         getSession: async () => ({ data: { session: { user: { email: 'dev@test.com' } } } }),
+         signInWithOtp: async () => ({ error: null }),
+-        verifyOtp: async () => ({ error: null })
++        verifyOtp: async () => ({ error: null }),
++        onAuthStateChange: () => ({ data: { subscription: { unsubscribe: () => {} } } })
+       }
+     } as unknown as ReturnType<typeof createClient>;
