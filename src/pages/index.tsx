@@ -102,8 +102,7 @@ export default function NaylaCore() {
         if (canvasRatio === '16/9') { targetW = 1920; targetH = 1080; }
         if (canvasRatio === '1/1') { targetW = 1080; targetH = 1080; }
         if (canvasRatio === '4/5') { targetW = 1080; targetH = 1350; }
-        canvas.width = targetW;
-        canvas.height = targetH;
+        canvas.width = targetW; canvas.height = targetH;
         ctx.fillStyle = config.color;
         ctx.fillRect(0, 0, targetW, targetH);
         const g = config.grosor;
@@ -116,9 +115,7 @@ export default function NaylaCore() {
         const scale = Math.min(imgW / img.width, imgH / img.height);
         const drawW = img.width * scale;
         const drawH = img.height * scale;
-        const drawX = imgX + (imgW - drawW) / 2;
-        const drawY = imgY + (imgH - drawH) / 2;
-        ctx.drawImage(img, drawX, drawY, drawW, drawH);
+        ctx.drawImage(img, imgX + (imgW - drawW) / 2, imgY + (imgH - drawH) / 2, drawW, drawH);
         resolve(canvas.toDataURL('image/jpeg', 0.95));
       };
       img.src = imagenUrl;
@@ -140,9 +137,7 @@ export default function NaylaCore() {
 
   const descargarImagenConMarco = (url: string, nombre: string) => {
     const a = document.createElement('a');
-    a.href = url;
-    a.download = `MARCO_${nombre.replace(/\.[^/.]+$/, '')}.jpg`;
-    a.click();
+    a.href = url; a.download = `MARCO_${nombre.replace(/\.[^/.]+$/, '')}.jpg`; a.click();
   };
 
   const descargarTodasConMarco = () => {
@@ -157,9 +152,8 @@ export default function NaylaCore() {
       const { error } = await supabase.auth.signInWithOtp({ email: emailInput, options: { shouldCreateUser: true } });
       if (error) throw error;
       setOtpEnviado(true);
-    } catch (err) {
-      setMessage('Error crítico de transmisión.');
-    } finally { setAuthLoading(false); }
+    } catch (err) { setMessage('Error crítico de transmisión.'); }
+    finally { setAuthLoading(false); }
   };
 
   const handleOtpVerify = async (e: React.FormEvent) => {
@@ -169,9 +163,8 @@ export default function NaylaCore() {
     try {
       const { error } = await supabase.auth.verifyOtp({ email: emailInput, token: otpInput, type: 'email' });
       if (error) throw error;
-    } catch (err) {
-      setMessage('Código incorrecto.');
-    } finally { setAuthLoading(false); }
+    } catch (err) { setMessage('Código incorrecto.'); }
+    finally { setAuthLoading(false); }
   };
 
   const handlePasteCode = async () => {
@@ -384,7 +377,8 @@ export default function NaylaCore() {
             style={{ aspectRatio: canvasRatio, height: '42vh', maxHeight: '42vh', minHeight: '42vh', backgroundColor: '#0a0a0a', borderRadius: '16px', overflow: 'hidden', position: 'relative', border: '1px solid #1a1a1a', touchAction: 'none' }}>
             {(videoResultadoUrl || videoTerminado) ? (
               <>
-                <video ref={videoRef} src={videoResultadoUrl || videoTerminado} loop muted playsInline onLoadedMetadata={(e) => setVideoMetadata({ width: e.currentTarget.videoWidth, height: e.currentTarget.videoHeight })} style={{ width: '100%', height: '100%', objectFit: 'contain', pointerEvents: 'none' }} />
+                {/* FIX AUDIO: removido muted */}
+                <video ref={videoRef} src={videoResultadoUrl || videoTerminado} loop playsInline onLoadedMetadata={(e) => setVideoMetadata({ width: e.currentTarget.videoWidth, height: e.currentTarget.videoHeight })} style={{ width: '100%', height: '100%', objectFit: 'contain', pointerEvents: 'none' }} />
                 {!videoResultadoUrl && rects.map((r) => (
                   <div key={r.id} onPointerDown={(e) => { e.stopPropagation(); if (!containerRef.current) return; const c = containerRef.current.getBoundingClientRect(); setDraggingInfo({ id: r.id, offsetX: (e.clientX - c.left) - r.x, offsetY: (e.clientY - c.top) - r.y }); }}
                     style={{ position: 'absolute', left: `${r.x}px`, top: `${r.y}px`, width: `${r.width}px`, height: `${r.height}px`, border: '1px solid #fff', backgroundColor: 'rgba(255,255,255,0.1)', pointerEvents: 'auto', cursor: 'move', borderRadius: '8px' }}>
@@ -411,12 +405,17 @@ export default function NaylaCore() {
         {/* TIMELINE HORIZONTAL */}
         <section style={{ height: '140px', backgroundColor: '#050505', position: 'relative', borderBottom: '1px solid #1a1a1a', overflow: 'hidden', display: 'flex', flexDirection: 'column', padding: '10px 0' }} onClick={() => setClipSeleccionado(null)}>
           <div style={{ position: 'absolute', left: hayClips ? '56px' : '50%', top: 0, bottom: 0, width: '2px', backgroundColor: '#fff', zIndex: 50, pointerEvents: 'none', boxShadow: '0 0 10px rgba(255,255,255,0.8)', transition: 'left 0.3s ease' }} />
-          <div className="timeline-track" ref={timelineRef} onClick={(e) => e.stopPropagation()}
-            style={{ paddingLeft: hayClips ? '8px' : 'calc(50% - 20px)', paddingRight: '50%', transition: 'padding-left 0.3s ease' }}>
-            <div className="neon-btn" onClick={() => { setNavActiva('galeria'); setToolMessage(null); }}
+          <div className="timeline-track" ref={timelineRef}
+            style={{ paddingLeft: hayClips ? '8px' : 'calc(50% - 20px)', paddingRight: '50%', transition: 'padding-left 0.3s ease' }}
+            onClick={(e) => e.stopPropagation()}>
+            {/* FIX BOTÓN +: agregado e.stopPropagation() */}
+            <div className="neon-btn"
+              onClick={(e) => { e.stopPropagation(); setNavActiva('galeria'); setToolMessage(null); }}
               style={{ width: '40px', height: '60px', minWidth: '40px', borderRadius: '10px', flexShrink: 0, marginRight: hayClips ? '6px' : '0', borderStyle: 'dashed', cursor: 'pointer', fontSize: '1.4rem', transition: 'margin 0.3s ease' }}>+</div>
             {pistaVideo.map((clip) => (
-              <div key={clip.id} onClick={(e) => { e.stopPropagation(); setClipSeleccionado(clip.id); }} className={`clip-block ${clipSeleccionado === clip.id ? 'selected' : ''}`}>
+              <div key={clip.id}
+                onClick={(e) => { e.stopPropagation(); setClipSeleccionado(clip.id); }}
+                className={`clip-block ${clipSeleccionado === clip.id ? 'selected' : ''}`}>
                 {clip.tipo === 'video'
                   ? <video src={clip.url} style={{ width: '100%', height: '100%', objectFit: 'cover' }} muted playsInline />
                   : <img src={clip.url} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />}
@@ -486,7 +485,7 @@ export default function NaylaCore() {
                   ))}
                   <input type="color" value={marcoConfig.color} onChange={(e) => setMarcoConfig({ ...marcoConfig, color: e.target.value })} style={{ width: '36px', height: '36px', borderRadius: '50%', border: 'none', cursor: 'pointer' }} />
                 </div>
-                <div style={{ backgroundColor: '#0a0a0a', padding: '10px 14px', borderRadius: '10px', border: '1px solid #1a1a1a', marginBottom: '1.2rem', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <div style={{ backgroundColor: '#0a0a0a', padding: '10px 14px', borderRadius: '10px', border: '1px solid #1a1a1a', marginBottom: '1.2rem' }}>
                   <span style={{ fontSize: '0.65rem', color: '#a3a3a3' }}>Ratio activo: <strong style={{ color: '#fff' }}>{canvasRatio}</strong> — {galeriaMultimedia.filter(i => i.tipo === 'foto').length} fotos en bodega</span>
                 </div>
                 <button onClick={procesarImagenesConMarco} disabled={marcoProcesando} className="neon-btn nav-btn"
@@ -552,4 +551,4 @@ export default function NaylaCore() {
       </div>
     </div>
   );
-}
+    }
