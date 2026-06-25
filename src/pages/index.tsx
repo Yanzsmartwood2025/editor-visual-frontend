@@ -453,13 +453,9 @@ export default function NaylaCore() {
 
         if (insertError) {
           console.error('Error insertando en Supabase:', insertError);
-          // Alertar pero no revertir el estado local para no bloquear al usuario
-          alert('Video extraído, pero hubo un error guardándolo en la nube.');
-          return;
+          // Silencioso de cara al usuario, el estado local ya lo tiene.
         }
       }
-
-      alert('Video extraído y añadido a la bodega exitosamente.');
 
     } catch (err: any) {
       console.error(err);
@@ -691,14 +687,9 @@ export default function NaylaCore() {
             {toolMessage && <div style={{ textAlign: 'center', padding: '2rem', color: '#a3a3a3', fontSize: '1rem', letterSpacing: '2px' }}>{toolMessage}</div>}
 
             {!toolMessage && navActiva === 'galeria' && (
-              <div style={{ maxHeight: '35vh', overflowY: 'auto' }}>
-                <div style={{ display: 'flex', gap: '10px', marginBottom: '1.5rem' }}>
-                  <label className="neon-btn" style={{ flex: 1, padding: '1rem', borderStyle: 'dashed', borderRadius: '12px', fontSize: '0.75rem', cursor: 'pointer' }}>+ SUBIR VIDEO/FOTO<input type="file" multiple accept="video/*,image/*" onChange={(e) => handleSubirMultimedia(e, 'video')} style={{ display: 'none' }} /></label>
-                  <label className="neon-btn" style={{ flex: 1, padding: '1rem', borderStyle: 'dashed', borderRadius: '12px', fontSize: '0.75rem', cursor: 'pointer' }}>+ SUBIR AUDIO<input type="file" multiple accept="audio/*" onChange={(e) => handleSubirMultimedia(e, 'audio')} style={{ display: 'none' }} /></label>
-                  <button className="neon-btn" onClick={() => setShowEnlaceInput(!showEnlaceInput)} style={{ flex: 1, padding: '1rem', borderStyle: 'dashed', borderRadius: '12px', fontSize: '0.75rem', cursor: 'pointer' }}>+ TRAER DESDE ENLACE</button>
-                </div>
+              <div style={{ maxHeight: '35vh' }}>
                 {showEnlaceInput && (
-                  <div style={{ display: 'flex', gap: '10px', marginBottom: '1.5rem', alignItems: 'center' }}>
+                  <div style={{ display: 'flex', gap: '10px', marginBottom: '1rem', alignItems: 'center' }}>
                     <input
                       type="text"
                       placeholder="Pega el enlace de meta.ai/share aquí..."
@@ -716,17 +707,36 @@ export default function NaylaCore() {
                     </button>
                   </div>
                 )}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
+                <div style={{ display: 'flex', flexDirection: 'row', gap: '10px', overflowX: 'auto', paddingBottom: '10px', alignItems: 'stretch' }}>
+                  <label className="neon-btn" style={{ minWidth: '120px', width: '120px', height: '140px', padding: '1rem', borderStyle: 'dashed', borderRadius: '12px', fontSize: '0.75rem', cursor: 'pointer', flexDirection: 'column', textAlign: 'center' }}>
+                    <span style={{ fontSize: '1.5rem', marginBottom: '8px' }}>+</span>
+                    VIDEO / FOTO
+                    <input type="file" multiple accept="video/*,image/*" onChange={(e) => handleSubirMultimedia(e, 'video')} style={{ display: 'none' }} />
+                  </label>
+                  <label className="neon-btn" style={{ minWidth: '120px', width: '120px', height: '140px', padding: '1rem', borderStyle: 'dashed', borderRadius: '12px', fontSize: '0.75rem', cursor: 'pointer', flexDirection: 'column', textAlign: 'center' }}>
+                    <span style={{ fontSize: '1.5rem', marginBottom: '8px' }}>+</span>
+                    AUDIO
+                    <input type="file" multiple accept="audio/*" onChange={(e) => handleSubirMultimedia(e, 'audio')} style={{ display: 'none' }} />
+                  </label>
+                  <button className="neon-btn" onClick={() => setShowEnlaceInput(!showEnlaceInput)} style={{ minWidth: '120px', width: '120px', height: '140px', padding: '1rem', borderStyle: 'dashed', borderRadius: '12px', fontSize: '0.75rem', cursor: 'pointer', flexDirection: 'column', textAlign: 'center' }}>
+                    <span style={{ fontSize: '1.5rem', marginBottom: '8px' }}>🔗</span>
+                    ENLACE
+                  </button>
                   {galeriaMultimedia.map(item => (
-                    <div key={item.id} className="neon-btn" style={{ justifyContent: 'space-between', padding: '1rem', borderRadius: '16px', borderStyle: 'solid' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '15px', flex: 1 }}>
-                        <span style={{ fontSize: '0.8rem', backgroundColor: '#262626', padding: '4px 8px', borderRadius: '6px', color: '#fff', fontWeight: 'bold' }}>{item.etiqueta}</span>
-                        <input type="text" value={item.nombre} onChange={(e) => renombrarItem(item.id, e.target.value)} style={{ background: 'transparent', border: 'none', color: '#fff', outline: 'none', width: '100%' }} />
+                    <div key={item.id} className="neon-btn" style={{ minWidth: '140px', width: '140px', height: '140px', padding: '10px', borderRadius: '12px', borderStyle: 'solid', flexDirection: 'column', position: 'relative', justifyContent: 'space-between' }}>
+                      <div style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <span style={{ fontSize: '0.65rem', backgroundColor: '#262626', padding: '2px 6px', borderRadius: '4px', color: '#fff', fontWeight: 'bold' }}>{item.etiqueta}</span>
+                        <button onClick={() => eliminarDeGaleria(item.id)} style={{ background: 'none', border: 'none', color: '#ff4444', cursor: 'pointer', fontSize: '1rem', padding: '0', lineHeight: '1' }}>✕</button>
                       </div>
-                      <div style={{ display: 'flex', gap: '10px' }}>
-                        <button className="neon-btn nav-btn active" onClick={() => agregarAlTimeline(item)} style={{ padding: '6px 12px', fontSize: '0.65rem' }}>+ PISTA</button>
-                        <button onClick={() => eliminarDeGaleria(item.id)} style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer', fontSize: '1rem' }}>✕</button>
+
+                      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', width: '100%', overflow: 'hidden' }}>
+                        {item.tipo === 'video' && <div style={{ fontSize: '2rem', color: '#a3a3a3' }}>▶️</div>}
+                        {item.tipo === 'audio' && <div style={{ fontSize: '2rem', color: '#a3a3a3' }}>🎵</div>}
+                        {item.tipo === 'foto' && <img src={item.url} style={{ width: '100%', height: '40px', objectFit: 'cover', borderRadius: '4px' }} alt={item.nombre} />}
+                        <input type="text" value={item.nombre} onChange={(e) => renombrarItem(item.id, e.target.value)} style={{ background: 'transparent', border: 'none', color: '#fff', outline: 'none', width: '100%', textAlign: 'center', fontSize: '0.65rem', marginTop: '8px', textOverflow: 'ellipsis', whiteSpace: 'nowrap', overflow: 'hidden' }} title={item.nombre} />
                       </div>
+
+                      <button className="neon-btn nav-btn active" onClick={() => agregarAlTimeline(item)} style={{ padding: '6px', fontSize: '0.6rem', width: '100%', marginTop: 'auto' }}>+ PISTA</button>
                     </div>
                   ))}
                 </div>
