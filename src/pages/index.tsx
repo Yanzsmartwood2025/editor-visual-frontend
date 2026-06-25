@@ -2,6 +2,12 @@
 /* eslint-disable */
 import React, { useState, useEffect, useRef } from 'react';
 import Head from 'next/head';
+import { Player, PlayerRef } from '@remotion/player';
+import { MainComposition } from '../components/MainComposition';
+import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
+import { arrayMove, SortableContext, horizontalListSortingStrategy } from '@dnd-kit/sortable';
+import { SortableTimelineItem } from '../components/SortableTimelineItem';
+import { getVideoMetadata } from '@remotion/media-utils';
 import { createClient } from '@supabase/supabase-js';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://dummy.supabase.co';
@@ -32,7 +38,7 @@ const supabase = process.env.NEXT_PUBLIC_SUPABASE_URL
 
 type Rect = { id: string; x: number; y: number; width: number; height: number };
 type MediaItem = { id: string; url: string; tipo: 'foto' | 'video' | 'audio'; nombre: string; creado_en: string; esOverlay: boolean; etiqueta: string };
-type TimelineItem = { id: string; mediaId: string; tipo: 'foto' | 'video' | 'audio'; nombre: string; etiqueta: string; url: string };
+type TimelineItem = { id: string; mediaId: string; tipo: 'foto' | 'video' | 'audio'; nombre: string; etiqueta: string; url: string; durationInSeconds?: number };
 type MarcoConfig = {
   posicion: 'derecha' | 'izquierda' | 'abajo' | 'arriba' | 'derecha+abajo' | 'derecha+arriba' | 'izquierda+abajo' | 'izquierda+arriba';
   grosor: number;
@@ -88,8 +94,28 @@ export default function NaylaCore() {
   const [videoResultadoUrl, setVideoResultadoUrl] = useState<string | null>(null);
   const [videoMetadata, setVideoMetadata] = useState({ width: 1080, height: 1920 });
   const [isPlaying, setIsPlaying] = useState(false);
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(KeyboardSensor)
+  );
+
+  const handleDragEnd = (event: any) => {
+    const { active, over } = event;
+    if (over && active.id !== over.id) {
+      setLineaDeTiempo((items) => {
+        const oldIndex = items.findIndex(i => i.id === active.id);
+        const newIndex = items.findIndex(i => i.id === over.id);
+        const newArray = arrayMove(items, oldIndex, newIndex);
+        sincronizarLineaDeTiempo(newArray);
+        return newArray;
+      });
+    }
+  };
+
+  const [isUserScrolling, setIsUserScrolling] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
-  const videoRef = useRef<HTMLVideoElement>(null);
+  const playerRef = useRef<PlayerRef>(null);
   const timelineRef = useRef<HTMLDivElement>(null);
   const [rects, setRects] = useState<Rect[]>([]);
   const [isDrawing, setIsDrawing] = useState(false);
@@ -100,7 +126,56 @@ export default function NaylaCore() {
   const [showEnlaceInput, setShowEnlaceInput] = useState(false);
   const [enlaceInput, setEnlaceInput] = useState('');
   const [extrayendoVideo, setExtrayendoVideo] = useState(false);
+  const [bodegaSeleccion, setBodegaSeleccion] = useState<string[]>([]);
   const [queueProgress, setQueueProgress] = useState(0);
+
+  const toggleSeleccionBodega = (id: string) => {
+    setBodegaSeleccion(prev => prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]);
+  };
+
+  const descargarSeleccionBodega = () => {
+    if (bodegaSeleccion.length === 0) return alert('Selecciona al menos un clip para descargar.');
+    bodegaSeleccion.forEach((id, index) => {
+      const item = galeriaMultimedia.find(i => i.id === id);
+      if (item) {
+        setTimeout(() => {
+          const a = document.createElement('a');
+          a.href = item.url;
+          // Set target to _blank to ensure it downloads if it's cross-origin, or rely on download attribute for same-origin
+          a.download = item.nombre || `Nayla_Clip_${id}.mp4`;
+          a.click();
+        }, index * 500); // 500ms delay between downloads to prevent browser blocking
+      }
+    });
+    setBodegaSeleccion([]); // clear selection after triggering downloads
+  };
+
+
+
+  useEffect(() => {
+    if (!playerRef.current || !timelineRef.current || isUserScrolling) return;
+
+    // We poll the player's current frame because Remotion player doesn't have an onFrameChange callback right now.
+    // However, it does have `getCurrentFrame()`. Let's use requestAnimationFrame.
+    let animationFrameId: number;
+    const syncScroll = () => {
+      if (playerRef.current && timelineRef.current && !isUserScrolling) {
+         const frame = playerRef.current.getCurrentFrame();
+         const fps = 30;
+         const seconds = frame / fps;
+         // Our scale is 20px per second.
+         const scrollPos = seconds * 20;
+         timelineRef.current.scrollLeft = scrollPos;
+      }
+      animationFrameId = requestAnimationFrame(syncScroll);
+    };
+
+    if (isPlaying) {
+      animationFrameId = requestAnimationFrame(syncScroll);
+    }
+
+    return () => cancelAnimationFrame(animationFrameId);
+  }, [isPlaying, isUserScrolling]);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -356,8 +431,18 @@ export default function NaylaCore() {
     }
   };
 
-  const agregarAlTimeline = (item: MediaItem) => {
-    const nuevo: TimelineItem = { id: Date.now().toString(), mediaId: item.id, tipo: item.tipo, nombre: item.nombre, etiqueta: item.etiqueta, url: item.url };
+  const agregarAlTimeline = async (item: MediaItem) => {
+    let durationInSeconds = 5;
+    if (item.tipo === 'video' || item.tipo === 'audio') {
+      try {
+        const metadata = await getVideoMetadata(item.url);
+        durationInSeconds = metadata.durationInSeconds;
+      } catch (e) {
+        console.warn('Could not load metadata for', item.url);
+      }
+    }
+
+    const nuevo: TimelineItem = { id: Date.now().toString(), mediaId: item.id, tipo: item.tipo, nombre: item.nombre, etiqueta: item.etiqueta, url: item.url, durationInSeconds };
     const nuevaLinea = [...lineaDeTiempo, nuevo];
     setLineaDeTiempo(nuevaLinea);
     // Removemos el cambio automático de media activa al agregar a la timeline
@@ -406,9 +491,9 @@ export default function NaylaCore() {
   };
 
   const togglePlay = () => {
-    if (videoRef.current) {
-      if (videoRef.current.paused) { videoRef.current.play(); setIsPlaying(true); }
-      else { videoRef.current.pause(); setIsPlaying(false); }
+    if (playerRef.current) {
+      if (playerRef.current.isPlaying()) { playerRef.current.pause(); setIsPlaying(false); }
+      else { playerRef.current.play(); setIsPlaying(true); }
     }
   };
 
@@ -425,8 +510,8 @@ export default function NaylaCore() {
         // Play is handled automatically in a useEffect or by the user hitting play again if we don't want autoplay
         // But for "reproducción de corrido" we should autoplay:
         setTimeout(() => {
-          if (videoRef.current) {
-            videoRef.current.play().catch(e => console.log('Autoplay prevent', e));
+          if (playerRef.current) {
+            playerRef.current.play().catch(e => console.log('Autoplay prevent', e));
             setIsPlaying(true);
           }
         }, 100);
@@ -603,7 +688,7 @@ export default function NaylaCore() {
     .tool-btn.active span, .tool-btn:active span { color: #ffffff; font-weight: bold; }
     .timeline-track { display: flex; height: 70px; overflow-x: auto; align-items: center; gap: 0; -webkit-overflow-scrolling: touch; }
     .timeline-track::-webkit-scrollbar { height: 0; }
-    .clip-block { height: 70px; min-width: 80px; width: 80px; position: relative; cursor: pointer; flex-shrink: 0; border-top: 2px solid transparent; border-bottom: 2px solid transparent; border-right: 1px solid #000; transition: 0.2s; }
+    .clip-block { height: 70px; position: relative; cursor: pointer; flex-shrink: 0; border-top: 2px solid transparent; border-bottom: 2px solid transparent; border-right: 1px solid #000; transition: 0.2s; }
     .clip-block:first-child { border-top-left-radius: 10px; border-bottom-left-radius: 10px; }
     .clip-block:last-child { border-top-right-radius: 10px; border-bottom-right-radius: 10px; border-right: none; }
     .clip-block.selected { border: 2px solid #ffffff; z-index: 10; box-shadow: 0 0 15px rgba(255,255,255,0.4); border-radius: 10px; }
@@ -682,18 +767,39 @@ export default function NaylaCore() {
         <section style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '10px', backgroundColor: '#050505' }}>
           <div ref={containerRef} onPointerDown={handlePointerDown} onPointerMove={handlePointerMove} onPointerUp={handlePointerUp} onPointerLeave={handlePointerUp}
             style={{ aspectRatio: canvasRatio, height: '42vh', maxHeight: '42vh', minHeight: '42vh', backgroundColor: '#0a0a0a', borderRadius: '16px', overflow: 'hidden', position: 'relative', border: '1px solid #1a1a1a', touchAction: 'none' }}>
-            {(videoResultadoUrl || mediaActivaUrl) ? (
+            {(lineaDeTiempo.length > 0 || videoResultadoUrl || mediaActivaUrl) ? (
               <>
-                {/* FIX AUDIO: removido muted */}
-                <video
-                  ref={videoRef}
-                  src={videoResultadoUrl || mediaActivaUrl}
-                  loop={!clipSeleccionado || lineaDeTiempo.findIndex(t => t.id === clipSeleccionado) === -1} // Solo loop si NO es del timeline
-                  playsInline
-                  onLoadedMetadata={(e) => setVideoMetadata({ width: e.currentTarget.videoWidth, height: e.currentTarget.videoHeight })}
-                  onEnded={handleVideoEnded}
-                  style={{ width: '100%', height: '100%', objectFit: 'contain', pointerEvents: 'none' }}
+
+                <Player
+                  ref={playerRef}
+                  component={MainComposition}
+                  inputProps={{
+                    timeline: lineaDeTiempo.length > 0 ? lineaDeTiempo :
+                      (videoResultadoUrl || mediaActivaUrl) ? [{
+                        id: 'preview',
+                        mediaId: 'preview',
+                        tipo: mediaActivaUrl?.includes('.mp4') || videoResultadoUrl ? 'video' : 'foto',
+                        nombre: 'Preview',
+                        etiqueta: 'PREVIEW',
+                        url: videoResultadoUrl || mediaActivaUrl,
+                        durationInSeconds: 30 // Fallback duration for preview
+                      } as TimelineItem] : [],
+                    canvasRatio
+                  }}
+                  durationInFrames={Math.max(30, Math.round(
+                    (lineaDeTiempo.length > 0 ? lineaDeTiempo :
+                      (videoResultadoUrl || mediaActivaUrl) ? [{ durationInSeconds: 30 } as TimelineItem] : []
+                    ).filter(t => t.tipo === 'video' || t.tipo === 'foto' || t.id === 'preview').reduce((acc, t) => acc + (t.durationInSeconds || 5), 0) * 30
+                  ))}
+                  compositionWidth={canvasRatio === '16/9' ? 1920 : 1080}
+                  compositionHeight={canvasRatio === '16/9' ? 1080 : (canvasRatio === '1/1' ? 1080 : (canvasRatio === '4/5' ? 1350 : 1920))}
+                  fps={30}
+                  style={{ width: '100%', height: '100%' }}
+                  controls={false}
+                  autoPlay={false}
+                  loop
                 />
+
                 {!videoResultadoUrl && rects.map((r) => (
                   <div key={r.id} onPointerDown={(e) => { e.stopPropagation(); if (!containerRef.current) return; const c = containerRef.current.getBoundingClientRect(); setDraggingInfo({ id: r.id, offsetX: (e.clientX - c.left) - r.x, offsetY: (e.clientY - c.top) - r.y }); }}
                     style={{ position: 'absolute', left: `${r.x}px`, top: `${r.y}px`, width: `${r.width}px`, height: `${r.height}px`, border: '1px solid #fff', backgroundColor: 'rgba(255,255,255,0.1)', pointerEvents: 'auto', cursor: 'move', borderRadius: '8px' }}>
@@ -719,37 +825,54 @@ export default function NaylaCore() {
 
         {/* TIMELINE HORIZONTAL */}
         <section style={{ height: '140px', backgroundColor: '#050505', position: 'relative', borderBottom: '1px solid #1a1a1a', overflow: 'hidden', display: 'flex', flexDirection: 'column', padding: '10px 0' }} onClick={() => setClipSeleccionado(null)}>
-          <div style={{ position: 'absolute', left: hayClips ? '56px' : '50%', top: 0, bottom: 0, width: '2px', backgroundColor: '#fff', zIndex: 50, pointerEvents: 'none', boxShadow: '0 0 10px rgba(255,255,255,0.8)', transition: 'left 0.3s ease' }} />
+          <div style={{ position: 'absolute', left: '50%', top: 0, bottom: 0, width: '2px', backgroundColor: '#fff', zIndex: 50, pointerEvents: 'none', boxShadow: '0 0 10px rgba(255,255,255,0.8)', transition: 'left 0.3s ease' }} />
           <div className="timeline-track" ref={timelineRef}
-            style={{ paddingLeft: hayClips ? '8px' : 'calc(50% - 20px)', paddingRight: '50%', transition: 'padding-left 0.3s ease' }}
+            onScroll={(e) => {
+              if (!isUserScrolling) return; // Only sync back if user is manually scrolling
+              if (!playerRef.current) return;
+              const scrollPos = e.currentTarget.scrollLeft;
+              const seconds = scrollPos / 20;
+              const frame = Math.round(seconds * 30);
+              playerRef.current.seekTo(Math.max(0, frame));
+            }}
+            onPointerDown={() => setIsUserScrolling(true)}
+            onPointerUp={() => { setIsUserScrolling(false); }}
+            onPointerLeave={() => { setIsUserScrolling(false); }}
+            style={{ paddingLeft: '50%', paddingRight: '50%', transition: 'padding-left 0.3s ease' }}
             onClick={(e) => e.stopPropagation()}>
             {/* FIX BOTÓN +: agregado e.stopPropagation() */}
             <div className="neon-btn"
               onClick={(e) => { e.stopPropagation(); setNavActiva('galeria'); setToolMessage(null); }}
               style={{ width: '40px', height: '60px', minWidth: '40px', borderRadius: '10px', flexShrink: 0, marginRight: hayClips ? '6px' : '0', borderStyle: 'dashed', cursor: 'pointer', fontSize: '1.4rem', transition: 'margin 0.3s ease' }}>+</div>
-            {pistaVideo.map((clip) => (
-              <div key={clip.id}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setClipSeleccionado(clip.id);
-                  setMediaActivaUrl(clip.url);
-                  setVideoResultadoUrl(null);
-                  if (videoRef.current) {
-                    videoRef.current.play().catch(e => console.log('Autoplay prevent', e));
-                    setIsPlaying(true);
-                  }
-                }}
-                className={`clip-block ${clipSeleccionado === clip.id ? 'selected' : ''}`}>
-                {clip.tipo === 'video'
-                  ? <video src={clip.url} style={{ width: '100%', height: '100%', objectFit: 'cover' }} muted playsInline />
-                  : <img src={clip.url} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />}
-                <span style={{ position: 'absolute', top: '4px', left: '6px', fontSize: '0.6rem', color: '#fff', fontWeight: 'bold', textShadow: '0 2px 4px #000', backgroundColor: 'rgba(0,0,0,0.5)', padding: '2px 4px', borderRadius: '4px' }}>{clip.etiqueta}</span>
-                {clipSeleccionado === clip.id && (
-                  <div onClick={(e) => { e.stopPropagation(); quitarDelTimeline(clip.id); }}
-                    style={{ position: 'absolute', top: '-8px', right: '-8px', width: '18px', height: '18px', backgroundColor: '#ff4444', borderRadius: '50%', display: 'flex', justifyContent: 'center', alignItems: 'center', fontSize: '10px', fontWeight: 'bold', cursor: 'pointer', zIndex: 20, color: '#fff' }}>✕</div>
-                )}
-              </div>
-            ))}
+
+            <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+              <SortableContext items={pistaVideo.map(c => c.id)} strategy={horizontalListSortingStrategy}>
+                {pistaVideo.map((clip) => (
+                  <SortableTimelineItem
+                    key={clip.id}
+                    id={clip.id}
+                    clip={clip}
+                    isSelected={clipSeleccionado === clip.id}
+                    onSelect={() => {
+                      setClipSeleccionado(clip.id);
+                      setMediaActivaUrl(clip.url);
+                      setVideoResultadoUrl(null);
+                      // Move player to the start of this clip
+                      if (playerRef.current) {
+                        let frameCount = 0;
+                        for (let i = 0; i < lineaDeTiempo.length; i++) {
+                           if (lineaDeTiempo[i].id === clip.id) break;
+                           frameCount += Math.round((lineaDeTiempo[i].durationInSeconds || 5) * 30);
+                        }
+                        playerRef.current.seekTo(frameCount);
+                      }
+                    }}
+                    onRemove={() => quitarDelTimeline(clip.id)}
+                  />
+                ))}
+              </SortableContext>
+            </DndContext>
+
           </div>
           <div style={{ display: 'flex', alignItems: 'center', height: '35px', overflowX: 'auto', padding: '0 50%', gap: '2px', marginTop: '8px' }} onClick={(e) => e.stopPropagation()}>
             {pistaAudio.map((clip) => (
@@ -768,6 +891,14 @@ export default function NaylaCore() {
 
             {!toolMessage && navActiva === 'galeria' && (
               <div style={{ maxHeight: '35vh' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+                  <p style={{ fontSize: '0.75rem', color: '#fff', fontWeight: 'bold', letterSpacing: '1px' }}>TUS ARCHIVOS</p>
+                  {bodegaSeleccion.length > 0 && (
+                    <button onClick={descargarSeleccionBodega} className="neon-btn nav-btn" style={{ padding: '6px 14px', fontSize: '0.65rem' }}>
+                      ↓ DESCARGAR SELECCIÓN ({bodegaSeleccion.length})
+                    </button>
+                  )}
+                </div>
                 {showEnlaceInput && (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '1rem' }}>
                     <textarea
@@ -808,7 +939,13 @@ export default function NaylaCore() {
                     ENLACE
                   </button>
                   {galeriaMultimedia.map(item => (
-                    <div key={item.id} className="neon-btn" style={{ minWidth: '140px', width: '140px', height: '140px', padding: '10px', borderRadius: '12px', borderStyle: 'solid', flexDirection: 'column', position: 'relative', justifyContent: 'space-between' }}>
+                    <div key={item.id} className="neon-btn" style={{ minWidth: '140px', width: '140px', height: '140px', padding: '10px', borderRadius: '12px', borderStyle: bodegaSeleccion.includes(item.id) ? 'solid' : 'solid', borderColor: bodegaSeleccion.includes(item.id) ? '#00ffcc' : 'transparent', flexDirection: 'column', position: 'relative', justifyContent: 'space-between' }}>
+                      <input
+                         type="checkbox"
+                         checked={bodegaSeleccion.includes(item.id)}
+                         onChange={() => toggleSeleccionBodega(item.id)}
+                         style={{ position: 'absolute', top: '8px', left: '8px', zIndex: 10, cursor: 'pointer', width: '16px', height: '16px', accentColor: '#00ffcc' }}
+                      />
                       <div style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                         <span style={{ fontSize: '0.65rem', backgroundColor: '#262626', padding: '2px 6px', borderRadius: '4px', color: '#fff', fontWeight: 'bold' }}>{item.etiqueta}</span>
                         <button onClick={() => eliminarDeGaleria(item.id)} style={{ background: 'none', border: 'none', color: '#ff4444', cursor: 'pointer', fontSize: '1rem', padding: '0', lineHeight: '1' }}>✕</button>
@@ -819,8 +956,8 @@ export default function NaylaCore() {
                           setMediaActivaUrl(item.url);
                           setClipSeleccionado(item.id);
                           setVideoResultadoUrl(null);
-                          if (item.tipo === 'video' && videoRef.current) {
-                            videoRef.current.play().catch(e => console.log('Autoplay prevent', e));
+                          if (item.tipo === 'video' && playerRef.current) {
+                            playerRef.current.play().catch(e => console.log('Autoplay prevent', e));
                             setIsPlaying(true);
                           }
                         }}
