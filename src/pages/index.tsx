@@ -84,6 +84,9 @@ export default function NaylaCore() {
   const [currentRect, setCurrentRect] = useState<Rect | null>(null);
   const [resizingInfo, setResizingInfo] = useState<{ id: string, corner: string } | null>(null);
   const [draggingInfo, setDraggingInfo] = useState<{ id: string, offsetX: number, offsetY: number } | null>(null);
+  const [showEnlaceInput, setShowEnlaceInput] = useState(false);
+  const [enlaceInput, setEnlaceInput] = useState('');
+  const [extrayendoVideo, setExtrayendoVideo] = useState(false);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => setSession(session));
@@ -219,6 +222,77 @@ export default function NaylaCore() {
     const url = videoResultadoUrl || videoTerminado;
     if (!url) return alert('No hay ningún video cargado para descargar.');
     const a = document.createElement('a'); a.href = url; a.download = `Nayla_Export_${calidadExportacion}_${Date.now()}.mp4`; a.click();
+  };
+
+  const handleExtraerDesdeEnlace = async () => {
+    if (!enlaceInput || !enlaceInput.includes('meta.ai')) {
+      alert('Por favor ingresa un enlace válido de Meta AI.');
+      return;
+    }
+
+    setExtrayendoVideo(true);
+    try {
+      // 1. Llamar a nuestra API Route ligera para obtener la URL de la CDN
+      const resApi = await fetch('/api/extract-meta-video', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: enlaceInput })
+      });
+
+      const dataApi = await resApi.json();
+
+      if (!resApi.ok || !dataApi.videoUrl) {
+        throw new Error(dataApi.error || 'No se pudo encontrar el video en el enlace.');
+      }
+
+      const cdnUrl = dataApi.videoUrl;
+      let finalMediaUrl = cdnUrl;
+
+      // 2. Intentar descargar el video al teléfono como Blob para evitar marcas de agua o CORS futuro
+      try {
+        const resBlob = await fetch(cdnUrl);
+        if (resBlob.ok) {
+          const blob = await resBlob.blob();
+          finalMediaUrl = URL.createObjectURL(blob);
+        } else {
+          console.warn('Fallo al obtener Blob (posible CORS), usando URL de CDN directo (Fallback).');
+        }
+      } catch (blobError) {
+        console.warn('Error al obtener Blob (posible CORS de fbcdn.net), usando URL de CDN directo (Fallback).', blobError);
+        // El finalMediaUrl sigue siendo cdnUrl
+      }
+
+      // 3. Insertar el resultado en la galeriaMultimedia (Bodega)
+      const countVideo = galeriaMultimedia.filter(item => item.tipo === 'video').length + 1;
+      const nuevoItem: MediaItem = {
+        id: Date.now().toString(),
+        url: finalMediaUrl,
+        tipo: 'video',
+        nombre: `Meta_Video_${countVideo}.mp4`,
+        creado_en: new Date().toLocaleTimeString(),
+        esOverlay: false,
+        etiqueta: `V${countVideo}`
+      };
+
+      const nuevaGaleria = [...galeriaMultimedia, nuevoItem];
+      setGaleriaMultimedia(nuevaGaleria);
+
+      // Comportamiento por defecto: si es el primer video, ponerlo en el monitor principal
+      if (!videoTerminado) {
+        setVideoTerminado(nuevoItem.url);
+        setVideoResultadoUrl(null);
+      }
+
+      setEnlaceInput('');
+      setShowEnlaceInput(false);
+      alert('Video extraído y añadido a la bodega exitosamente.');
+
+    } catch (err: any) {
+      console.error(err);
+      alert('Error extrayendo video: ' + err.message);
+    } finally {
+      setExtrayendoVideo(false);
+    }
   };
 
   const processVideo = async (motorElegido: 'nube' | 'local') => {
@@ -447,7 +521,27 @@ export default function NaylaCore() {
                 <div style={{ display: 'flex', gap: '10px', marginBottom: '1.5rem' }}>
                   <label className="neon-btn" style={{ flex: 1, padding: '1rem', borderStyle: 'dashed', borderRadius: '12px', fontSize: '0.75rem', cursor: 'pointer' }}>+ SUBIR VIDEO/FOTO<input type="file" multiple accept="video/*,image/*" onChange={(e) => handleSubirMultimedia(e, 'video')} style={{ display: 'none' }} /></label>
                   <label className="neon-btn" style={{ flex: 1, padding: '1rem', borderStyle: 'dashed', borderRadius: '12px', fontSize: '0.75rem', cursor: 'pointer' }}>+ SUBIR AUDIO<input type="file" multiple accept="audio/*" onChange={(e) => handleSubirMultimedia(e, 'audio')} style={{ display: 'none' }} /></label>
+                  <button className="neon-btn" onClick={() => setShowEnlaceInput(!showEnlaceInput)} style={{ flex: 1, padding: '1rem', borderStyle: 'dashed', borderRadius: '12px', fontSize: '0.75rem', cursor: 'pointer' }}>+ TRAER DESDE ENLACE</button>
                 </div>
+                {showEnlaceInput && (
+                  <div style={{ display: 'flex', gap: '10px', marginBottom: '1.5rem', alignItems: 'center' }}>
+                    <input
+                      type="text"
+                      placeholder="Pega el enlace de meta.ai/share aquí..."
+                      value={enlaceInput}
+                      onChange={(e) => setEnlaceInput(e.target.value)}
+                      style={{ flex: 1, padding: '0.8rem', backgroundColor: '#0a0a0a', border: '1px solid #404040', borderRadius: '8px', color: '#fff', outline: 'none' }}
+                    />
+                    <button
+                      onClick={handleExtraerDesdeEnlace}
+                      disabled={extrayendoVideo || !enlaceInput}
+                      className="neon-btn nav-btn"
+                      style={{ padding: '0.8rem 1.2rem', backgroundColor: extrayendoVideo ? '#404040' : '#fff', color: extrayendoVideo ? '#a3a3a3' : '#000', fontWeight: 'bold' }}
+                    >
+                      {extrayendoVideo ? 'EXTRAYENDO...' : 'EXTRAER'}
+                    </button>
+                  </div>
+                )}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
                   {galeriaMultimedia.map(item => (
                     <div key={item.id} className="neon-btn" style={{ justifyContent: 'space-between', padding: '1rem', borderRadius: '16px', borderStyle: 'solid' }}>

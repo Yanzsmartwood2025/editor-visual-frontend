@@ -20,6 +20,7 @@
     "@eslint/eslintrc": "3.1.0",
     "@eslint/js": "9.38.0",
     "@next/eslint-plugin-next": "15.1.6",
+    "@remotion/eslint-plugin": "^4.0.482",
     "@types/formidable": "^3.4.5",
     "@types/node": "20.12.14",
     "@types/react": "19.2.7",
