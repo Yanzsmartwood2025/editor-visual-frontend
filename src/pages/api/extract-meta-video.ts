@@ -37,52 +37,22 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     const html = await response.text();
 
-    // Regex to find video URL. This looks for fbcdn.net URLs that contain .mp4
-    // Many times in Facebook/Meta sources, the URL is escaped like \/ or similar, and ends with .mp4
-    // We try a few common patterns.
+    console.log(`[extract-meta-video] HTML fetched successfully. Length: ${html.length}`);
 
-    // Pattern 1: Look for "video_url":"https:\/\/..." or similar
-    const videoUrlRegex = /(?:https?:)?\\?\/\\?\/[^"']*\.fbcdn\.net[^"']*\.mp4[^"']*/g;
+    // Nueva Regex robusta para capturar URLs de .mp4 escapadas o sin escapar de fbcdn.net
+    const searchRegex = /(https:(?:\\\/|\/)(?:\\\/|\/)[^"'\s]+\.fbcdn\.net[^"'\s]+\.mp4[^"'\s]*)/gi;
+    let match = searchRegex.exec(html);
 
-    let match = videoUrlRegex.exec(html);
+    if (match && match[1]) {
+      // Procesamos la cadena extraída: reemplazamos \u0026 por & y quitamos los escapes de las barras \/
+      let finalUrl = match[1].replace(/\\u0026/g, '&').replace(/\\/g, '');
 
-    if (match && match[0]) {
-      // Unescape forward slashes if any
-      let finalUrl = match[0].replace(/\\/g, '');
-      // Ensure it has protocol
-      if (finalUrl.startsWith('//')) {
-          finalUrl = 'https:' + finalUrl;
-      }
-
+      console.log(`[extract-meta-video] Extracted Video URL: ${finalUrl}`);
       return res.status(200).json({ videoUrl: finalUrl });
     }
 
-    // Try a more general search for any .mp4 URL in fbcdn
-    const genericMp4Regex = /https:\/\/[a-zA-Z0-9-.]+\.fbcdn\.net\/v\/[^"']+\.mp4[^"']*/g;
-    match = genericMp4Regex.exec(html);
-
-    if (match && match[0]) {
-        const finalUrl = match[0].replace(/\\/g, '');
-        return res.status(200).json({ videoUrl: finalUrl });
-    }
-
-    // If no direct .mp4 found, maybe they are encoded or we need to refine the search.
-    // Meta sometimes puts these inside deeply nested JSONs.
-    // Try catching any URL string that has fbcdn and ends with something before "
-    const wideSearch = /(https?:\/\/[a-zA-Z0-9-.]+\.fbcdn\.net\/v\/[a-zA-Z0-9-_/.]+\.mp4[^"'\\]*)/gi;
-    match = wideSearch.exec(html);
-
-    if (match && match[1]) {
-        return res.status(200).json({ videoUrl: match[1] });
-    }
-
-    // One more try looking for unescaped URLs
-    const unescapedRegex = /https:\/\/[^"'\s]+\.fbcdn\.net[^"'\s]+\.mp4[^"'\s]*/gi;
-    match = unescapedRegex.exec(html);
-    if(match && match[0]) {
-        return res.status(200).json({ videoUrl: match[0] });
-    }
-
+    console.log('[extract-meta-video] Fallo en la extracción. No se encontró ninguna URL de fbcdn.net terminada en .mp4 en el HTML.');
+    console.log(`[extract-meta-video] HTML Snippet (primeros 500 chars): ${html.substring(0, 500)}`);
     return res.status(404).json({ error: 'No se pudo encontrar la URL del video en la página.' });
 
   } catch (error: any) {
