@@ -89,10 +89,65 @@ export default function NaylaCore() {
   const [extrayendoVideo, setExtrayendoVideo] = useState(false);
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => setSession(session));
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session);
+      if (session) cargarDatosUsuario(session.user.id);
+    });
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSession(session);
+      if (session) cargarDatosUsuario(session.user.id);
+    });
+
     const timer = setTimeout(() => setShowIntro(false), 3000);
-    return () => clearTimeout(timer);
+    return () => {
+      clearTimeout(timer);
+      subscription.unsubscribe();
+    };
   }, []);
+
+  const cargarDatosUsuario = async (userId: string) => {
+    try {
+      // Cargar Bodega
+      const { data: galeriaData, error: galeriaError } = await supabase
+        .from('galeria_multimedia')
+        .select('*')
+        .eq('user_id', userId)
+        .order('creado_en', { ascending: true });
+
+      if (!galeriaError && galeriaData) {
+        // Adaptar si es necesario, o setear directo si coinciden los campos
+        const galeria = galeriaData.map(item => ({
+          id: item.id,
+          url: item.url,
+          tipo: item.tipo,
+          nombre: item.nombre,
+          creado_en: item.creado_en,
+          esOverlay: item.esOverlay,
+          etiqueta: item.etiqueta
+        }));
+        setGaleriaMultimedia(galeria);
+      }
+
+      // Cargar Línea de Tiempo
+      const { data: proyectoData, error: proyectoError } = await supabase
+        .from('proyectos_usuario')
+        .select('linea_de_tiempo')
+        .eq('user_id', userId)
+        .single();
+
+      if (!proyectoError && proyectoData && proyectoData.linea_de_tiempo) {
+        setLineaDeTiempo(proyectoData.linea_de_tiempo);
+        // Si hay clips, establecer el primero que sea video/foto como videoTerminado
+        const clipsVisuales = proyectoData.linea_de_tiempo.filter((c: any) => c.tipo === 'video' || c.tipo === 'foto');
+        if (clipsVisuales.length > 0 && !videoTerminado) {
+          setVideoTerminado(clipsVisuales[0].url);
+        }
+      }
+    } catch (err) {
+      console.error('Error al cargar los datos del usuario:', err);
+    }
+  };
 
   const aplicarMarcoAImagen = (imagenUrl: string, config: MarcoConfig): Promise<string> => {
     return new Promise((resolve) => {
@@ -174,34 +229,150 @@ export default function NaylaCore() {
     try { const text = await navigator.clipboard.readText(); if (text) setOtpInput(text.trim()); } catch (err) {}
   };
 
+  const [subiendoArchivo, setSubiendoArchivo] = useState(false);
+
   const handleSubirMultimedia = async (e: React.ChangeEvent<HTMLInputElement>, tipo: 'foto' | 'video' | 'audio') => {
     if (!e.target.files || e.target.files.length === 0) return;
     const files = Array.from(e.target.files);
-    const nuevosItems: MediaItem[] = files.map((file, index) => {
-      const countTipo = galeriaMultimedia.filter(item => item.tipo === tipo).length + index + 1;
-      const inicial = tipo === 'video' ? 'V' : tipo === 'foto' ? 'F' : 'A';
-      return { id: (Date.now() + index).toString(), url: URL.createObjectURL(file), tipo, nombre: file.name, creado_en: new Date().toLocaleTimeString(), esOverlay: false, etiqueta: `${inicial}${countTipo}` };
-    });
-    setGaleriaMultimedia([...galeriaMultimedia, ...nuevosItems]);
-    if (tipo === 'video' && !videoTerminado) { setVideoFile(files[0]); setVideoTerminado(nuevosItems[0].url); setVideoResultadoUrl(null); }
+    setSubiendoArchivo(true);
+
+    try {
+      const nuevosItems: MediaItem[] = [];
+
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        const countTipo = galeriaMultimedia.filter(item => item.tipo === tipo).length + i + 1;
+        const inicial = tipo === 'video' ? 'V' : tipo === 'foto' ? 'F' : 'A';
+        const id = (Date.now() + i).toString();
+
+        let finalUrl = URL.createObjectURL(file); // Fallback local
+
+        if (session) {
+          // Subir a Supabase Storage
+          const fileExt = file.name.split('.').pop();
+          const fileName = `${session.user.id}/${id}.${fileExt}`;
+
+          const { error: uploadError } = await supabase.storage
+            .from('media_bodega')
+            .upload(fileName, file);
+
+          if (!uploadError) {
+            const { data: { publicUrl } } = supabase.storage
+              .from('media_bodega')
+              .getPublicUrl(fileName);
+            finalUrl = publicUrl;
+          } else {
+            console.error('Error subiendo al storage:', uploadError);
+          }
+        }
+
+        const nuevoItem: MediaItem = {
+          id,
+          url: finalUrl,
+          tipo,
+          nombre: file.name,
+          creado_en: new Date().toLocaleTimeString(),
+          esOverlay: false,
+          etiqueta: `${inicial}${countTipo}`
+        };
+
+        nuevosItems.push(nuevoItem);
+      }
+
+      setGaleriaMultimedia(prev => [...prev, ...nuevosItems]);
+
+      if (session) {
+        // Sincronizar con Supabase (fuera del state updater para evitar doble ejecución en StrictMode)
+        const { error } = await supabase.from('galeria_multimedia')
+          .insert(nuevosItems.map(item => ({ ...item, user_id: session.user.id })));
+
+        if (error) console.error('Error insertando en base de datos:', error);
+      }
+
+      if (tipo === 'video' && !videoTerminado) {
+        setVideoFile(files[0]);
+        setVideoTerminado(nuevosItems[0].url);
+        setVideoResultadoUrl(null);
+      }
+    } catch (err) {
+      console.error('Error procesando subida:', err);
+      alert('Hubo un error al procesar los archivos.');
+    } finally {
+      setSubiendoArchivo(false);
+    }
   };
 
-  const eliminarDeGaleria = (id: string) => {
+  const eliminarDeGaleria = async (id: string) => {
     setGaleriaMultimedia(galeriaMultimedia.filter(item => item.id !== id));
     setLineaDeTiempo(lineaDeTiempo.filter(item => item.mediaId !== id));
+
+    if (session) {
+      const { error } = await supabase
+        .from('galeria_multimedia')
+        .delete()
+        .eq('id', id)
+        .eq('user_id', session.user.id);
+
+      if (error) {
+        console.error('Error eliminando de Supabase:', error);
+      }
+
+      // La línea de tiempo también debe actualizarse si se eliminó de ahí
+      sincronizarLineaDeTiempo(lineaDeTiempo.filter(item => item.mediaId !== id));
+    }
+  };
+
+  const sincronizarLineaDeTiempo = async (nuevaLinea: TimelineItem[]) => {
+    if (session) {
+      const { error } = await supabase
+        .from('proyectos_usuario')
+        .upsert(
+          {
+            user_id: session.user.id,
+            linea_de_tiempo: nuevaLinea,
+            actualizado_en: new Date().toISOString()
+          },
+          { onConflict: 'user_id' }
+        );
+      if (error) {
+        console.error('Error sincronizando línea de tiempo:', error);
+      }
+    }
   };
 
   const agregarAlTimeline = (item: MediaItem) => {
     const nuevo: TimelineItem = { id: Date.now().toString(), mediaId: item.id, tipo: item.tipo, nombre: item.nombre, etiqueta: item.etiqueta, url: item.url };
-    setLineaDeTiempo([...lineaDeTiempo, nuevo]);
+    const nuevaLinea = [...lineaDeTiempo, nuevo];
+    setLineaDeTiempo(nuevaLinea);
     if (item.tipo === 'video' || item.tipo === 'foto') { setVideoTerminado(item.url); setVideoResultadoUrl(null); setRects([]); }
+    sincronizarLineaDeTiempo(nuevaLinea);
   };
 
-  const quitarDelTimeline = (id: string) => { setLineaDeTiempo(lineaDeTiempo.filter(t => t.id !== id)); setClipSeleccionado(null); };
+  const quitarDelTimeline = (id: string) => {
+    const nuevaLinea = lineaDeTiempo.filter(t => t.id !== id);
+    setLineaDeTiempo(nuevaLinea);
+    setClipSeleccionado(null);
+    sincronizarLineaDeTiempo(nuevaLinea);
+  };
 
-  const renombrarItem = (id: string, nuevoNombre: string) => {
+  const renombrarItem = async (id: string, nuevoNombre: string) => {
     setGaleriaMultimedia(galeriaMultimedia.map(item => item.id === id ? { ...item, nombre: nuevoNombre } : item));
-    setLineaDeTiempo(lineaDeTiempo.map(item => item.mediaId === id ? { ...item, nombre: nuevoNombre } : item));
+    const nuevaLinea = lineaDeTiempo.map(item => item.mediaId === id ? { ...item, nombre: nuevoNombre } : item);
+    setLineaDeTiempo(nuevaLinea);
+
+    if (session) {
+      const { error } = await supabase
+        .from('galeria_multimedia')
+        .update({ nombre: nuevoNombre })
+        .eq('id', id)
+        .eq('user_id', session.user.id);
+
+      if (error) {
+        console.error('Error renombrando en Supabase:', error);
+      }
+
+      sincronizarLineaDeTiempo(nuevaLinea);
+    }
   };
 
   const handleToolClick = (tool: any) => {
@@ -245,24 +416,10 @@ export default function NaylaCore() {
         throw new Error(dataApi.error || 'No se pudo encontrar el video en el enlace.');
       }
 
-      const cdnUrl = dataApi.videoUrl;
-      let finalMediaUrl = cdnUrl;
+      // Para Meta AI usamos la URL directa de la CDN para ahorrar storage (Opción B)
+      const finalMediaUrl = dataApi.videoUrl;
 
-      // 2. Intentar descargar el video al teléfono como Blob para evitar marcas de agua o CORS futuro
-      try {
-        const resBlob = await fetch(cdnUrl);
-        if (resBlob.ok) {
-          const blob = await resBlob.blob();
-          finalMediaUrl = URL.createObjectURL(blob);
-        } else {
-          console.warn('Fallo al obtener Blob (posible CORS), usando URL de CDN directo (Fallback).');
-        }
-      } catch (blobError) {
-        console.warn('Error al obtener Blob (posible CORS de fbcdn.net), usando URL de CDN directo (Fallback).', blobError);
-        // El finalMediaUrl sigue siendo cdnUrl
-      }
-
-      // 3. Insertar el resultado en la galeriaMultimedia (Bodega)
+      // 3. Insertar el resultado en la galeriaMultimedia (Bodega) y Supabase
       const countVideo = galeriaMultimedia.filter(item => item.tipo === 'video').length + 1;
       const nuevoItem: MediaItem = {
         id: Date.now().toString(),
@@ -285,6 +442,23 @@ export default function NaylaCore() {
 
       setEnlaceInput('');
       setShowEnlaceInput(false);
+
+      if (session) {
+        const { error: insertError } = await supabase
+          .from('galeria_multimedia')
+          .insert([{
+            ...nuevoItem,
+            user_id: session.user.id
+          }]);
+
+        if (insertError) {
+          console.error('Error insertando en Supabase:', insertError);
+          // Alertar pero no revertir el estado local para no bloquear al usuario
+          alert('Video extraído, pero hubo un error guardándolo en la nube.');
+          return;
+        }
+      }
+
       alert('Video extraído y añadido a la bodega exitosamente.');
 
     } catch (err: any) {
