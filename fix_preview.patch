@@ -1,0 +1,16 @@
+--- src/pages/index.tsx
++++ src/pages/index.tsx
+@@ -482,7 +482,10 @@
+                   inputProps={{
+                     timeline: lineaDeTiempo.length > 0 ? lineaDeTiempo :
+                       (videoResultadoUrl || mediaActivaUrl) ? [{
+                         id: 'preview',
+                         mediaId: 'preview',
+                         tipo: mediaActivaUrl?.includes('.mp4') || videoResultadoUrl ? 'video' : 'foto',
+                         nombre: 'Preview',
+                         etiqueta: 'PREVIEW',
+                         url: videoResultadoUrl || mediaActivaUrl,
+                         durationInSeconds: 30 // Fallback duration for preview
+                       } as TimelineItem] : [],
+                     canvasRatio
+                   }}

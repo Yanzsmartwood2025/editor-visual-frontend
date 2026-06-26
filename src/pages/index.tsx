@@ -9,6 +9,8 @@ import { arrayMove, SortableContext, horizontalListSortingStrategy } from '@dnd-
 import { SortableTimelineItem } from '../components/SortableTimelineItem';
 import { getVideoMetadata } from '@remotion/media-utils';
 import { createClient } from '@supabase/supabase-js';
+import JSZip from 'jszip';
+import { saveAs } from 'file-saver';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://dummy.supabase.co';
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'dummy_key';
@@ -77,7 +79,9 @@ export default function NaylaCore() {
   const [authLoading, setAuthLoading] = useState(false);
   const [message, setMessage] = useState('');
   const [navActiva, setNavActiva] = useState<string | null>(null);
-  const [codigoJsInput, setCodigoJsInput] = useState('// Inyecta comandos JS aquí\nNaylaEngine.unir("V1", "V2");');
+  const [codigoJsInput, setCodigoJsInput] = useState('// Inyecta comandos JS aquí\n// Ej: NaylaEngine.agregar(["V1", "V2", "A1"]);');
+  const [moldesScripts, setMoldesScripts] = useState<{ nombre: string; codigo: string }[]>([]);
+  const [moldeActivo, setMoldeActivo] = useState<string>('');
   const [toolMessage, setToolMessage] = useState<string | null>(null);
   const [marcoConfig, setMarcoConfig] = useState<MarcoConfig>({ posicion: 'derecha+abajo', grosor: 80, color: '#ffffff' });
   const [marcoImagenes, setMarcoImagenes] = useState<{ original: string; procesada: string; nombre: string }[]>([]);
@@ -133,21 +137,47 @@ export default function NaylaCore() {
     setBodegaSeleccion(prev => prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]);
   };
 
-  const descargarSeleccionBodega = () => {
+  const [descargandoLote, setDescargandoLote] = useState(false);
+
+  const descargarSeleccionBodega = async () => {
     if (bodegaSeleccion.length === 0) return alert('Selecciona al menos un clip para descargar.');
-    bodegaSeleccion.forEach((id, index) => {
-      const item = galeriaMultimedia.find(i => i.id === id);
-      if (item) {
-        setTimeout(() => {
-          const a = document.createElement('a');
-          a.href = item.url;
-          // Set target to _blank to ensure it downloads if it's cross-origin, or rely on download attribute for same-origin
-          a.download = item.nombre || `Nayla_Clip_${id}.mp4`;
-          a.click();
-        }, index * 500); // 500ms delay between downloads to prevent browser blocking
+    setDescargandoLote(true);
+    try {
+      const zip = new JSZip();
+      for (const id of bodegaSeleccion) {
+        const item = galeriaMultimedia.find(i => i.id === id);
+        if (item) {
+          const res = await fetch(item.url);
+          const blob = await res.blob();
+          const ext = item.tipo === 'foto' ? 'jpg' : item.tipo === 'audio' ? 'mp3' : 'mp4';
+          zip.file(item.nombre || `Nayla_Clip_${id}.${ext}`, blob);
+        }
       }
-    });
-    setBodegaSeleccion([]); // clear selection after triggering downloads
+      const content = await zip.generateAsync({ type: 'blob' });
+      saveAs(content, `Nayla_Descargas_${Date.now()}.zip`);
+      setBodegaSeleccion([]);
+    } catch (e) {
+      console.error(e);
+      alert('Hubo un error empaquetando la descarga.');
+    } finally {
+      setDescargandoLote(false);
+    }
+  };
+
+  const descargarIndividual = async (url: string, nombre: string, tipo: string) => {
+    try {
+      const res = await fetch(url);
+      const blob = await res.blob();
+      const ext = tipo === 'foto' ? 'jpg' : tipo === 'audio' ? 'mp3' : 'mp4';
+      saveAs(blob, nombre || `Nayla_Clip.${ext}`);
+    } catch (e) {
+      console.error(e);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = nombre;
+      a.target = "_blank";
+      a.click();
+    }
   };
 
 
@@ -178,6 +208,13 @@ export default function NaylaCore() {
   }, [isPlaying, isUserScrolling]);
 
   useEffect(() => {
+    try {
+      const moldesGuardados = localStorage.getItem('nayla_moldes_scripts');
+      if (moldesGuardados) {
+        setMoldesScripts(JSON.parse(moldesGuardados));
+      }
+    } catch (e) { console.error('Error cargando moldes:', e); }
+
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
       if (session) cargarDatosUsuario(session.user.id);
@@ -580,6 +617,85 @@ export default function NaylaCore() {
     }
   };
 
+  const guardarMolde = () => {
+    const nombre = prompt('Nombre para este molde:', 'Molde Nuevo');
+    if (!nombre) return;
+    const nuevosMoldes = [...moldesScripts, { nombre, codigo: codigoJsInput }];
+    setMoldesScripts(nuevosMoldes);
+    localStorage.setItem('nayla_moldes_scripts', JSON.stringify(nuevosMoldes));
+    setMoldeActivo(nombre);
+  };
+
+  const cargarMolde = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const nombre = e.target.value;
+    setMoldeActivo(nombre);
+    const molde = moldesScripts.find(m => m.nombre === nombre);
+    if (molde) {
+      setCodigoJsInput(molde.codigo);
+    }
+  };
+
+  const eliminarMoldeActivo = () => {
+    if (!moldeActivo) return;
+    const nuevosMoldes = moldesScripts.filter(m => m.nombre !== moldeActivo);
+    setMoldesScripts(nuevosMoldes);
+    localStorage.setItem('nayla_moldes_scripts', JSON.stringify(nuevosMoldes));
+    setMoldeActivo('');
+    setCodigoJsInput('// Inyecta comandos JS aquí\n// Ej: NaylaEngine.agregar(["V1", "V2", "A1"]);');
+  };
+
+  const ejecutarScript = () => {
+    try {
+      // Definir la API disponible en el script
+      const NaylaEngine = {
+        agregar: (etiquetas: string[]) => {
+          let agregados = 0;
+          let nuevaLinea = [...lineaDeTiempo];
+
+          etiquetas.forEach(etiqueta => {
+            const media = galeriaMultimedia.find(m => m.etiqueta === etiqueta);
+            if (media) {
+              const nuevo: TimelineItem = {
+                id: Date.now().toString() + Math.random().toString(),
+                mediaId: media.id,
+                tipo: media.tipo,
+                nombre: media.nombre,
+                etiqueta: media.etiqueta,
+                url: media.url,
+                durationInSeconds: 5 // Default
+              };
+              nuevaLinea.push(nuevo);
+              agregados++;
+            } else {
+              console.warn(`Etiqueta no encontrada: ${etiqueta}`);
+            }
+          });
+
+          if (agregados > 0) {
+            setLineaDeTiempo(nuevaLinea);
+            sincronizarLineaDeTiempo(nuevaLinea);
+            alert(`NaylaEngine: Se agregaron ${agregados} clips a la línea de tiempo.`);
+          } else {
+            alert(`NaylaEngine: No se encontró ningún clip con las etiquetas proporcionadas.`);
+          }
+        },
+        limpiar: () => {
+          setLineaDeTiempo([]);
+          sincronizarLineaDeTiempo([]);
+          alert('NaylaEngine: Línea de tiempo limpiada.');
+        }
+      };
+
+      // Ejecutar el script ingresado en el contexto proporcionado usando Function (más seguro que eval)
+      const execute = new Function('NaylaEngine', codigoJsInput);
+      execute(NaylaEngine);
+
+    } catch (e: any) {
+      alert('Error en el script: ' + e.message);
+      console.error('Script Error:', e);
+    }
+  };
+
   const handleExtraerDesdeEnlace = async () => {
     if (!enlaceInput) return;
 
@@ -774,21 +890,35 @@ export default function NaylaCore() {
                   ref={playerRef}
                   component={MainComposition}
                   inputProps={{
-                    timeline: lineaDeTiempo.length > 0 ? lineaDeTiempo :
-                      (videoResultadoUrl || mediaActivaUrl) ? [{
-                        id: 'preview',
-                        mediaId: 'preview',
-                        tipo: mediaActivaUrl?.includes('.mp4') || videoResultadoUrl ? 'video' : 'foto',
-                        nombre: 'Preview',
-                        etiqueta: 'PREVIEW',
-                        url: videoResultadoUrl || mediaActivaUrl,
-                        durationInSeconds: 30 // Fallback duration for preview
-                      } as TimelineItem] : [],
+                    timeline: (clipSeleccionado && !lineaDeTiempo.find(t => t.id === clipSeleccionado))
+                      ? [{
+                          id: 'preview',
+                          mediaId: 'preview',
+                          tipo: mediaActivaUrl?.includes('.mp4') || videoResultadoUrl ? 'video' : 'foto',
+                          nombre: 'Preview',
+                          etiqueta: 'PREVIEW',
+                          url: videoResultadoUrl || mediaActivaUrl,
+                          durationInSeconds: 30
+                        } as TimelineItem]
+                      : lineaDeTiempo.length > 0
+                        ? lineaDeTiempo
+                        : (videoResultadoUrl || mediaActivaUrl) ? [{
+                            id: 'preview',
+                            mediaId: 'preview',
+                            tipo: mediaActivaUrl?.includes('.mp4') || videoResultadoUrl ? 'video' : 'foto',
+                            nombre: 'Preview',
+                            etiqueta: 'PREVIEW',
+                            url: videoResultadoUrl || mediaActivaUrl,
+                            durationInSeconds: 30
+                          } as TimelineItem] : [],
                     canvasRatio
                   }}
                   durationInFrames={Math.max(30, Math.round(
-                    (lineaDeTiempo.length > 0 ? lineaDeTiempo :
-                      (videoResultadoUrl || mediaActivaUrl) ? [{ durationInSeconds: 30 } as TimelineItem] : []
+                    ((clipSeleccionado && !lineaDeTiempo.find(t => t.id === clipSeleccionado))
+                      ? [{ durationInSeconds: 30 } as TimelineItem]
+                      : lineaDeTiempo.length > 0
+                        ? lineaDeTiempo
+                        : (videoResultadoUrl || mediaActivaUrl) ? [{ durationInSeconds: 30 } as TimelineItem] : []
                     ).filter(t => t.tipo === 'video' || t.tipo === 'foto' || t.id === 'preview').reduce((acc, t) => acc + (t.durationInSeconds || 5), 0) * 30
                   ))}
                   compositionWidth={canvasRatio === '16/9' ? 1920 : 1080}
@@ -894,8 +1024,8 @@ export default function NaylaCore() {
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
                   <p style={{ fontSize: '0.75rem', color: '#fff', fontWeight: 'bold', letterSpacing: '1px' }}>TUS ARCHIVOS</p>
                   {bodegaSeleccion.length > 0 && (
-                    <button onClick={descargarSeleccionBodega} className="neon-btn nav-btn" style={{ padding: '6px 14px', fontSize: '0.65rem' }}>
-                      ↓ DESCARGAR SELECCIÓN ({bodegaSeleccion.length})
+                    <button onClick={descargarSeleccionBodega} disabled={descargandoLote} className="neon-btn nav-btn" style={{ padding: '6px 14px', fontSize: '0.65rem' }}>
+                      {descargandoLote ? 'EMPAQUETANDO...' : `↓ DESCARGAR SELECCIÓN (${bodegaSeleccion.length})`}
                     </button>
                   )}
                 </div>
@@ -948,7 +1078,10 @@ export default function NaylaCore() {
                       />
                       <div style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                         <span style={{ fontSize: '0.65rem', backgroundColor: '#262626', padding: '2px 6px', borderRadius: '4px', color: '#fff', fontWeight: 'bold' }}>{item.etiqueta}</span>
-                        <button onClick={() => eliminarDeGaleria(item.id)} style={{ background: 'none', border: 'none', color: '#ff4444', cursor: 'pointer', fontSize: '1rem', padding: '0', lineHeight: '1' }}>✕</button>
+                        <div style={{ display: 'flex', gap: '4px' }}>
+                          <button onClick={() => descargarIndividual(item.url, item.nombre, item.tipo)} title="Descargar" style={{ background: 'none', border: 'none', color: '#00ffcc', cursor: 'pointer', fontSize: '0.8rem', padding: '0' }}>↓</button>
+                          <button onClick={() => eliminarDeGaleria(item.id)} title="Eliminar" style={{ background: 'none', border: 'none', color: '#ff4444', cursor: 'pointer', fontSize: '0.8rem', padding: '0', lineHeight: '1' }}>✕</button>
+                        </div>
                       </div>
 
                       <div
@@ -1036,8 +1169,28 @@ export default function NaylaCore() {
 
             {!toolMessage && navActiva === 'script' && (
               <div style={{ maxHeight: '35vh', overflowY: 'auto' }}>
-                <p style={{ fontSize: '0.75rem', color: '#fff', fontWeight: 'bold', marginBottom: '1rem', letterSpacing: '1px' }}>SCRIPT MANUAL</p>
-                <textarea value={codigoJsInput} onChange={(e) => setCodigoJsInput(e.target.value)} style={{ width: '100%', height: '80px', backgroundColor: '#0a0a0a', border: '1px solid #262626', borderRadius: '12px', color: '#00ffcc', padding: '1rem', fontFamily: 'monospace', outline: 'none' }} />
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+                  <p style={{ fontSize: '0.75rem', color: '#fff', fontWeight: 'bold', letterSpacing: '1px' }}>SCRIPT MANUAL / MOLDES</p>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    {moldesScripts.length > 0 && (
+                      <select value={moldeActivo} onChange={cargarMolde} style={{ backgroundColor: '#0a0a0a', color: '#fff', border: '1px solid #404040', borderRadius: '8px', padding: '4px 8px', fontSize: '0.65rem' }}>
+                        <option value="">-- Seleccionar Molde --</option>
+                        {moldesScripts.map(m => (
+                          <option key={m.nombre} value={m.nombre}>{m.nombre}</option>
+                        ))}
+                      </select>
+                    )}
+                    <button onClick={guardarMolde} className="neon-btn nav-btn" style={{ padding: '4px 10px', fontSize: '0.6rem' }}>GUARDAR MOLDE</button>
+                    {moldeActivo && <button onClick={eliminarMoldeActivo} className="neon-btn nav-btn" style={{ padding: '4px 10px', fontSize: '0.6rem', color: '#ff4444' }}>X</button>}
+                  </div>
+                </div>
+                <p style={{ fontSize: '0.65rem', color: '#737373', marginBottom: '10px' }}>
+                  Comandos disponibles: <br />
+                  <code style={{ color: '#00ffcc' }}>NaylaEngine.agregar(["V1", "V2", "A1"]);</code> - Agrega a la pista las etiquetas.<br />
+                  <code style={{ color: '#00ffcc' }}>NaylaEngine.limpiar();</code> - Borra la pista actual.
+                </p>
+                <textarea value={codigoJsInput} onChange={(e) => setCodigoJsInput(e.target.value)} style={{ width: '100%', height: '100px', backgroundColor: '#0a0a0a', border: '1px solid #262626', borderRadius: '12px', color: '#00ffcc', padding: '1rem', fontFamily: 'monospace', outline: 'none', marginBottom: '1rem', resize: 'vertical' }} />
+                <button onClick={ejecutarScript} className="neon-btn nav-btn" style={{ width: '100%', backgroundColor: '#fff', color: '#000', fontWeight: 'bold' }}>EJECUTAR SCRIPT ▶</button>
               </div>
             )}
 
