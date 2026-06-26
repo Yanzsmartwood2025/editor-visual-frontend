@@ -40,7 +40,8 @@ const supabase = process.env.NEXT_PUBLIC_SUPABASE_URL
 
 type Rect = { id: string; x: number; y: number; width: number; height: number };
 type MediaItem = { id: string; url: string; tipo: 'foto' | 'video' | 'audio'; nombre: string; creado_en: string; esOverlay: boolean; etiqueta: string };
-type TimelineItem = { id: string; mediaId: string; tipo: 'foto' | 'video' | 'audio'; nombre: string; etiqueta: string; url: string; durationInSeconds?: number };
+type TimelineItem = { id: string; mediaId: string; tipo: 'foto' | 'video' | 'audio'; nombre: string; etiqueta: string; url: string; durationInSeconds?: number; volume?: number; fadeIn?: number; fadeOut?: number };
+type SubtitleItem = { id: string; texto: string; inicioSec: number; finSec: number; };
 type MarcoConfig = {
   posicion: 'derecha' | 'izquierda' | 'abajo' | 'arriba' | 'derecha+abajo' | 'derecha+arriba' | 'izquierda+abajo' | 'izquierda+arriba';
   grosor: number;
@@ -77,9 +78,13 @@ export default function NaylaCore() {
   const [otpInput, setOtpInput] = useState('');
   const [otpEnviado, setOtpEnviado] = useState(false);
   const [authLoading, setAuthLoading] = useState(false);
+  const [iaApiKey, setIaApiKey] = useState('');
+  const [iaPrompt, setIaPrompt] = useState('Haz un video con 3 clips y ponles subtítulos');
+  const [iaLoading, setIaLoading] = useState(false);
+
   const [message, setMessage] = useState('');
   const [navActiva, setNavActiva] = useState<string | null>(null);
-  const [codigoJsInput, setCodigoJsInput] = useState('// Inyecta comandos JS aquí\n// Ej: NaylaEngine.agregar(["V1", "V2", "A1"]);');
+  const [codigoJsInput, setCodigoJsInput] = useState('// Inyecta comandos JS aquí\n// Ej: NaylaEngine.agregar(["V1", "V2", "A1"]);\n// NaylaEngine.agregarSubtitulos([{ texto: "Hola", inicio: 0, fin: 5 }]);');
   const [moldesScripts, setMoldesScripts] = useState<{ nombre: string; codigo: string }[]>([]);
   const [moldeActivo, setMoldeActivo] = useState<string>('');
   const [toolMessage, setToolMessage] = useState<string | null>(null);
@@ -88,6 +93,7 @@ export default function NaylaCore() {
   const [marcoProcesando, setMarcoProcesando] = useState(false);
   const [galeriaMultimedia, setGaleriaMultimedia] = useState<MediaItem[]>([]);
   const [lineaDeTiempo, setLineaDeTiempo] = useState<TimelineItem[]>([]);
+  const [subtitulos, setSubtitulos] = useState<SubtitleItem[]>([]);
   const [clipSeleccionado, setClipSeleccionado] = useState<string | null>(null);
   const [canvasRatio, setCanvasRatio] = useState<'9/16' | '16/9' | '1/1' | '4/5'>('9/16');
   const [calidadExportacion, setCalidadExportacion] = useState('1080p');
@@ -641,50 +647,61 @@ export default function NaylaCore() {
     setMoldesScripts(nuevosMoldes);
     localStorage.setItem('nayla_moldes_scripts', JSON.stringify(nuevosMoldes));
     setMoldeActivo('');
-    setCodigoJsInput('// Inyecta comandos JS aquí\n// Ej: NaylaEngine.agregar(["V1", "V2", "A1"]);');
+    setCodigoJsInput('// Inyecta comandos JS aquí\n// Ej: NaylaEngine.agregar(["V1", "V2", "A1"]);\n// NaylaEngine.agregarSubtitulos([{ texto: "Hola", inicio: 0, fin: 5 }]);');
   };
+
+
+  const getEngineContext = () => ({
+        agregar: (etiquetas: string[]) => {
+          let agregados = 0;
+          setLineaDeTiempo(prevLinea => {
+             const nuevaLinea = [...prevLinea];
+             etiquetas.forEach(etiqueta => {
+                const media = galeriaMultimedia.find(m => m.etiqueta === etiqueta);
+                if (media) {
+                  nuevaLinea.push({
+                    id: Date.now().toString() + Math.random().toString(),
+                    mediaId: media.id,
+                    tipo: media.tipo,
+                    nombre: media.nombre,
+                    etiqueta: media.etiqueta,
+                    url: media.url,
+                    durationInSeconds: 5
+                  });
+                  agregados++;
+                }
+             });
+             if(agregados > 0) setTimeout(() => sincronizarLineaDeTiempo(nuevaLinea), 0);
+             return nuevaLinea;
+          });
+        },
+        modificar: (etiqueta: string, opciones: any) => {
+          setLineaDeTiempo(prev => {
+            let modificado = false;
+            const arr = prev.map(clip => {
+              if (clip.etiqueta === etiqueta) { modificado = true; return { ...clip, ...opciones }; }
+              return clip;
+            });
+            if(modificado) setTimeout(() => sincronizarLineaDeTiempo(arr), 0);
+            return arr;
+          });
+        },
+        agregarSubtitulos: (nuevosSubtitulos: any[]) => {
+          const subsAInsertar = nuevosSubtitulos.map(sub => ({ ...sub, id: Date.now().toString() + Math.random().toString() }));
+          setSubtitulos(prev => [...prev, ...subsAInsertar]);
+        },
+        limpiarSubtitulos: () => setSubtitulos([]),
+        limpiar: () => {
+           setLineaDeTiempo([]);
+           setSubtitulos([]);
+           setTimeout(() => sincronizarLineaDeTiempo([]), 0);
+        }
+  });
 
   const ejecutarScript = () => {
     try {
       // Definir la API disponible en el script
-      const NaylaEngine = {
-        agregar: (etiquetas: string[]) => {
-          let agregados = 0;
-          let nuevaLinea = [...lineaDeTiempo];
-
-          etiquetas.forEach(etiqueta => {
-            const media = galeriaMultimedia.find(m => m.etiqueta === etiqueta);
-            if (media) {
-              const nuevo: TimelineItem = {
-                id: Date.now().toString() + Math.random().toString(),
-                mediaId: media.id,
-                tipo: media.tipo,
-                nombre: media.nombre,
-                etiqueta: media.etiqueta,
-                url: media.url,
-                durationInSeconds: 5 // Default
-              };
-              nuevaLinea.push(nuevo);
-              agregados++;
-            } else {
-              console.warn(`Etiqueta no encontrada: ${etiqueta}`);
-            }
-          });
-
-          if (agregados > 0) {
-            setLineaDeTiempo(nuevaLinea);
-            sincronizarLineaDeTiempo(nuevaLinea);
-            alert(`NaylaEngine: Se agregaron ${agregados} clips a la línea de tiempo.`);
-          } else {
-            alert(`NaylaEngine: No se encontró ningún clip con las etiquetas proporcionadas.`);
-          }
-        },
-        limpiar: () => {
-          setLineaDeTiempo([]);
-          sincronizarLineaDeTiempo([]);
-          alert('NaylaEngine: Línea de tiempo limpiada.');
-        }
-      };
+      const NaylaEngine = getEngineContext();
 
       // Ejecutar el script ingresado en el contexto proporcionado usando Function (más seguro que eval)
       const execute = new Function('NaylaEngine', codigoJsInput);
@@ -890,6 +907,7 @@ export default function NaylaCore() {
                   ref={playerRef}
                   component={MainComposition}
                   inputProps={{
+                    subtitles: subtitulos,
                     timeline: (clipSeleccionado && !lineaDeTiempo.find(t => t.id === clipSeleccionado))
                       ? [{
                           id: 'preview',
@@ -1186,8 +1204,11 @@ export default function NaylaCore() {
                 </div>
                 <p style={{ fontSize: '0.65rem', color: '#737373', marginBottom: '10px' }}>
                   Comandos disponibles: <br />
-                  <code style={{ color: '#00ffcc' }}>NaylaEngine.agregar(["V1", "V2", "A1"]);</code> - Agrega a la pista las etiquetas.<br />
-                  <code style={{ color: '#00ffcc' }}>NaylaEngine.limpiar();</code> - Borra la pista actual.
+                  <code style={{ color: '#00ffcc' }}>NaylaEngine.agregar(["V1", "V2"]);</code> - Agrega clips por etiqueta.<br />
+                  <code style={{ color: '#00ffcc' }}>{"NaylaEngine.modificar('V1', { volume: 0.5 });"}</code> - Cambia volumen y efectos.<br />
+                  { /* Escape in JSX */ }{ /* */ }<code style={{ color: '#00ffcc' }}>{"NaylaEngine.agregarSubtitulos([{ texto: \"Hola\", inicioSec: 0, finSec: 2 }]);"}</code> - Agrega subtítulos.<br />
+                  <code style={{ color: '#00ffcc' }}>NaylaEngine.limpiarSubtitulos();</code> - Borra los subtítulos.<br />
+                  <code style={{ color: '#00ffcc' }}>NaylaEngine.limpiar();</code> - Borra pista y subtítulos.
                 </p>
                 <textarea value={codigoJsInput} onChange={(e) => setCodigoJsInput(e.target.value)} style={{ width: '100%', height: '100px', backgroundColor: '#0a0a0a', border: '1px solid #262626', borderRadius: '12px', color: '#00ffcc', padding: '1rem', fontFamily: 'monospace', outline: 'none', marginBottom: '1rem', resize: 'vertical' }} />
                 <button onClick={ejecutarScript} className="neon-btn nav-btn" style={{ width: '100%', backgroundColor: '#fff', color: '#000', fontWeight: 'bold' }}>EJECUTAR SCRIPT ▶</button>
@@ -1195,8 +1216,61 @@ export default function NaylaCore() {
             )}
 
             {!toolMessage && navActiva === 'ia' && (
-              <div style={{ maxHeight: '35vh', overflowY: 'auto' }}>
-                <div style={{ textAlign: 'center', padding: '2rem', color: '#a3a3a3', fontSize: '1rem', letterSpacing: '2px' }}>SUPERVISOR IA (En desarrollo)</div>
+              <div style={{ maxHeight: '35vh', overflowY: 'auto', padding: '10px' }}>
+                <div style={{ fontWeight: 'bold', letterSpacing: '2px', color: '#a3a3a3', marginBottom: '15px' }}>SUPERVISOR IA</div>
+
+                <div style={{ marginBottom: '15px', backgroundColor: '#0a0a0a', border: '1px solid #262626', padding: '10px', borderRadius: '8px' }}>
+                   <div style={{ fontSize: '0.7rem', color: '#737373', marginBottom: '5px' }}>Si no tienes API Key, usa el servicio premium (5$ PayPal/Bitcoin)</div>
+                   <button className="neon-btn nav-btn" style={{ padding: '6px 15px', fontSize: '0.7rem', width: '100%', marginBottom: '10px', backgroundColor: '#d4af37', color: '#000', fontWeight: 'bold' }}>CONTRATAR PLAN IA ($5)</button>
+
+                   <div style={{ fontSize: '0.7rem', color: '#737373', marginBottom: '5px' }}>O ingresa tu propia API Key de OpenAI:</div>
+                   <input
+                     type="password"
+                     placeholder="sk-proj-..."
+                     value={iaApiKey}
+                     onChange={(e) => setIaApiKey(e.target.value)}
+                     style={{ width: '100%', backgroundColor: '#050505', border: '1px solid #262626', color: '#fff', padding: '8px', borderRadius: '5px', fontSize: '0.7rem' }}
+                   />
+                </div>
+
+                <textarea
+                  value={iaPrompt}
+                  onChange={(e) => setIaPrompt(e.target.value)}
+                  placeholder="Describe lo que quieres que haga la IA (ej: Agrega todos los videos, baja el volumen y pon el subtítulo 'Inicio')"
+                  style={{ width: '100%', height: '80px', backgroundColor: '#0a0a0a', border: '1px solid #262626', borderRadius: '8px', color: '#00ffcc', padding: '1rem', fontFamily: 'monospace', outline: 'none', marginBottom: '1rem', resize: 'vertical' }}
+                />
+
+                <button
+                  onClick={async () => {
+                     if(!iaPrompt) return;
+                     setIaLoading(true);
+                     try {
+                        const res = await fetch('/api/supervisor', {
+                           method: 'POST',
+                           headers: { 'Content-Type': 'application/json' },
+                           body: JSON.stringify({ prompt: iaPrompt, apiKey: iaApiKey, galeria: galeriaMultimedia })
+                        });
+                        const data = await res.json();
+                        if(data.error) throw new Error(data.error);
+
+                        console.log("Código IA:", data.code);
+                        // Ejecutar código usando el mismo contexto de NaylaEngine
+                        const NaylaEngine = getEngineContext();
+                        const execute = new Function('NaylaEngine', data.code);
+                        execute(NaylaEngine);
+                        alert('Ejecución IA finalizada');
+                     } catch(err: any) {
+                        alert("Error en IA: " + err.message);
+                     } finally {
+                        setIaLoading(false);
+                     }
+                  }}
+                  disabled={iaLoading}
+                  className="neon-btn nav-btn"
+                  style={{ width: '100%', backgroundColor: '#fff', color: '#000', fontWeight: 'bold' }}
+                >
+                  {iaLoading ? 'PROCESANDO...' : 'GENERAR Y EJECUTAR 🤖'}
+                </button>
               </div>
             )}
           </div>
