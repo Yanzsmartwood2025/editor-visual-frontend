@@ -124,6 +124,12 @@ export default function NaylaCore() {
   };
 
   const [isUserScrolling, setIsUserScrolling] = useState(false);
+
+  useEffect(() => {
+    const handleUp = () => setIsUserScrolling(false);
+    window.addEventListener('pointerup', handleUp);
+    return () => window.removeEventListener('pointerup', handleUp);
+  }, []);
   const containerRef = useRef<HTMLDivElement>(null);
   const playerRef = useRef<PlayerRef>(null);
   const timelineRef = useRef<HTMLDivElement>(null);
@@ -554,7 +560,7 @@ export default function NaylaCore() {
         // But for "reproducción de corrido" we should autoplay:
         setTimeout(() => {
           if (playerRef.current) {
-            playerRef.current.play().catch(e => console.log('Autoplay prevent', e));
+            playerRef.current.play();
             setIsPlaying(true);
           }
         }, 100);
@@ -824,7 +830,7 @@ export default function NaylaCore() {
     .clip-block { height: 70px; position: relative; cursor: pointer; flex-shrink: 0; border-top: 2px solid transparent; border-bottom: 2px solid transparent; border-right: 1px solid #000; transition: 0.2s; }
     .clip-block:first-child { border-top-left-radius: 10px; border-bottom-left-radius: 10px; }
     .clip-block:last-child { border-top-right-radius: 10px; border-bottom-right-radius: 10px; border-right: none; }
-    .clip-block.selected { border: 2px solid #ffffff; z-index: 10; box-shadow: 0 0 15px rgba(255,255,255,0.4); border-radius: 10px; }
+    .clip-block.selected { border: 2px solid #ffffff; box-sizing: border-box; z-index: 10; box-shadow: 0 0 15px rgba(255,255,255,0.4); border-radius: 10px; }
     .audio-block { height: 35px; border-radius: 8px; flex-shrink: 0; min-width: 120px; display: flex; align-items: center; justify-content: center; color: #fff; font-size: 0.65rem; cursor: pointer; margin-right: 2px; border: 1px solid #404040; }
     .toolbar-container { display: flex; gap: 8px; overflow-x: auto; padding: 12px 16px; background-color: #050505; border-top: 1px solid #1a1a1a; min-height: 95px; position: relative; z-index: 100; align-items: center; }
     .toolbar-container::-webkit-scrollbar { height: 0; }
@@ -984,8 +990,8 @@ export default function NaylaCore() {
               playerRef.current.seekTo(Math.max(0, frame));
             }}
             onPointerDown={() => setIsUserScrolling(true)}
-            onPointerUp={() => { setIsUserScrolling(false); }}
-            onPointerLeave={() => { setIsUserScrolling(false); }}
+            onPointerUp={() => { setTimeout(() => setIsUserScrolling(false), 50); }}
+            onPointerLeave={() => { setTimeout(() => setIsUserScrolling(false), 50); }}
             style={{ paddingLeft: '50%', paddingRight: '50%', transition: 'padding-left 0.3s ease' }}
             onClick={(e) => e.stopPropagation()}>
             {/* FIX BOTÓN +: agregado e.stopPropagation() */}
@@ -1108,14 +1114,14 @@ export default function NaylaCore() {
                           setClipSeleccionado(item.id);
                           setVideoResultadoUrl(null);
                           if (item.tipo === 'video' && playerRef.current) {
-                            playerRef.current.play().catch(e => console.log('Autoplay prevent', e));
+                            playerRef.current.play();
                             setIsPlaying(true);
                           }
                         }}
                         style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', width: '100%', overflow: 'hidden', cursor: 'pointer' }}>
                         {item.tipo === 'video' && <div style={{ fontSize: '2rem', color: '#a3a3a3' }}>▶️</div>}
                         {item.tipo === 'audio' && <div style={{ fontSize: '2rem', color: '#a3a3a3' }}>🎵</div>}
-                        {item.tipo === 'foto' && <img src={item.url} style={{ width: '100%', height: '40px', objectFit: 'cover', borderRadius: '4px' }} alt={item.nombre} />}
+                        {item.tipo === 'foto' && <img src={item.url} style={{ width: '100%', height: '40px', objectFit: 'contain', borderRadius: '4px' }} alt={item.nombre} />}
                         <input type="text" value={item.nombre} onChange={(e) => renombrarItem(item.id, e.target.value)} style={{ background: 'transparent', border: 'none', color: '#fff', outline: 'none', width: '100%', textAlign: 'center', fontSize: '0.65rem', marginTop: '8px', textOverflow: 'ellipsis', whiteSpace: 'nowrap', overflow: 'hidden' }} title={item.nombre} />
                       </div>
 
