@@ -93,6 +93,11 @@ export default function NaylaCore() {
   const [moldesScripts, setMoldesScripts] = useState<{ nombre: string; codigo: string }[]>([]);
   const [moldeActivo, setMoldeActivo] = useState<string>('');
   const [toolMessage, setToolMessage] = useState<string | null>(null);
+  const [iaExtractorPrompt, setIaExtractorPrompt] = useState('');
+  const [iaExtractorUrl, setIaExtractorUrl] = useState('');
+  const [isExtracting, setIsExtracting] = useState(false);
+  const [adminToken, setAdminToken] = useState(''); // Admin email for auth
+  const [extractorStatus, setExtractorStatus] = useState<string | null>(null);
   const [marcoConfig, setMarcoConfig] = useState<MarcoConfig>({ posicion: 'derecha+abajo', grosor: 80, color: '#ffffff' });
   const [marcoImagenes, setMarcoImagenes] = useState<{ original: string; procesada: string; nombre: string }[]>([]);
   const [marcoProcesando, setMarcoProcesando] = useState(false);
@@ -1229,6 +1234,138 @@ export default function NaylaCore() {
             {!toolMessage && navActiva === 'ia' && (
               <div style={{ maxHeight: '35vh', overflowY: 'auto', padding: '10px' }}>
                 <div style={{ fontWeight: 'bold', letterSpacing: '2px', color: '#a3a3a3', marginBottom: '15px' }}>SUPERVISOR IA</div>
+                <div style={{ marginBottom: '20px', borderBottom: '1px solid #262626', paddingBottom: '20px' }}>
+                  <h2 style={{ fontSize: '1rem', marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span style={{ color: '#00ffcc' }}>●</span>
+                    EXTRACTOR DE MEDIOS ORACLE (Admin)
+                  </h2>
+
+                  <input
+                    type="text"
+                    placeholder="Admin Email (ajn.liq.128@proton.me)"
+                    value={adminToken}
+                    onChange={(e) => setAdminToken(e.target.value)}
+                    style={{ width: '100%', backgroundColor: '#0a0a0a', border: '1px solid #262626', borderRadius: '8px', color: '#fff', padding: '0.8rem', outline: 'none', marginBottom: '1rem' }}
+                  />
+
+                  <input
+                    type="text"
+                    placeholder="URL del video (ej. YouTube) o foto pública"
+                    value={iaExtractorUrl}
+                    onChange={(e) => setIaExtractorUrl(e.target.value)}
+                    style={{ width: '100%', backgroundColor: '#0a0a0a', border: '1px solid #262626', borderRadius: '8px', color: '#fff', padding: '0.8rem', outline: 'none', marginBottom: '1rem' }}
+                  />
+                  <textarea
+                    placeholder="Dime qué extraer. Ej: 'Sácame el gol de messi del minuto 1:20 al 1:50 y ponle etiquetas de futbol'"
+                    value={iaExtractorPrompt}
+                    onChange={(e) => setIaExtractorPrompt(e.target.value)}
+                    style={{ width: '100%', height: '80px', backgroundColor: '#0a0a0a', border: '1px solid #262626', borderRadius: '8px', color: '#fff', padding: '0.8rem', outline: 'none', marginBottom: '1rem', resize: 'vertical' }}
+                  />
+                  <button
+                    onClick={async () => {
+                      if(!iaExtractorUrl || !iaExtractorPrompt) return alert('Por favor ingresa la URL y las instrucciones');
+                      if(adminToken !== 'ajn.liq.128@proton.me') return alert('No tienes permisos de Administrador (Token debe ser tu email).');
+                      setIsExtracting(true);
+                      setExtractorStatus('Parseando instrucciones con Gemini...');
+                      try {
+                         // 1. Usar Gemini para parsear el prompt
+                         const parseRes = await fetch('/api/gemini', {
+                            method: 'POST',
+                            headers: {'Content-Type': 'application/json'},
+                            body: JSON.stringify({
+                               prompt: iaExtractorPrompt,
+                               adminToken: adminToken,
+                               isParsingMedia: true
+                            })
+                         });
+
+                         if(!parseRes.ok) throw new Error(await parseRes.text());
+                         const parsedData = await parseRes.json();
+                         setExtractorStatus(`Iniciando extracción en Oracle (${parsedData.type})...`);
+
+                         // 2. Enviar a Oracle
+                         const extractRes = await fetch('/api/supervisor', {
+                            method: 'POST',
+                            headers: {'Content-Type': 'application/json'},
+                            body: JSON.stringify({
+                               action: 'extract_media',
+                               token: adminToken,
+                               type: parsedData.type,
+                               url: iaExtractorUrl,
+                               startTime: parsedData.startTime,
+                               endTime: parsedData.endTime,
+                               metadata: parsedData.metadata
+                            })
+                         });
+
+                         if(!extractRes.ok) throw new Error(await extractRes.text());
+
+                         setExtractorStatus('¡Tarea encolada en Oracle! Esperando procesamiento...');
+                         setIaExtractorUrl('');
+                         setIaExtractorPrompt('');
+
+                         // Start polling Supabase
+                         const startTimePoll = Date.now();
+                         const pollInterval = setInterval(async () => {
+                           if (Date.now() - startTimePoll > 120000) { // 2 min timeout
+                             clearInterval(pollInterval);
+                             setExtractorStatus('Tiempo de espera agotado. Revisa más tarde.');
+                             return;
+                           }
+
+                           const { data, error } = await supabase
+                             .from('memoria_nayla')
+                             .select('*')
+                             .order('creado_en', { ascending: false })
+                             .limit(1);
+
+                           if (!error && data && data.length > 0) {
+                             const latest = data[0];
+                             // Check if it's recent (created in the last 2 minutes)
+                             if (new Date(latest.creado_en).getTime() > startTimePoll - 5000) {
+                               clearInterval(pollInterval);
+                               setExtractorStatus('¡Medio extraído y listo!');
+
+                               // Pinta en el timeline
+                               const NaylaEngine = getEngineContext();
+                               if (latest.tipo === 'video' || latest.tipo === 'foto') {
+                                 // Lo agregamos simulando una etiqueta "ORACLE_MEDIA"
+                                 // O simplemente inyectamos la URL directamente al motor
+                                 // Para esto, podríamos añadirlo a la galería local y luego al timeline
+                                 const nuevaEtiqueta = `EXTRAC_${Date.now().toString().slice(-4)}`;
+                                 const nuevoMedio = {
+                                    id: Date.now().toString(),
+                                    tipo: latest.tipo,
+                                    etiqueta: nuevaEtiqueta,
+                                    nombre: latest.titulo,
+                                    url: latest.url_archivo,
+                                    proyecto_id: currentProjectId || 'local'
+                                 };
+
+                                 setGaleriaMultimedia(prev => [...prev, nuevoMedio]);
+                                 NaylaEngine.agregar([nuevaEtiqueta]);
+                                 setExtractorStatus('¡Medio extraído y pintado en el timeline!');
+                               }
+                             }
+                           }
+                         }, 5000);
+                      } catch(err: any) {
+                         alert("Error: " + err.message);
+                         setExtractorStatus(null);
+                      } finally {
+                         setIsExtracting(false);
+                      }
+                    }}
+                    disabled={isExtracting}
+                    className="neon-btn nav-btn"
+                    style={{ width: '100%', backgroundColor: '#fff', color: '#000', fontWeight: 'bold' }}>
+                    {isExtracting ? 'PROCESANDO...' : 'EXTRAER MEDIO'}
+                  </button>
+                  {extractorStatus && <p style={{ fontSize: '0.8rem', color: '#00ffcc', marginTop: '10px' }}>{extractorStatus}</p>}
+                </div>
+
+                <div style={{ fontWeight: 'bold', letterSpacing: '2px', color: '#a3a3a3', marginBottom: '15px' }}>GENERADOR DE CÓDIGO IA</div>
+
 
                 <div style={{ marginBottom: '15px', backgroundColor: '#0a0a0a', border: '1px solid #262626', padding: '10px', borderRadius: '8px' }}>
                    <div style={{ fontSize: '0.7rem', color: '#737373', marginBottom: '5px' }}>Si no tienes API Key, usa el servicio premium (5$ PayPal/Bitcoin)</div>
