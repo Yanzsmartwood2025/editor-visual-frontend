@@ -81,6 +81,11 @@ export default function NaylaCore() {
   const [iaApiKey, setIaApiKey] = useState('');
   const [iaPrompt, setIaPrompt] = useState('Haz un video con 3 clips y ponles subtítulos');
   const [iaLoading, setIaLoading] = useState(false);
+  const [iaBandejasAbiertas, setIaBandejasAbiertas] = useState(false);
+  const [iaBandejaActiva, setIaBandejaActiva] = useState('audio'); // 'audio', 'fotos', 'videos'
+  const [iaAudioTexto, setIaAudioTexto] = useState('');
+  const [iaFotosFotoBase, setIaFotosFotoBase] = useState('');
+  const [iaFotosPrompt, setIaFotosPrompt] = useState('');
 
   const [message, setMessage] = useState('');
   const [navActiva, setNavActiva] = useState<string | null>(null);
@@ -1246,37 +1251,163 @@ export default function NaylaCore() {
                   style={{ width: '100%', height: '80px', backgroundColor: '#0a0a0a', border: '1px solid #262626', borderRadius: '8px', color: '#00ffcc', padding: '1rem', fontFamily: 'monospace', outline: 'none', marginBottom: '1rem', resize: 'vertical' }}
                 />
 
-                <button
-                  onClick={async () => {
-                     if(!iaPrompt) return;
-                     setIaLoading(true);
-                     try {
-                        const res = await fetch('/api/supervisor', {
-                           method: 'POST',
-                           headers: { 'Content-Type': 'application/json' },
-                           body: JSON.stringify({ prompt: iaPrompt, apiKey: iaApiKey, galeria: galeriaMultimedia })
-                        });
-                        const data = await res.json();
-                        if(data.error) throw new Error(data.error);
+                <div style={{ display: 'flex', gap: '10px' }}>
+                  <button
+                    onClick={async () => {
+                       if(!iaPrompt) return;
+                       setIaLoading(true);
+                       try {
+                          const res = await fetch('/api/supervisor', {
+                             method: 'POST',
+                             headers: { 'Content-Type': 'application/json' },
+                             body: JSON.stringify({ prompt: iaPrompt, apiKey: iaApiKey, galeria: galeriaMultimedia })
+                          });
+                          const data = await res.json();
+                          if(data.error) throw new Error(data.error);
 
-                        console.log("Código IA:", data.code);
-                        // Ejecutar código usando el mismo contexto de NaylaEngine
-                        const NaylaEngine = getEngineContext();
-                        const execute = new Function('NaylaEngine', data.code);
-                        execute(NaylaEngine);
-                        alert('Ejecución IA finalizada');
-                     } catch(err: any) {
-                        alert("Error en IA: " + err.message);
-                     } finally {
-                        setIaLoading(false);
-                     }
-                  }}
-                  disabled={iaLoading}
-                  className="neon-btn nav-btn"
-                  style={{ width: '100%', backgroundColor: '#fff', color: '#000', fontWeight: 'bold' }}
-                >
-                  {iaLoading ? 'PROCESANDO...' : 'GENERAR Y EJECUTAR 🤖'}
-                </button>
+                          console.log("Código IA:", data.code);
+                          // Ejecutar código usando el mismo contexto de NaylaEngine
+                          const NaylaEngine = getEngineContext();
+                          const execute = new Function('NaylaEngine', data.code);
+                          execute(NaylaEngine);
+                          alert('Ejecución IA finalizada');
+                       } catch(err: any) {
+                          alert("Error en IA: " + err.message);
+                       } finally {
+                          setIaLoading(false);
+                       }
+                    }}
+                    disabled={iaLoading}
+                    className="neon-btn nav-btn"
+                    style={{ flex: 1, backgroundColor: '#fff', color: '#000', fontWeight: 'bold' }}
+                  >
+                    {iaLoading ? 'PROCESANDO...' : 'GENERAR Y EJECUTAR 🤖'}
+                  </button>
+
+                  <button
+                    onClick={() => setIaBandejasAbiertas(!iaBandejasAbiertas)}
+                    className="neon-btn nav-btn"
+                    style={{ padding: '0 15px', backgroundColor: '#1a1a1a', color: '#fff', border: '1px solid #333' }}
+                  >
+                    {iaBandejasAbiertas ? 'CERRAR HERRAMIENTAS' : 'HERRAMIENTAS IA'}
+                  </button>
+                </div>
+
+                {iaBandejasAbiertas && (
+                  <div style={{ marginTop: '15px', border: '1px solid #262626', borderRadius: '8px', overflow: 'hidden' }}>
+                    <div style={{ display: 'flex', borderBottom: '1px solid #262626' }}>
+                      <button
+                        onClick={() => setIaBandejaActiva('audio')}
+                        style={{ flex: 1, padding: '10px', backgroundColor: iaBandejaActiva === 'audio' ? '#262626' : '#0a0a0a', color: '#fff', border: 'none', cursor: 'pointer', fontSize: '0.8rem' }}
+                      >
+                        Audio
+                      </button>
+                      <button
+                        onClick={() => setIaBandejaActiva('fotos')}
+                        style={{ flex: 1, padding: '10px', backgroundColor: iaBandejaActiva === 'fotos' ? '#262626' : '#0a0a0a', color: '#fff', border: 'none', cursor: 'pointer', fontSize: '0.8rem', borderLeft: '1px solid #262626', borderRight: '1px solid #262626' }}
+                      >
+                        Fotos
+                      </button>
+                      <button
+                        onClick={() => setIaBandejaActiva('videos')}
+                        style={{ flex: 1, padding: '10px', backgroundColor: iaBandejaActiva === 'videos' ? '#262626' : '#0a0a0a', color: '#fff', border: 'none', cursor: 'pointer', fontSize: '0.8rem' }}
+                      >
+                        Videos
+                      </button>
+                    </div>
+
+                    <div style={{ padding: '15px', backgroundColor: '#0a0a0a' }}>
+                      {iaBandejaActiva === 'audio' && (
+                        <div>
+                          <textarea
+                            value={iaAudioTexto}
+                            onChange={(e) => setIaAudioTexto(e.target.value)}
+                            placeholder="Escribe el texto para generar voz..."
+                            style={{ width: '100%', height: '60px', backgroundColor: '#050505', border: '1px solid #333', color: '#fff', padding: '10px', borderRadius: '5px', fontSize: '0.8rem', marginBottom: '10px', resize: 'none' }}
+                          />
+                          <button
+                            className="neon-btn nav-btn"
+                            style={{ width: '100%', backgroundColor: '#00cc66', color: '#000', fontWeight: 'bold' }}
+                            onClick={async () => {
+                              if (!iaAudioTexto) return alert('Ingresa texto primero');
+                              try {
+                                const res = await fetch('/api/ia-audio', {
+                                  method: 'POST',
+                                  headers: { 'Content-Type': 'application/json' },
+                                  body: JSON.stringify({ texto: iaAudioTexto, email: session?.user?.email })
+                                });
+                                const data = await res.json();
+                                if (data.error) throw new Error(data.error);
+
+                                alert(`Audio generado (Simulado). URL: ${data.url}`);
+                                // Mock agregarlo a la galería
+                                setGaleriaMultimedia(prev => [...prev, { id: `ia-audio-${Date.now()}`, nombre: 'Audio Generado IA', tipo: 'audio', url: data.url, etiqueta: 'A_IA' }]);
+                              } catch (err: any) {
+                                alert("Error IA Audio: " + err.message);
+                              }
+                            }}
+                          >
+                            GENERAR AUDIO
+                          </button>
+                        </div>
+                      )}
+
+                      {iaBandejaActiva === 'fotos' && (
+                        <div>
+                          <div style={{ fontSize: '0.7rem', color: '#737373', marginBottom: '10px' }}>
+                            Selecciona una imagen de referencia de la galería:
+                          </div>
+                          <select
+                            value={iaFotosFotoBase}
+                            onChange={(e) => setIaFotosFotoBase(e.target.value)}
+                            style={{ width: '100%', backgroundColor: '#050505', border: '1px solid #333', color: '#fff', padding: '8px', borderRadius: '5px', fontSize: '0.8rem', marginBottom: '10px' }}
+                          >
+                            <option value="">-- Seleccionar Foto Base --</option>
+                            {galeriaMultimedia.filter(m => m.tipo === 'imagen').map(m => (
+                              <option key={m.id} value={m.url}>{m.nombre || m.etiqueta}</option>
+                            ))}
+                          </select>
+                          <textarea
+                            value={iaFotosPrompt}
+                            onChange={(e) => setIaFotosPrompt(e.target.value)}
+                            placeholder="Describe la nueva escena manteniendo la consistencia..."
+                            style={{ width: '100%', height: '60px', backgroundColor: '#050505', border: '1px solid #333', color: '#fff', padding: '10px', borderRadius: '5px', fontSize: '0.8rem', marginBottom: '10px', resize: 'none' }}
+                          />
+                          <button
+                            className="neon-btn nav-btn"
+                            style={{ width: '100%', backgroundColor: '#00cc66', color: '#000', fontWeight: 'bold' }}
+                            onClick={async () => {
+                              if (!iaFotosFotoBase || !iaFotosPrompt) return alert('Selecciona foto base y escribe el prompt');
+                              try {
+                                const res = await fetch('/api/ia-fotos', {
+                                  method: 'POST',
+                                  headers: { 'Content-Type': 'application/json' },
+                                  body: JSON.stringify({ fotoBaseUrl: iaFotosFotoBase, prompt: iaFotosPrompt, email: session?.user?.email })
+                                });
+                                const data = await res.json();
+                                if (data.error) throw new Error(data.error);
+
+                                alert(`Foto generada (Simulada). URL: ${data.url}`);
+                                // Mock agregarlo a la galería
+                                setGaleriaMultimedia(prev => [...prev, { id: `ia-foto-${Date.now()}`, nombre: 'Foto Generada IA', tipo: 'imagen', url: data.url, etiqueta: 'I_IA' }]);
+                              } catch (err: any) {
+                                alert("Error IA Fotos: " + err.message);
+                              }
+                            }}
+                          >
+                            GENERAR FOTO
+                          </button>
+                        </div>
+                      )}
+
+                      {iaBandejaActiva === 'videos' && (
+                        <div style={{ textAlign: 'center', padding: '20px 0', color: '#737373', fontSize: '0.9rem' }}>
+                          Próximamente / Manual
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </div>
