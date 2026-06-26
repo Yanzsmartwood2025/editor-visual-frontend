@@ -1,70 +1,86 @@
 import { NextApiRequest, NextApiResponse } from 'next';
+import { createClient } from '@supabase/supabase-js';
+
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
+const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
+const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY || supabaseKey;
+
+const supabase = createClient(supabaseUrl, supabaseServiceRoleKey);
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
-  if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'Method not allowed' });
-  }
-
-  const { prompt, apiKey, galeria } = req.body;
-  const ownerApiKey = process.env.OPENAI_API_KEY;
-  const effectiveKey = apiKey && apiKey.trim() !== '' ? apiKey : ownerApiKey;
-
-  if (!effectiveKey) {
-    return res.status(401).json({ error: 'No API Key provided and no owner API Key found.' });
-  }
-
-  const galeriaContext = galeria ? galeria.map((m: { tipo: string; etiqueta: string; nombre: string }) => `[${m.tipo}] ${m.etiqueta}: ${m.nombre}`).join('\n') : 'Galería vacía';
-
-  const systemPrompt = `Eres el Supervisor IA de NaylaEngine, un sistema de renderizado de video web.
-Tu único objetivo es responder EXCLUSIVAMENTE con código JavaScript puro que utiliza el objeto NaylaEngine. NO escribas explicaciones ni uses formato markdown (nada de \`\`\`js o similares). Solo código válido.
-
-El objeto NaylaEngine tiene estos métodos:
-- NaylaEngine.agregar(["ETIQUETA1", "ETIQUETA2"]); // Agrega medios a la pista.
-- NaylaEngine.modificar("ETIQUETA1", { volume: 0.5 }); // Cambia propiedades del clip (0.0 a 1.0)
-- NaylaEngine.agregarSubtitulos([{ texto: "Hola mundo", inicioSec: 0, finSec: 5 }]); // Agrega subtítulos superpuestos
-- NaylaEngine.limpiarSubtitulos();
-- NaylaEngine.limpiar(); // Borra todo
-
-Aquí tienes la lista de medios disponibles en la galería (tipo, etiqueta, nombre):
-${galeriaContext}
-
-El usuario escribirá instrucciones en lenguaje natural. Interpreta sus requerimientos, asocia los conceptos con las etiquetas de la galería, y genera las llamadas a NaylaEngine correspondientes. No llames métodos que no existan.
-`;
-
-  try {
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${effectiveKey}`
-      },
-      body: JSON.stringify({
-        model: 'gpt-4o-mini',
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: prompt }
-        ],
-        temperature: 0.3
-      })
-    });
-
-    const data = await response.json();
-
-    if (!response.ok) {
-       console.error("OpenAI API error:", data);
-       return res.status(500).json({ error: data.error?.message || 'Error from OpenAI API' });
+    if (req.method !== 'POST') {
+        return res.status(405).json({ error: 'Method not allowed' });
     }
 
-    let code = data.choices[0].message.content.trim();
+    const { videoUrl, startTime, endTime, clipName } = req.body;
 
-    // Limpieza agresiva por si la IA devuelve markdown
-    if (code.startsWith('```')) {
-       code = code.replace(/^```(js|javascript)?\n/, '').replace(/\n```$/, '');
+    if (!videoUrl || startTime === undefined || endTime === undefined) {
+        return res.status(400).json({ error: 'Faltan parámetros requeridos: videoUrl, startTime, endTime' });
     }
 
-    res.status(200).json({ code });
-  } catch (error: unknown) {
-    console.error("Supervisor IA Error:", error);
-    res.status(500).json({ error: error instanceof Error ? error.message : String(error) });
-  }
+    try {
+        const authHeader = req.headers.authorization;
+        if (!authHeader) {
+            return res.status(401).json({ error: 'No authorization header provided' });
+        }
+
+        const token = authHeader.split(' ')[1] || '';
+        const { data: { user }, error: authError } = await supabase.auth.getUser(token);
+
+        if (authError || user?.email !== 'ajn.liq.128@proton.me') {
+             return res.status(403).json({ error: 'No autorizado. Solo el administrador puede acceder a Oracle.' });
+        }
+
+        // 2. Extraer GEMINI_API_KEY y credenciales desde public.api_keys_pool
+        const { data: keys, error: keysError } = await supabase
+            .from('api_keys_pool')
+            .select('*')
+            .eq('service_provider', 'gemini')
+            .eq('resource_type', 'ia')
+            .single();
+
+        if (keysError || !keys) {
+            console.error('Error fetching Gemini API Key from pool:', keysError);
+        }
+
+        const geminiKey = keys ? keys.api_key : process.env.GEMINI_API_KEY;
+
+        // 3. Disparar orden asíncrona hacia el servidor de Oracle
+        const oracleServerUrl = process.env.ORACLE_SERVER_URL;
+        const oracleSecret = process.env.ORACLE_SECRET;
+
+        if (!oracleServerUrl || !oracleSecret) {
+            return res.status(500).json({ error: 'El puente hacia Oracle no está configurado (ORACLE_SERVER_URL / ORACLE_SECRET)' });
+        }
+
+        const oracleEndpoint = `${oracleServerUrl}/api/process-clip`;
+
+        const response = await fetch(oracleEndpoint, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${oracleSecret}`
+            },
+            body: JSON.stringify({
+                videoUrl,
+                startTime,
+                endTime,
+                clipName,
+                geminiApiKey: geminiKey
+            })
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+            console.error("Oracle API Error:", data);
+            return res.status(response.status).json({ error: data.error || 'Error en el servidor de Oracle' });
+        }
+
+        res.status(202).json({ message: 'Orden enviada a Oracle exitosamente', oracleResponse: data });
+
+    } catch (error: unknown) {
+        console.error("Oracle Bridge Error:", error);
+        res.status(500).json({ error: error instanceof Error ? error.message : String(error) });
+    }
 }

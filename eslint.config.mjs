@@ -21,6 +21,9 @@ export default [
       "next-env.d.ts",
       "deploy.mjs",
       "next.config.js",
+      "oracle-service/**",
+      "patch_fades.js",
+      "public/sw.js",
     ],
   },
   // Base JS recommended
