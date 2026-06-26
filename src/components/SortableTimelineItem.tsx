@@ -40,10 +40,10 @@ export function SortableTimelineItem({ id, clip, isSelected, onSelect, onRemove 
             backgroundColor: '#1a1a1a',
             display: 'flex',
           }}>
-            <video src={clip.url} style={{ width: '100%', height: '100%', objectFit: 'cover' }} muted playsInline preload="metadata" />
+            <video src={clip.url} style={{ width: '100%', height: '100%', objectFit: 'contain' }} muted playsInline preload="metadata" />
           </div>
         ) : (
-          <img src={clip.url} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+          <img src={clip.url} style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
         )}
       </div>
 
