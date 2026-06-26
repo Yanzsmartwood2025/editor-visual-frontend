@@ -1,15 +1,35 @@
 import React, { useMemo } from 'react';
-import { AbsoluteFill, Sequence, OffthreadVideo, Img, Audio, useVideoConfig } from 'remotion';
+import { AbsoluteFill, Sequence, OffthreadVideo, Img, Audio, useVideoConfig, useCurrentFrame, interpolate } from 'remotion';
 
 // Interfaces based on main file
-type TimelineItem = { id: string; mediaId: string; tipo: 'foto' | 'video' | 'audio'; nombre: string; etiqueta: string; url: string; durationInSeconds?: number };
+type TimelineItem = { id: string; mediaId: string; tipo: 'foto' | 'video' | 'audio'; nombre: string; etiqueta: string; url: string; durationInSeconds?: number; volume?: number; fadeIn?: number; fadeOut?: number };
+type SubtitleItem = { id: string; texto: string; inicioSec: number; finSec: number; };
 
 interface MainCompositionProps {
   timeline: TimelineItem[];
   canvasRatio: '9/16' | '16/9' | '1/1' | '4/5';
+  subtitles?: SubtitleItem[];
 }
 
-export const MainComposition: React.FC<MainCompositionProps> = ({ timeline, canvasRatio }) => {
+
+const ClipWithFades: React.FC<{ clip: TimelineItem, durationInFrames: number, children: React.ReactNode }> = ({ clip, durationInFrames, children }) => {
+  const frame = useCurrentFrame();
+  const { fps } = useVideoConfig();
+
+  const fadeInFrames = Math.round((clip.fadeIn || 0) * fps);
+  const fadeOutFrames = Math.round((clip.fadeOut || 0) * fps);
+
+  const opacity = interpolate(
+    frame,
+    [0, fadeInFrames, durationInFrames - fadeOutFrames - 1, durationInFrames - 1],
+    [fadeInFrames > 0 ? 0 : 1, 1, 1, fadeOutFrames > 0 ? 0 : 1],
+    { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' }
+  );
+
+  return <AbsoluteFill style={{ opacity }}>{children}</AbsoluteFill>;
+};
+
+export const MainComposition: React.FC<MainCompositionProps> = ({ timeline, subtitles = [] }) => {
   const { fps } = useVideoConfig();
 
   // We filter out videos and photos to build the main visual sequence
@@ -34,26 +54,60 @@ export const MainComposition: React.FC<MainCompositionProps> = ({ timeline, canv
           from={clip.startFrame}
           durationInFrames={clip.durationInFrames}
         >
-          {clip.tipo === 'video' ? (
-            <OffthreadVideo
-              src={clip.url}
-              style={{ width: '100%', height: '100%', objectFit: 'contain' }}
-            />
-          ) : (
-            <Img
-              src={clip.url}
-              style={{ width: '100%', height: '100%', objectFit: 'contain' }}
-            />
-          )}
+          <ClipWithFades clip={clip} durationInFrames={clip.durationInFrames}>
+            {clip.tipo === 'video' ? (
+              <OffthreadVideo
+                src={clip.url}
+                volume={clip.volume !== undefined ? clip.volume : 1}
+                style={{ width: '100%', height: '100%', objectFit: 'contain' }}
+              />
+            ) : (
+              <Img
+                src={clip.url}
+                style={{ width: '100%', height: '100%', objectFit: 'contain' }}
+              />
+            )}
+          </ClipWithFades>
         </Sequence>
       ))}
 
       {/* For simplicity, audio clips start at frame 0 and loop/play their duration. We can improve this later to position them. */}
       {audioClips.map((clip) => (
         <Sequence key={clip.id} from={0}>
-           <Audio src={clip.url} />
+           <Audio src={clip.url} volume={clip.volume !== undefined ? clip.volume : 1} />
         </Sequence>
       ))}
+
+      {/* Subtitles Overlay */}
+      {subtitles.map(sub => {
+         const fromFrame = Math.round(sub.inicioSec * fps);
+         const duration = Math.round((sub.finSec - sub.inicioSec) * fps);
+         if (duration <= 0) return null;
+
+         return (
+            <Sequence key={sub.id} from={fromFrame} durationInFrames={duration}>
+              <AbsoluteFill style={{
+                justifyContent: 'flex-end',
+                alignItems: 'center',
+                paddingBottom: '10%',
+              }}>
+                <div style={{
+                  backgroundColor: 'rgba(0, 0, 0, 0.7)',
+                  color: 'white',
+                  padding: '10px 20px',
+                  borderRadius: '10px',
+                  fontSize: '40px',
+                  fontFamily: 'sans-serif',
+                  textAlign: 'center',
+                  maxWidth: '80%',
+                  textShadow: '2px 2px 4px rgba(0,0,0,0.5)'
+                }}>
+                  {sub.texto}
+                </div>
+              </AbsoluteFill>
+            </Sequence>
+         )
+      })}
     </AbsoluteFill>
   );
 };
