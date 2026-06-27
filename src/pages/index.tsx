@@ -13,28 +13,10 @@ import { createClient } from '@supabase/supabase-js';
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://dummy.supabase.co';
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'dummy_key';
 
-const supabase = process.env.NEXT_PUBLIC_SUPABASE_URL
-  ? createClient(supabaseUrl, supabaseAnonKey)
-  : {
-      auth: {
-        getSession: async () => ({ data: { session: { user: { email: 'dev@test.com' } } } }),
-        signInWithOtp: async () => ({ error: null }),
-        verifyOtp: async () => ({ error: null }),
-        onAuthStateChange: () => ({ data: { subscription: { unsubscribe: () => {} } } })
-      },
-      from: () => ({
-        select: () => ({
-          eq: () => ({
-            order: async () => ({ data: [], error: null }),
-            single: async () => ({ data: null, error: null })
-          })
-        }),
-        insert: async () => ({ error: null }),
-        delete: () => ({ eq: () => ({ eq: async () => ({ error: null }) }) }),
-        update: () => ({ eq: () => ({ eq: async () => ({ error: null }) }) }),
-        upsert: async () => ({ error: null })
-      })
-    } as unknown as ReturnType<typeof createClient>;
+if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
+  console.error('ERROR CRÍTICO: Variables de entorno de Supabase no configuradas.');
+}
+const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 type Rect = { id: string; x: number; y: number; width: number; height: number };
 type MediaItem = { id: string; url: string; tipo: 'foto' | 'video' | 'audio'; nombre: string; creado_en: string; esOverlay: boolean; etiqueta: string };
@@ -339,8 +321,13 @@ export default function NaylaCore() {
     if (!otpInput || !emailInput) return;
     setAuthLoading(true); setMessage('');
     try {
-      const { error } = await supabase.auth.verifyOtp({ email: emailInput, token: otpInput, type: 'email' });
+      const { data, error } = await supabase.auth.verifyOtp({ email: emailInput, token: otpInput, type: 'email' });
       if (error) throw error;
+      setShowIntro(true);
+      setTimeout(() => {
+        setShowIntro(false);
+        if (data?.session) setSession(data.session);
+      }, 3000);
     } catch (err) { setMessage('Código incorrecto.'); }
     finally { setAuthLoading(false); }
   };
@@ -809,6 +796,7 @@ export default function NaylaCore() {
   const ICONOS_POS: Record<string, string> = { derecha: '→', izquierda: '←', abajo: '↓', arriba: '↑', 'derecha+abajo': '↘', 'derecha+arriba': '↗', 'izquierda+abajo': '↙', 'izquierda+arriba': '↖' };
 
   const globalStyles = `
+    @keyframes spin { to { transform: rotate(360deg); } }
     ::-webkit-scrollbar { height: 4px; width: 4px; }
     ::-webkit-scrollbar-track { background: transparent; }
     ::-webkit-scrollbar-thumb { background: #404040; border-radius: 10px; }
@@ -839,9 +827,18 @@ export default function NaylaCore() {
   if (!session) {
     if (showIntro) {
       return (
-        <div style={{ minHeight: '100vh', backgroundColor: '#000', display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+        <div style={{ minHeight: '100vh', backgroundColor: '#000', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center' }}>
           <style>{`@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }`}</style>
           <img src="/assets/imagenes/Icono-intro.jpeg" alt="NAYLA" style={{ width: '150px', height: '150px', borderRadius: '24px', objectFit: 'cover', animation: 'fadeIn 1s ease-in-out' }} />
+          <div style={{
+            width: '30px',
+            height: '30px',
+            border: '3px solid #333',
+            borderTop: '3px solid #fff',
+            borderRadius: '50%',
+            animation: 'spin 1s linear infinite',
+            marginTop: '20px'
+          }} />
         </div>
       );
     }
@@ -883,6 +880,24 @@ export default function NaylaCore() {
         <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
           <img src="/assets/imagenes/Icono-intro.jpeg" alt="NAYLA" style={{ width: '35px', height: '35px', borderRadius: '8px', objectFit: 'cover' }} />
           <span style={{ fontSize: '0.7rem', padding: '4px 10px', border: '1px solid #fff', borderRadius: '100px', letterSpacing: '2px', fontWeight: 'bold' }}>LOGIC</span>
+          {session && (
+            <span style={{
+              fontSize: '0.6rem',
+              color: '#00ffcc',
+              letterSpacing: '1px'
+            }}>
+              ● {session.user.email}
+            </span>
+          )}
+          {session && (
+            <button
+              onClick={() => supabase.auth.signOut().then(() => setSession(null))}
+              className="neon-btn nav-btn"
+              style={{ padding: '4px 10px', fontSize: '0.6rem', color: '#ff4444' }}
+            >
+              SALIR
+            </button>
+          )}
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
           <select value={calidadExportacion} onChange={(e) => setCalidadExportacion(e.target.value)} style={{ backgroundColor: '#000', color: '#fff', border: '1px solid #404040', borderRadius: '8px', padding: '6px 10px', fontSize: '0.7rem', outline: 'none' }}>
