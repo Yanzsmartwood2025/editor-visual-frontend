@@ -183,8 +183,9 @@ export default function NaylaCore() {
          const fps = 30;
          const seconds = frame / fps;
          // Our scale is 20px per second.
-         const scrollPos = seconds * 20;
-         timelineRef.current.scrollLeft = scrollPos;
+         const containerWidth = timelineRef.current.clientWidth;
+         const scrollPos = (seconds * 20) - (containerWidth / 2);
+         timelineRef.current.scrollLeft = Math.max(0, scrollPos);
       }
       animationFrameId = requestAnimationFrame(syncScroll);
     };
