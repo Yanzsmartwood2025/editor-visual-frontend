@@ -468,14 +468,12 @@ export default function NaylaCore() {
     const nuevo: TimelineItem = { id: Date.now().toString(), mediaId: item.id, tipo: item.tipo, nombre: item.nombre, etiqueta: item.etiqueta, url: item.url, durationInSeconds };
     const nuevaLinea = [...lineaDeTiempo, nuevo];
     setLineaDeTiempo(nuevaLinea);
-    // Removemos el cambio automático de media activa al agregar a la timeline
-    // Para que el reproductor siga mostrando lo que estaba reproduciendo, a menos que sea el primero
-    if (!mediaActivaUrl && (item.tipo === 'video' || item.tipo === 'foto')) {
-        setMediaActivaUrl(item.url);
-        setClipSeleccionado(nuevo.id);
-        setVideoResultadoUrl(null);
-        setRects([]);
-    }
+
+    setClipSeleccionado(nuevo.id);
+    setMediaActivaUrl(nuevo.url);
+    setVideoResultadoUrl(null);
+    setRects([]);
+
     sincronizarLineaDeTiempo(nuevaLinea);
   };
 
