@@ -60,7 +60,6 @@ export const MainComposition: React.FC<MainCompositionProps> = ({ timeline, subt
                 src={clip.url}
                 volume={clip.volume !== undefined ? clip.volume : 1}
                 style={{ width: '100%', height: '100%', objectFit: 'contain' }}
-                crossOrigin="anonymous"
               />
             ) : (
               <Img
