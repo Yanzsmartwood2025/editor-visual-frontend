@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { AbsoluteFill, Sequence, OffthreadVideo, Img, Audio, useVideoConfig, useCurrentFrame, interpolate } from 'remotion';
+import { AbsoluteFill, Sequence, Video, Img, Audio, useVideoConfig, useCurrentFrame, interpolate } from 'remotion';
 
 // Interfaces based on main file
 type TimelineItem = { id: string; mediaId: string; tipo: 'foto' | 'video' | 'audio'; nombre: string; etiqueta: string; url: string; durationInSeconds?: number; volume?: number; fadeIn?: number; fadeOut?: number };
@@ -56,7 +56,7 @@ export const MainComposition: React.FC<MainCompositionProps> = ({ timeline, subt
         >
           <ClipWithFades clip={clip} durationInFrames={clip.durationInFrames}>
             {clip.tipo === 'video' ? (
-              <OffthreadVideo
+              <Video
                 src={clip.url}
                 volume={clip.volume !== undefined ? clip.volume : 1}
                 style={{ width: '100%', height: '100%', objectFit: 'contain' }}
