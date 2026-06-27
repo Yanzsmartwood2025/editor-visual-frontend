@@ -135,6 +135,63 @@ app.post('/api/process-clip', async (req, res) => {
     }
 });
 
+
+app.post('/api/extract-meta', async (req, res) => {
+    const authHeader = req.headers.authorization;
+    if (authHeader !== `Bearer ${process.env.ORACLE_SECRET}`) {
+        return res.status(401).json({ error: 'Unauthorized: Invalid ORACLE_SECRET' });
+    }
+
+    const { url } = req.body;
+    if (!url || typeof url !== 'string') {
+        return res.status(400).json({ error: 'URL no proporcionada' });
+    }
+
+    console.log(`[extract-meta] Recibida solicitud para extraer: ${url}`);
+
+    try {
+        const response = await fetch(url, {
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+            }
+        });
+
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+
+        const html = await response.text();
+        console.log(`[extract-meta] HTML descargado, longitud: ${html.length}`);
+
+        // Intentar primero con la regex de fbcdn con mp4
+        const searchRegex = /(https:(?:\\\/|\/)(?:\\\/|\/)[^"'\s]+\.fbcdn\.net[^"'\s]+\.mp4[^"'\s]*)/gi;
+        let match = searchRegex.exec(html);
+
+        if (match && match[1]) {
+            let finalUrl = match[1].replace(/\\u0026/g, '&').replace(/\\/g, '');
+            console.log(`[extract-meta] Encontrado via fbcdn regex: ${finalUrl}`);
+            return res.status(200).json({ videoUrl: finalUrl });
+        }
+
+        // Fallback regex: cualquier https que termine en mp4
+        const broadRegex = /(https:(?:\\\/|\/)(?:\\\/|\/)[^"'\s<>]+\.mp4[^"'\s<>]*)/gi;
+        let matchBroad = broadRegex.exec(html);
+
+        if (matchBroad && matchBroad[1]) {
+            let finalUrl = matchBroad[1].replace(/\\u0026/g, '&').replace(/\\/g, '');
+            console.log(`[extract-meta] Encontrado via broad regex: ${finalUrl}`);
+            return res.status(200).json({ videoUrl: finalUrl });
+        }
+
+        console.log(`[extract-meta] No se encontro video mp4 en el HTML de ${url}`);
+        return res.status(404).json({ error: 'Video no encontrado en el HTML devuelto a Oracle' });
+
+    } catch (e) {
+        console.error(`[extract-meta] Error interno: `, e);
+        return res.status(500).json({ error: 'Error interno en Oracle procesando la extraccion' });
+    }
+});
+
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {
     console.log(`Oracle Servidor iniciado en el puerto ${PORT}`);
