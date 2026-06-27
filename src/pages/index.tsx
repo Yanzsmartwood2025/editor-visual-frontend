@@ -9,7 +9,6 @@ import { arrayMove, SortableContext, horizontalListSortingStrategy } from '@dnd-
 import { SortableTimelineItem } from '../components/SortableTimelineItem';
 import { getVideoMetadata } from '@remotion/media-utils';
 import { createClient } from '@supabase/supabase-js';
-import { saveAs } from 'file-saver';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://dummy.supabase.co';
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'dummy_key';
@@ -146,19 +145,23 @@ export default function NaylaCore() {
   const [showEnlaceInput, setShowEnlaceInput] = useState(false);
   const [enlaceInput, setEnlaceInput] = useState('');
   const [extrayendoVideo, setExtrayendoVideo] = useState(false);
-  const [bodegaSeleccion, setBodegaSeleccion] = useState<string[]>([]);
   const [queueProgress, setQueueProgress] = useState(0);
-
-  const toggleSeleccionBodega = (id: string) => {
-    setBodegaSeleccion(prev => prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]);
-  };
 
   const descargarIndividual = async (url: string, nombre: string, tipo: string) => {
     try {
       const res = await fetch(url);
       const blob = await res.blob();
       const ext = tipo === 'foto' ? 'jpg' : tipo === 'audio' ? 'mp3' : 'mp4';
-      saveAs(blob, nombre || `Nayla_Clip.${ext}`);
+
+      const blobUrl = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = blobUrl;
+      a.download = nombre || `Nayla_Clip.${ext}`;
+      a.style.display = 'none';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(blobUrl);
     } catch (e) {
       console.error(e);
       const a = document.createElement('a');
@@ -350,6 +353,14 @@ export default function NaylaCore() {
 
   const handleSubirMultimedia = async (e: React.ChangeEvent<HTMLInputElement>, tipo: 'foto' | 'video' | 'audio') => {
     if (!e.target.files || e.target.files.length === 0) return;
+
+    // Esperar sesión si no está lista
+    let currentSession = session;
+    if (!currentSession) {
+      const { data } = await supabase.auth.getSession();
+      currentSession = data.session;
+    }
+
     const files = Array.from(e.target.files);
     setSubiendoArchivo(true);
 
@@ -364,10 +375,10 @@ export default function NaylaCore() {
 
         let finalUrl = URL.createObjectURL(file); // Fallback local
 
-        if (session) {
+        if (currentSession) {
           // Subir a Supabase Storage
           const fileExt = file.name.split('.').pop();
-          const fileName = `${session.user.id}/${id}.${fileExt}`;
+          const fileName = `${currentSession.user.id}/${id}.${fileExt}`;
 
           const { error: uploadError } = await supabase.storage
             .from('media_bodega')
@@ -1074,13 +1085,7 @@ export default function NaylaCore() {
                     ENLACE
                   </button>
                   {galeriaMultimedia.map(item => (
-                    <div key={item.id} className="neon-btn" style={{ minWidth: '140px', width: '140px', height: '140px', padding: '10px', borderRadius: '12px', borderStyle: bodegaSeleccion.includes(item.id) ? 'solid' : 'solid', borderColor: bodegaSeleccion.includes(item.id) ? '#00ffcc' : 'transparent', flexDirection: 'column', position: 'relative', justifyContent: 'space-between' }}>
-                      <input
-                         type="checkbox"
-                         checked={bodegaSeleccion.includes(item.id)}
-                         onChange={() => toggleSeleccionBodega(item.id)}
-                         style={{ position: 'absolute', top: '8px', left: '8px', zIndex: 10, cursor: 'pointer', width: '16px', height: '16px', accentColor: '#00ffcc' }}
-                      />
+                    <div key={item.id} className="neon-btn" style={{ minWidth: '140px', width: '140px', height: '140px', padding: '10px', borderRadius: '12px', borderStyle: 'solid', borderColor: 'transparent', flexDirection: 'column', position: 'relative', justifyContent: 'space-between' }}>
                       <div style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                         <span style={{ fontSize: '0.65rem', backgroundColor: '#262626', padding: '2px 6px', borderRadius: '4px', color: '#fff', fontWeight: 'bold' }}>{item.etiqueta}</span>
                         <div style={{ display: 'flex', gap: '4px' }}>
