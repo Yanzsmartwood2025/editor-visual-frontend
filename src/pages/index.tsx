@@ -595,42 +595,50 @@ export default function NaylaCore() {
 
       const finalMediaUrl = dataApi.videoUrl;
 
-      // Obtener un snapshot actualizado del contador basado en un timestamp y la galeria
-      // Usamos una función updater para evitar problemas de race conditions con múltiples setState
+      // 1. Calcular de forma síncrona usando el estado actual (fuera del updater)
+      const countVideo = galeriaMultimedia.filter(item => item.tipo === 'video').length + 1;
+      const id = Date.now().toString() + index;
+
+      const nuevoItem: MediaItem = {
+        id,
+        url: finalMediaUrl,
+        tipo: 'video',
+        nombre: `Meta_Video_${countVideo}.mp4`,
+        creado_en: new Date().toLocaleTimeString(),
+        esOverlay: false,
+        etiqueta: `V${countVideo}`
+      };
+
+      // 2. Comprobar si es el primer video usando el estado actual
+      const esPrimerVideo = galeriaMultimedia.length === 0 || !galeriaMultimedia.find(i => i.tipo === 'video');
+
+      // 3. Hacer el setState updater solo para la galeria
       setGaleriaMultimedia(prev => {
-        const countVideo = prev.filter(item => item.tipo === 'video').length + 1;
-        const id = Date.now().toString() + index;
-        const nuevoItem: MediaItem = {
-          id,
-          url: finalMediaUrl,
-          tipo: 'video',
-          nombre: `Meta_Video_${countVideo}.mp4`,
-          creado_en: new Date().toLocaleTimeString(),
-          esOverlay: false,
-          etiqueta: `V${countVideo}`
-        };
+        // En caso de concurrencia aseguramos nombres/etiquetas únicas basadas en "prev" también
+        const actualCount = prev.filter(item => item.tipo === 'video').length + 1;
+        const itemActualizado = { ...nuevoItem, nombre: `Meta_Video_${actualCount}.mp4`, etiqueta: `V${actualCount}` };
 
         if (session) {
           supabase
             .from('galeria_multimedia')
-            .insert([{ ...nuevoItem, user_id: session.user.id }])
+            .insert([{ ...itemActualizado, user_id: session.user.id }])
             .then(({ error }) => {
               if (error) console.error('Error insertando en Supabase:', error);
             });
         }
-
-        // Si es el primer video de todos
-        if (prev.length === 0 || !prev.find(i => i.tipo === 'video')) {
-          setMediaActivaUrl(nuevoItem.url);
-          setClipSeleccionado(nuevoItem.id);
-          setVideoResultadoUrl(null);
-        }
-
-        return [...prev, nuevoItem];
+        return [...prev, itemActualizado];
       });
 
-    } catch (err) {
+      // 4. Si era el primer video, disparamos los otros setState de manera independiente y segura
+      if (esPrimerVideo) {
+        setMediaActivaUrl(nuevoItem.url);
+        setClipSeleccionado(nuevoItem.id);
+        setVideoResultadoUrl(null);
+      }
+
+    } catch (err: any) {
       console.error(err);
+      alert(`Error extrayendo video: ${err.message}`);
     }
   };
 
@@ -753,7 +761,7 @@ export default function NaylaCore() {
 
     setExtrayendoVideo(false);
     setEnlaceInput('');
-    setShowEnlaceInput(false);
+    // Removemos setShowEnlaceInput(false) para no colapsar la vista al terminar y que el usuario vea los nuevos clips
     setTimeout(() => setQueueProgress(0), 1000); // Limpiar progreso despues de 1s
   };
 
@@ -1363,7 +1371,7 @@ export default function NaylaCore() {
                             style={{ width: '100%', backgroundColor: '#050505', border: '1px solid #333', color: '#fff', padding: '8px', borderRadius: '5px', fontSize: '0.8rem', marginBottom: '10px' }}
                           >
                             <option value="">-- Seleccionar Foto Base --</option>
-                            {galeriaMultimedia.filter(m => m.tipo === 'imagen').map(m => (
+                            {galeriaMultimedia.filter(m => m.tipo === 'foto').map(m => (
                               <option key={m.id} value={m.url}>{m.nombre || m.etiqueta}</option>
                             ))}
                           </select>
@@ -1389,7 +1397,7 @@ export default function NaylaCore() {
 
                                 alert(`Foto generada (Simulada). URL: ${data.url}`);
                                 // Mock agregarlo a la galería
-                                setGaleriaMultimedia(prev => [...prev, { id: `ia-foto-${Date.now()}`, nombre: 'Foto Generada IA', tipo: 'imagen', url: data.url, etiqueta: 'I_IA' }]);
+                                setGaleriaMultimedia(prev => [...prev, { id: `ia-foto-${Date.now()}`, nombre: 'Foto Generada IA', tipo: 'foto', url: data.url, etiqueta: 'I_IA' }]);
                               } catch (err: any) {
                                 alert("Error IA Fotos: " + err.message);
                               }
