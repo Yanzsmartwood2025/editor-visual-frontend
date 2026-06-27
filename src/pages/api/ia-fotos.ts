@@ -6,10 +6,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  const { fotoBaseUrl, prompt, email } = req.body;
+  // La UI pasa fotoBaseUrl, prompt, email
+  const { fotoBaseUrl: _unused, prompt, email } = req.body;
 
-  if (!fotoBaseUrl || !prompt || !email) {
-    return res.status(400).json({ error: 'Foto base, prompt y email son requeridos.' });
+  if (!prompt || !email) {
+    return res.status(400).json({ error: 'El prompt y el email son requeridos.' });
   }
 
   if (email !== 'ajn.liq.128@proton.me') {
@@ -26,33 +27,38 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   const supabase = createClient(supabaseUrl, supabaseKey);
 
   try {
-    // 1. Extraer la API key de Gemini de Supabase
     const { data: keyData, error: keyError } = await supabase
       .from('api_keys_pool')
       .select('api_key')
-      .eq('service_provider', 'gemini')
-      .eq('resource_type', 'ia')
+      .eq('service_provider', 'pixabay')
       .limit(1)
       .single();
 
     if (keyError || !keyData?.api_key) {
-      console.warn("No se encontró Gemini API Key en Supabase, usando variable de entorno si existe o fallando.");
-      const envKey = process.env.GEMINI_API_KEY;
-      if(!envKey) {
-          return res.status(500).json({ error: 'No se encontró la llave de API para el servicio de Fotos IA.' });
-      }
+        return res.status(500).json({ error: 'No se encontró la llave de API para Pixabay.' });
     }
 
-    const effectiveKey = keyData?.api_key || process.env.GEMINI_API_KEY;
+    const pixabayKey = keyData.api_key;
 
-    // TODO: Implementar llamada real a servicio de generación de imágenes usando la API Key y la imagen base.
-    // Por ahora retornamos un placeholder simulando la nueva imagen.
-    console.log(`[ia-fotos] Procesando imagen base con prompt "${prompt}" usando API Key terminando en ${effectiveKey?.substring(effectiveKey.length - 4)}`);
+    console.log(`[ia-fotos] Buscando en Pixabay con prompt "${prompt}"`);
 
-    // Placeholder URL para la foto generada
-    const mockFotoUrl = 'https://picsum.photos/800/600';
+    const pixabayUrl = `https://pixabay.com/api/?key=${pixabayKey}&q=${encodeURIComponent(prompt)}&image_type=photo&per_page=3`;
+    const pixabayRes = await fetch(pixabayUrl);
 
-    res.status(200).json({ url: mockFotoUrl, message: 'Foto generada exitosamente (Placeholder)' });
+    if (!pixabayRes.ok) {
+        throw new Error(`Error en Pixabay API: ${pixabayRes.status}`);
+    }
+
+    const data = await pixabayRes.json();
+    const hits = data.hits || [];
+
+    if (hits.length === 0) {
+        return res.status(404).json({ error: 'No se encontraron resultados en Pixabay para ese prompt.' });
+    }
+
+    const bestImageUrl = hits[0].largeImageURL || hits[0].webformatURL;
+
+    res.status(200).json({ url: bestImageUrl, message: 'Foto obtenida de Pixabay exitosamente' });
 
   } catch (error: any) {
     console.error("Error en ia-fotos:", error);
