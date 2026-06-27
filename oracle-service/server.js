@@ -5,6 +5,7 @@ const { v4: uuidv4 } = require('uuid');
 const fs = require('fs');
 const path = require('path');
 const cors = require('cors');
+const ws = require('ws');
 
 const app = express();
 app.use(express.json());
@@ -13,10 +14,11 @@ app.use(cors());
 // Configuración de Supabase
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
 const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
-const supabase = createClient(supabaseUrl, supabaseKey);
+const supabase = createClient(supabaseUrl, supabaseKey, {
+  realtime: { transport: ws }
+});
 
 app.post('/api/process-clip', async (req, res) => {
-    // 1. Validar Token de seguridad
     const authHeader = req.headers.authorization;
     if (authHeader !== `Bearer ${process.env.ORACLE_SECRET}`) {
         return res.status(401).json({ error: 'Unauthorized: Invalid ORACLE_SECRET' });
@@ -28,17 +30,14 @@ app.post('/api/process-clip', async (req, res) => {
         return res.status(400).json({ error: 'Missing required parameters: videoUrl, startTime, endTime' });
     }
 
-    // Basic URL validation to prevent some obvious issues, but we primarily rely on `spawn` without shell=true to prevent command injection
     try {
         new URL(videoUrl);
     } catch(e) {
         return res.status(400).json({ error: 'Invalid videoUrl' });
     }
 
-    // 2. Responder 202 (Accepted) inmediatamente
     res.status(202).json({ message: 'Procesamiento de clip iniciado en segundo plano' });
 
-    // 3. Procesar en segundo plano
     const jobId = uuidv4();
     const outputFilename = `clip_${jobId}.mp4`;
     const outputPath = path.join('/tmp', outputFilename);
@@ -61,31 +60,29 @@ app.post('/api/process-clip', async (req, res) => {
         let stderrOutput = '';
 
         ytProcess.stderr.on('data', (data) => {
-            // yt-dlp writes progress to stderr mostly
             stderrOutput += data.toString();
         });
 
         ytProcess.on('close', async (code) => {
             if (code !== 0) {
-                 console.error(`[Job ${jobId}] Error ejecutando yt-dlp. Exit code: ${code}. Output:`, stderrOutput);
-                 return;
+                console.error(`[Job ${jobId}] Error ejecutando yt-dlp. Exit code: ${code}. Output:`, stderrOutput);
+                return;
             }
 
             console.log(`[Job ${jobId}] Video recortado exitosamente: ${outputPath}`);
 
             try {
                 if (!fs.existsSync(outputPath)) {
-                     console.error(`[Job ${jobId}] El archivo de salida no existe: ${outputPath}`);
-                     return;
+                    console.error(`[Job ${jobId}] El archivo de salida no existe: ${outputPath}`);
+                    return;
                 }
 
-                // Subir a Supabase Storage
                 const fileBuffer = fs.readFileSync(outputPath);
                 const storagePath = `recortes/${outputFilename}`;
 
                 console.log(`[Job ${jobId}] Subiendo a Supabase Storage...`);
                 const { data: uploadData, error: uploadError } = await supabase.storage
-                    .from('media_assets') // Usaremos 'media_assets' u otro si se especifica
+                    .from('media_assets')
                     .upload(storagePath, fileBuffer, {
                         contentType: 'video/mp4',
                         cacheControl: '3600',
@@ -101,7 +98,6 @@ app.post('/api/process-clip', async (req, res) => {
                 const finalUrl = publicUrlData.publicUrl;
                 console.log(`[Job ${jobId}] Archivo subido con éxito: ${finalUrl}`);
 
-                // Registrar en la tabla public.memoria_nayla
                 const metadata = {
                     originalUrl: videoUrl,
                     startTime,
@@ -128,7 +124,6 @@ app.post('/api/process-clip', async (req, res) => {
             } catch (e) {
                 console.error(`[Job ${jobId}] Error durante subida/registro:`, e);
             } finally {
-                // Limpieza
                 if (fs.existsSync(outputPath)) {
                     fs.unlinkSync(outputPath);
                 }
