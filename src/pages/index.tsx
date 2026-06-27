@@ -9,7 +9,6 @@ import { arrayMove, SortableContext, horizontalListSortingStrategy } from '@dnd-
 import { SortableTimelineItem } from '../components/SortableTimelineItem';
 import { getVideoMetadata } from '@remotion/media-utils';
 import { createClient } from '@supabase/supabase-js';
-import JSZip from 'jszip';
 import { saveAs } from 'file-saver';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://dummy.supabase.co';
@@ -152,33 +151,6 @@ export default function NaylaCore() {
 
   const toggleSeleccionBodega = (id: string) => {
     setBodegaSeleccion(prev => prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]);
-  };
-
-  const [descargandoLote, setDescargandoLote] = useState(false);
-
-  const descargarSeleccionBodega = async () => {
-    if (bodegaSeleccion.length === 0) return alert('Selecciona al menos un clip para descargar.');
-    setDescargandoLote(true);
-    try {
-      const zip = new JSZip();
-      for (const id of bodegaSeleccion) {
-        const item = galeriaMultimedia.find(i => i.id === id);
-        if (item) {
-          const res = await fetch(item.url);
-          const blob = await res.blob();
-          const ext = item.tipo === 'foto' ? 'jpg' : item.tipo === 'audio' ? 'mp3' : 'mp4';
-          zip.file(item.nombre || `Nayla_Clip_${id}.${ext}`, blob);
-        }
-      }
-      const content = await zip.generateAsync({ type: 'blob' });
-      saveAs(content, `Nayla_Descargas_${Date.now()}.zip`);
-      setBodegaSeleccion([]);
-    } catch (e) {
-      console.error(e);
-      alert('Hubo un error empaquetando la descarga.');
-    } finally {
-      setDescargandoLote(false);
-    }
   };
 
   const descargarIndividual = async (url: string, nombre: string, tipo: string) => {
@@ -931,7 +903,7 @@ export default function NaylaCore() {
                       ? [{
                           id: 'preview',
                           mediaId: 'preview',
-                          tipo: mediaActivaUrl?.includes('.mp4') || videoResultadoUrl ? 'video' : 'foto',
+                          tipo: galeriaMultimedia.find(item => item.id === clipSeleccionado)?.tipo || (mediaActivaUrl?.includes('.mp4') || videoResultadoUrl ? 'video' : 'foto'),
                           nombre: 'Preview',
                           etiqueta: 'PREVIEW',
                           url: videoResultadoUrl || mediaActivaUrl,
@@ -942,7 +914,7 @@ export default function NaylaCore() {
                         : (videoResultadoUrl || mediaActivaUrl) ? [{
                             id: 'preview',
                             mediaId: 'preview',
-                            tipo: mediaActivaUrl?.includes('.mp4') || videoResultadoUrl ? 'video' : 'foto',
+                            tipo: galeriaMultimedia.find(item => item.id === clipSeleccionado)?.tipo || (mediaActivaUrl?.includes('.mp4') || videoResultadoUrl ? 'video' : 'foto'),
                             nombre: 'Preview',
                             etiqueta: 'PREVIEW',
                             url: videoResultadoUrl || mediaActivaUrl,
@@ -1060,11 +1032,6 @@ export default function NaylaCore() {
               <div style={{ maxHeight: '35vh' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
                   <p style={{ fontSize: '0.75rem', color: '#fff', fontWeight: 'bold', letterSpacing: '1px' }}>TUS ARCHIVOS</p>
-                  {bodegaSeleccion.length > 0 && (
-                    <button onClick={descargarSeleccionBodega} disabled={descargandoLote} className="neon-btn nav-btn" style={{ padding: '6px 14px', fontSize: '0.65rem' }}>
-                      {descargandoLote ? 'EMPAQUETANDO...' : `↓ DESCARGAR SELECCIÓN (${bodegaSeleccion.length})`}
-                    </button>
-                  )}
                 </div>
                 {showEnlaceInput && (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '1rem' }}>
