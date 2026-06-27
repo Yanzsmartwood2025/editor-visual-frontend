@@ -323,11 +323,9 @@ export default function NaylaCore() {
     try {
       const { data, error } = await supabase.auth.verifyOtp({ email: emailInput, token: otpInput, type: 'email' });
       if (error) throw error;
+      if (data?.session) setSession(data.session);
       setShowIntro(true);
-      setTimeout(() => {
-        setShowIntro(false);
-        if (data?.session) setSession(data.session);
-      }, 3000);
+      setTimeout(() => setShowIntro(false), 3000);
     } catch (err) { setMessage('Código incorrecto.'); }
     finally { setAuthLoading(false); }
   };
