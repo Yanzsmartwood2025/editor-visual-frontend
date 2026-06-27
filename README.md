@@ -86,3 +86,18 @@ Found an issue with Remotion? [File an issue here](https://remotion.dev/issue).
 ## License
 
 Note that for some entities a company license is needed. [Read the terms here](https://github.com/remotion-dev/remotion/blob/main/LICENSE.md).
+
+### Configuración para la Búsqueda Autónoma en YouTube
+
+Para que el agente de IA pueda buscar videos automáticamente en YouTube usando lenguaje natural, necesitas configurar una clave de API de YouTube en Vercel. Sigue estos pasos:
+
+1. Ve a [Google Cloud Console](https://console.cloud.google.com/).
+2. Crea un nuevo proyecto o selecciona uno existente.
+3. En el menú de navegación, ve a **APIs & Services > Library**.
+4. Busca **YouTube Data API v3** y actívala para tu proyecto.
+5. Ve a **APIs & Services > Credentials**.
+6. Haz clic en **Create Credentials > API key**.
+7. Copia la API key generada.
+8. Ve a la configuración de tu proyecto en Vercel.
+9. En la sección **Settings > Environment Variables**, añade una nueva variable llamada `YOUTUBE_API_KEY` y pega la clave que acabas de copiar.
+10. Guarda y haz un redeploy (re-despliegue) de la aplicación para que la variable tenga efecto.

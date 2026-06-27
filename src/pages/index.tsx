@@ -136,6 +136,8 @@ export default function NaylaCore() {
     return () => window.removeEventListener('pointerup', handleUp);
   }, []);
   const containerRef = useRef<HTMLDivElement>(null);
+  const lastPollTimeRef = useRef<string>(new Date().toISOString());
+
   const playerRef = useRef<PlayerRef>(null);
   const timelineRef = useRef<HTMLDivElement>(null);
   const [rects, setRects] = useState<Rect[]>([]);
@@ -248,6 +250,54 @@ export default function NaylaCore() {
       subscription.unsubscribe();
     };
   }, []);
+
+
+  // Polling useEffect separado que depende de session
+  useEffect(() => {
+    const pollInterval = setInterval(async () => {
+      if (!session) return;
+
+      try {
+        const { data, error } = await supabase
+          .from('memoria_nayla')
+          .select('*')
+          .gt('created_at', lastPollTimeRef.current)
+          .order('created_at', { ascending: true });
+
+        if (error) {
+            console.error('Error polling memoria_nayla:', error);
+            return;
+        }
+
+        if (data && data.length > 0) {
+            const latestRecord = data[data.length - 1];
+            if (latestRecord.created_at) {
+                lastPollTimeRef.current = latestRecord.created_at;
+            }
+
+            const nuevosItems = data.map((item: any) => ({
+                id: `clip-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+                tipo: 'video', // Asumimos que son videos recortados
+                url: item.url,
+                nombre: item.metadata?.clipName || 'Clip Recortado',
+                creado_en: item.created_at || new Date().toISOString(),
+                esOverlay: false,
+                etiqueta: 'Clip'
+            }));
+
+            setGaleriaMultimedia(prev => [...prev, ...nuevosItems]);
+
+            const { error: insertError } = await supabase.from('galeria_multimedia')
+                .insert(nuevosItems.map(item => ({ ...item, user_id: session.user.id })));
+            if (insertError) console.error('Error insertando en galeria_multimedia:', insertError);
+        }
+      } catch (err) { console.error('Excepción en polling:', err); }
+    }, 5000);
+
+    return () => {
+      clearInterval(pollInterval);
+    };
+  }, [session]);
 
   const cargarDatosUsuario = async (userId: string) => {
     try {
@@ -1265,12 +1315,17 @@ export default function NaylaCore() {
                           const data = await res.json();
                           if(data.error) throw new Error(data.error);
 
-                          console.log("Código IA:", data.code);
-                          // Ejecutar código usando el mismo contexto de NaylaEngine
-                          const NaylaEngine = getEngineContext();
-                          const execute = new Function('NaylaEngine', data.code);
-                          execute(NaylaEngine);
-                          alert('Ejecución IA finalizada');
+                          if (data.code) {
+                            console.log("Código IA:", data.code);
+                            // Ejecutar código usando el mismo contexto de NaylaEngine
+                            const NaylaEngine = getEngineContext();
+                            const execute = new Function('NaylaEngine', data.code);
+                            execute(NaylaEngine);
+                            alert('Ejecución IA finalizada');
+                          } else if (data.action === 'search') {
+                             console.log("Búsqueda IA:", data.message);
+                             alert('✅ ' + data.message);
+                          }
                        } catch(err: any) {
                           alert("Error en IA: " + err.message);
                        } finally {
