@@ -914,7 +914,7 @@ export default function NaylaCore() {
         <section style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '10px', backgroundColor: '#050505' }}>
           <div ref={containerRef} onPointerDown={handlePointerDown} onPointerMove={handlePointerMove} onPointerUp={handlePointerUp} onPointerLeave={handlePointerUp}
             style={{ aspectRatio: canvasRatio, height: '42vh', maxHeight: '42vh', minHeight: '42vh', backgroundColor: '#0a0a0a', borderRadius: '16px', overflow: 'hidden', position: 'relative', border: '1px solid #1a1a1a', touchAction: 'none' }}>
-            {(lineaDeTiempo.length > 0 || videoResultadoUrl || mediaActivaUrl) ? (
+            {(lineaDeTiempo.filter(t => t.tipo === 'video' || t.tipo === 'foto').length > 0 || videoResultadoUrl || mediaActivaUrl) ? (
               <>
 
                 <Player
@@ -945,7 +945,7 @@ export default function NaylaCore() {
                           } as TimelineItem] : [],
                     canvasRatio
                   }}
-                  durationInFrames={Math.max(30, Math.round(
+                  durationInFrames={Math.max(300, Math.round(
                     ((clipSeleccionado && !lineaDeTiempo.find(t => t.id === clipSeleccionado))
                       ? [{ durationInSeconds: 30 } as TimelineItem]
                       : lineaDeTiempo.length > 0
