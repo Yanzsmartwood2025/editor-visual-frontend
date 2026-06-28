@@ -1077,8 +1077,17 @@ export default function NaylaCore() {
                       <div style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                         <span style={{ fontSize: '0.65rem', backgroundColor: '#262626', padding: '2px 6px', borderRadius: '4px', color: '#fff', fontWeight: 'bold' }}>{item.etiqueta}</span>
                         <div style={{ display: 'flex', gap: '4px' }}>
-                          <button onClick={() => descargarIndividual(item.url, item.nombre, item.tipo)} title="Descargar" style={{ background: 'none', border: 'none', color: '#00ffcc', cursor: 'pointer', fontSize: '0.8rem', padding: '0' }}>↓</button>
-                          <button onClick={() => eliminarDeGaleria(item.id)} title="Eliminar" style={{ background: 'none', border: 'none', color: '#ff4444', cursor: 'pointer', fontSize: '0.8rem', padding: '0', lineHeight: '1' }}>✕</button>
+                          <button onClick={() => descargarIndividual(item.url, item.nombre, item.tipo)} title="Descargar" style={{ background: 'rgba(255,255,255,0.1)', border: '1px solid #fff', borderRadius: '50%', width: '24px', height: '24px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', padding: 0 }}>
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5">
+                              <path d="M12 5v14M5 12l7 7 7-7"/>
+                            </svg>
+                          </button>
+                          <button onClick={() => eliminarDeGaleria(item.id)} title="Eliminar" style={{ background: 'rgba(255,255,255,0.1)', border: '1px solid #fff', borderRadius: '50%', width: '24px', height: '24px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', padding: 0 }}>
+                            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5">
+                              <line x1="18" y1="6" x2="6" y2="18"/>
+                              <line x1="6" y1="6" x2="18" y2="18"/>
+                            </svg>
+                          </button>
                         </div>
                       </div>
 
@@ -1093,13 +1102,19 @@ export default function NaylaCore() {
                           }
                         }}
                         style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', width: '100%', overflow: 'hidden', cursor: 'pointer' }}>
-                        {item.tipo === 'video' && <div style={{ fontSize: '2rem', color: '#a3a3a3' }}>▶️</div>}
-                        {item.tipo === 'audio' && <div style={{ fontSize: '2rem', color: '#a3a3a3' }}>🎵</div>}
+                        {item.tipo === 'video' && <svg width="32" height="32" viewBox="0 0 24 24" fill="white">
+                          <polygon points="5,3 19,12 5,21"/>
+                        </svg>}
+                        {item.tipo === 'audio' && <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
+                          <path d="M9 18V5l12-2v13"/>
+                          <circle cx="6" cy="18" r="3"/>
+                          <circle cx="18" cy="16" r="3"/>
+                        </svg>}
                         {item.tipo === 'foto' && <img src={item.url} style={{ width: '100%', height: '40px', objectFit: 'contain', borderRadius: '4px' }} alt={item.nombre} />}
                         <input type="text" value={item.nombre} onChange={(e) => renombrarItem(item.id, e.target.value)} style={{ background: 'transparent', border: 'none', color: '#fff', outline: 'none', width: '100%', textAlign: 'center', fontSize: '0.65rem', marginTop: '8px', textOverflow: 'ellipsis', whiteSpace: 'nowrap', overflow: 'hidden' }} title={item.nombre} />
                       </div>
 
-                      <button className="neon-btn nav-btn active" onClick={() => agregarAlTimeline(item)} style={{ padding: '6px', fontSize: '0.6rem', width: '100%', marginTop: 'auto' }}>+ PISTA</button>
+                      <button onClick={() => agregarAlTimeline(item)} style={{ padding: '6px', fontSize: '0.6rem', width: '100%', marginTop: 'auto', backgroundColor: '#fff', color: '#000', border: 'none', borderRadius: '100px', fontWeight: 'bold', cursor: 'pointer' }}>+ PISTA</button>
                     </div>
                   ))}
                 </div>
