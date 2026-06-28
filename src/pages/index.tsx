@@ -2,8 +2,6 @@
 /* eslint-disable */
 import React, { useState, useEffect, useRef } from 'react';
 import Head from 'next/head';
-import { Player, PlayerRef } from '@remotion/player';
-import { MainComposition } from '../components/MainComposition';
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
 import { arrayMove, SortableContext, horizontalListSortingStrategy } from '@dnd-kit/sortable';
 import { SortableTimelineItem } from '../components/SortableTimelineItem';
@@ -116,7 +114,7 @@ export default function NaylaCore() {
     return () => window.removeEventListener('pointerup', handleUp);
   }, []);
   const containerRef = useRef<HTMLDivElement>(null);
-  const playerRef = useRef<PlayerRef>(null);
+  const playerRef = useRef<HTMLVideoElement>(null);
   const timelineRef = useRef<HTMLDivElement>(null);
   const [rects, setRects] = useState<Rect[]>([]);
   const [isDrawing, setIsDrawing] = useState(false);
@@ -164,7 +162,7 @@ export default function NaylaCore() {
     let animationFrameId: number;
     const syncScroll = () => {
       if (playerRef.current && timelineRef.current && !isUserScrolling) {
-         const frame = playerRef.current.getCurrentFrame();
+         const frame = Math.round(playerRef.current.currentTime * 30);
          const fps = 30;
          const seconds = frame / fps;
          // Our scale is 20px per second.
@@ -513,8 +511,8 @@ export default function NaylaCore() {
 
   const togglePlay = () => {
     if (playerRef.current) {
-      if (playerRef.current.isPlaying()) { playerRef.current.pause(); setIsPlaying(false); }
-      else { playerRef.current.play(); setIsPlaying(true); }
+      if (!playerRef.current.paused) { playerRef.current.pause(); setIsPlaying(false); }
+      else { const playPromise = playerRef.current.play(); if (playPromise !== undefined) { playPromise.catch(error => console.log('Autoplay prevented:', error)); } setIsPlaying(true); }
     }
   };
 
@@ -532,7 +530,7 @@ export default function NaylaCore() {
         // But for "reproducción de corrido" we should autoplay:
         setTimeout(() => {
           if (playerRef.current) {
-            playerRef.current.play();
+            const playPromise = playerRef.current.play(); if (playPromise !== undefined) { playPromise.catch(error => console.log('Autoplay prevented:', error)); }
             setIsPlaying(true);
           }
         }, 100);
@@ -917,49 +915,14 @@ export default function NaylaCore() {
             {(lineaDeTiempo.filter(t => t.tipo === 'video' || t.tipo === 'foto').length > 0 || videoResultadoUrl || mediaActivaUrl) ? (
               <>
 
-                <Player
-                  ref={playerRef}
-                  component={MainComposition}
-                  inputProps={{
-                    subtitles: subtitulos,
-                    timeline: (clipSeleccionado && !lineaDeTiempo.find(t => t.id === clipSeleccionado))
-                      ? [{
-                          id: 'preview',
-                          mediaId: 'preview',
-                          tipo: galeriaMultimedia.find(item => item.id === clipSeleccionado)?.tipo || (mediaActivaUrl?.includes('.mp4') || videoResultadoUrl ? 'video' : 'foto'),
-                          nombre: 'Preview',
-                          etiqueta: 'PREVIEW',
-                          url: videoResultadoUrl || mediaActivaUrl,
-                          durationInSeconds: 30
-                        } as TimelineItem]
-                      : lineaDeTiempo.length > 0
-                        ? lineaDeTiempo
-                        : (videoResultadoUrl || mediaActivaUrl) ? [{
-                            id: 'preview',
-                            mediaId: 'preview',
-                            tipo: galeriaMultimedia.find(item => item.id === clipSeleccionado)?.tipo || (mediaActivaUrl?.includes('.mp4') || videoResultadoUrl ? 'video' : 'foto'),
-                            nombre: 'Preview',
-                            etiqueta: 'PREVIEW',
-                            url: videoResultadoUrl || mediaActivaUrl,
-                            durationInSeconds: 30
-                          } as TimelineItem] : [],
-                    canvasRatio
-                  }}
-                  durationInFrames={Math.max(300, Math.round(
-                    ((clipSeleccionado && !lineaDeTiempo.find(t => t.id === clipSeleccionado))
-                      ? [{ durationInSeconds: 30 } as TimelineItem]
-                      : lineaDeTiempo.length > 0
-                        ? lineaDeTiempo
-                        : (videoResultadoUrl || mediaActivaUrl) ? [{ durationInSeconds: 30 } as TimelineItem] : []
-                    ).filter(t => t.tipo === 'video' || t.tipo === 'foto' || t.id === 'preview').reduce((acc, t) => acc + (t.durationInSeconds || 5), 0) * 30
-                  ))}
-                  compositionWidth={canvasRatio === '16/9' ? 1920 : 1080}
-                  compositionHeight={canvasRatio === '16/9' ? 1080 : (canvasRatio === '1/1' ? 1080 : (canvasRatio === '4/5' ? 1350 : 1920))}
-                  fps={30}
-                  style={{ width: '100%', height: '100%' }}
+                <video
+                  key={lineaDeTiempo[0]?.url || mediaActivaUrl}
+                  src={lineaDeTiempo.filter(t => t.tipo === 'video').at(clipSeleccionado ? lineaDeTiempo.findIndex(t => t.id === clipSeleccionado) : 0)?.url || mediaActivaUrl || ''}
+                  style={{ width: '100%', height: '100%', objectFit: 'contain' }}
                   controls={false}
-                  autoPlay={false}
-                  loop
+                  playsInline
+                  muted={false}
+                  ref={playerRef as any}
                 />
 
                 {!videoResultadoUrl && rects.map((r) => (
@@ -995,7 +958,7 @@ export default function NaylaCore() {
               const scrollPos = e.currentTarget.scrollLeft;
               const seconds = scrollPos / 20;
               const frame = Math.round(seconds * 30);
-              playerRef.current.seekTo(Math.max(0, frame));
+              playerRef.current.currentTime = (Math.max(0, frame)) / 30;
             }}
             onPointerDown={() => setIsUserScrolling(true)}
             onPointerUp={() => { setTimeout(() => setIsUserScrolling(false), 50); }}
@@ -1026,7 +989,7 @@ export default function NaylaCore() {
                            if (lineaDeTiempo[i].id === clip.id) break;
                            frameCount += Math.round((lineaDeTiempo[i].durationInSeconds || 5) * 30);
                         }
-                        playerRef.current.seekTo(frameCount);
+                        playerRef.current.currentTime = (frameCount) / 30;
                       }
                     }}
                     onRemove={() => quitarDelTimeline(clip.id)}
@@ -1111,7 +1074,7 @@ export default function NaylaCore() {
                           setClipSeleccionado(item.id);
                           setVideoResultadoUrl(null);
                           if (item.tipo === 'video' && playerRef.current) {
-                            playerRef.current.play();
+                            const playPromise = playerRef.current.play(); if (playPromise !== undefined) { playPromise.catch(error => console.log('Autoplay prevented:', error)); }
                             setIsPlaying(true);
                           }
                         }}
