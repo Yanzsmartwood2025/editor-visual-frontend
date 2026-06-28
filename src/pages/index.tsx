@@ -100,8 +100,16 @@ export default function NaylaCore() {
         const oldIndex = items.findIndex(i => i.id === active.id);
         const newIndex = items.findIndex(i => i.id === over.id);
         const newArray = arrayMove(items, oldIndex, newIndex);
-        sincronizarLineaDeTiempo(newArray);
-        return newArray;
+
+        const contadores: Record<string, number> = { V: 0, F: 0, A: 0 };
+        const renumerado = newArray.map((clip) => {
+          const inicial = clip.tipo === 'video' ? 'V' : clip.tipo === 'foto' ? 'F' : 'A';
+          contadores[inicial]++;
+          return { ...clip, etiqueta: `${inicial}${contadores[inicial]}` };
+        });
+
+        sincronizarLineaDeTiempo(renumerado);
+        return renumerado;
       });
     }
   };
@@ -797,7 +805,7 @@ export default function NaylaCore() {
     * { -webkit-tap-highlight-color: transparent; }
     button:focus, button:active { outline: none; background-color: inherit; }
     .neon-btn { background: #0a0a0a; border: 1px solid #262626; color: #a3a3a3; transition: all 0.2s ease; display: flex; justify-content: center; align-items: center; gap: 8px; }
-    .neon-btn:active, .neon-btn.active { background: #ffffff; color: #000000; border-color: #ffffff; box-shadow: 0 0 15px rgba(255,255,255,0.7); }
+    .neon-btn:active, .neon-btn.active { background: #ffffff; color: #000000; border-color: #ffffff; box-shadow: 0 0 15px rgba(255,255,255,0.5); }
     .nav-btn { font-size: 0.7rem; font-weight: bold; padding: 0.8rem 1.2rem; border-radius: 100px; cursor: pointer; text-transform: uppercase; white-space: nowrap; }
     .tool-btn { background: transparent; border: none; color: #a3a3a3; display: flex; flex-direction: column; align-items: center; gap: 6px; font-size: 0.7rem; cursor: pointer; transition: 0.2s; min-width: 70px; }
     .tool-btn:hover { color: #ffffff; }
@@ -923,6 +931,7 @@ export default function NaylaCore() {
                   playsInline
                   muted={false}
                   ref={playerRef as any}
+                  onEnded={handleVideoEnded}
                 />
 
                 {!videoResultadoUrl && rects.map((r) => (
@@ -944,7 +953,7 @@ export default function NaylaCore() {
 
         <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 20px', alignItems: 'center', backgroundColor: '#000', borderBottom: '1px solid #1a1a1a' }}>
           <span style={{ color: '#737373', fontSize: '0.75rem', fontFamily: 'monospace' }}>00:00:00</span>
-          <button onClick={togglePlay} style={{ background: 'none', border: 'none', color: '#fff', fontSize: '1.5rem', cursor: 'pointer', outline: 'none' }}>{isPlaying ? '⏸' : '▶'}</button>
+          <button onClick={togglePlay} style={{ background: 'none', border: 'none', color: '#ffffff', fontSize: '1.5rem', cursor: 'pointer', outline: 'none' }}>{isPlaying ? '⏸' : '▶'}</button>
           <span style={{ color: '#737373', fontSize: '0.75rem', fontFamily: 'monospace' }}>00:00:00</span>
         </div>
 
@@ -1055,7 +1064,12 @@ export default function NaylaCore() {
                     <input type="file" multiple accept="audio/*" onChange={(e) => handleSubirMultimedia(e, 'audio')} style={{ display: 'none' }} />
                   </label>
                   <button className="neon-btn" onClick={() => setShowEnlaceInput(!showEnlaceInput)} style={{ minWidth: '120px', width: '120px', height: '140px', padding: '1rem', borderStyle: 'dashed', borderRadius: '12px', fontSize: '0.75rem', cursor: 'pointer', flexDirection: 'column', textAlign: 'center' }}>
-                    <span style={{ fontSize: '1.5rem', marginBottom: '8px' }}>🔗</span>
+                    <span style={{ marginBottom: '8px' }}>
+                      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
+                        <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
+                      </svg>
+                    </span>
                     ENLACE
                   </button>
                   {galeriaMultimedia.map(item => (
