@@ -13,12 +13,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   try {
     const parsedUrl = new URL(url);
-    if (parsedUrl.protocol !== 'https:') {
-        return res.status(400).json({ error: 'La URL debe usar el protocolo HTTPS.' });
-    }
-
-    if (parsedUrl.hostname !== 'www.meta.ai' && parsedUrl.hostname !== 'meta.ai') {
-        return res.status(400).json({ error: 'La URL debe pertenecer al dominio meta.ai.' });
+    if (parsedUrl.protocol !== 'https:' && parsedUrl.protocol !== 'http:') {
+        return res.status(400).json({ error: 'La URL debe usar el protocolo HTTP o HTTPS.' });
     }
   } catch (e) {
     return res.status(400).json({ error: 'Formato de URL inválido.' });
@@ -30,7 +26,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   // Intento 1: Delegar al Oráculo si las variables están configuradas
   if (ORACLE_URL && ORACLE_SECRET) {
     try {
-      console.log(`[extract-meta-video] Intentando delegar extracción a Oracle: ${ORACLE_URL}/api/extract-meta`);
+      console.log(`[extract-video] Intentando delegar extracción a Oracle: ${ORACLE_URL}/api/extract-meta`);
       const oracleRes = await fetch(`${ORACLE_URL}/api/extract-meta`, {
         method: 'POST',
         headers: {
@@ -45,17 +41,17 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       if (oracleRes.ok) {
         const oracleData = await oracleRes.json();
         if (oracleData.videoUrl) {
-          console.log(`[extract-meta-video] Extracción exitosa desde Oracle: ${oracleData.videoUrl}`);
+          console.log(`[extract-video] Extracción exitosa desde Oracle: ${oracleData.videoUrl}`);
           return res.status(200).json({ videoUrl: oracleData.videoUrl });
         }
       } else {
-        console.warn(`[extract-meta-video] Oracle falló con status ${oracleRes.status}. Haciendo fallback a extracción local en Vercel.`);
+        console.warn(`[extract-video] Oracle falló con status ${oracleRes.status}. Haciendo fallback a extracción local en Vercel.`);
       }
     } catch (oracleError) {
-      console.warn('[extract-meta-video] Error conectando al Oráculo. Haciendo fallback local.', oracleError);
+      console.warn('[extract-video] Error conectando al Oráculo. Haciendo fallback local.', oracleError);
     }
   } else {
-     console.log('[extract-meta-video] ORACLE_URL o ORACLE_SECRET no configurados. Procediendo con extracción local en Vercel.');
+     console.log('[extract-video] ORACLE_URL o ORACLE_SECRET no configurados. Procediendo con extracción local en Vercel.');
   }
 
   // Intento 2 (Fallback): Extracción local desde Vercel
@@ -72,7 +68,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     const html = await response.text();
 
-    console.log(`[extract-meta-video] HTML fetched successfully locally. Length: ${html.length}`);
+    console.log(`[extract-video] HTML fetched successfully locally. Length: ${html.length}`);
 
     // Intentar primero con la regex original (fbcdn con mp4)
     const searchRegex = /(https:(?:\\\/|\/)(?:\\\/|\/)[^"'\s]+\.fbcdn\.net[^"'\s]+\.mp4[^"'\s]*)/gi;
@@ -80,7 +76,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     if (match && match[1]) {
       let finalUrl = match[1].replace(/\\u0026/g, '&').replace(/\\/g, '');
-      console.log(`[extract-meta-video] Extracted Video URL (fbcdn regex): ${finalUrl}`);
+      console.log(`[extract-video] Extracted Video URL (fbcdn regex): ${finalUrl}`);
       return res.status(200).json({ videoUrl: finalUrl });
     }
 
@@ -90,11 +86,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     if (matchBroad && matchBroad[1]) {
       let finalUrl = matchBroad[1].replace(/\\u0026/g, '&').replace(/\\/g, '');
-      console.log(`[extract-meta-video] Extracted Video URL (broad regex): ${finalUrl}`);
+      console.log(`[extract-video] Extracted Video URL (broad regex): ${finalUrl}`);
       return res.status(200).json({ videoUrl: finalUrl });
     }
 
-    console.log('[extract-meta-video] Fallo en la extracción local. No se encontró URL .mp4 en el HTML.');
+    console.log('[extract-video] Fallo en la extracción local. No se encontró URL .mp4 en el HTML.');
     return res.status(404).json({ error: 'No se pudo encontrar la URL del video en la página usando Vercel o el Oráculo.' });
 
   } catch (error: any) {
