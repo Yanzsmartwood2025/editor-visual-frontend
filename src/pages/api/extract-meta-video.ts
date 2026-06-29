@@ -38,8 +38,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           'Authorization': `Bearer ${ORACLE_SECRET}`
         },
         body: JSON.stringify({ url }),
-        // Agregamos un timeout razonable para no bloquear demasiado si el oráculo está caído
-        signal: AbortSignal.timeout(10000)
+        // Agregamos un timeout más largo (45s) ya que el Oráculo podría estar descargando/subiendo con yt-dlp
+        signal: AbortSignal.timeout(45000)
       });
 
       if (oracleRes.ok) {

@@ -149,46 +149,123 @@ app.post('/api/extract-meta', async (req, res) => {
 
     console.log(`[extract-meta] Recibida solicitud para extraer: ${url}`);
 
+    const jobId = uuidv4();
+    const outputFilename = `meta_${jobId}.mp4`;
+    const outputPath = path.join('/tmp', outputFilename);
+
     try {
-        const response = await fetch(url, {
-            headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-            }
+        console.log(`[extract-meta] Intentando descargar con yt-dlp... ${url}`);
+
+        const ytDlpArgs = [
+            '-f', 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
+            '--no-progress',
+            url,
+            '-o', outputPath
+        ];
+
+        const ytProcess = spawn('yt-dlp', ytDlpArgs);
+        let stderrOutput = '';
+
+        ytProcess.stdout.on('data', () => {}); // Consumir stdout para evitar llenar el buffer
+
+        ytProcess.stderr.on('data', (data) => {
+            stderrOutput += data.toString();
         });
 
-        if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
+        await new Promise((resolve, reject) => {
+            ytProcess.on('error', (err) => {
+                reject(new Error(`Fallo al ejecutar yt-dlp: ${err.message}`));
+            });
+            ytProcess.on('close', (code) => {
+                if (code !== 0) {
+                    reject(new Error(`yt-dlp exit code ${code}. Output: ${stderrOutput}`));
+                } else {
+                    resolve();
+                }
+            });
+        });
+
+        console.log(`[extract-meta] Video descargado exitosamente: ${outputPath}`);
+
+        if (!fs.existsSync(outputPath)) {
+             throw new Error(`El archivo de salida no existe: ${outputPath}`);
         }
 
-        const html = await response.text();
-        console.log(`[extract-meta] HTML descargado, longitud: ${html.length}`);
+        const fileStream = fs.createReadStream(outputPath);
+        const storagePath = `media_bodega/${outputFilename}`;
 
-        // Intentar primero con la regex de fbcdn con mp4
-        const searchRegex = /(https:(?:\\\/|\/)(?:\\\/|\/)[^"'\s]+\.fbcdn\.net[^"'\s]+\.mp4[^"'\s]*)/gi;
-        let match = searchRegex.exec(html);
+        console.log(`[extract-meta] Subiendo a Supabase Storage mediante stream...`);
+        const { data: uploadData, error: uploadError } = await supabase.storage
+            .from('media_assets')
+            .upload(storagePath, fileStream, {
+                contentType: 'video/mp4',
+                cacheControl: '3600',
+                upsert: false,
+                duplex: 'half'
+            });
 
-        if (match && match[1]) {
-            let finalUrl = match[1].replace(/\\u0026/g, '&').replace(/\\/g, '');
-            console.log(`[extract-meta] Encontrado via fbcdn regex: ${finalUrl}`);
-            return res.status(200).json({ videoUrl: finalUrl });
+        if (uploadError) throw uploadError;
+
+        const { data: publicUrlData } = supabase.storage
+            .from('media_assets')
+            .getPublicUrl(storagePath);
+
+        const finalUrl = publicUrlData.publicUrl;
+        console.log(`[extract-meta] Archivo subido con éxito: ${finalUrl}`);
+
+        if (fs.existsSync(outputPath)) {
+            fs.unlinkSync(outputPath);
         }
 
-        // Fallback regex: cualquier https que termine en mp4
-        const broadRegex = /(https:(?:\\\/|\/)(?:\\\/|\/)[^"'\s<>]+\.mp4[^"'\s<>]*)/gi;
-        let matchBroad = broadRegex.exec(html);
-
-        if (matchBroad && matchBroad[1]) {
-            let finalUrl = matchBroad[1].replace(/\\u0026/g, '&').replace(/\\/g, '');
-            console.log(`[extract-meta] Encontrado via broad regex: ${finalUrl}`);
-            return res.status(200).json({ videoUrl: finalUrl });
-        }
-
-        console.log(`[extract-meta] No se encontro video mp4 en el HTML de ${url}`);
-        return res.status(404).json({ error: 'Video no encontrado en el HTML devuelto a Oracle' });
+        return res.status(200).json({ videoUrl: finalUrl });
 
     } catch (e) {
-        console.error(`[extract-meta] Error interno: `, e);
-        return res.status(500).json({ error: 'Error interno en Oracle procesando la extraccion' });
+        console.error(`[extract-meta] Error en yt-dlp o subida, procediendo a fallback regex...`, e.message);
+
+        if (fs.existsSync(outputPath)) {
+            fs.unlinkSync(outputPath);
+        }
+
+        try {
+            console.log(`[extract-meta] Iniciando fallback regex para: ${url}`);
+            const response = await fetch(url, {
+                headers: {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+                }
+            });
+
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+
+            const html = await response.text();
+            console.log(`[extract-meta] HTML descargado, longitud: ${html.length}`);
+
+            const searchRegex = /(https:(?:\\\/|\/)(?:\\\/|\/)[^"'\s]+\.fbcdn\.net[^"'\s]+\.mp4[^"'\s]*)/gi;
+            let match = searchRegex.exec(html);
+
+            if (match && match[1]) {
+                let finalUrl = match[1].replace(/\\u0026/g, '&').replace(/\\/g, '');
+                console.log(`[extract-meta] Encontrado via fbcdn regex: ${finalUrl}`);
+                return res.status(200).json({ videoUrl: finalUrl });
+            }
+
+            const broadRegex = /(https:(?:\\\/|\/)(?:\\\/|\/)[^"'\s<>]+\.mp4[^"'\s<>]*)/gi;
+            let matchBroad = broadRegex.exec(html);
+
+            if (matchBroad && matchBroad[1]) {
+                let finalUrl = matchBroad[1].replace(/\\u0026/g, '&').replace(/\\/g, '');
+                console.log(`[extract-meta] Encontrado via broad regex: ${finalUrl}`);
+                return res.status(200).json({ videoUrl: finalUrl });
+            }
+
+            console.log(`[extract-meta] No se encontro video mp4 en el HTML de ${url}`);
+            return res.status(404).json({ error: 'Video no encontrado en el HTML devuelto a Oracle' });
+
+        } catch (fallbackError) {
+            console.error(`[extract-meta] Error interno en fallback: `, fallbackError);
+            return res.status(500).json({ error: 'Error interno en Oracle procesando la extraccion' });
+        }
     }
 });
 
