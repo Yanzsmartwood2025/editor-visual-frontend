@@ -17,7 +17,7 @@ if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_A
 const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 type Rect = { id: string; x: number; y: number; width: number; height: number };
-type MediaItem = { id: string; url: string; tipo: 'foto' | 'video' | 'audio'; nombre: string; creado_en: string; esOverlay: boolean; etiqueta: string };
+type MediaItem = { id: string; url: string; tipo: 'foto' | 'video' | 'audio'; nombre: string; creado_en: string; esOverlay: boolean; etiqueta: string; fuente?: string };
 type TimelineItem = { id: string; mediaId: string; tipo: 'foto' | 'video' | 'audio'; nombre: string; etiqueta: string; url: string; durationInSeconds?: number; volume?: number; fadeIn?: number; fadeOut?: number };
 type SubtitleItem = { id: string; texto: string; inicioSec: number; finSec: number; };
 type MarcoConfig = {
@@ -26,29 +26,54 @@ type MarcoConfig = {
   color: string;
 };
 
-const TOOLS = [
-  { id: 'galeria', nombre: 'BODEGA', icon: <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg> },
-  { id: 'cortar', nombre: 'CORTAR', icon: <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><line x1="20" y1="4" x2="8.12" y2="15.88"/><line x1="14.47" y1="14.48" x2="20" y2="20"/><line x1="8.12" y1="8.12" x2="12" y2="12"/></svg> },
-  { id: 'dividir', nombre: 'DIVIDIR', icon: <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="2" x2="12" y2="22"/><line x1="4" y1="12" x2="8" y2="12"/><line x1="16" y1="12" x2="20" y2="12"/></svg> },
-  { id: 'borrar', nombre: 'BORRAR', icon: <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg> },
-  { id: 'volumen', nombre: 'VOLUMEN', icon: <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/></svg> },
-  { id: 'velocidad', nombre: 'VELOCIDAD', icon: <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg> },
-  { id: 'girar', nombre: 'GIRAR', icon: <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><polyline points="3 3 3 8 8 8"/></svg> },
-  { id: 'duplicar', nombre: 'DUPLICAR', icon: <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg> },
-  { id: 'inverso', nombre: 'INVERSO', icon: <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><polyline points="21 3 21 8 16 8"/></svg> },
-  { id: 'congelacion', nombre: 'CONGELACIÓN', icon: <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2v20M2 12h20M4.93 4.93l14.14 14.14M19.07 4.93L4.93 19.07"/></svg> },
-  { id: 'mascara', nombre: 'MÁSCARA', icon: <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg> },
-  { id: 'opacidad', nombre: 'OPACIDAD', icon: <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="2" x2="12" y2="22"/><line x1="12" y1="12" x2="22" y2="12"/></svg> },
-  { id: 'filtro', nombre: 'FILTRO', icon: <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg> },
-  { id: 'efecto', nombre: 'EFECTO', icon: <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M10 3.2A1.2 1.2 0 0 0 8 4v16a1.2 1.2 0 0 0 2 1.2M14 3.2A1.2 1.2 0 0 1 16 4v16a1.2 1.2 0 0 1-2 1.2M6 8H4M6 16H4M20 8h-2M20 16h-2"/></svg> },
-  { id: 'texto', nombre: 'TEXTO', icon: <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="4 7 4 4 20 4 20 7"/><line x1="9" y1="20" x2="15" y2="20"/><line x1="12" y1="4" x2="12" y2="20"/></svg> },
-  { id: 'audio', nombre: 'AUDIO', icon: <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg> },
-  { id: 'lona', nombre: 'LONA/RATIO', icon: <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="21" x2="9" y2="9"/></svg> },
-  { id: 'marco', nombre: 'MARCO', icon: <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="2" y="2" width="20" height="20" rx="2"/><rect x="6" y="6" width="12" height="12" rx="1"/></svg> },
-  { id: 'herramientas', nombre: 'DELOGO IA ⚡', icon: <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg> },
-  { id: 'script', nombre: 'SCRIPT 💻', icon: <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg> },
-  { id: 'ia', nombre: 'SUPERVISOR IA', icon: <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="11" width="18" height="10" rx="2"/><circle cx="12" cy="5" r="2"/><path d="M12 7v4"/><line x1="8" y1="16" x2="8" y2="16"/><line x1="16" y1="16" x2="16" y2="16"/></svg> },
+
+const MAIN_TOOLS = [
+  { id: 'editor', nombre: 'EDITOR', icon: <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><line x1="20" y1="4" x2="8.12" y2="15.88"/><line x1="14.47" y1="14.48" x2="20" y2="20"/><line x1="8.12" y1="8.12" x2="12" y2="12"/></svg> },
+  { id: 'boveda', nombre: 'BÓVEDA', icon: <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg> },
+  { id: 'buscar', nombre: 'BUSCAR', icon: <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg> },
+  { id: 'ia', nombre: 'IA', icon: <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="11" width="18" height="10" rx="2"/><circle cx="12" cy="5" r="2"/><path d="M12 7v4"/><line x1="8" y1="16" x2="8" y2="16"/><line x1="16" y1="16" x2="16" y2="16"/></svg> }
 ];
+
+const SUB_TOOLS: Record<string, any[]> = {
+  editor: [
+    { id: 'cortar', nombre: 'Cortar', icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><line x1="20" y1="4" x2="8.12" y2="15.88"/><line x1="14.47" y1="14.48" x2="20" y2="20"/><line x1="8.12" y1="8.12" x2="12" y2="12"/></svg> },
+    { id: 'dividir', nombre: 'Dividir', icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="2" x2="12" y2="22"/><line x1="4" y1="12" x2="8" y2="12"/><line x1="16" y1="12" x2="20" y2="12"/></svg> },
+    { id: 'borrar', nombre: 'Borrar', icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg> },
+    { id: 'volumen', nombre: 'Volumen', icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/></svg> },
+    { id: 'velocidad', nombre: 'Velocidad', icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg> },
+    { id: 'girar', nombre: 'Girar', icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><polyline points="3 3 3 8 8 8"/></svg> },
+    { id: 'duplicar', nombre: 'Duplicar', icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg> },
+    { id: 'texto', nombre: 'Texto', icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="4 7 4 4 20 4 20 7"/><line x1="9" y1="20" x2="15" y2="20"/><line x1="12" y1="4" x2="12" y2="20"/></svg> },
+    { id: 'marco', nombre: 'Marco', icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="2" y="2" width="20" height="20" rx="2"/><rect x="6" y="6" width="12" height="12" rx="1"/></svg> },
+    { id: 'filtro', nombre: 'Filtro', icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg> },
+  ],
+  boveda: [
+    { id: 'subir-vf', nombre: 'Subir (V/F)', icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg> },
+    { id: 'subir-a', nombre: 'Subir Audio', icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg> },
+    { id: 'enlace', nombre: 'Enlace', icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg> },
+    { id: 'filtro-todo', nombre: 'Todo', isFilter: true, filterValue: 'todo' },
+    { id: 'filtro-videos', nombre: 'Videos', isFilter: true, filterValue: 'videos' },
+    { id: 'filtro-fotos', nombre: 'Fotos', isFilter: true, filterValue: 'fotos' },
+    { id: 'filtro-audios', nombre: 'Audios', isFilter: true, filterValue: 'audios' },
+  ],
+  buscar: [
+    { id: 'youtube', nombre: 'YouTube', icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M22.54 6.42a2.78 2.78 0 0 0-1.94-2C18.88 4 12 4 12 4s-6.88 0-8.6.46a2.78 2.78 0 0 0-1.94 2A29 29 0 0 0 1 11.75a29 29 0 0 0 .46 5.33 2.78 2.78 0 0 0 1.94 2c1.72.46 8.6.46 8.6.46s6.88 0 8.6-.46a2.78 2.78 0 0 0 1.94-2 29 29 0 0 0 .46-5.33 29 29 0 0 0-.46-5.33z"/><polygon points="9.75 15.02 15.5 11.75 9.75 8.48 9.75 15.02"/></svg> },
+    { id: 'pixabay', nombre: 'Pixabay', icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg> },
+    { id: 'musicastock', nombre: 'Música Stock', icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg> },
+    { id: 'noticias', nombre: 'Noticias', icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg> },
+    { id: 'artistas', nombre: 'Artistas', icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="8" r="5"/><line x1="12" y1="13" x2="12" y2="22"/><line x1="12" y1="17" x2="19" y2="14"/><line x1="12" y1="17" x2="5" y2="14"/></svg> },
+    { id: 'stockvideo', nombre: 'Stock Video', icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"/><line x1="7" y1="2" x2="7" y2="22"/><line x1="17" y1="2" x2="17" y2="22"/><line x1="2" y1="12" x2="22" y2="12"/><line x1="2" y1="7" x2="7" y2="7"/><line x1="2" y1="17" x2="7" y2="17"/><line x1="17" y1="17" x2="22" y2="17"/><line x1="17" y1="7" x2="22" y2="7"/></svg> },
+  ],
+  ia: [
+    { id: 'supervisor', nombre: 'Supervisor', icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="11" width="18" height="10" rx="2"/><circle cx="12" cy="5" r="2"/><path d="M12 7v4"/><line x1="8" y1="16" x2="8" y2="16"/><line x1="16" y1="16" x2="16" y2="16"/></svg> },
+    { id: 'delogo', nombre: 'Delogo', icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg> },
+    { id: 'sonidos', nombre: 'Sonidos (TTS)', icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="22"/></svg> },
+    { id: 'iafoto', nombre: 'IA Foto', icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg> },
+    { id: 'script', nombre: 'Script', icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg> },
+    { id: 'render', nombre: 'Render', icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="5 3 19 12 5 21 5 3"/></svg> },
+  ]
+};
+
 
 export default function NaylaCore() {
   const [session, setSession] = useState(null);
@@ -66,7 +91,10 @@ export default function NaylaCore() {
   const [iaFotosPrompt, setIaFotosPrompt] = useState('');
 
   const [message, setMessage] = useState('');
-  const [navActiva, setNavActiva] = useState<string | null>(null);
+  const [mainNav, setMainNav] = useState<string>('boveda');
+  const [subTool, setSubTool] = useState<string | null>(null);
+  const [filtroGaleria, setFiltroGaleria] = useState<string>('todo'); // todo, videos, fotos, audios
+  const [searchQuery, setSearchQuery] = useState('');
   const [codigoJsInput, setCodigoJsInput] = useState('// Inyecta comandos JS aquí\n// Ej: NaylaEngine.agregar(["V1", "V2", "A1"]);\n// NaylaEngine.agregarSubtitulos([{ texto: "Hola", inicio: 0, fin: 5 }]);');
   const [moldesScripts, setMoldesScripts] = useState<{ nombre: string; codigo: string }[]>([]);
   const [moldeActivo, setMoldeActivo] = useState<string>('');
@@ -799,6 +827,25 @@ export default function NaylaCore() {
   const ICONOS_POS: Record<string, string> = { derecha: '→', izquierda: '←', abajo: '↓', arriba: '↑', 'derecha+abajo': '↘', 'derecha+arriba': '↗', 'izquierda+abajo': '↙', 'izquierda+arriba': '↖' };
 
   const globalStyles = `
+    .main-btn { background: #0a0a0a; border: 1px solid #262626; color: #a3a3a3; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; font-size: 10px; font-weight: bold; cursor: pointer; transition: all 0.2s ease; border-radius: 12px; min-width: 70px; height: 70px; }
+    .main-btn:hover { color: #ffffff; border-color: #404040; }
+    .main-btn.active { background: #ffffff; color: #000000; border-color: #ffffff; box-shadow: 0 0 15px rgba(255,255,255,0.5); }
+    .sub-btn { background: transparent; border: none; color: #a3a3a3; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; font-size: 7px; cursor: pointer; transition: 0.2s; min-width: 48px; min-height: 48px; padding: 4px; }
+    .sub-btn:hover { color: #ffffff; }
+    .sub-btn.active { color: #ffffff; font-weight: bold; }
+    .sub-btn .icon-container { width: 36px; height: 36px; display: flex; justify-content: center; align-items: center; border-radius: 10px; transition: all 0.2s ease; border: 1px solid transparent; background: #111; }
+    .sub-btn:hover .icon-container { background: #222; }
+    .sub-btn.active .icon-container { background: #ffffff; color: #000000; border-color: #ffffff; box-shadow: 0 0 10px rgba(255,255,255,0.4); }
+    .sub-row { display: flex; gap: 4px; overflow-x: auto; padding: 12px 16px; background-color: #050505; border-top: 1px solid #1a1a1a; align-items: center; min-height: 70px; }
+    .sub-row::-webkit-scrollbar { height: 0; }
+    .main-row { display: flex; gap: 12px; overflow-x: auto; padding: 16px; background-color: #000; border-top: 1px solid #1a1a1a; justify-content: center; }
+    .main-row::-webkit-scrollbar { height: 0; }
+    .source-badge { position: absolute; top: 6px; right: 6px; font-size: 0.55rem; font-weight: bold; padding: 2px 4px; border-radius: 4px; color: #fff; z-index: 10; letter-spacing: 0.5px; }
+    .source-badge.yt { background-color: #cc0000; }
+    .source-badge.px { background-color: #009900; }
+    .source-badge.ia { background-color: #6600cc; }
+    .source-badge.mio { background-color: #404040; }
+
     @keyframes spin { to { transform: rotate(360deg); } }
     ::-webkit-scrollbar { height: 4px; width: 4px; }
     ::-webkit-scrollbar-track { background: transparent; }
@@ -1019,111 +1066,19 @@ export default function NaylaCore() {
           </div>
         </section>
 
-        {/* PANELES */}
-        {navActiva && (
-          <div className="panel-container">
-            {toolMessage && <div style={{ textAlign: 'center', padding: '2rem', color: '#a3a3a3', fontSize: '1rem', letterSpacing: '2px' }}>{toolMessage}</div>}
 
-            {!toolMessage && navActiva === 'galeria' && (
-              <div style={{ maxHeight: '35vh' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-                  <p style={{ fontSize: '0.75rem', color: '#fff', fontWeight: 'bold', letterSpacing: '1px' }}>TUS ARCHIVOS</p>
-                </div>
-                {showEnlaceInput && (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '1rem' }}>
-                    <textarea
-                      placeholder="Pega uno o varios enlaces web aquí (separados por saltos de línea o comas)..."
-                      value={enlaceInput}
-                      onChange={(e) => setEnlaceInput(e.target.value)}
-                      rows={3}
-                      style={{ width: '100%', padding: '0.8rem', backgroundColor: '#0a0a0a', border: '1px solid #404040', borderRadius: '8px', color: '#fff', outline: 'none', resize: 'vertical' }}
-                    />
-                    <button
-                      onClick={handleExtraerDesdeEnlace}
-                      disabled={extrayendoVideo || !enlaceInput}
-                      className="neon-btn nav-btn"
-                      style={{ padding: '0.8rem 1.2rem', backgroundColor: extrayendoVideo ? '#404040' : '#fff', color: extrayendoVideo ? '#a3a3a3' : '#000', fontWeight: 'bold', width: '100%' }}
-                    >
-                      {extrayendoVideo ? 'PROCESANDO ENLACES EN COLA...' : 'PROCESAR ENLACES EN COLA'}
-                    </button>
-                    {(extrayendoVideo || queueProgress > 0) && (
-                      <div style={{ width: '100%', backgroundColor: '#262626', height: '8px', borderRadius: '4px', overflow: 'hidden', marginTop: '4px' }}>
-                        <div style={{ height: '100%', width: `${queueProgress}%`, backgroundColor: '#00ffcc', transition: 'width 0.3s ease' }} />
-                      </div>
-                    )}
-                  </div>
-                )}
-                <div style={{ display: 'flex', flexDirection: 'row', gap: '10px', overflowX: 'auto', paddingBottom: '10px', alignItems: 'stretch' }}>
-                  <label className="neon-btn" style={{ minWidth: '120px', width: '120px', height: '140px', padding: '1rem', borderStyle: 'dashed', borderRadius: '12px', fontSize: '0.75rem', cursor: 'pointer', flexDirection: 'column', textAlign: 'center' }}>
-                    <span style={{ fontSize: '1.5rem', marginBottom: '8px' }}>+</span>
-                    VIDEO / FOTO
-                    <input type="file" multiple accept="video/*,image/*" onChange={(e) => handleSubirMultimedia(e, 'video')} style={{ display: 'none' }} />
-                  </label>
-                  <label className="neon-btn" style={{ minWidth: '120px', width: '120px', height: '140px', padding: '1rem', borderStyle: 'dashed', borderRadius: '12px', fontSize: '0.75rem', cursor: 'pointer', flexDirection: 'column', textAlign: 'center' }}>
-                    <span style={{ fontSize: '1.5rem', marginBottom: '8px' }}>+</span>
-                    AUDIO
-                    <input type="file" multiple accept="audio/*" onChange={(e) => handleSubirMultimedia(e, 'audio')} style={{ display: 'none' }} />
-                  </label>
-                  <button className="neon-btn" onClick={() => setShowEnlaceInput(!showEnlaceInput)} style={{ minWidth: '120px', width: '120px', height: '140px', padding: '1rem', borderStyle: 'dashed', borderRadius: '12px', fontSize: '0.75rem', cursor: 'pointer', flexDirection: 'column', textAlign: 'center' }}>
-                    <span style={{ marginBottom: '8px' }}>
-                      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                        <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
-                        <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
-                      </svg>
-                    </span>
-                    ENLACE
-                  </button>
-                  {galeriaMultimedia.map(item => (
-                    <div key={item.id} className="neon-btn" style={{ minWidth: '140px', width: '140px', height: '140px', padding: '10px', borderRadius: '12px', borderStyle: 'solid', borderColor: 'transparent', flexDirection: 'column', position: 'relative', justifyContent: 'space-between' }}>
-                      <div style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <span style={{ fontSize: '0.65rem', backgroundColor: '#262626', padding: '2px 6px', borderRadius: '4px', color: '#fff', fontWeight: 'bold' }}>{item.etiqueta}</span>
-                        <div style={{ display: 'flex', gap: '4px' }}>
-                          <button onClick={() => descargarIndividual(item.url, item.nombre, item.tipo)} title="Descargar" style={{ background: 'rgba(255,255,255,0.1)', border: '1px solid #fff', borderRadius: '50%', width: '24px', height: '24px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', padding: 0 }}>
-                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5">
-                              <path d="M12 5v14M5 12l7 7 7-7"/>
-                            </svg>
-                          </button>
-                          <button onClick={() => eliminarDeGaleria(item.id)} title="Eliminar" style={{ background: 'rgba(255,255,255,0.1)', border: '1px solid #fff', borderRadius: '50%', width: '24px', height: '24px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', padding: 0 }}>
-                            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5">
-                              <line x1="18" y1="6" x2="6" y2="18"/>
-                              <line x1="6" y1="6" x2="18" y2="18"/>
-                            </svg>
-                          </button>
-                        </div>
-                      </div>
+        {/* NUEVA ESTRUCTURA DE HERRAMIENTAS */}
 
-                      <div
-                        onClick={() => {
-                          setMediaActivaUrl(item.url);
-                          setClipSeleccionado(item.id);
-                          setVideoResultadoUrl(null);
-                          if (item.tipo === 'video' && playerRef.current) {
-                            const playPromise = playerRef.current.play(); if (playPromise !== undefined) { playPromise.catch(error => console.log('Autoplay prevented:', error)); }
-                            setIsPlaying(true);
-                          }
-                        }}
-                        style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', width: '100%', overflow: 'hidden', cursor: 'pointer' }}>
-                        {item.tipo === 'video' && <svg width="32" height="32" viewBox="0 0 24 24" fill="white">
-                          <polygon points="5,3 19,12 5,21"/>
-                        </svg>}
-                        {item.tipo === 'audio' && <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
-                          <path d="M9 18V5l12-2v13"/>
-                          <circle cx="6" cy="18" r="3"/>
-                          <circle cx="18" cy="16" r="3"/>
-                        </svg>}
-                        {item.tipo === 'foto' && <img src={item.url} style={{ width: '100%', height: '40px', objectFit: 'contain', borderRadius: '4px' }} alt={item.nombre} />}
-                        <input type="text" value={item.nombre} onChange={(e) => renombrarItem(item.id, e.target.value)} style={{ background: 'transparent', border: 'none', color: '#fff', outline: 'none', width: '100%', textAlign: 'center', fontSize: '0.65rem', marginTop: '8px', textOverflow: 'ellipsis', whiteSpace: 'nowrap', overflow: 'hidden' }} title={item.nombre} />
-                      </div>
-
-                      <button onClick={() => agregarAlTimeline(item)} style={{ padding: '6px', fontSize: '0.6rem', width: '100%', marginTop: 'auto', backgroundColor: '#fff', color: '#000', border: 'none', borderRadius: '100px', fontWeight: 'bold', cursor: 'pointer' }}>+ PISTA</button>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {!toolMessage && navActiva === 'marco' && (
-              <div style={{ maxHeight: '50vh', overflowY: 'auto' }}>
+        {/* AREA DE PANELES COMPLEJOS (Reemplaza a la galería si están activos) */}
+        {toolMessage ? (
+          <div className="panel-container" style={{ position: 'relative', bottom: 'auto', flex: 1, minHeight: '35vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <div style={{ textAlign: 'center', padding: '2rem', color: '#a3a3a3', fontSize: '1rem', letterSpacing: '2px' }}>{toolMessage}</div>
+          </div>
+        ) : subTool && ['marco', 'delogo', 'script', 'supervisor'].includes(subTool) ? (
+          <div className="panel-container" style={{ position: 'relative', bottom: 'auto', flex: 1, minHeight: '35vh', overflowY: 'auto' }}>
+            {/* COMPONENTES DE PANELES COMPLEJOS */}
+            {subTool === 'marco' && (
+              <div>
                 <p style={{ fontSize: '0.75rem', color: '#fff', fontWeight: 'bold', marginBottom: '1rem', letterSpacing: '1px' }}>MARCO — CUBRIR MARCA DE AGUA</p>
                 <p style={{ fontSize: '0.65rem', color: '#737373', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '1px' }}>Posición del marco</p>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '6px', marginBottom: '1.2rem' }}>
@@ -1141,9 +1096,6 @@ export default function NaylaCore() {
                     <div key={color} onClick={() => setMarcoConfig({ ...marcoConfig, color })} style={{ width: '36px', height: '36px', borderRadius: '50%', backgroundColor: color, cursor: 'pointer', border: marcoConfig.color === color ? '3px solid #00ffcc' : '2px solid #333', flexShrink: 0 }} />
                   ))}
                   <input type="color" value={marcoConfig.color} onChange={(e) => setMarcoConfig({ ...marcoConfig, color: e.target.value })} style={{ width: '36px', height: '36px', borderRadius: '50%', border: 'none', cursor: 'pointer' }} />
-                </div>
-                <div style={{ backgroundColor: '#0a0a0a', padding: '10px 14px', borderRadius: '10px', border: '1px solid #1a1a1a', marginBottom: '1.2rem' }}>
-                  <span style={{ fontSize: '0.65rem', color: '#a3a3a3' }}>Ratio activo: <strong style={{ color: '#fff' }}>{canvasRatio}</strong> — {galeriaMultimedia.filter(i => i.tipo === 'foto').length} fotos en bodega</span>
                 </div>
                 <button onClick={procesarImagenesConMarco} disabled={marcoProcesando} className="neon-btn nav-btn"
                   style={{ width: '100%', backgroundColor: marcoProcesando ? '#0a0a0a' : '#fff', color: marcoProcesando ? '#a3a3a3' : '#000', borderColor: marcoProcesando ? '#262626' : '#fff' }}>
@@ -1168,8 +1120,8 @@ export default function NaylaCore() {
               </div>
             )}
 
-            {!toolMessage && navActiva === 'herramientas' && (
-              <div style={{ maxHeight: '35vh', overflowY: 'auto' }}>
+            {subTool === 'delogo' && (
+              <div>
                 <p style={{ fontSize: '0.75rem', color: '#fff', fontWeight: 'bold', marginBottom: '1rem', letterSpacing: '1px' }}>SUPRESIÓN DE MARCA DE AGUA (DELOGO)</p>
                 <div style={{ backgroundColor: '#0a0a0a', padding: '1.5rem', borderRadius: '16px', border: '1px dashed #404040', marginBottom: '1rem' }}>
                   <p style={{ fontSize: '0.7rem', color: '#a3a3a3', marginBottom: '1rem' }}>1. Selecciona un video en la pista.<br />2. Dibuja un rectángulo blanco sobre el logo en el monitor.<br />3. Elige el motor de procesamiento.</p>
@@ -1181,8 +1133,8 @@ export default function NaylaCore() {
               </div>
             )}
 
-            {!toolMessage && navActiva === 'script' && (
-              <div style={{ maxHeight: '35vh', overflowY: 'auto' }}>
+            {subTool === 'script' && (
+              <div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
                   <p style={{ fontSize: '0.75rem', color: '#fff', fontWeight: 'bold', letterSpacing: '1px' }}>SCRIPT MANUAL / MOLDES</p>
                   <div style={{ display: 'flex', gap: '8px' }}>
@@ -1202,7 +1154,7 @@ export default function NaylaCore() {
                   Comandos disponibles: <br />
                   <code style={{ color: '#00ffcc' }}>NaylaEngine.agregar(["V1", "V2"]);</code> - Agrega clips por etiqueta.<br />
                   <code style={{ color: '#00ffcc' }}>{"NaylaEngine.modificar('V1', { volume: 0.5 });"}</code> - Cambia volumen y efectos.<br />
-                  { /* Escape in JSX */ }{ /* */ }<code style={{ color: '#00ffcc' }}>{"NaylaEngine.agregarSubtitulos([{ texto: \"Hola\", inicioSec: 0, finSec: 2 }]);"}</code> - Agrega subtítulos.<br />
+                  <code style={{ color: '#00ffcc' }}>{"NaylaEngine.agregarSubtitulos([{ texto: \"Hola\", inicioSec: 0, finSec: 2 }]);"}</code> - Agrega subtítulos.<br />
                   <code style={{ color: '#00ffcc' }}>NaylaEngine.limpiarSubtitulos();</code> - Borra los subtítulos.<br />
                   <code style={{ color: '#00ffcc' }}>NaylaEngine.limpiar();</code> - Borra pista y subtítulos.
                 </p>
@@ -1211,8 +1163,8 @@ export default function NaylaCore() {
               </div>
             )}
 
-            {!toolMessage && navActiva === 'ia' && (
-              <div style={{ maxHeight: '35vh', overflowY: 'auto', padding: '10px' }}>
+            {subTool === 'supervisor' && (
+              <div style={{ padding: '10px' }}>
                 <div style={{ fontWeight: 'bold', letterSpacing: '2px', color: '#a3a3a3', marginBottom: '15px' }}>SUPERVISOR IA</div>
 
                 <div style={{ marginBottom: '15px', backgroundColor: '#0a0a0a', border: '1px solid #262626', padding: '10px', borderRadius: '8px' }}>
@@ -1251,7 +1203,6 @@ export default function NaylaCore() {
                           if(data.error) throw new Error(data.error);
 
                           console.log("Código IA:", data.code);
-                          // Ejecutar código usando el mismo contexto de NaylaEngine
                           const NaylaEngine = getEngineContext();
                           const execute = new Function('NaylaEngine', data.code);
                           execute(NaylaEngine);
@@ -1268,146 +1219,286 @@ export default function NaylaCore() {
                   >
                     {iaLoading ? 'PROCESANDO...' : 'GENERAR Y EJECUTAR 🤖'}
                   </button>
-
-                  <button
-                    onClick={() => setIaBandejasAbiertas(!iaBandejasAbiertas)}
-                    className="neon-btn nav-btn"
-                    style={{ padding: '0 15px', backgroundColor: '#1a1a1a', color: '#fff', border: '1px solid #333' }}
-                  >
-                    {iaBandejasAbiertas ? 'CERRAR HERRAMIENTAS' : 'HERRAMIENTAS IA'}
-                  </button>
                 </div>
+              </div>
+            )}
+          </div>
+        ) : (
+          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', backgroundColor: '#000' }}>
 
-                {iaBandejasAbiertas && (
-                  <div style={{ marginTop: '15px', border: '1px solid #262626', borderRadius: '8px', overflow: 'hidden' }}>
-                    <div style={{ display: 'flex', borderBottom: '1px solid #262626' }}>
-                      <button
-                        onClick={() => setIaBandejaActiva('audio')}
-                        style={{ flex: 1, padding: '10px', backgroundColor: iaBandejaActiva === 'audio' ? '#262626' : '#0a0a0a', color: '#fff', border: 'none', cursor: 'pointer', fontSize: '0.8rem' }}
-                      >
-                        Audio
-                      </button>
-                      <button
-                        onClick={() => setIaBandejaActiva('fotos')}
-                        style={{ flex: 1, padding: '10px', backgroundColor: iaBandejaActiva === 'fotos' ? '#262626' : '#0a0a0a', color: '#fff', border: 'none', cursor: 'pointer', fontSize: '0.8rem', borderLeft: '1px solid #262626', borderRight: '1px solid #262626' }}
-                      >
-                        Fotos
-                      </button>
-                      <button
-                        onClick={() => setIaBandejaActiva('videos')}
-                        style={{ flex: 1, padding: '10px', backgroundColor: iaBandejaActiva === 'videos' ? '#262626' : '#0a0a0a', color: '#fff', border: 'none', cursor: 'pointer', fontSize: '0.8rem' }}
-                      >
-                        Videos
-                      </button>
-                    </div>
+            {/* AREA DE BÚSQUEDA (Si hay sub-herramienta de búsqueda activa) */}
+            {subTool && ['youtube', 'pixabay', 'musicastock', 'noticias', 'artistas', 'stockvideo'].includes(subTool) && (
+              <div style={{ padding: '10px 16px', backgroundColor: '#050505', borderBottom: '1px solid #1a1a1a', display: 'flex', gap: '8px' }}>
+                <input
+                  type="text"
+                  placeholder={`Buscar en ${SUB_TOOLS['buscar'].find(t => t.id === subTool)?.nombre || ''}...`}
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  style={{ flex: 1, padding: '8px 12px', backgroundColor: '#111', border: '1px solid #333', borderRadius: '8px', color: '#fff', fontSize: '0.8rem', outline: 'none' }}
+                />
+                <button className="neon-btn nav-btn" style={{ padding: '8px 16px' }} onClick={async () => {
+                  if (!searchQuery) return;
+                  const btnNombre = SUB_TOOLS.buscar.find(t => t.id === subTool)?.nombre;
+                  const newMockId = `mock-${Date.now()}`;
+                  const count = galeriaMultimedia.length + 1;
 
-                    <div style={{ padding: '15px', backgroundColor: '#0a0a0a' }}>
-                      {iaBandejaActiva === 'audio' && (
-                        <div>
-                          <textarea
-                            value={iaAudioTexto}
-                            onChange={(e) => setIaAudioTexto(e.target.value)}
-                            placeholder="Escribe el texto para generar voz..."
-                            style={{ width: '100%', height: '60px', backgroundColor: '#050505', border: '1px solid #333', color: '#fff', padding: '10px', borderRadius: '5px', fontSize: '0.8rem', marginBottom: '10px', resize: 'none' }}
-                          />
-                          <button
-                            className="neon-btn nav-btn"
-                            style={{ width: '100%', backgroundColor: '#00cc66', color: '#000', fontWeight: 'bold' }}
-                            onClick={async () => {
-                              if (!iaAudioTexto) return alert('Ingresa texto primero');
-                              try {
-                                const res = await fetch('/api/ia-audio', {
-                                  method: 'POST',
-                                  headers: { 'Content-Type': 'application/json' },
-                                  body: JSON.stringify({ texto: iaAudioTexto, email: session?.user?.email })
-                                });
-                                const data = await res.json();
-                                if (data.error) throw new Error(data.error);
+                  let tipo: 'video' | 'foto' | 'audio' = 'video';
+                  let fuente = subTool;
 
-                                alert(`Audio generado (Simulado). URL: ${data.url}`);
-                                // Mock agregarlo a la galería
-                                setGaleriaMultimedia(prev => [...prev, { id: `ia-audio-${Date.now()}`, nombre: 'Audio Generado IA', tipo: 'audio', url: data.url, etiqueta: 'A_IA' }]);
-                              } catch (err: any) {
-                                alert("Error IA Audio: " + err.message);
-                              }
-                            }}
-                          >
-                            GENERAR AUDIO
-                          </button>
-                        </div>
-                      )}
+                  if (subTool === 'pixabay') tipo = 'foto';
+                  if (subTool === 'musicastock') tipo = 'audio';
+                  if (subTool === 'noticias') tipo = 'foto';
+                  if (subTool === 'artistas') tipo = 'foto';
 
-                      {iaBandejaActiva === 'fotos' && (
-                        <div>
-                          <div style={{ fontSize: '0.7rem', color: '#737373', marginBottom: '10px' }}>
-                            Selecciona una imagen de referencia de la galería:
-                          </div>
-                          <select
-                            value={iaFotosFotoBase}
-                            onChange={(e) => setIaFotosFotoBase(e.target.value)}
-                            style={{ width: '100%', backgroundColor: '#050505', border: '1px solid #333', color: '#fff', padding: '8px', borderRadius: '5px', fontSize: '0.8rem', marginBottom: '10px' }}
-                          >
-                            <option value="">-- Seleccionar Foto Base --</option>
-                            {galeriaMultimedia.filter(m => m.tipo === 'foto').map(m => (
-                              <option key={m.id} value={m.url}>{m.nombre || m.etiqueta}</option>
-                            ))}
-                          </select>
-                          <textarea
-                            value={iaFotosPrompt}
-                            onChange={(e) => setIaFotosPrompt(e.target.value)}
-                            placeholder="Describe la nueva escena manteniendo la consistencia..."
-                            style={{ width: '100%', height: '60px', backgroundColor: '#050505', border: '1px solid #333', color: '#fff', padding: '10px', borderRadius: '5px', fontSize: '0.8rem', marginBottom: '10px', resize: 'none' }}
-                          />
-                          <button
-                            className="neon-btn nav-btn"
-                            style={{ width: '100%', backgroundColor: '#00cc66', color: '#000', fontWeight: 'bold' }}
-                            onClick={async () => {
-                              if (!iaFotosFotoBase || !iaFotosPrompt) return alert('Selecciona foto base y escribe el prompt');
-                              try {
-                                const res = await fetch('/api/ia-fotos', {
-                                  method: 'POST',
-                                  headers: { 'Content-Type': 'application/json' },
-                                  body: JSON.stringify({ fotoBaseUrl: iaFotosFotoBase, prompt: iaFotosPrompt, email: session?.user?.email })
-                                });
-                                const data = await res.json();
-                                if (data.error) throw new Error(data.error);
+                  const inicial = tipo === 'video' ? 'V' : tipo === 'foto' ? 'F' : 'A';
 
-                                alert(`Foto generada (Simulada). URL: ${data.url}`);
-                                // Mock agregarlo a la galería
-                                setGaleriaMultimedia(prev => [...prev, { id: `ia-foto-${Date.now()}`, nombre: 'Foto Generada IA', tipo: 'foto', url: data.url, etiqueta: 'I_IA' }]);
-                              } catch (err: any) {
-                                alert("Error IA Fotos: " + err.message);
-                              }
-                            }}
-                          >
-                            GENERAR FOTO
-                          </button>
-                        </div>
-                      )}
+                  const mockItem: MediaItem = {
+                    id: newMockId,
+                    url: 'https://www.w3schools.com/html/mov_bbb.mp4',
+                    tipo,
+                    nombre: `${btnNombre} Resultado ${count}`,
+                    creado_en: new Date().toLocaleTimeString(),
+                    esOverlay: false,
+                    etiqueta: `${inicial}${count}`,
+                    fuente
+                  };
 
-                      {iaBandejaActiva === 'videos' && (
-                        <div style={{ textAlign: 'center', padding: '20px 0', color: '#737373', fontSize: '0.9rem' }}>
-                          Próximamente / Manual
-                        </div>
-                      )}
-                    </div>
+                  setGaleriaMultimedia(prev => [...prev, mockItem]);
+                  setSearchQuery('');
+                }}>BUSCAR</button>
+              </div>
+            )}
+
+            {/* AREA DE INPUT PARA ENLACES O IA (Si sub-herramienta lo requiere y no es panel complejo) */}
+            {subTool === 'enlace' && (
+              <div style={{ padding: '10px 16px', backgroundColor: '#050505', borderBottom: '1px solid #1a1a1a', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <textarea
+                  placeholder="Pega uno o varios enlaces web aquí (separados por saltos de línea o comas)..."
+                  value={enlaceInput}
+                  onChange={(e) => setEnlaceInput(e.target.value)}
+                  rows={2}
+                  style={{ width: '100%', padding: '0.8rem', backgroundColor: '#111', border: '1px solid #333', borderRadius: '8px', color: '#fff', outline: 'none', resize: 'vertical' }}
+                />
+                <button
+                  onClick={handleExtraerDesdeEnlace}
+                  disabled={extrayendoVideo || !enlaceInput}
+                  className="neon-btn nav-btn"
+                  style={{ padding: '0.8rem', backgroundColor: extrayendoVideo ? '#404040' : '#fff', color: extrayendoVideo ? '#a3a3a3' : '#000', fontWeight: 'bold' }}
+                >
+                  {extrayendoVideo ? 'PROCESANDO ENLACES EN COLA...' : 'PROCESAR ENLACES EN COLA'}
+                </button>
+                {(extrayendoVideo || queueProgress > 0) && (
+                  <div style={{ width: '100%', backgroundColor: '#262626', height: '4px', borderRadius: '2px', overflow: 'hidden' }}>
+                    <div style={{ height: '100%', width: `${queueProgress}%`, backgroundColor: '#00ffcc', transition: 'width 0.3s ease' }} />
                   </div>
                 )}
               </div>
             )}
+
+            {subTool === 'sonidos' && (
+              <div style={{ padding: '10px 16px', backgroundColor: '#050505', borderBottom: '1px solid #1a1a1a', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <textarea
+                  value={iaAudioTexto}
+                  onChange={(e) => setIaAudioTexto(e.target.value)}
+                  placeholder="Escribe el texto para generar voz..."
+                  style={{ width: '100%', height: '60px', backgroundColor: '#111', border: '1px solid #333', color: '#fff', padding: '10px', borderRadius: '8px', fontSize: '0.8rem', resize: 'none' }}
+                />
+                <button
+                  className="neon-btn nav-btn"
+                  style={{ backgroundColor: '#00cc66', color: '#000', fontWeight: 'bold' }}
+                  onClick={async () => {
+                    if (!iaAudioTexto) return alert('Ingresa texto primero');
+                    try {
+                      const res = await fetch('/api/ia-audio', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ texto: iaAudioTexto, email: session?.user?.email })
+                      });
+                      const data = await res.json();
+                      if (data.error) throw new Error(data.error);
+
+                      alert(`Audio generado (Simulado). URL: ${data.url}`);
+                      setGaleriaMultimedia(prev => [...prev, { id: `ia-audio-${Date.now()}`, nombre: 'Audio Generado IA', tipo: 'audio', url: data.url, etiqueta: 'A_IA', fuente: 'ia' }]);
+                    } catch (err: any) {
+                      alert("Error IA Audio: " + err.message);
+                    }
+                  }}
+                >
+                  GENERAR AUDIO
+                </button>
+              </div>
+            )}
+
+            {subTool === 'iafoto' && (
+              <div style={{ padding: '10px 16px', backgroundColor: '#050505', borderBottom: '1px solid #1a1a1a', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <select
+                  value={iaFotosFotoBase}
+                  onChange={(e) => setIaFotosFotoBase(e.target.value)}
+                  style={{ width: '100%', backgroundColor: '#111', border: '1px solid #333', color: '#fff', padding: '8px', borderRadius: '8px', fontSize: '0.8rem' }}
+                >
+                  <option value="">-- Seleccionar Foto Base --</option>
+                  {galeriaMultimedia.filter(m => m.tipo === 'foto').map(m => (
+                    <option key={m.id} value={m.url}>{m.nombre || m.etiqueta}</option>
+                  ))}
+                </select>
+                <textarea
+                  value={iaFotosPrompt}
+                  onChange={(e) => setIaFotosPrompt(e.target.value)}
+                  placeholder="Describe la nueva escena manteniendo la consistencia..."
+                  style={{ width: '100%', height: '60px', backgroundColor: '#111', border: '1px solid #333', color: '#fff', padding: '10px', borderRadius: '8px', fontSize: '0.8rem', resize: 'none' }}
+                />
+                <button
+                  className="neon-btn nav-btn"
+                  style={{ backgroundColor: '#00cc66', color: '#000', fontWeight: 'bold' }}
+                  onClick={async () => {
+                    if (!iaFotosFotoBase || !iaFotosPrompt) return alert('Selecciona foto base y escribe el prompt');
+                    try {
+                      const res = await fetch('/api/ia-fotos', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ fotoBaseUrl: iaFotosFotoBase, prompt: iaFotosPrompt, email: session?.user?.email })
+                      });
+                      const data = await res.json();
+                      if (data.error) throw new Error(data.error);
+
+                      alert(`Foto generada (Simulada). URL: ${data.url}`);
+                      setGaleriaMultimedia(prev => [...prev, { id: `ia-foto-${Date.now()}`, nombre: 'Foto Generada IA', tipo: 'foto', url: data.url, etiqueta: 'I_IA', fuente: 'ia' }]);
+                    } catch (err: any) {
+                      alert("Error IA Fotos: " + err.message);
+                    }
+                  }}
+                >
+                  GENERAR FOTO
+                </button>
+              </div>
+            )}
+
+            {/* GALERÍA SIEMPRE VISIBLE */}
+            <div style={{ flex: 1, padding: '16px', overflowY: 'auto' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(110px, 1fr))', gap: '10px' }}>
+                {galeriaMultimedia
+                  .filter(item => {
+                    if (filtroGaleria === 'videos') return item.tipo === 'video';
+                    if (filtroGaleria === 'fotos') return item.tipo === 'foto';
+                    if (filtroGaleria === 'audios') return item.tipo === 'audio';
+                    return true;
+                  })
+                  .map(item => {
+                    const srcFuente = item.fuente || 'propio';
+                    let bgBadge = 'mio';
+                    let txtBadge = 'MIO';
+                    if (srcFuente === 'youtube') { bgBadge = 'yt'; txtBadge = 'YT'; }
+                    else if (srcFuente === 'pixabay' || srcFuente === 'noticias' || srcFuente === 'artistas' || srcFuente === 'musicastock' || srcFuente === 'stockvideo') { bgBadge = 'px'; txtBadge = 'PX'; }
+                    else if (srcFuente === 'ia' || srcFuente === 'sonidos' || srcFuente === 'iafoto') { bgBadge = 'ia'; txtBadge = 'IA'; }
+
+                    return (
+                      <div key={item.id} className="neon-btn" style={{ minHeight: '120px', padding: '10px', borderRadius: '12px', borderStyle: 'solid', borderColor: 'transparent', flexDirection: 'column', position: 'relative', justifyContent: 'space-between', width: '100%' }}>
+                        <div className={`source-badge ${bgBadge}`}>{txtBadge}</div>
+                        <div style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <span style={{ fontSize: '0.65rem', backgroundColor: '#262626', padding: '2px 6px', borderRadius: '4px', color: '#fff', fontWeight: 'bold' }}>{item.etiqueta}</span>
+                          <div style={{ display: 'flex', gap: '4px', zIndex: 10 }}>
+                            <button onClick={() => descargarIndividual(item.url, item.nombre, item.tipo)} title="Descargar" style={{ background: 'rgba(255,255,255,0.1)', border: '1px solid #fff', borderRadius: '50%', width: '22px', height: '22px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', padding: 0 }}>
+                              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5"><path d="M12 5v14M5 12l7 7 7-7"/></svg>
+                            </button>
+                            <button onClick={() => eliminarDeGaleria(item.id)} title="Eliminar" style={{ background: 'rgba(255,255,255,0.1)', border: '1px solid #fff', borderRadius: '50%', width: '22px', height: '22px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', padding: 0 }}>
+                              <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                            </button>
+                          </div>
+                        </div>
+
+                        <div
+                          onClick={() => {
+                            setMediaActivaUrl(item.url);
+                            setClipSeleccionado(item.id);
+                            setVideoResultadoUrl(null);
+                            if (item.tipo === 'video' && playerRef.current) {
+                              const playPromise = playerRef.current.play(); if (playPromise !== undefined) { playPromise.catch(error => console.log('Autoplay prevented:', error)); }
+                              setIsPlaying(true);
+                            }
+                          }}
+                          style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', width: '100%', overflow: 'hidden', cursor: 'pointer', marginTop: '15px' }}>
+                          {item.tipo === 'video' && <svg width="24" height="24" viewBox="0 0 24 24" fill="white"><polygon points="5,3 19,12 5,21"/></svg>}
+                          {item.tipo === 'audio' && <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>}
+                          {item.tipo === 'foto' && <img src={item.url} style={{ width: '100%', height: '40px', objectFit: 'contain', borderRadius: '4px' }} alt={item.nombre} />}
+                          <input type="text" value={item.nombre} onChange={(e) => renombrarItem(item.id, e.target.value)} style={{ background: 'transparent', border: 'none', color: '#fff', outline: 'none', width: '100%', textAlign: 'center', fontSize: '0.55rem', marginTop: '8px', textOverflow: 'ellipsis', whiteSpace: 'nowrap', overflow: 'hidden' }} title={item.nombre} />
+                        </div>
+
+                        <button onClick={() => agregarAlTimeline(item)} style={{ padding: '6px', fontSize: '0.5rem', width: '100%', marginTop: 'auto', backgroundColor: '#fff', color: '#000', border: 'none', borderRadius: '100px', fontWeight: 'bold', cursor: 'pointer' }}>+ PISTA</button>
+                      </div>
+                    );
+                })}
+              </div>
+            </div>
           </div>
         )}
 
-        <div className="toolbar-container">
-          {TOOLS.map((tool) => (
-            <button key={tool.id} className={`tool-btn ${navActiva === tool.id ? 'active' : ''}`} onClick={() => handleToolClick(tool)}>
-              <div className="tool-icon">{tool.icon}</div>
+        {/* FILA DE SUB-HERRAMIENTAS */}
+        <div className="sub-row">
+          {SUB_TOOLS[mainNav]?.map((tool) => {
+            if (tool.id === 'subir-vf') {
+              return (
+                <label key={tool.id} className="sub-btn">
+                  <div className="icon-container">{tool.icon}</div>
+                  <span>{tool.nombre}</span>
+                  <input type="file" multiple accept="video/*,image/*" onChange={(e) => handleSubirMultimedia(e, 'video')} style={{ display: 'none' }} />
+                </label>
+              );
+            }
+            if (tool.id === 'subir-a') {
+              return (
+                <label key={tool.id} className="sub-btn">
+                  <div className="icon-container">{tool.icon}</div>
+                  <span>{tool.nombre}</span>
+                  <input type="file" multiple accept="audio/*" onChange={(e) => handleSubirMultimedia(e, 'audio')} style={{ display: 'none' }} />
+                </label>
+              );
+            }
+            if (tool.isFilter) {
+              return (
+                <button key={tool.id} className={`sub-btn ${filtroGaleria === tool.filterValue ? 'active' : ''}`} onClick={() => setFiltroGaleria(tool.filterValue)}>
+                  <div className="icon-container" style={{ border: filtroGaleria === tool.filterValue ? '1px solid #fff' : '1px solid #333' }}>
+                    <span style={{ fontSize: '10px' }}>{tool.nombre.substring(0,2).toUpperCase()}</span>
+                  </div>
+                  <span>{tool.nombre}</span>
+                </button>
+              );
+            }
+            return (
+              <button key={tool.id} className={`sub-btn ${subTool === tool.id ? 'active' : ''}`} onClick={() => {
+                // Toggle
+                if (subTool === tool.id) {
+                  setSubTool(null);
+                  setToolMessage(null);
+                } else {
+                  setSubTool(tool.id);
+                  if (['marco', 'delogo', 'script', 'supervisor', 'youtube', 'pixabay', 'musicastock', 'noticias', 'artistas', 'stockvideo', 'sonidos', 'iafoto', 'enlace'].includes(tool.id)) {
+                    setToolMessage(null);
+                  } else {
+                    setToolMessage('PRÓXIMAMENTE');
+                  }
+                }
+              }}>
+                <div className="icon-container">{tool.icon}</div>
+                <span>{tool.nombre}</span>
+              </button>
+            );
+          })}
+        </div>
+
+        {/* FILA DE BOTONES PRINCIPALES */}
+        <div className="main-row">
+          {MAIN_TOOLS.map((tool) => (
+            <button key={tool.id} className={`main-btn ${mainNav === tool.id ? 'active' : ''}`} onClick={() => {
+              setMainNav(tool.id);
+              setSubTool(null);
+            }}>
+              <div>{tool.icon}</div>
               <span>{tool.nombre}</span>
             </button>
           ))}
-        </div>
 
+        </div>
       </div>
     </div>
   );
-    }
+}
