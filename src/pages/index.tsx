@@ -554,7 +554,7 @@ export default function NaylaCore() {
 
   const procesarEnlaceIndividual = async (url: string, index: number) => {
     try {
-      const resApi = await fetch('/api/extract-meta-video', {
+      const resApi = await fetch('/api/extract-video', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ url })
@@ -710,10 +710,11 @@ export default function NaylaCore() {
 
     // Parsear los enlaces, separando por espacios, comas o saltos de línea
     const urlsBrutas = enlaceInput.split(/[\s,]+/).filter(u => u.trim() !== '');
-    const urls = urlsBrutas.filter(u => u.includes('meta.ai'));
+    // Aceptar cualquier enlace HTTP o HTTPS
+    const urls = urlsBrutas.filter(u => u.startsWith('http://') || u.startsWith('https://'));
 
     if (urls.length === 0) {
-      alert('No se encontraron enlaces válidos de Meta AI en el texto.');
+      alert('No se encontraron enlaces válidos (http:// o https://) en el texto.');
       return;
     }
 
@@ -1031,7 +1032,7 @@ export default function NaylaCore() {
                 {showEnlaceInput && (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '1rem' }}>
                     <textarea
-                      placeholder="Pega uno o varios enlaces de meta.ai/share aquí (separados por saltos de línea o comas)..."
+                      placeholder="Pega uno o varios enlaces web aquí (separados por saltos de línea o comas)..."
                       value={enlaceInput}
                       onChange={(e) => setEnlaceInput(e.target.value)}
                       rows={3}
