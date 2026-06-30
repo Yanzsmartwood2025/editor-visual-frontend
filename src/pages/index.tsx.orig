@@ -76,7 +76,6 @@ const SUB_TOOLS: Record<string, any[]> = {
 
 
 export default function NaylaCore() {
-  const [darkMode, setDarkMode] = useState(true);
   const [session, setSession] = useState(null);
   const [emailInput, setEmailInput] = useState('');
   const [otpInput, setOtpInput] = useState('');
@@ -828,19 +827,18 @@ export default function NaylaCore() {
   const ICONOS_POS: Record<string, string> = { derecha: '→', izquierda: '←', abajo: '↓', arriba: '↑', 'derecha+abajo': '↘', 'derecha+arriba': '↗', 'izquierda+abajo': '↙', 'izquierda+arriba': '↖' };
 
   const globalStyles = `
-    .main-btn { flex: 1; border: 1px solid transparent; color: #a3a3a3; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; font-size: 10px; font-weight: bold; cursor: pointer; transition: all 0.2s ease; border-radius: 12px; height: 70px; }
-    .main-btn.active { box-shadow: 0 0 15px rgba(0,0,0,0.2); }
-    ${darkMode ? '.main-btn { background: #0a0a0a; border-color: #262626; } .main-btn:hover { color: #ffffff; border-color: #404040; } .main-btn.active { background: #ffffff; color: #000000; border-color: #ffffff; box-shadow: 0 0 15px rgba(255,255,255,0.5); }' : '.main-btn { background: #f3f4f6; border-color: #e5e7eb; color: #4b5563; } .main-btn:hover { color: #000000; border-color: #d1d5db; } .main-btn.active { background: #000000; color: #ffffff; border-color: #000000; }'}
-
-    .sub-btn { background: transparent; border: none; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; font-size: 7px; cursor: pointer; transition: 0.2s; min-width: 48px; min-height: 48px; padding: 4px; }
-    ${darkMode ? '.sub-btn { color: #a3a3a3; } .sub-btn:hover { color: #ffffff; } .sub-btn.active { color: #ffffff; font-weight: bold; }' : '.sub-btn { color: #4b5563; } .sub-btn:hover { color: #000000; } .sub-btn.active { color: #000000; font-weight: bold; }'}
-
-    .sub-btn .icon-container { width: 36px; height: 36px; display: flex; justify-content: center; align-items: center; border-radius: 10px; transition: all 0.2s ease; border: 1px solid transparent; }
-    ${darkMode ? '.sub-btn .icon-container { background: #111; } .sub-btn:hover .icon-container { background: #222; } .sub-btn.active .icon-container { background: #ffffff; color: #000000; border-color: #ffffff; box-shadow: 0 0 10px rgba(255,255,255,0.4); }' : '.sub-btn .icon-container { background: #e5e7eb; border-color: #d1d5db; } .sub-btn:hover .icon-container { background: #d1d5db; } .sub-btn.active .icon-container { background: #000000; color: #ffffff; border-color: #000000; box-shadow: 0 0 10px rgba(0,0,0,0.2); }'}
-
-    .sub-row { display: flex; gap: 4px; overflow-x: auto; padding: 12px 16px; align-items: center; min-height: 70px; }
+    .main-btn { flex: 1; background: #0a0a0a; border: 1px solid #262626; color: #a3a3a3; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; font-size: 10px; font-weight: bold; cursor: pointer; transition: all 0.2s ease; border-radius: 12px; height: 70px; }
+    .main-btn:hover { color: #ffffff; border-color: #404040; }
+    .main-btn.active { background: #ffffff; color: #000000; border-color: #ffffff; box-shadow: 0 0 15px rgba(255,255,255,0.5); }
+    .sub-btn { background: transparent; border: none; color: #a3a3a3; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; font-size: 7px; cursor: pointer; transition: 0.2s; min-width: 48px; min-height: 48px; padding: 4px; }
+    .sub-btn:hover { color: #ffffff; }
+    .sub-btn.active { color: #ffffff; font-weight: bold; }
+    .sub-btn .icon-container { width: 36px; height: 36px; display: flex; justify-content: center; align-items: center; border-radius: 10px; transition: all 0.2s ease; border: 1px solid transparent; background: #111; }
+    .sub-btn:hover .icon-container { background: #222; }
+    .sub-btn.active .icon-container { background: #ffffff; color: #000000; border-color: #ffffff; box-shadow: 0 0 10px rgba(255,255,255,0.4); }
+    .sub-row { display: flex; gap: 4px; overflow-x: auto; padding: 12px 16px; background-color: #050505; border-top: 1px solid #1a1a1a; align-items: center; min-height: 70px; }
     .sub-row::-webkit-scrollbar { height: 0; }
-    .main-row { display: flex; gap: 12px; overflow-x: auto; padding: 16px; width: 100%; }
+    .main-row { display: flex; gap: 12px; overflow-x: auto; padding: 16px; background-color: #000; border-top: 1px solid #1a1a1a; width: 100%; }
     .main-row::-webkit-scrollbar { height: 0; }
     .source-badge { position: absolute; top: 6px; right: 6px; font-size: 0.55rem; font-weight: bold; padding: 2px 4px; border-radius: 4px; color: #fff; z-index: 10; letter-spacing: 0.5px; }
     .source-badge.yt { background-color: #cc0000; }
@@ -895,13 +893,13 @@ export default function NaylaCore() {
       );
     }
     return (
-      <div style={{ minHeight: '100vh', backgroundColor: '#000', color: darkMode ? '#fff' : '#000', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', fontFamily: 'system-ui, sans-serif', overflow: 'hidden' }}>
+      <div style={{ minHeight: '100vh', backgroundColor: '#000', color: '#fff', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', fontFamily: 'system-ui, sans-serif', overflow: 'hidden' }}>
         <Head><title>NAYLA - AUTENTICACIÓN</title></Head>
         <style>{globalStyles}</style>
         <div style={{ width: '100%', maxWidth: '400px', border: '1px solid #262626', backgroundColor: '#050505', padding: '2.5rem', borderRadius: '24px', textAlign: 'center', opacity: otpEnviado ? 0.5 : 1, transition: 'opacity 0.3s' }}>
           <h1 style={{ fontSize: '1rem', letterSpacing: '4px', margin: '0 0 2rem 0', textTransform: 'uppercase' }}>NAYLA</h1>
           <form onSubmit={handleEmailAuth}>
-            <input type="email" placeholder="CORREO MAESTRO" value={emailInput} onChange={(e) => setEmailInput(e.target.value)} disabled={otpEnviado} style={{ width: '100%', padding: '1rem', backgroundColor: '#0a0a0a', border: '1px solid #404040', borderRadius: '16px', color: darkMode ? '#fff' : '#000', fontSize: '0.8rem', marginBottom: '1rem', textAlign: 'center', outline: 'none' }} />
+            <input type="email" placeholder="CORREO MAESTRO" value={emailInput} onChange={(e) => setEmailInput(e.target.value)} disabled={otpEnviado} style={{ width: '100%', padding: '1rem', backgroundColor: '#0a0a0a', border: '1px solid #404040', borderRadius: '16px', color: '#fff', fontSize: '0.8rem', marginBottom: '1rem', textAlign: 'center', outline: 'none' }} />
             <button type="submit" disabled={authLoading || otpEnviado} className="neon-btn nav-btn" style={{ width: '100%', marginBottom: '1rem' }}>{authLoading && !otpEnviado ? 'PROCESANDO...' : 'SOLICITAR ACCESO'}</button>
             {message && !otpEnviado && <p style={{ color: '#ff4444', fontSize: '0.8rem', margin: 0 }}>{message}</p>}
           </form>
@@ -911,7 +909,7 @@ export default function NaylaCore() {
           {otpEnviado && <p style={{ color: '#00ffcc', fontSize: '0.8rem', marginBottom: '1rem', letterSpacing: '1px', fontWeight: 'bold' }}>CÓDIGO ENVIADO — REVISA TU CORREO</p>}
           <h2 style={{ fontSize: '0.9rem', letterSpacing: '2px', margin: '0 0 1.5rem 0', textTransform: 'uppercase' }}>CÓDIGO DE ACCESO</h2>
           <form onSubmit={handleOtpVerify} style={{ width: '100%', maxWidth: '350px' }}>
-            <input type="text" inputMode="numeric" placeholder="CÓDIGO 000000" value={otpInput} onChange={(e) => setOtpInput(e.target.value)} style={{ width: '100%', padding: '1rem', backgroundColor: '#0a0a0a', border: '1px solid #fff', borderRadius: '16px', color: darkMode ? '#fff' : '#000', fontSize: '1rem', marginBottom: '1rem', textAlign: 'center', outline: 'none', letterSpacing: '4px' }} />
+            <input type="text" inputMode="numeric" placeholder="CÓDIGO 000000" value={otpInput} onChange={(e) => setOtpInput(e.target.value)} style={{ width: '100%', padding: '1rem', backgroundColor: '#0a0a0a', border: '1px solid #fff', borderRadius: '16px', color: '#fff', fontSize: '1rem', marginBottom: '1rem', textAlign: 'center', outline: 'none', letterSpacing: '4px' }} />
             <div style={{ display: 'flex', gap: '10px', marginBottom: '1rem' }}>
               <button type="button" onClick={handlePasteCode} className="neon-btn nav-btn" style={{ flex: 1, padding: '0.8rem' }}>PEGAR CÓDIGO</button>
               <button type="submit" disabled={authLoading} className="neon-btn nav-btn" style={{ flex: 1, backgroundColor: '#fff', color: '#000', fontWeight: 'bold', padding: '0.8rem' }}>{authLoading ? 'VERIFICANDO...' : 'INGRESAR'}</button>
@@ -924,7 +922,7 @@ export default function NaylaCore() {
   }
 
   return (
-    <div className={`min-h-screen w-full flex flex-col overflow-x-hidden select-none ${darkMode ? 'bg-black text-gray-200' : 'bg-white text-gray-800'}`} style={{ fontFamily: 'system-ui, sans-serif' }}>
+    <div style={{ minHeight: '100vh', backgroundColor: '#000', color: '#ededed', fontFamily: 'system-ui, sans-serif' }}>
       <Head><title>NAYLA CORE</title></Head>
       <style>{globalStyles}</style>
 
@@ -952,14 +950,7 @@ export default function NaylaCore() {
           )}
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-          <button onClick={() => setDarkMode(!darkMode)} className="neon-btn nav-btn" style={{ padding: '6px', color: darkMode ? '#fff' : '#000' }} title={darkMode ? 'Modo Claro' : 'Modo Oscuro'}>
-            {darkMode ? (
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
-            ) : (
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
-            )}
-          </button>
-          <select value={calidadExportacion} onChange={(e) => setCalidadExportacion(e.target.value)} style={{ backgroundColor: '#000', color: darkMode ? '#fff' : '#000', border: '1px solid #404040', borderRadius: '8px', padding: '6px 10px', fontSize: '0.7rem', outline: 'none' }}>
+          <select value={calidadExportacion} onChange={(e) => setCalidadExportacion(e.target.value)} style={{ backgroundColor: '#000', color: '#fff', border: '1px solid #404040', borderRadius: '8px', padding: '6px 10px', fontSize: '0.7rem', outline: 'none' }}>
             <option value="480p">480p</option>
             <option value="720p">720p</option>
             <option value="1080p">1080p (FHD)</option>
@@ -972,14 +963,11 @@ export default function NaylaCore() {
         </div>
       </header>
 
-      <div className="flex flex-col md:flex-row md:max-w-6xl md:mx-auto w-full gap-4 flex-1 overflow-hidden">
-
-        {/* COLUMNA IZQUIERDA: Monitor de Video y Línea de Tiempo */}
-        <div className="flex flex-col w-full md:w-1/2">
+      <div style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
 
         <section style={{ width: '100%', padding: '0', backgroundColor: '#050505' }}>
           <div ref={containerRef} onPointerDown={handlePointerDown} onPointerMove={handlePointerMove} onPointerUp={handlePointerUp} onPointerLeave={handlePointerUp}
-            className="w-full max-w-[430px] mx-auto aspect-[9/16] relative flex items-center justify-center overflow-hidden touch-none" style={{ aspectRatio: canvasRatio, backgroundColor: darkMode ? '#0a0a0a' : '#f0f0f0', border: darkMode ? '1px solid #1a1a1a' : '1px solid #ddd' }}>
+            style={{ aspectRatio: canvasRatio, width: '100%', height: canvasRatio === '9/16' ? '50vw' : 'auto', backgroundColor: '#0a0a0a', borderRadius: '0', overflow: 'hidden', position: 'relative', border: '1px solid #1a1a1a', touchAction: 'none' }}>
             {(lineaDeTiempo.filter(t => t.tipo === 'video' || t.tipo === 'foto').length > 0 || videoResultadoUrl || mediaActivaUrl) ? (
               <>
 
@@ -1078,11 +1066,6 @@ export default function NaylaCore() {
           </div>
         </section>
 
-        </div>
-
-        {/* COLUMNA DERECHA: Herramientas, Galería y Controles */}
-        <div className="flex flex-col w-full md:w-1/2 flex-1 overflow-hidden">
-
 
         {/* NUEVA ESTRUCTURA DE HERRAMIENTAS */}
 
@@ -1096,7 +1079,7 @@ export default function NaylaCore() {
             {/* COMPONENTES DE PANELES COMPLEJOS */}
             {subTool === 'marco' && (
               <div>
-                <p style={{ fontSize: '0.75rem', color: darkMode ? '#fff' : '#000', fontWeight: 'bold', marginBottom: '1rem', letterSpacing: '1px' }}>MARCO — CUBRIR MARCA DE AGUA</p>
+                <p style={{ fontSize: '0.75rem', color: '#fff', fontWeight: 'bold', marginBottom: '1rem', letterSpacing: '1px' }}>MARCO — CUBRIR MARCA DE AGUA</p>
                 <p style={{ fontSize: '0.65rem', color: '#737373', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '1px' }}>Posición del marco</p>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '6px', marginBottom: '1.2rem' }}>
                   {POSICIONES.map(pos => (
@@ -1139,7 +1122,7 @@ export default function NaylaCore() {
 
             {subTool === 'delogo' && (
               <div>
-                <p style={{ fontSize: '0.75rem', color: darkMode ? '#fff' : '#000', fontWeight: 'bold', marginBottom: '1rem', letterSpacing: '1px' }}>SUPRESIÓN DE MARCA DE AGUA (DELOGO)</p>
+                <p style={{ fontSize: '0.75rem', color: '#fff', fontWeight: 'bold', marginBottom: '1rem', letterSpacing: '1px' }}>SUPRESIÓN DE MARCA DE AGUA (DELOGO)</p>
                 <div style={{ backgroundColor: '#0a0a0a', padding: '1.5rem', borderRadius: '16px', border: '1px dashed #404040', marginBottom: '1rem' }}>
                   <p style={{ fontSize: '0.7rem', color: '#a3a3a3', marginBottom: '1rem' }}>1. Selecciona un video en la pista.<br />2. Dibuja un rectángulo blanco sobre el logo en el monitor.<br />3. Elige el motor de procesamiento.</p>
                   <div style={{ display: 'flex', gap: '10px' }}>
@@ -1153,10 +1136,10 @@ export default function NaylaCore() {
             {subTool === 'script' && (
               <div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-                  <p style={{ fontSize: '0.75rem', color: darkMode ? '#fff' : '#000', fontWeight: 'bold', letterSpacing: '1px' }}>SCRIPT MANUAL / MOLDES</p>
+                  <p style={{ fontSize: '0.75rem', color: '#fff', fontWeight: 'bold', letterSpacing: '1px' }}>SCRIPT MANUAL / MOLDES</p>
                   <div style={{ display: 'flex', gap: '8px' }}>
                     {moldesScripts.length > 0 && (
-                      <select value={moldeActivo} onChange={cargarMolde} style={{ backgroundColor: '#0a0a0a', color: darkMode ? '#fff' : '#000', border: '1px solid #404040', borderRadius: '8px', padding: '4px 8px', fontSize: '0.65rem' }}>
+                      <select value={moldeActivo} onChange={cargarMolde} style={{ backgroundColor: '#0a0a0a', color: '#fff', border: '1px solid #404040', borderRadius: '8px', padding: '4px 8px', fontSize: '0.65rem' }}>
                         <option value="">-- Seleccionar Molde --</option>
                         {moldesScripts.map(m => (
                           <option key={m.nombre} value={m.nombre}>{m.nombre}</option>
@@ -1194,7 +1177,7 @@ export default function NaylaCore() {
                      placeholder="sk-proj-..."
                      value={iaApiKey}
                      onChange={(e) => setIaApiKey(e.target.value)}
-                     style={{ width: '100%', backgroundColor: '#050505', border: '1px solid #262626', color: darkMode ? '#fff' : '#000', padding: '8px', borderRadius: '5px', fontSize: '0.7rem' }}
+                     style={{ width: '100%', backgroundColor: '#050505', border: '1px solid #262626', color: '#fff', padding: '8px', borderRadius: '5px', fontSize: '0.7rem' }}
                    />
                 </div>
 
@@ -1251,7 +1234,7 @@ export default function NaylaCore() {
                   placeholder={`Buscar en ${SUB_TOOLS['buscar'].find(t => t.id === subTool)?.nombre || ''}...`}
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  style={{ flex: 1, padding: '8px 12px', backgroundColor: '#111', border: '1px solid #333', borderRadius: '8px', color: darkMode ? '#fff' : '#000', fontSize: '0.8rem', outline: 'none' }}
+                  style={{ flex: 1, padding: '8px 12px', backgroundColor: '#111', border: '1px solid #333', borderRadius: '8px', color: '#fff', fontSize: '0.8rem', outline: 'none' }}
                 />
                 <button className="neon-btn nav-btn" style={{ padding: '8px 16px' }} onClick={async () => {
                   if (!searchQuery) return;
@@ -1294,7 +1277,7 @@ export default function NaylaCore() {
                   value={enlaceInput}
                   onChange={(e) => setEnlaceInput(e.target.value)}
                   rows={2}
-                  style={{ width: '100%', padding: '0.8rem', backgroundColor: '#111', border: '1px solid #333', borderRadius: '8px', color: darkMode ? '#fff' : '#000', outline: 'none', resize: 'vertical' }}
+                  style={{ width: '100%', padding: '0.8rem', backgroundColor: '#111', border: '1px solid #333', borderRadius: '8px', color: '#fff', outline: 'none', resize: 'vertical' }}
                 />
                 <button
                   onClick={handleExtraerDesdeEnlace}
@@ -1318,7 +1301,7 @@ export default function NaylaCore() {
                   value={iaAudioTexto}
                   onChange={(e) => setIaAudioTexto(e.target.value)}
                   placeholder="Escribe el texto para generar voz..."
-                  style={{ width: '100%', height: '60px', backgroundColor: '#111', border: '1px solid #333', color: darkMode ? '#fff' : '#000', padding: '10px', borderRadius: '8px', fontSize: '0.8rem', resize: 'none' }}
+                  style={{ width: '100%', height: '60px', backgroundColor: '#111', border: '1px solid #333', color: '#fff', padding: '10px', borderRadius: '8px', fontSize: '0.8rem', resize: 'none' }}
                 />
                 <button
                   className="neon-btn nav-btn"
@@ -1351,7 +1334,7 @@ export default function NaylaCore() {
                 <select
                   value={iaFotosFotoBase}
                   onChange={(e) => setIaFotosFotoBase(e.target.value)}
-                  style={{ width: '100%', backgroundColor: '#111', border: '1px solid #333', color: darkMode ? '#fff' : '#000', padding: '8px', borderRadius: '8px', fontSize: '0.8rem' }}
+                  style={{ width: '100%', backgroundColor: '#111', border: '1px solid #333', color: '#fff', padding: '8px', borderRadius: '8px', fontSize: '0.8rem' }}
                 >
                   <option value="">-- Seleccionar Foto Base --</option>
                   {galeriaMultimedia.filter(m => m.tipo === 'foto').map(m => (
@@ -1362,7 +1345,7 @@ export default function NaylaCore() {
                   value={iaFotosPrompt}
                   onChange={(e) => setIaFotosPrompt(e.target.value)}
                   placeholder="Describe la nueva escena manteniendo la consistencia..."
-                  style={{ width: '100%', height: '60px', backgroundColor: '#111', border: '1px solid #333', color: darkMode ? '#fff' : '#000', padding: '10px', borderRadius: '8px', fontSize: '0.8rem', resize: 'none' }}
+                  style={{ width: '100%', height: '60px', backgroundColor: '#111', border: '1px solid #333', color: '#fff', padding: '10px', borderRadius: '8px', fontSize: '0.8rem', resize: 'none' }}
                 />
                 <button
                   className="neon-btn nav-btn"
@@ -1412,7 +1395,7 @@ export default function NaylaCore() {
                       <div key={item.id} className="neon-btn" style={{ minHeight: '120px', padding: '10px', borderRadius: '12px', borderStyle: 'solid', borderColor: 'transparent', flexDirection: 'column', position: 'relative', justifyContent: 'space-between', width: '100%' }}>
                         <div className={`source-badge ${bgBadge}`}>{txtBadge}</div>
                         <div style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                          <span style={{ fontSize: '0.65rem', backgroundColor: '#262626', padding: '2px 6px', borderRadius: '4px', color: darkMode ? '#fff' : '#000', fontWeight: 'bold' }}>{item.etiqueta}</span>
+                          <span style={{ fontSize: '0.65rem', backgroundColor: '#262626', padding: '2px 6px', borderRadius: '4px', color: '#fff', fontWeight: 'bold' }}>{item.etiqueta}</span>
                           <div style={{ display: 'flex', gap: '4px', zIndex: 10 }}>
                             <button onClick={() => descargarIndividual(item.url, item.nombre, item.tipo)} title="Descargar" style={{ background: 'rgba(255,255,255,0.1)', border: '1px solid #fff', borderRadius: '50%', width: '22px', height: '22px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', padding: 0 }}>
                               <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5"><path d="M12 5v14M5 12l7 7 7-7"/></svg>
@@ -1437,7 +1420,7 @@ export default function NaylaCore() {
                           {item.tipo === 'video' && <svg width="24" height="24" viewBox="0 0 24 24" fill="white"><polygon points="5,3 19,12 5,21"/></svg>}
                           {item.tipo === 'audio' && <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>}
                           {item.tipo === 'foto' && <img src={item.url} style={{ width: '100%', height: '40px', objectFit: 'contain', borderRadius: '4px' }} alt={item.nombre} />}
-                          <input type="text" value={item.nombre} onChange={(e) => renombrarItem(item.id, e.target.value)} style={{ background: 'transparent', border: 'none', color: darkMode ? '#fff' : '#000', outline: 'none', width: '100%', textAlign: 'center', fontSize: '0.55rem', marginTop: '8px', textOverflow: 'ellipsis', whiteSpace: 'nowrap', overflow: 'hidden' }} title={item.nombre} />
+                          <input type="text" value={item.nombre} onChange={(e) => renombrarItem(item.id, e.target.value)} style={{ background: 'transparent', border: 'none', color: '#fff', outline: 'none', width: '100%', textAlign: 'center', fontSize: '0.55rem', marginTop: '8px', textOverflow: 'ellipsis', whiteSpace: 'nowrap', overflow: 'hidden' }} title={item.nombre} />
                         </div>
 
                         <button onClick={() => agregarAlTimeline(item)} style={{ padding: '6px', fontSize: '0.5rem', width: '100%', marginTop: 'auto', backgroundColor: '#fff', color: '#000', border: 'none', borderRadius: '100px', fontWeight: 'bold', cursor: 'pointer' }}>+ PISTA</button>
@@ -1450,38 +1433,38 @@ export default function NaylaCore() {
         )}
 
         {/* FILA DE SUB-HERRAMIENTAS */}
-        <div className={`grid grid-cols-5 gap-2 w-full p-3 border-t ${darkMode ? 'bg-neutral-950 border-neutral-900' : 'bg-gray-50 border-gray-200'}`}>
+        <div className="sub-row">
           {SUB_TOOLS[mainNav]?.map((tool) => {
             if (tool.id === 'subir-vf') {
               return (
-                <label key={tool.id} className={`sub-btn w-full ${!darkMode ? 'text-black' : ''}`}>
-                  <div className={`icon-container ${!darkMode ? 'bg-gray-200 border-gray-300' : ''}`}>{tool.icon}</div>
-                  <span className={!darkMode ? 'text-black font-medium' : ''}>{tool.nombre}</span>
+                <label key={tool.id} className="sub-btn">
+                  <div className="icon-container">{tool.icon}</div>
+                  <span>{tool.nombre}</span>
                   <input type="file" multiple accept="video/*,image/*" onChange={(e) => handleSubirMultimedia(e, 'video')} style={{ display: 'none' }} />
                 </label>
               );
             }
             if (tool.id === 'subir-a') {
               return (
-                <label key={tool.id} className={`sub-btn w-full ${!darkMode ? 'text-black' : ''}`}>
-                  <div className={`icon-container ${!darkMode ? 'bg-gray-200 border-gray-300' : ''}`}>{tool.icon}</div>
-                  <span className={!darkMode ? 'text-black font-medium' : ''}>{tool.nombre}</span>
+                <label key={tool.id} className="sub-btn">
+                  <div className="icon-container">{tool.icon}</div>
+                  <span>{tool.nombre}</span>
                   <input type="file" multiple accept="audio/*" onChange={(e) => handleSubirMultimedia(e, 'audio')} style={{ display: 'none' }} />
                 </label>
               );
             }
             if (tool.isFilter) {
               return (
-                <button key={tool.id} className={`sub-btn w-full ${filtroGaleria === tool.filterValue ? 'active' : ''} ${!darkMode ? 'text-black' : ''}`} onClick={() => setFiltroGaleria(tool.filterValue)}>
-                  <div className={`icon-container ${!darkMode ? 'bg-gray-200 border-gray-300' : ''}`} style={{ border: filtroGaleria === tool.filterValue ? (darkMode ? '1px solid #fff' : '1px solid #000') : (darkMode ? '1px solid #333' : '1px solid #d1d5db') }}>
-                    <span style={{ fontSize: '10px' }} className={!darkMode ? 'text-black' : ''}>{tool.nombre.substring(0,2).toUpperCase()}</span>
+                <button key={tool.id} className={`sub-btn ${filtroGaleria === tool.filterValue ? 'active' : ''}`} onClick={() => setFiltroGaleria(tool.filterValue)}>
+                  <div className="icon-container" style={{ border: filtroGaleria === tool.filterValue ? '1px solid #fff' : '1px solid #333' }}>
+                    <span style={{ fontSize: '10px' }}>{tool.nombre.substring(0,2).toUpperCase()}</span>
                   </div>
-                  <span className={!darkMode ? 'text-black font-medium' : ''}>{tool.nombre}</span>
+                  <span>{tool.nombre}</span>
                 </button>
               );
             }
             return (
-              <button key={tool.id} className={`sub-btn w-full ${subTool === tool.id ? 'active' : ''} ${!darkMode ? 'text-black' : ''}`} onClick={() => {
+              <button key={tool.id} className={`sub-btn ${subTool === tool.id ? 'active' : ''}`} onClick={() => {
                 // Toggle
                 if (subTool === tool.id) {
                   setSubTool(null);
@@ -1495,26 +1478,24 @@ export default function NaylaCore() {
                   }
                 }
               }}>
-                <div className={`icon-container ${!darkMode ? 'bg-gray-200 border-gray-300' : ''}`}>{tool.icon}</div>
-                <span className={!darkMode ? 'text-black font-medium' : ''}>{tool.nombre}</span>
+                <div className="icon-container">{tool.icon}</div>
+                <span>{tool.nombre}</span>
               </button>
             );
           })}
         </div>
 
         {/* FILA DE BOTONES PRINCIPALES */}
-        <div className={`grid grid-cols-4 gap-2 w-full p-3 ${darkMode ? 'bg-black' : 'bg-white'}`}>
+        <div className="main-row">
           {MAIN_TOOLS.map((tool) => (
-            <button key={tool.id} className={`main-btn w-full ${mainNav === tool.id ? 'active' : ''} ${!darkMode ? 'bg-gray-100 border-gray-300 text-black' : ''}`} style={{ backgroundColor: !darkMode ? (mainNav === tool.id ? '#000' : '#f3f4f6') : undefined, color: !darkMode ? (mainNav === tool.id ? '#fff' : '#000') : undefined }} onClick={() => {
+            <button key={tool.id} className={`main-btn ${mainNav === tool.id ? 'active' : ''}`} onClick={() => {
               setMainNav(tool.id);
               setSubTool(null);
             }}>
               <div>{tool.icon}</div>
-              <span className={!darkMode && mainNav !== tool.id ? 'text-black font-bold' : ''}>{tool.nombre}</span>
+              <span>{tool.nombre}</span>
             </button>
           ))}
-
-        </div>
 
         </div>
       </div>
