@@ -827,7 +827,7 @@ export default function NaylaCore() {
   const ICONOS_POS: Record<string, string> = { derecha: '→', izquierda: '←', abajo: '↓', arriba: '↑', 'derecha+abajo': '↘', 'derecha+arriba': '↗', 'izquierda+abajo': '↙', 'izquierda+arriba': '↖' };
 
   const globalStyles = `
-    .main-btn { background: #0a0a0a; border: 1px solid #262626; color: #a3a3a3; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; font-size: 10px; font-weight: bold; cursor: pointer; transition: all 0.2s ease; border-radius: 12px; min-width: 70px; height: 70px; }
+    .main-btn { flex: 1; background: #0a0a0a; border: 1px solid #262626; color: #a3a3a3; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; font-size: 10px; font-weight: bold; cursor: pointer; transition: all 0.2s ease; border-radius: 12px; height: 70px; }
     .main-btn:hover { color: #ffffff; border-color: #404040; }
     .main-btn.active { background: #ffffff; color: #000000; border-color: #ffffff; box-shadow: 0 0 15px rgba(255,255,255,0.5); }
     .sub-btn { background: transparent; border: none; color: #a3a3a3; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; font-size: 7px; cursor: pointer; transition: 0.2s; min-width: 48px; min-height: 48px; padding: 4px; }
@@ -838,7 +838,7 @@ export default function NaylaCore() {
     .sub-btn.active .icon-container { background: #ffffff; color: #000000; border-color: #ffffff; box-shadow: 0 0 10px rgba(255,255,255,0.4); }
     .sub-row { display: flex; gap: 4px; overflow-x: auto; padding: 12px 16px; background-color: #050505; border-top: 1px solid #1a1a1a; align-items: center; min-height: 70px; }
     .sub-row::-webkit-scrollbar { height: 0; }
-    .main-row { display: flex; gap: 12px; overflow-x: auto; padding: 16px; background-color: #000; border-top: 1px solid #1a1a1a; justify-content: center; }
+    .main-row { display: flex; gap: 12px; overflow-x: auto; padding: 16px; background-color: #000; border-top: 1px solid #1a1a1a; width: 100%; }
     .main-row::-webkit-scrollbar { height: 0; }
     .source-badge { position: absolute; top: 6px; right: 6px; font-size: 0.55rem; font-weight: bold; padding: 2px 4px; border-radius: 4px; color: #fff; z-index: 10; letter-spacing: 0.5px; }
     .source-badge.yt { background-color: #cc0000; }
@@ -874,7 +874,7 @@ export default function NaylaCore() {
     .marco-pos-btn.selected { background: #ffffff; color: #000000; border-color: #ffffff; box-shadow: 0 0 10px rgba(255,255,255,0.5); }
   `;
 
-  if (!session) {
+  if (!session && false) {
     if (showIntro) {
       return (
         <div style={{ minHeight: '100vh', backgroundColor: '#000', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center' }}>
@@ -965,16 +965,16 @@ export default function NaylaCore() {
 
       <div style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
 
-        <section style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '10px', backgroundColor: '#050505' }}>
+        <section style={{ width: '100%', padding: '0', backgroundColor: '#050505' }}>
           <div ref={containerRef} onPointerDown={handlePointerDown} onPointerMove={handlePointerMove} onPointerUp={handlePointerUp} onPointerLeave={handlePointerUp}
-            style={{ aspectRatio: canvasRatio, height: '42vh', maxHeight: '42vh', minHeight: '42vh', backgroundColor: '#0a0a0a', borderRadius: '16px', overflow: 'hidden', position: 'relative', border: '1px solid #1a1a1a', touchAction: 'none' }}>
+            style={{ aspectRatio: canvasRatio, width: '100%', height: canvasRatio === '9/16' ? '50vw' : 'auto', backgroundColor: '#0a0a0a', borderRadius: '0', overflow: 'hidden', position: 'relative', border: '1px solid #1a1a1a', touchAction: 'none' }}>
             {(lineaDeTiempo.filter(t => t.tipo === 'video' || t.tipo === 'foto').length > 0 || videoResultadoUrl || mediaActivaUrl) ? (
               <>
 
                 <video
                   key={lineaDeTiempo[0]?.url || mediaActivaUrl}
                   src={lineaDeTiempo.filter(t => t.tipo === 'video').at(clipSeleccionado ? lineaDeTiempo.findIndex(t => t.id === clipSeleccionado) : 0)?.url || mediaActivaUrl || ''}
-                  style={{ width: '100%', height: '100%', objectFit: 'contain' }}
+                  style={{ width: '100%', height: '100%', objectFit: 'contain', borderRadius: '0' }}
                   controls={false}
                   playsInline
                   muted={false}
@@ -993,7 +993,7 @@ export default function NaylaCore() {
               </>
             ) : (
               <div style={{ display: 'flex', height: '100%', justifyContent: 'center', alignItems: 'center' }}>
-                <img src="/assets/imagenes/Icono-intro.jpeg" alt="NAYLA" style={{ width: '80px', height: '80px', borderRadius: '16px', opacity: 0.5, filter: 'grayscale(100%)' }} />
+                <img src="/assets/imagenes/Icono-intro.jpeg" alt="NAYLA" style={{ width: '80px', height: '80px', borderRadius: '0', opacity: 0.5, filter: 'grayscale(100%)' }} />
               </div>
             )}
           </div>
