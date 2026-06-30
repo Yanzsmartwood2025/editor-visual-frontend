@@ -1,0 +1,140 @@
+--- src/pages/index.tsx
++++ src/pages/index.tsx
+@@ -76,6 +76,7 @@
+
+
+ export default function NaylaCore() {
++  const [darkMode, setDarkMode] = useState(true);
+   const [session, setSession] = useState(null);
+   const [emailInput, setEmailInput] = useState('');
+   const [otpInput, setOtpInput] = useState('');
+@@ -922,7 +923,7 @@
+   }
+
+   return (
+-    <div style={{ minHeight: '100vh', backgroundColor: '#000', color: '#ededed', fontFamily: 'system-ui, sans-serif' }}>
++    <div className={`min-h-screen w-full flex flex-col overflow-x-hidden select-none ${darkMode ? 'bg-black text-gray-200' : 'bg-white text-gray-800'}`} style={{ fontFamily: 'system-ui, sans-serif' }}>
+       <Head><title>NAYLA CORE</title></Head>
+       <style>{globalStyles}</style>
+
+@@ -949,6 +950,13 @@
+           )}
+         </div>
+         <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
++          <button onClick={() => setDarkMode(!darkMode)} className="neon-btn nav-btn" style={{ padding: '6px', color: darkMode ? '#fff' : '#000' }} title={darkMode ? 'Modo Claro' : 'Modo Oscuro'}>
++            {darkMode ? (
++              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
++            ) : (
++              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
++            )}
++          </button>
+           <select value={calidadExportacion} onChange={(e) => setCalidadExportacion(e.target.value)} style={{ backgroundColor: '#000', color: '#fff', border: '1px solid #404040', borderRadius: '8px', padding: '6px 10px', fontSize: '0.7rem', outline: 'none' }}>
+             <option value="480p">480p</option>
+             <option value="720p">720p</option>
+@@ -963,7 +971,10 @@
+         </div>
+       </header>
+
+-      <div style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
++      <div className="flex flex-col md:flex-row md:max-w-6xl md:mx-auto w-full gap-4 flex-1 overflow-hidden">
++
++        {/* COLUMNA IZQUIERDA: Monitor de Video y Línea de Tiempo */}
++        <div className="flex flex-col w-full md:w-1/2">
+
+         <section style={{ width: '100%', padding: '0', backgroundColor: '#050505' }}>
+           <div ref={containerRef} onPointerDown={handlePointerDown} onPointerMove={handlePointerMove} onPointerUp={handlePointerUp} onPointerLeave={handlePointerUp}
+@@ -1067,6 +1078,11 @@
+             ))}
+           </div>
+         </section>
++
++        </div>
++
++        {/* COLUMNA DERECHA: Herramientas, Galería y Controles */}
++        <div className="flex flex-col w-full md:w-1/2 flex-1 overflow-hidden">
+
+
+         {/* NUEVA ESTRUCTURA DE HERRAMIENTAS */}
+@@ -1433,38 +1449,38 @@
+         )}
+
+         {/* FILA DE SUB-HERRAMIENTAS */}
+-        <div className="sub-row">
++        <div className={`grid grid-cols-5 gap-2 w-full p-3 border-t ${darkMode ? 'bg-neutral-950 border-neutral-900' : 'bg-gray-50 border-gray-200'}`}>
+           {SUB_TOOLS[mainNav]?.map((tool) => {
+             if (tool.id === 'subir-vf') {
+               return (
+-                <label key={tool.id} className="sub-btn">
+-                  <div className="icon-container">{tool.icon}</div>
+-                  <span>{tool.nombre}</span>
++                <label key={tool.id} className={`sub-btn w-full ${!darkMode ? 'text-black' : ''}`}>
++                  <div className={`icon-container ${!darkMode ? 'bg-gray-200 border-gray-300' : ''}`}>{tool.icon}</div>
++                  <span className={!darkMode ? 'text-black font-medium' : ''}>{tool.nombre}</span>
+                   <input type="file" multiple accept="video/*,image/*" onChange={(e) => handleSubirMultimedia(e, 'video')} style={{ display: 'none' }} />
+                 </label>
+               );
+             }
+             if (tool.id === 'subir-a') {
+               return (
+-                <label key={tool.id} className="sub-btn">
+-                  <div className="icon-container">{tool.icon}</div>
+-                  <span>{tool.nombre}</span>
++                <label key={tool.id} className={`sub-btn w-full ${!darkMode ? 'text-black' : ''}`}>
++                  <div className={`icon-container ${!darkMode ? 'bg-gray-200 border-gray-300' : ''}`}>{tool.icon}</div>
++                  <span className={!darkMode ? 'text-black font-medium' : ''}>{tool.nombre}</span>
+                   <input type="file" multiple accept="audio/*" onChange={(e) => handleSubirMultimedia(e, 'audio')} style={{ display: 'none' }} />
+                 </label>
+               );
+             }
+             if (tool.isFilter) {
+               return (
+-                <button key={tool.id} className={`sub-btn ${filtroGaleria === tool.filterValue ? 'active' : ''}`} onClick={() => setFiltroGaleria(tool.filterValue)}>
+-                  <div className="icon-container" style={{ border: filtroGaleria === tool.filterValue ? '1px solid #fff' : '1px solid #333' }}>
+-                    <span style={{ fontSize: '10px' }}>{tool.nombre.substring(0,2).toUpperCase()}</span>
++                <button key={tool.id} className={`sub-btn w-full ${filtroGaleria === tool.filterValue ? 'active' : ''} ${!darkMode ? 'text-black' : ''}`} onClick={() => setFiltroGaleria(tool.filterValue)}>
++                  <div className={`icon-container ${!darkMode ? 'bg-gray-200 border-gray-300' : ''}`} style={{ border: filtroGaleria === tool.filterValue ? (darkMode ? '1px solid #fff' : '1px solid #000') : (darkMode ? '1px solid #333' : '1px solid #d1d5db') }}>
++                    <span style={{ fontSize: '10px' }} className={!darkMode ? 'text-black' : ''}>{tool.nombre.substring(0,2).toUpperCase()}</span>
+                   </div>
+-                  <span>{tool.nombre}</span>
++                  <span className={!darkMode ? 'text-black font-medium' : ''}>{tool.nombre}</span>
+                 </button>
+               );
+             }
+             return (
+-              <button key={tool.id} className={`sub-btn ${subTool === tool.id ? 'active' : ''}`} onClick={() => {
++              <button key={tool.id} className={`sub-btn w-full ${subTool === tool.id ? 'active' : ''} ${!darkMode ? 'text-black' : ''}`} onClick={() => {
+                 // Toggle
+                 if (subTool === tool.id) {
+                   setSubTool(null);
+@@ -1478,24 +1494,26 @@
+                   }
+                 }
+               }}>
+-                <div className="icon-container">{tool.icon}</div>
+-                <span>{tool.nombre}</span>
++                <div className={`icon-container ${!darkMode ? 'bg-gray-200 border-gray-300' : ''}`}>{tool.icon}</div>
++                <span className={!darkMode ? 'text-black font-medium' : ''}>{tool.nombre}</span>
+               </button>
+             );
+           })}
+         </div>
+
+         {/* FILA DE BOTONES PRINCIPALES */}
+-        <div className="main-row">
++        <div className={`grid grid-cols-4 gap-2 w-full p-3 ${darkMode ? 'bg-black' : 'bg-white'}`}>
+           {MAIN_TOOLS.map((tool) => (
+-            <button key={tool.id} className={`main-btn ${mainNav === tool.id ? 'active' : ''}`} onClick={() => {
++            <button key={tool.id} className={`main-btn w-full ${mainNav === tool.id ? 'active' : ''} ${!darkMode ? 'bg-gray-100 border-gray-300 text-black' : ''}`} style={{ backgroundColor: !darkMode ? (mainNav === tool.id ? '#000' : '#f3f4f6') : undefined, color: !darkMode ? (mainNav === tool.id ? '#fff' : '#000') : undefined }} onClick={() => {
+               setMainNav(tool.id);
+               setSubTool(null);
+             }}>
+               <div>{tool.icon}</div>
+-              <span>{tool.nombre}</span>
++              <span className={!darkMode && mainNav !== tool.id ? 'text-black font-bold' : ''}>{tool.nombre}</span>
+             </button>
+           ))}
+
++        </div>
++
+         </div>
+       </div>
