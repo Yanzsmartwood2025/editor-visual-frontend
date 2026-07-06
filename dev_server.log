@@ -6,8 +6,17 @@ npm warn Unknown project config "auto-install-peers". This will stop working in 
 ▲ Next.js 16.2.3 (Turbopack)
 - Local:         http://localhost:3000
 - Network:       http://192.168.0.2:3000
-✓ Ready in 523ms
+✓ Ready in 546ms
 
 ○ Compiling / ...
- GET / 200 in 4.1s (next.js: 4.0s, application-code: 78ms)
- GET / 200 in 28ms (next.js: 6ms, application-code: 22ms)
+ERROR CRÍTICO: Variables de entorno de Supabase no configuradas.
+ GET / 200 in 4.0s (next.js: 4.0s, application-code: 57ms)
+[browser] ERROR CRÍTICO: Variables de entorno de Supabase no configuradas.
+    at module evaluation (src/pages/index.tsx:15:11)
+  13 |
+  14 | if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
+> 15 |   console.error('ERROR CRÍTICO: Variables de entorno de Supabase no configuradas.');
+     |           ^
+  16 | }
+  17 | const supabase = createClient(supabaseUrl, supabaseAnonKey);
+  18 | (src/pages/index.tsx:15:11)

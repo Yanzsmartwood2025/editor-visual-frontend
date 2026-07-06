@@ -876,7 +876,7 @@ export default function NaylaCore() {
     .marco-pos-btn.selected { background: #ffffff; color: #000000; border-color: #ffffff; box-shadow: 0 0 10px rgba(255,255,255,0.5); }
   `;
 
-  if (!session && false) {
+  if (!session) {
     if (showIntro) {
       return (
         <div style={{ minHeight: '100vh', backgroundColor: '#000', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center' }}>
