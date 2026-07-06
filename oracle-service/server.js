@@ -6,6 +6,7 @@ const fs = require('fs');
 const path = require('path');
 const cors = require('cors');
 const ws = require('ws');
+const { GoogleGenerativeAI } = require('@google/generative-ai');
 
 const app = express();
 app.use(express.json());
@@ -220,14 +221,14 @@ app.post('/api/extract-meta', async (req, res) => {
         return res.status(200).json({ videoUrl: finalUrl });
 
     } catch (e) {
-        console.error(`[extract-meta] Error en yt-dlp o subida, procediendo a fallback regex...`, e.message);
+        console.error(`[extract-meta] Error en yt-dlp o subida, procediendo a fallback de IA (Gemini)...`, e.message);
 
         if (fs.existsSync(outputPath)) {
             fs.unlinkSync(outputPath);
         }
 
         try {
-            console.log(`[extract-meta] Iniciando fallback regex para: ${url}`);
+            console.log(`[extract-meta] Iniciando fallback IA para: ${url}`);
             const response = await fetch(url, {
                 headers: {
                     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
@@ -238,33 +239,69 @@ app.post('/api/extract-meta', async (req, res) => {
                 throw new Error(`HTTP error! status: ${response.status}`);
             }
 
-            const html = await response.text();
-            console.log(`[extract-meta] HTML descargado, longitud: ${html.length}`);
+            let html = await response.text();
+            console.log(`[extract-meta] HTML descargado, longitud original: ${html.length}`);
 
-            const searchRegex = /(https:(?:\\\/|\/)(?:\\\/|\/)[^"'\s]+\.fbcdn\.net[^"'\s]+\.mp4[^"'\s]*)/gi;
-            let match = searchRegex.exec(html);
+            // Limpieza del HTML para ahorrar tokens
+            html = html.replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, '');
+            html = html.replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, '');
+            html = html.replace(/<svg\b[^>]*>[\s\S]*?<\/svg>/gi, '');
+            console.log(`[extract-meta] HTML limpio, longitud: ${html.length}`);
 
-            if (match && match[1]) {
-                let finalUrl = match[1].replace(/\\u0026/g, '&').replace(/\\/g, '');
-                console.log(`[extract-meta] Encontrado via fbcdn regex: ${finalUrl}`);
-                return res.status(200).json({ videoUrl: finalUrl });
+            const geminiKey = process.env.GEMINI_API_KEY;
+            if (!geminiKey) {
+                console.error('[extract-meta] No GEMINI_API_KEY configurada para el fallback.');
+                return res.status(500).json({ error: 'Error interno: IA no configurada.' });
             }
 
-            const broadRegex = /(https:(?:\\\/|\/)(?:\\\/|\/)[^"'\s<>]+\.mp4[^"'\s<>]*)/gi;
-            let matchBroad = broadRegex.exec(html);
+            const genAI = new GoogleGenerativeAI(geminiKey);
+            const model = genAI.getGenerativeModel({ model: "gemini-2.5-pro" });
 
-            if (matchBroad && matchBroad[1]) {
-                let finalUrl = matchBroad[1].replace(/\\u0026/g, '&').replace(/\\/g, '');
-                console.log(`[extract-meta] Encontrado via broad regex: ${finalUrl}`);
-                return res.status(200).json({ videoUrl: finalUrl });
+            const systemPrompt = `
+Eres un extractor experto de URLs de video.
+Tu objetivo es encontrar el enlace directo al video (.mp4) de más alta calidad, sin marcas de agua si es posible, en el código HTML crudo proporcionado.
+Busca propiedades de metadatos (como og:video, twitter:player:stream), URLs en variables JSON embebidas, o atributos 'src' dentro de etiquetas de video.
+Si la URL está encodeada (ej. contiene \\u0026 o \/), decodifícala a un formato HTTP estándar válido.
+Debes devolver ÚNICAMENTE un objeto JSON válido con la siguiente estructura, sin texto adicional ni bloques de markdown (como \`\`\`json):
+{
+  "videoUrl": "la_url_directa_al_mp4_aqui"
+}
+Si no encuentras ningún video, devuelve:
+{
+  "videoUrl": null
+}
+`;
+            console.log(`[extract-meta] Consultando a Gemini 2.5 Pro...`);
+            const result = await model.generateContent([
+                systemPrompt,
+                "HTML crudo:\n" + html
+            ]);
+
+            let textResponse = result.response.text().trim();
+            // Limpiar posibles bloques markdown que Gemini a veces devuelve de todos modos
+            textResponse = textResponse.replace(/^```json/i, '').replace(/^```/, '').replace(/```$/, '').trim();
+
+            console.log(`[extract-meta] Respuesta de Gemini:\n${textResponse}`);
+
+            let jsonResponse;
+            try {
+                jsonResponse = JSON.parse(textResponse);
+            } catch (jsonErr) {
+                console.error(`[extract-meta] Error parseando JSON de Gemini:`, jsonErr);
+                return res.status(500).json({ error: 'Respuesta inválida de la IA.' });
             }
 
-            console.log(`[extract-meta] No se encontro video mp4 en el HTML de ${url}`);
-            return res.status(404).json({ error: 'Video no encontrado en el HTML devuelto a Oracle' });
+            if (jsonResponse.videoUrl) {
+                console.log(`[extract-meta] Extracción exitosa via IA: ${jsonResponse.videoUrl}`);
+                return res.status(200).json({ videoUrl: jsonResponse.videoUrl });
+            } else {
+                console.log(`[extract-meta] La IA no encontró un video mp4 en el HTML de ${url}`);
+                return res.status(404).json({ error: 'Video no encontrado en el HTML mediante IA.' });
+            }
 
         } catch (fallbackError) {
-            console.error(`[extract-meta] Error interno en fallback: `, fallbackError);
-            return res.status(500).json({ error: 'Error interno en Oracle procesando la extraccion' });
+            console.error(`[extract-meta] Error interno en fallback IA: `, fallbackError);
+            return res.status(500).json({ error: 'Error interno en Oracle procesando el fallback.' });
         }
     }
 });
