@@ -20,18 +20,18 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(400).json({ error: 'Formato de URL inválido.' });
   }
 
-  const ORACLE_URL = process.env.ORACLE_URL || 'http://oracle-service:3001';
+  const ORACLE_SERVER_URL = process.env.ORACLE_SERVER_URL || 'http://oracle-service:3001';
   const ORACLE_SECRET = process.env.ORACLE_SECRET;
 
-  if (!ORACLE_URL || !ORACLE_SECRET) {
-    console.error('[extract-video] ORACLE_URL o ORACLE_SECRET no configurados.');
+  if (!ORACLE_SERVER_URL || !ORACLE_SECRET) {
+    console.error('[extract-video] ORACLE_SERVER_URL o ORACLE_SECRET no configurados.');
     return res.status(500).json({ error: 'El servicio de extracción (Oráculo) no está configurado.' });
   }
 
   // Delegar todo al Oráculo
   try {
-    console.log(`[extract-video] Delegando extracción a Oracle: ${ORACLE_URL}/api/extract-meta`);
-    const oracleRes = await fetch(`${ORACLE_URL}/api/extract-meta`, {
+    console.log(`[extract-video] Delegando extracción a Oracle: ${ORACLE_SERVER_URL}/api/extract-meta`);
+    const oracleRes = await fetch(`${ORACLE_SERVER_URL}/api/extract-meta`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
