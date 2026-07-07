@@ -248,32 +248,10 @@ app.post('/api/extract-meta', async (req, res) => {
             html = html.replace(/<svg\b[^>]*>[\s\S]*?<\/svg>/gi, '');
             console.log(`[extract-meta] HTML limpio, longitud: ${html.length}`);
 
-            let geminiKey = process.env.GEMINI_API_KEY;
+            let geminiKey = req.headers['x-gemini-api-key'] || process.env.GEMINI_API_KEY;
 
             if (!geminiKey) {
-                console.log('[extract-meta] GEMINI_API_KEY no encontrada en env. Buscando en Supabase...');
-                try {
-                    const { data: keyData, error: keyError } = await supabase
-                        .from('api_keys_pool')
-                        .select('api_key')
-                        .eq('service_provider', 'gemini')
-                        .eq('resource_type', 'ia')
-                        .limit(1)
-                        .single();
-
-                    if (keyError || !keyData?.api_key) {
-                        console.error('[extract-meta] Error o clave no encontrada en Supabase api_keys_pool', keyError);
-                    } else {
-                        geminiKey = keyData.api_key;
-                        console.log('[extract-meta] GEMINI_API_KEY obtenida exitosamente desde Supabase.');
-                    }
-                } catch (dbErr) {
-                    console.error('[extract-meta] Excepción al consultar Supabase:', dbErr);
-                }
-            }
-
-            if (!geminiKey) {
-                console.error('[extract-meta] No GEMINI_API_KEY configurada localmente ni encontrada en base de datos para el fallback.');
+                console.error('[extract-meta] No GEMINI_API_KEY configurada localmente ni proveida por el header para el fallback.');
                 return res.status(500).json({ error: 'Error interno: IA no configurada.' });
             }
 
