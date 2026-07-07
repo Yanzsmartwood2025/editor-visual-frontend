@@ -1,5 +1,6 @@
 import { NextApiRequest, NextApiResponse } from 'next';
 import { createClient } from '@supabase/supabase-js';
+import { executeWithGeminiKey } from '../../utils/apiKeyManager';
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== 'POST') {
@@ -26,24 +27,25 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   const supabase = createClient(supabaseUrl, supabaseKey);
 
   try {
-    // 1. Extraer la API key de Gemini de Supabase
-    const { data: keyData, error: keyError } = await supabase
-      .from('api_keys_pool')
-      .select('api_key')
-      .eq('service_provider', 'gemini')
-      .eq('resource_type', 'ia')
-      .limit(1)
-      .single();
-
-    if (keyError || !keyData?.api_key) {
-      console.warn("No se encontró Gemini API Key en Supabase, usando variable de entorno si existe o fallando.");
+    const fallbackExecute = async () => {
+      console.warn("[ia-audio] No se encontró Gemini API Key en Supabase, usando variable de entorno si existe o fallando.");
       const envKey = process.env.GEMINI_API_KEY;
-      if(!envKey) {
-          return res.status(500).json({ error: 'No se encontró la llave de API para el servicio de Audio IA.' });
+      if (!envKey) {
+        throw new Error('No se encontró la llave de API para el servicio de Audio IA.');
       }
-    }
+      return envKey;
+    };
 
-    const effectiveKey = keyData?.api_key || process.env.GEMINI_API_KEY;
+    const effectiveKey = await executeWithGeminiKey(
+      supabase,
+      async (apiKey) => {
+        // En una implementación real, aquí se llamaría al servicio de TTS.
+        // Si el servicio devuelve 429, deberíamos lanzar un RateLimitError.
+        // Por ahora, simplemente retornamos la key para usarla en el log.
+        return apiKey;
+      },
+      fallbackExecute
+    );
 
     // TODO: Implementar llamada real a servicio de TTS (Texto a voz) usando la API Key.
     // Por ahora retornamos un placeholder simulando un audio.
@@ -56,6 +58,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   } catch (error: any) {
     console.error("Error en ia-audio:", error);
+    if (error.message.includes('Límite de Gemini alcanzado')) {
+       return res.status(429).json({ error: error.message });
+    }
     res.status(500).json({ error: error.message || 'Error interno del servidor.' });
   }
 }

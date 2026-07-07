@@ -1,6 +1,7 @@
 import { NextApiRequest, NextApiResponse } from 'next';
 import { createClient } from '@supabase/supabase-js';
 import { GoogleGenerativeAI } from '@google/generative-ai';
+import { executeWithGeminiKey, RateLimitError } from '../../utils/apiKeyManager';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
 const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
@@ -21,45 +22,20 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
 
     try {
-        // Obtenemos la Gemini API Key de Supabase si es que el usuario es el Admin
-        // O usamos la proporcionada por el usuario (apiKey) si es premium.
-        let geminiKey = apiKey;
-
         const authHeader = req.headers.authorization;
         let isAuthorized = false;
 
         if (authHeader) {
             const token = authHeader.split(' ')[1] || '';
             const { data: { user } } = await supabase.auth.getUser(token);
-
             if (user?.email === 'ajn.liq.128@proton.me') {
                  isAuthorized = true;
-                 if (!geminiKey) {
-                     const { data: keys } = await supabase
-                         .from('api_keys_pool')
-                         .select('*')
-                         .eq('service_provider', 'gemini')
-                         .eq('resource_type', 'ia')
-                         .single();
-
-                     if (keys) geminiKey = keys.api_key;
-                 }
             }
         }
 
-        // El frontend no provee API key para admin normalmente pero puede estar en el environment si se corre en local o fallar.
-        // Verificamos si se dio apiKey (el usuario premium) o si es administrador.
         if (!isAuthorized && !apiKey) {
             return res.status(401).json({ error: 'No authorization header provided or invalid token, and no Premium API Key provided' });
         }
-
-        if (!geminiKey) {
-             geminiKey = process.env.GEMINI_API_KEY;
-             if (!geminiKey) return res.status(403).json({ error: 'No se proporcionó una API Key válida y no se encontró una en el pool.' });
-        }
-
-        const genAI = new GoogleGenerativeAI(geminiKey);
-        const model = genAI.getGenerativeModel({ model: "gemini-1.5-pro" });
 
         const systemPrompt = `
 Eres un asistente experto para NaylaEngine, un editor de video basado en código JavaScript.
@@ -97,25 +73,49 @@ Contexto adicional:
 La galería actual del usuario contiene los siguientes elementos: ${JSON.stringify(galeria)}
 `;
 
-        const result = await model.generateContent([
-            systemPrompt,
-            "Prompt del usuario: " + prompt
-        ]);
+        const executeGemini = async (keyToUse: string) => {
+            const genAI = new GoogleGenerativeAI(keyToUse);
+            const model = genAI.getGenerativeModel({ model: "gemini-1.5-pro" });
+            try {
+                const result = await model.generateContent([
+                    systemPrompt,
+                    "Prompt del usuario: " + prompt
+                ]);
+                let codeResponse = result.response.text();
+                codeResponse = codeResponse.replace(/```javascript/g, '').replace(/```js/g, '').replace(/```/g, '').trim();
+                if (codeResponse.includes('await') && !codeResponse.includes('async () =>')) {
+                    codeResponse = `(async () => {\n${codeResponse}\n})();`;
+                }
+                return codeResponse;
+            } catch (err: any) {
+                if (err.status === 429 || err.message?.includes('429')) {
+                    throw new RateLimitError(err.message, err.message?.toLowerCase().includes('quota'));
+                }
+                throw err;
+            }
+        };
 
-        let codeResponse = result.response.text();
-
-        // Limpiamos los backticks si la IA los incluyó por error
-        codeResponse = codeResponse.replace(/```javascript/g, '').replace(/```js/g, '').replace(/```/g, '').trim();
-
-        // Envolver en async si el código usa await y no está envuelto
-        if (codeResponse.includes('await') && !codeResponse.includes('async () =>')) {
-            codeResponse = `(async () => {\n${codeResponse}\n})();`;
+        let finalCode = '';
+        if (apiKey) {
+            // User provided API key directly
+            finalCode = await executeGemini(apiKey);
+        } else {
+            // Admin flow using pool
+            const fallbackKey = process.env.GEMINI_API_KEY;
+            finalCode = await executeWithGeminiKey(
+                supabase,
+                executeGemini,
+                fallbackKey ? () => executeGemini(fallbackKey) : undefined
+            );
         }
 
-        res.status(200).json({ code: codeResponse });
+        res.status(200).json({ code: finalCode });
 
-    } catch (error: unknown) {
+    } catch (error: any) {
         console.error("Supervisor IA Error:", error);
+        if (error.message?.includes('Límite de Gemini alcanzado')) {
+           return res.status(429).json({ error: error.message });
+        }
         res.status(500).json({ error: error instanceof Error ? error.message : String(error) });
     }
 }
