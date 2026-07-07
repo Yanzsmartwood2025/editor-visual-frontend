@@ -40,7 +40,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         .from('api_keys_pool')
         .select('api_key, character_name')
         .ilike('service_provider', '%gemini%')
-        .eq('resource_type', 'ia')
+        .eq('resource_type', 'llm')
         .gt('monthly_limit', 0)
         .not('api_key', 'is', null)
         .order('monthly_limit', { ascending: false });

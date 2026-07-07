@@ -35,14 +35,23 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
             if (user?.email === 'ajn.liq.128@proton.me') {
                  isAuthorized = true;
                  if (!geminiKey) {
-                     const { data: keys } = await supabase
+                     const { data: keysData, error: keysError } = await supabase
                          .from('api_keys_pool')
                          .select('*')
-                         .eq('service_provider', 'gemini')
-                         .eq('resource_type', 'ia')
-                         .single();
+                         .ilike('service_provider', '%gemini%')
+                         .eq('resource_type', 'llm')
+                         .gt('monthly_limit', 0)
+                         .not('api_key', 'is', null)
+                         .order('monthly_limit', { ascending: false });
 
-                     if (keys) geminiKey = keys.api_key;
+                     if (keysError) {
+                         console.warn('[supervisor] Error al consultar la tabla api_keys_pool.', keysError);
+                     } else if (keysData && keysData.length > 0) {
+                         const validKeyRecord = keysData.find(row => row.api_key && row.api_key.trim() !== '');
+                         if (validKeyRecord) {
+                             geminiKey = validKeyRecord.api_key;
+                         }
+                     }
                  }
             }
         }

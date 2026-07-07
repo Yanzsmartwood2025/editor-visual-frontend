@@ -27,15 +27,26 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   try {
     // 1. Extraer la API key de Gemini de Supabase
-    const { data: keyData, error: keyError } = await supabase
+    const { data: keysData, error: keyError } = await supabase
       .from('api_keys_pool')
       .select('api_key')
-      .eq('service_provider', 'gemini')
-      .eq('resource_type', 'ia')
-      .limit(1)
-      .single();
+      .ilike('service_provider', '%gemini%')
+      .eq('resource_type', 'llm')
+      .gt('monthly_limit', 0)
+      .not('api_key', 'is', null)
+      .order('monthly_limit', { ascending: false });
 
-    if (keyError || !keyData?.api_key) {
+    let dbKey = null;
+    if (keyError) {
+      console.warn("[ia-audio] Error al consultar la tabla api_keys_pool.", keyError);
+    } else if (keysData && keysData.length > 0) {
+      const validKeyRecord = keysData.find(row => row.api_key && row.api_key.trim() !== '');
+      if (validKeyRecord) {
+        dbKey = validKeyRecord.api_key;
+      }
+    }
+
+    if (!dbKey) {
       console.warn("No se encontró Gemini API Key en Supabase, usando variable de entorno si existe o fallando.");
       const envKey = process.env.GEMINI_API_KEY;
       if(!envKey) {
@@ -43,7 +54,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       }
     }
 
-    const effectiveKey = keyData?.api_key || process.env.GEMINI_API_KEY;
+    const effectiveKey = dbKey || process.env.GEMINI_API_KEY;
 
     // TODO: Implementar llamada real a servicio de TTS (Texto a voz) usando la API Key.
     // Por ahora retornamos un placeholder simulando un audio.
