@@ -19,6 +19,70 @@ const supabase = createClient(supabaseUrl, supabaseKey, {
   realtime: { transport: ws }
 });
 
+// --- Rotación de API Keys de Gemini ---
+// Detecta si un error es por límite de cuota/rate-limit (para saber si vale la pena
+// intentar con la siguiente key) vs. otro tipo de error (donde no tiene sentido rotar).
+function isQuotaOrRateLimitError(err) {
+    const status = err?.status || err?.response?.status;
+    const message = (err?.message || '').toLowerCase();
+    return (
+        status === 429 ||
+        message.includes('quota') ||
+        message.includes('rate limit') ||
+        message.includes('resource_exhausted') ||
+        message.includes('too many requests')
+    );
+}
+
+/**
+ * Intenta generar contenido con Gemini usando una lista de API keys en orden.
+ * Si una key falla por cuota/rate-limit, pasa automáticamente a la siguiente.
+ * Si falla por otro motivo (prompt inválido, key inválida, etc.), se detiene y lanza el error.
+ *
+ * @param {string[]} apiKeys - Lista de keys a probar en orden de prioridad.
+ * @param {any[]} promptParts - Contenido a enviar a generateContent (igual que hoy).
+ * @param {string} modelName - Nombre del modelo, por defecto gemini-2.5-pro.
+ * @returns {Promise<{text: string, keyIndexUsed: number}>}
+ */
+async function generateWithGeminiRotation(apiKeys, promptParts, modelName = 'gemini-2.5-pro') {
+    const validKeys = apiKeys.filter(Boolean);
+
+    if (validKeys.length === 0) {
+        throw new Error('No hay ninguna GEMINI_API_KEY configurada.');
+    }
+
+    let lastError = null;
+
+    for (let i = 0; i < validKeys.length; i++) {
+        const key = validKeys[i];
+        try {
+            const genAI = new GoogleGenerativeAI(key);
+            const model = genAI.getGenerativeModel({ model: modelName });
+            const result = await model.generateContent(promptParts);
+            const text = result.response.text();
+
+            console.log(`[Gemini] Éxito usando key #${i + 1} de ${validKeys.length}`);
+            return { text, keyIndexUsed: i };
+
+        } catch (err) {
+            lastError = err;
+
+            if (isQuotaOrRateLimitError(err)) {
+                console.warn(`[Gemini] Key #${i + 1} agotó su cuota o alcanzó el rate limit. Probando siguiente key...`);
+                continue; // pasar a la siguiente key
+            }
+
+            // Error real (no de cuota): no tiene sentido seguir rotando, se detiene aquí.
+            console.error(`[Gemini] Error no relacionado a cuota con key #${i + 1}:`, err.message);
+            throw err;
+        }
+    }
+
+    // Si llegamos aquí, todas las keys fallaron por cuota/rate-limit.
+    console.error('[Gemini] Todas las API keys alcanzaron su límite de cuota.');
+    throw lastError || new Error('Todas las API keys de Gemini alcanzaron su límite.');
+}
+
 app.post('/api/process-clip', async (req, res) => {
     const authHeader = req.headers.authorization;
     if (authHeader !== `Bearer ${process.env.ORACLE_SECRET}`) {
@@ -250,21 +314,19 @@ app.post('/api/extract-meta', async (req, res) => {
 
             console.log(`[extract-meta] Oráculo: Header x-gemini-api-key recibido: ${!!req.headers['x-gemini-api-key']}`);
 
-            let geminiKey = req.headers['x-gemini-api-key'] || process.env.GEMINI_API_KEY;
+            // Orden de prioridad: key del header (si el cliente manda una propia) primero,
+            // luego las 3 keys configuradas en el entorno, rotando si alguna se queda sin cuota.
+            const headerKey = req.headers['x-gemini-api-key'];
+            const geminiKeys = [
+                headerKey,
+                process.env.GEMINI_API_KEY,
+                process.env.GEMINI_API_KEY_2,
+                process.env.GEMINI_API_KEY_3
+            ].filter(Boolean);
 
-            if (!geminiKey) {
-                console.error('[extract-meta] No GEMINI_API_KEY configurada localmente ni proveida por el header para el fallback.');
+            if (geminiKeys.length === 0) {
+                console.error('[extract-meta] No hay ninguna GEMINI_API_KEY configurada (ni en env ni en el header) para el fallback.');
                 return res.status(500).json({ error: 'Error interno: IA no configurada.' });
-            }
-
-            let genAI;
-            let model;
-            try {
-                genAI = new GoogleGenerativeAI(geminiKey);
-                model = genAI.getGenerativeModel({ model: "gemini-2.5-pro" });
-            } catch (initErr) {
-                console.error(`[extract-meta] Oráculo: Error del SDK de Gemini al inicializar: ${initErr.message}`, initErr);
-                return res.status(500).json({ error: 'Error inicializando el SDK de la IA.' });
             }
 
             const systemPrompt = `
@@ -281,13 +343,22 @@ Si no encuentras ningún video, devuelve:
   "videoUrl": null
 }
 `;
-            console.log(`[extract-meta] Consultando a Gemini 2.5 Pro...`);
-            const result = await model.generateContent([
-                systemPrompt,
-                "HTML crudo:\n" + html
-            ]);
+            console.log(`[extract-meta] Consultando a Gemini 2.5 Pro (con rotación de ${geminiKeys.length} key(s) disponibles)...`);
 
-            let textResponse = result.response.text().trim();
+            let textResponse;
+            try {
+                const { text, keyIndexUsed } = await generateWithGeminiRotation(
+                    geminiKeys,
+                    [systemPrompt, "HTML crudo:\n" + html],
+                    "gemini-2.5-pro"
+                );
+                textResponse = text.trim();
+                console.log(`[extract-meta] Respuesta obtenida usando la key en posición ${keyIndexUsed + 1}.`);
+            } catch (geminiErr) {
+                console.error(`[extract-meta] Todas las keys de Gemini fallaron:`, geminiErr.message);
+                return res.status(503).json({ error: 'El servicio de IA no está disponible en este momento (límite de cuota alcanzado en todas las keys).' });
+            }
+
             // Limpiar posibles bloques markdown que Gemini a veces devuelve de todos modos
             textResponse = textResponse.replace(/^```json/i, '').replace(/^```/, '').replace(/```$/, '').trim();
 
