@@ -41,10 +41,10 @@ function isQuotaOrRateLimitError(err) {
  *
  * @param {string[]} apiKeys - Lista de keys a probar en orden de prioridad.
  * @param {any[]} promptParts - Contenido a enviar a generateContent (igual que hoy).
- * @param {string} modelName - Nombre del modelo, por defecto gemini-2.5-pro.
+ * @param {string} modelName - Nombre del modelo, por defecto gemini-2.5-flash.
  * @returns {Promise<{text: string, keyIndexUsed: number}>}
  */
-async function generateWithGeminiRotation(apiKeys, promptParts, modelName = 'gemini-2.5-pro') {
+async function generateWithGeminiRotation(apiKeys, promptParts, modelName = 'gemini-2.5-flash') {
     const validKeys = apiKeys.filter(Boolean);
 
     if (validKeys.length === 0) {
@@ -343,14 +343,14 @@ Si no encuentras ningún video, devuelve:
   "videoUrl": null
 }
 `;
-            console.log(`[extract-meta] Consultando a Gemini 2.5 Pro (con rotación de ${geminiKeys.length} key(s) disponibles)...`);
+            console.log(`[extract-meta] Consultando a Gemini 2.5 Flash (con rotación de ${geminiKeys.length} key(s) disponibles)...`);
 
             let textResponse;
             try {
                 const { text, keyIndexUsed } = await generateWithGeminiRotation(
                     geminiKeys,
                     [systemPrompt, "HTML crudo:\n" + html],
-                    "gemini-2.5-pro"
+                    "gemini-2.5-flash"
                 );
                 textResponse = text.trim();
                 console.log(`[extract-meta] Respuesta obtenida usando la key en posición ${keyIndexUsed + 1}.`);
