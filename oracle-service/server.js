@@ -112,11 +112,18 @@ app.post('/api/process-clip', async (req, res) => {
 
         const ytDlpArgs = [
             '-f', 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
-            '--download-sections', `*${startTime}-${endTime}`,
+            '--download-sections', `*${startTime}-${endTime}`
+        ];
+
+        if (process.env.YTDLP_COOKIES_PATH && fs.existsSync(process.env.YTDLP_COOKIES_PATH)) {
+            ytDlpArgs.push('--cookies', process.env.YTDLP_COOKIES_PATH);
+        }
+
+        ytDlpArgs.push(
             videoUrl,
             '-o', outputPath,
             '--force-keyframes-at-cuts'
-        ];
+        );
 
         console.log(`[Job ${jobId}] Ejecutando yt-dlp...`);
 
@@ -223,10 +230,17 @@ app.post('/api/extract-meta', async (req, res) => {
 
         const ytDlpArgs = [
             '-f', 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
-            '--no-progress',
+            '--no-progress'
+        ];
+
+        if (process.env.YTDLP_COOKIES_PATH && fs.existsSync(process.env.YTDLP_COOKIES_PATH)) {
+            ytDlpArgs.push('--cookies', process.env.YTDLP_COOKIES_PATH);
+        }
+
+        ytDlpArgs.push(
             url,
             '-o', outputPath
-        ];
+        );
 
         const ytProcess = spawn('yt-dlp', ytDlpArgs);
         let stderrOutput = '';
