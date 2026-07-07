@@ -248,6 +248,8 @@ app.post('/api/extract-meta', async (req, res) => {
             html = html.replace(/<svg\b[^>]*>[\s\S]*?<\/svg>/gi, '');
             console.log(`[extract-meta] HTML limpio, longitud: ${html.length}`);
 
+            console.log(`[extract-meta] Oráculo: Header x-gemini-api-key recibido: ${!!req.headers['x-gemini-api-key']}`);
+
             let geminiKey = req.headers['x-gemini-api-key'] || process.env.GEMINI_API_KEY;
 
             if (!geminiKey) {
@@ -255,8 +257,15 @@ app.post('/api/extract-meta', async (req, res) => {
                 return res.status(500).json({ error: 'Error interno: IA no configurada.' });
             }
 
-            const genAI = new GoogleGenerativeAI(geminiKey);
-            const model = genAI.getGenerativeModel({ model: "gemini-2.5-pro" });
+            let genAI;
+            let model;
+            try {
+                genAI = new GoogleGenerativeAI(geminiKey);
+                model = genAI.getGenerativeModel({ model: "gemini-2.5-pro" });
+            } catch (initErr) {
+                console.error(`[extract-meta] Oráculo: Error del SDK de Gemini al inicializar: ${initErr.message}`, initErr);
+                return res.status(500).json({ error: 'Error inicializando el SDK de la IA.' });
+            }
 
             const systemPrompt = `
 Eres un extractor experto de URLs de video.
