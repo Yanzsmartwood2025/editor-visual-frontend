@@ -68,6 +68,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       requestHeaders['x-gemini-api-key'] = geminiApiKey;
     }
 
+    console.log(`[extract-video] Vercel: Llave enviada en header (x-gemini-api-key): ${!!geminiApiKey}`);
+
     const oracleRes = await fetch(`${ORACLE_SERVER_URL}/api/extract-meta`, {
       method: 'POST',
       headers: requestHeaders,
