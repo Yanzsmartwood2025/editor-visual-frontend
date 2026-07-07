@@ -97,7 +97,13 @@ export async function executeWithGeminiKey<T>(
     .select('*')
     .ilike('service_provider', '%gemini%')
     .eq('resource_type', 'llm')
+    .eq('is_active', true)
     .not('api_key', 'is', null);
+
+  console.log('[executeWithGeminiKey] Supabase query result:', {
+    keysFound: keysData?.length || 0,
+    error: keysError
+  });
 
   let candidateKeys: ApiKeyRecord[] = [];
 

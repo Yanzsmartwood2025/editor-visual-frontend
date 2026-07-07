@@ -16,8 +16,10 @@ const mockSupabase = {
     update: mockUpdate,
     select: mockSelect.mockReturnValue({
       ilike: mockIlike.mockReturnValue({
-        eq: mockEq.mockReturnValue({
-          not: mockNot
+        eq: vi.fn().mockReturnValue({
+          eq: vi.fn().mockReturnValue({
+            not: mockNot
+          })
         })
       })
     })
