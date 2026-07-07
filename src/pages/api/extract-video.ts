@@ -38,16 +38,27 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       const supabase = createClient(supabaseUrl, supabaseKey);
       const { data, error } = await supabase
         .from('api_keys_pool')
-        .select('api_key')
-        .eq('service_provider', 'gemini')
+        .select('api_key, character_name')
+        .ilike('service_provider', '%gemini%')
         .eq('resource_type', 'ia')
-        .single();
+        .gt('monthly_limit', 0)
+        .not('api_key', 'is', null)
+        .order('monthly_limit', { ascending: false });
 
-      if (!error && data && data.api_key) {
-        geminiApiKey = data.api_key;
-        console.log('[extract-video] Gemini API Key encontrada en base de datos.');
+      if (error) {
+        console.warn('[extract-video] Error al consultar la tabla api_keys_pool.', error);
+      } else if (data && data.length > 0) {
+        // Find the first valid non-empty key (since 'not null' doesn't cover empty strings)
+        const validKeyRecord = data.find(row => row.api_key && row.api_key.trim() !== '');
+
+        if (validKeyRecord) {
+          geminiApiKey = validKeyRecord.api_key;
+          console.log(`[extract-video] Gemini API Key seleccionada de la base de datos (character_name: '${validKeyRecord.character_name}').`);
+        } else {
+          console.warn('[extract-video] 0 keys de Gemini con cuota disponible (o todas vacías).');
+        }
       } else {
-        console.warn('[extract-video] No se encontró clave de Gemini en la tabla api_keys_pool.', error);
+        console.warn('[extract-video] 0 keys de Gemini con cuota disponible.');
       }
     } else {
       console.warn('[extract-video] Credenciales de Supabase no configuradas en Vercel, omitiendo búsqueda de IA.');
