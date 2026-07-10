@@ -23,8 +23,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
 
-  let apiUrl = process.env.MANUS_API_URL || 'https://api.manus.im/v1/chat/completions';
-  if (!apiUrl.startsWith('http')) apiUrl = `https://${apiUrl}`;
+  const apiUrl = 'https://api.manus.im/v1/chat/completions';
 
   const aiName = process.env.NEXT_PUBLIC_AI_NAME || 'Nayla';
   const flashModel = process.env.NAYLA_MODEL_FLASH || 'manus-flash';

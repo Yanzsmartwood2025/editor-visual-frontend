@@ -45,7 +45,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const pixabayUrl = `https://pixabay.com/api/audio/?key=${pixabayKey}&q=${encodeURIComponent(query)}&per_page=3`;
 
     // NOTA: Para no romper, haré fallback a /api/ por si acaso (aunque la original da fotos por defecto si no dices image_type).
-    let pixabayRes = await fetch(pixabayUrl);
+    const pixabayRes = await fetch(pixabayUrl);
 
     if (!pixabayRes.ok) {
         throw new Error(`Error en Pixabay Audio API: ${pixabayRes.status}`);
