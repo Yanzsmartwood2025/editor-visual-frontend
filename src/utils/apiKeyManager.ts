@@ -87,15 +87,16 @@ export class RateLimitError extends Error {
 /**
  * Executes a function with the best available Gemini API key, handling limits, resets, and retries.
  */
-export async function executeWithGeminiKey<T>(
+export async function executeWithApiKey<T>(
   supabase: SupabaseClient,
+  provider: string,
   action: (apiKey: string) => Promise<T>,
   fallbackAction?: () => Promise<T>
 ): Promise<T> {
   const { data: keysData, error: keysError } = await supabase
     .from('api_keys_pool')
     .select('*')
-    .ilike('service_provider', '%gemini%')
+    .ilike('service_provider', `%${provider}%`)
     .eq('resource_type', 'llm')
     .not('api_key', 'is', null);
 
@@ -125,10 +126,10 @@ export async function executeWithGeminiKey<T>(
 
   if (candidateKeys.length === 0) {
     if (fallbackAction) {
-      console.warn('[executeWithGeminiKey] No available Gemini keys found, trying fallback.');
+      console.warn('[executeWithApiKey] No available keys found, trying fallback.');
       return await fallbackAction();
     }
-    throw new Error('Límite de Gemini alcanzado en todas las cuentas disponibles, intenta en unos minutos.');
+    throw new Error(`Límite de ${provider} alcanzado en todas las cuentas disponibles, intenta en unos minutos.`);
   }
 
   // 2. Try keys in order
@@ -149,7 +150,7 @@ export async function executeWithGeminiKey<T>(
     } catch (error: any) {
       // Check if it's a 429 Rate Limit error
       if (error instanceof RateLimitError || error?.status === 429 || error?.response?.status === 429 || error?.message?.includes('429')) {
-        console.warn(`[executeWithGeminiKey] Key ${key.character_name || key.id} hit rate limit (429). Retrying...`);
+        console.warn(`[executeWithApiKey] Key ${key.character_name || key.id} hit rate limit (429). Retrying...`);
 
         // Determine if daily or minute based on error message or explicit flag
         const isDaily = (error instanceof RateLimitError && error.isDailyLimit) ||
@@ -179,8 +180,23 @@ export async function executeWithGeminiKey<T>(
 
   // If we exhaust all candidate keys via 429s
   if (fallbackAction) {
-    console.warn('[executeWithGeminiKey] All candidate Gemini keys hit 429, trying fallback.');
+    console.warn('[executeWithApiKey] All candidate keys hit 429, trying fallback.');
     return await fallbackAction();
   }
-  throw new Error('Límite de Gemini alcanzado en todas las cuentas disponibles, intenta en unos minutos.');
+  throw new Error(`Límite de ${provider} alcanzado en todas las cuentas disponibles, intenta en unos minutos.`);
+}
+
+
+/**
+ * Logs an AI Rate Limit error to the database.
+ */
+export async function logAiRateLimitError(supabase: SupabaseClient, provider: string, errorMessage: string): Promise<void> {
+  try {
+    await supabase.from('ai_operation_logs').insert({
+      provider,
+      error_message: errorMessage
+    });
+  } catch (err) {
+    console.error('[logAiRateLimitError] Failed to log error:', err);
+  }
 }

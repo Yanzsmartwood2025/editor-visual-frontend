@@ -1,6 +1,6 @@
 import { NextApiRequest, NextApiResponse } from 'next';
 import { createClient } from '@supabase/supabase-js';
-import { executeWithGeminiKey } from '../../utils/apiKeyManager';
+import { executeWithApiKey } from '../../utils/apiKeyManager';
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== 'POST') {
@@ -36,8 +36,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       return envKey;
     };
 
-    const effectiveKey = await executeWithGeminiKey(
-      supabase,
+    const effectiveKey = await executeWithApiKey(supabase, "gemini",
       async (apiKey) => {
         // En una implementación real, aquí se llamaría al servicio de TTS.
         // Si el servicio devuelve 429, deberíamos lanzar un RateLimitError.
