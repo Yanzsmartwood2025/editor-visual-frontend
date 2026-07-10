@@ -7,7 +7,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  const { prompt } = req.body;
+  const { prompt, model } = req.body;
 
   if (!prompt || typeof prompt !== 'string') {
     return res.status(400).json({ error: 'Prompt es requerido.' });
@@ -17,7 +17,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
 
   if (!supabaseUrl || !supabaseServiceKey) {
-    console.error('[chat-manus] Missing Supabase credentials.');
+    console.error('[chat-nayla] Missing Supabase credentials.');
     return res.status(500).json({ error: 'Configuración de servidor incompleta.' });
   }
 
@@ -37,8 +37,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
             'Authorization': `Bearer ${apiKey}`
           },
           body: JSON.stringify({
-            model: "manus-1",
+            model: model === 'manus-flash' ? 'manus-flash' : 'manus-pro',
             messages: [
+              { role: "system", content: "Hola, soy Nayla. Estoy aquí para ayudarte a crear el mejor contenido y gestionar tus redes sociales." },
               { role: "user", content: prompt }
             ],
             stream: false
@@ -50,7 +51,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           if (response.status === 429) {
             throw { status: 429, message: errorData || 'Rate limit' };
           }
-          throw new Error(`Manus API Error: ${response.status} - ${errorData}`);
+          throw new Error(`Nayla API Error: ${response.status} - ${errorData}`);
         }
 
         const data = await response.json();
@@ -71,8 +72,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
             'Authorization': `Bearer ${fallbackKey}`
           },
           body: JSON.stringify({
-            model: "manus-1",
+            model: model === 'manus-flash' ? 'manus-flash' : 'manus-pro',
             messages: [
+              { role: "system", content: "Hola, soy Nayla. Estoy aquí para ayudarte a crear el mejor contenido y gestionar tus redes sociales." },
               { role: "user", content: prompt }
             ],
             stream: false
@@ -81,7 +83,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
         if (!response.ok) {
           const errorData = await response.text();
-          throw new Error(`Manus API Fallback Error: ${response.status} - ${errorData}`);
+          throw new Error(`Nayla API Fallback Error: ${response.status} - ${errorData}`);
         }
 
         const data = await response.json();
@@ -104,7 +106,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(200).json(parsedResponse);
 
   } catch (error: any) {
-    console.error('[chat-manus] Error procesando el chat:', error);
+    console.error('[chat-nayla] Error procesando el chat:', error);
 
     // Loguear si es error de límite (rate limit)
     const isRateLimit = error?.message?.toLowerCase().includes('límite') || error?.status === 429;
@@ -114,6 +116,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         return res.status(429).json({ error: 'Límite de cuota alcanzado. Por favor, intenta de nuevo más tarde o cambia de cuenta.' });
     }
 
-    return res.status(500).json({ error: 'Error interno en el chat de Manus.', details: error.message });
+    return res.status(500).json({ error: 'Error interno en el chat de Nayla.', details: error.message });
   }
 }
