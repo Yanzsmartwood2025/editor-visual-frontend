@@ -105,22 +105,30 @@ export async function executeWithApiKey<T>(
   let candidateKeys: ApiKeyRecord[] = [];
 
   if (!keysError && keysData && keysData.length > 0) {
+    console.log(`[executeWithApiKey] Encontradas ${keysData.length} llaves para el provider '${provider}' en BD.`);
     // 1. Sync windows and filter out invalid/exhausted keys
     for (const rawKey of keysData) {
       if (!rawKey.api_key || rawKey.api_key.trim() === '') continue;
 
       const key = await syncKeyWindows(supabase, rawKey as ApiKeyRecord);
 
-      if (
-        key.is_exhausted_today ||
-        key.requests_today >= (key.rpd_limit || 250) ||
-        key.requests_in_current_minute >= (key.rpm_limit || 10)
-      ) {
+      if (key.is_exhausted_today) {
+        console.log(`[executeWithApiKey] Llave descartada (id: ${key.id}, char: ${key.character_name}): is_exhausted_today es true.`);
+        continue; // Discard exhausted key
+      }
+      if (key.requests_today >= (key.rpd_limit || 250)) {
+        console.log(`[executeWithApiKey] Llave descartada (id: ${key.id}, char: ${key.character_name}): Limite diario alcanzado (${key.requests_today}/${key.rpd_limit || 250}).`);
+        continue; // Discard exhausted key
+      }
+      if (key.requests_in_current_minute >= (key.rpm_limit || 10)) {
+        console.log(`[executeWithApiKey] Llave descartada (id: ${key.id}, char: ${key.character_name}): Limite por minuto alcanzado (${key.requests_in_current_minute}/${key.rpm_limit || 10}).`);
         continue; // Discard exhausted key
       }
 
       candidateKeys.push(key);
     }
+  } else {
+    console.log(`[executeWithApiKey] No se encontraron llaves en la BD para el provider '${provider}'.`);
   }
 
   // Sort by lowest recent usage (requests_in_current_minute ASC)
