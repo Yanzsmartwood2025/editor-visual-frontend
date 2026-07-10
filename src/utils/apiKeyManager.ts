@@ -102,7 +102,11 @@ export async function executeWithApiKey<T>(
     .order('created_at', { ascending: false })
     .not('api_key', 'is', null);
 
-  let candidateKeys: ApiKeyRecord[] = [];
+  const candidateKeys: ApiKeyRecord[] = [];
+
+  if (keysError) {
+    console.error(`[executeWithApiKey] Error de base de datos al buscar llaves para el provider '${provider}':`, keysError);
+  }
 
   if (!keysError && keysData && keysData.length > 0) {
     console.log(`[executeWithApiKey] Encontradas ${keysData.length} llaves para el provider '${provider}' en BD.`);
@@ -158,14 +162,19 @@ export async function executeWithApiKey<T>(
       return result;
 
     } catch (error: any) {
-      // Check if it's a 429 Rate Limit error
-      if (error instanceof RateLimitError || error?.status === 429 || error?.response?.status === 429 || error?.message?.includes('429')) {
-        console.warn(`[executeWithApiKey] Key ${key.character_name || key.id} hit rate limit (429). Retrying...`);
+      // Check if it's a 429 Rate Limit error or resource exhausted
+      const isResourceExhausted = error?.message?.toLowerCase().includes('credit limit exceeded') ||
+                                  error?.message?.toLowerCase().includes('resource_exhausted') ||
+                                  error?.message?.toLowerCase().includes('resource exhausted');
+
+      if (error instanceof RateLimitError || error?.status === 429 || error?.response?.status === 429 || error?.message?.includes('429') || isResourceExhausted) {
+        console.warn(`[executeWithApiKey] Key ${key.character_name || key.id} hit rate limit or exhausted. Retrying...`);
 
         // Determine if daily or minute based on error message or explicit flag
         const isDaily = (error instanceof RateLimitError && error.isDailyLimit) ||
                         error?.message?.toLowerCase().includes('quota') ||
-                        error?.message?.toLowerCase().includes('daily');
+                        error?.message?.toLowerCase().includes('daily') ||
+                        isResourceExhausted;
 
         if (isDaily) {
           // Mark daily exhaustion

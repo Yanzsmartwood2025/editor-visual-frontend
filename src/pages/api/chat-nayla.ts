@@ -7,7 +7,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  const { prompt } = req.body;
+  const { prompt, model } = req.body;
 
   if (!prompt || typeof prompt !== 'string') {
     return res.status(400).json({ error: 'Prompt es requerido.' });
@@ -38,7 +38,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     // We ensure it has a protocol first if it's missing one.
     if (!/^https?:\/\//i.test(baseUrlStr)) baseUrlStr = 'https://' + baseUrlStr;
     cleanBaseUrl = new URL(baseUrlStr).origin;
-  } catch (e) {
+  } catch {
     console.warn('[chat-nayla] Invalid MANUS_API_URL, falling back to https://api.manus.ai');
   }
   const createUrl = `${cleanBaseUrl}/v2/task.create`;
@@ -49,6 +49,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   const fullPrompt = systemMessage + prompt;
 
   const runManusTask = async (apiKey: string) => {
+    // Determine agent profile based on requested model
+    let agentProfile = 'manus-1.6'; // Default
+    if (model === 'manus-flash') {
+      agentProfile = 'manus-1.6-lite';
+    } else if (model === 'manus-pro') {
+      agentProfile = 'manus-1.6-max';
+    }
+
     // 1. Create the task
     const createRes = await fetch(createUrl, {
       method: 'POST',
@@ -57,6 +65,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         'x-manus-api-key': apiKey,
       },
       body: JSON.stringify({
+        agent_profile: agentProfile,
         message: {
           content: [
             { type: "text", text: fullPrompt }
@@ -179,7 +188,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         // Limpiamos los backticks de markdown si la IA los incluye
         const cleanedText = manusResponseText.replace(/```json/g, '').replace(/```/g, '').trim();
         parsedResponse = JSON.parse(cleanedText);
-    } catch (e) {
+    } catch {
         // No es JSON, lo enviamos como texto simple
         parsedResponse = { text: manusResponseText };
     }
