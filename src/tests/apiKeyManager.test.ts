@@ -11,22 +11,25 @@ const mockNot = vi.fn();
 
 mockUpdate.mockReturnValue({ eq: mockEq });
 
-
 const mockOrder = vi.fn().mockReturnValue({ not: mockNot });
 const mockEq3 = vi.fn().mockReturnValue({ order: mockOrder });
 const mockEq2 = vi.fn().mockReturnValue({ eq: mockEq3 });
 const mockEq1 = vi.fn().mockReturnValue({ eq: mockEq2 });
+const mockIlikeReturn = { eq: mockEq1 };
+
+// The actual chain is .ilike(...).eq(...).eq(...).order(...).not(...)
+const chainNot = vi.fn();
+const chainOrder = vi.fn().mockReturnValue({ not: chainNot });
+const chainEq2 = vi.fn().mockReturnValue({ order: chainOrder });
+const chainEq1 = vi.fn().mockReturnValue({ eq: chainEq2 });
+const chainIlike = vi.fn().mockReturnValue({ eq: chainEq1 });
 
 const mockSupabase = {
   from: vi.fn().mockReturnValue({
     update: mockUpdate,
     select: mockSelect.mockReturnValue({
-      eq: mockEq1,
-      ilike: mockIlike.mockReturnValue({
-        eq: mockEq.mockReturnValue({
-          not: mockNot
-        })
-      })
+      ilike: chainIlike,
+      eq: mockEq1 // fallback if eq is still called first in some places
     })
   })
 } as unknown as SupabaseClient;
@@ -120,7 +123,7 @@ describe('apiKeyManager', () => {
     ];
 
     it('should select the key with the lowest requests_in_current_minute', async () => {
-      mockNot.mockResolvedValueOnce({ data: keys, error: null });
+      chainNot.mockResolvedValueOnce({ data: keys, error: null });
 
       const action = vi.fn().mockResolvedValue('success');
 
@@ -142,7 +145,7 @@ describe('apiKeyManager', () => {
         ...keys,
         { id: '4', api_key: 'key-4', service_provider: 'gemini', resource_type: 'llm', requests_in_current_minute: 10, requests_today: 50, last_used_at: null, minute_window_started_at: '2024-01-02T12:00:00Z', day_window_started_at: '2024-01-02T00:00:00Z', is_exhausted_today: false, rpm_limit: 10, rpd_limit: 250 }
       ];
-      mockNot.mockResolvedValueOnce({ data: mixedKeys, error: null });
+      chainNot.mockResolvedValueOnce({ data: mixedKeys, error: null });
 
       // Make key-2 and key-3 hit 429 RPM limit to force it to try the rest
       const action = vi.fn()
@@ -162,7 +165,7 @@ describe('apiKeyManager', () => {
     });
 
     it('should mark key as exhausted today if daily rate limit is hit', async () => {
-      mockNot.mockResolvedValueOnce({ data: keys, error: null });
+      chainNot.mockResolvedValueOnce({ data: keys, error: null });
 
       const action = vi.fn()
         .mockRejectedValueOnce(new RateLimitError('Quota Exceeded', true)) // fails key-2 (Daily)
@@ -185,7 +188,7 @@ describe('apiKeyManager', () => {
     });
 
     it('should throw error if all keys fail with rate limit and no fallback is provided', async () => {
-      mockNot.mockResolvedValueOnce({ data: keys, error: null });
+      chainNot.mockResolvedValueOnce({ data: keys, error: null });
 
       const action = vi.fn().mockRejectedValue(new RateLimitError('RPM Hit', false));
 
@@ -193,7 +196,7 @@ describe('apiKeyManager', () => {
     });
 
     it('should execute fallback if all keys fail and fallback is provided', async () => {
-       mockNot.mockResolvedValueOnce({ data: keys, error: null });
+       chainNot.mockResolvedValueOnce({ data: keys, error: null });
        const action = vi.fn().mockRejectedValue(new RateLimitError('RPM Hit', false));
        const fallback = vi.fn().mockResolvedValue('fallback_success');
 
