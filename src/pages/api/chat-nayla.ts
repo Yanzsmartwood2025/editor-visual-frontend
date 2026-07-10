@@ -23,7 +23,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
 
-  const apiUrl = 'https://api.manus.im/v1/chat/completions';
+  let apiUrl = process.env.MANUS_API_URL || 'https://api.manus.im/v1/chat/completions';
+  if (!apiUrl.startsWith('http')) apiUrl = `https://${apiUrl}`;
+
+  const aiName = process.env.NEXT_PUBLIC_AI_NAME || 'Nayla';
+  const flashModel = process.env.NAYLA_MODEL_FLASH || 'manus-flash';
+  const proModel = process.env.NAYLA_MODEL_PRO || 'manus-pro';
+  const targetModel = model === 'manus-flash' ? flashModel : proModel;
+
+  const systemMessage = `Hola, soy ${aiName}. Estoy aquí para ayudarte a crear el mejor contenido y gestionar tus redes sociales.`;
 
   try {
     const manusResponseText = await executeWithApiKey(
@@ -37,9 +45,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
             'Authorization': `Bearer ${apiKey}`
           },
           body: JSON.stringify({
-            model: model === 'manus-flash' ? 'manus-flash' : 'manus-pro',
+            model: targetModel,
             messages: [
-              { role: "system", content: "Hola, soy Nayla. Estoy aquí para ayudarte a crear el mejor contenido y gestionar tus redes sociales." },
+              { role: "system", content: systemMessage },
               { role: "user", content: prompt }
             ],
             stream: false
@@ -72,9 +80,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
             'Authorization': `Bearer ${fallbackKey}`
           },
           body: JSON.stringify({
-            model: model === 'manus-flash' ? 'manus-flash' : 'manus-pro',
+            model: targetModel,
             messages: [
-              { role: "system", content: "Hola, soy Nayla. Estoy aquí para ayudarte a crear el mejor contenido y gestionar tus redes sociales." },
+              { role: "system", content: systemMessage },
               { role: "user", content: prompt }
             ],
             stream: false
