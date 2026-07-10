@@ -96,13 +96,15 @@ export async function executeWithApiKey<T>(
   const { data: keysData, error: keysError } = await supabase
     .from('api_keys_pool')
     .select('*')
-    .eq('service_provider', provider)
+    .ilike('service_provider', `%${provider}%`)
     .eq('is_active', true)
     .eq('resource_type', 'llm')
     .order('created_at', { ascending: false })
     .not('api_key', 'is', null);
 
-  let candidateKeys: ApiKeyRecord[] = [];
+  console.log(`[DEBUG] Buscando llaves para ${provider}. Encontradas: ${keysData?.length || 0}. Error: ${keysError?.message || 'ninguno'}`);
+
+  const candidateKeys: ApiKeyRecord[] = [];
 
   if (!keysError && keysData && keysData.length > 0) {
     // 1. Sync windows and filter out invalid/exhausted keys
