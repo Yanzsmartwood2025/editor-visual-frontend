@@ -1,12 +1,13 @@
 import { NextApiRequest, NextApiResponse } from 'next';
 import { createClient } from '@supabase/supabase-js';
+import { registrarMemoriaUniversal } from '../../utils/memoriaUniversal';
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  const { nombre, email } = req.body;
+  const { nombre, email, personaje_id, contexto_programa } = req.body;
 
   if (!nombre) {
     return res.status(400).json({ error: 'El nombre del artista es requerido.' });
@@ -106,17 +107,19 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
             const finalUrl = publicUrlData.publicUrl;
 
-            const { error: dbError } = await supabase
-                .from('memoria_nayla')
-                .insert({
+            try {
+                await registrarMemoriaUniversal(supabase, {
                     url: finalUrl,
                     tipo: 'foto',
                     nombre: `Last.fm: ${nombre}`,
-                    estado: 'completado'
+                    estado: 'completado',
+                    metadata: { originalUrl: imgUrl, source: 'lastfm' },
+                    personaje_id: personaje_id || 'Nayla',
+                    contexto_programa: contexto_programa || `Búsqueda de artista: ${nombre}`
                 });
-
-            if (!dbError) {
                 resultados.push(finalUrl);
+            } catch (dbError) {
+                console.error("Error registrando en memoria universal:", dbError);
             }
         } catch (downloadError) {
              console.error("Error procesando imagen de Last.fm:", downloadError);
