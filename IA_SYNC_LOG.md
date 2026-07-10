@@ -9,11 +9,13 @@ La IA del sistema es **Nayla**, y su personalidad es de un asistente experto, cu
 - **Gestión de APIs:** Uso de un pool rotativo de APIs guardado en Supabase (api_keys_pool) para maximizar recursos y evitar límites de uso (rate-limiting) de distintos proveedores (Gemini, Nayla/Manus, etc.).
 
 ## Estado Actual
-Se ha completado la refactorización para unificar la identidad bajo el nombre Nayla, implementando las tareas 1 a 4, incluyendo:
+Se ha completado la refactorización para unificar la identidad bajo el nombre Nayla y se acaba de terminar la implementación de la "Memoria Universal" y el "Oracle Service".
+
+Los cambios recientes incluyen:
 1. Reemplazos de identidad de IAs externas (ChatGPT, Aura, Manus) por **Nayla**.
-2. Cambios estructurales para utilizar las APIs de forma unificada bajo un contexto de sistema que refuerza el comportamiento nativo de NaylaCore.
-3. Incorporación del modelo selector en el chat (Nayla Flash / Nayla Pro).
-4. Actualización del endpoint `chat-nayla.ts` para manejar estas peticiones.
+2. Restricción estricta de rol para Nayla en `chat-nayla.ts` (Asistente Creativa de NaylaCore enfocada en edición y curaduría, rechazando temas ajenos).
+3. Implementación de la Memoria Universal, que centraliza los registros en base de datos.
+4. Implementación del Oracle Service, microservicio para descargas y procesamiento pesado de video asíncrono con `yt-dlp` y FFmpeg, evitando la sobrecarga de Vercel.
 
 ## Hoja de Ruta
 - Integración de WhatsApp.
