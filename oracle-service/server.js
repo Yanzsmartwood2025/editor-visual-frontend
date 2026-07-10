@@ -9,6 +9,104 @@ const ws = require('ws');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 
 const app = express();
+
+// --- Tareas de Limpieza Automática ---
+let isTmpCleanupRunning = false;
+let isStorageCleanupRunning = false;
+
+// 1. Limpieza de archivos en /tmp (cada hora)
+setInterval(() => {
+    if (isTmpCleanupRunning) return;
+    isTmpCleanupRunning = true;
+    try {
+        console.log('[Cleanup] Iniciando limpieza periódica de /tmp...');
+        const tmpDir = '/tmp';
+        if (!fs.existsSync(tmpDir)) {
+            return;
+        }
+        const files = fs.readdirSync(tmpDir);
+        const now = Date.now();
+        let deletedCount = 0;
+        files.forEach(file => {
+            // Solo limpiar los archivos generados por nosotros (clip_*, meta_*)
+            if (file.startsWith('clip_') || file.startsWith('meta_')) {
+                const filePath = path.join(tmpDir, file);
+                try {
+                    const stats = fs.statSync(filePath);
+                    // Si el archivo tiene más de 1 hora de antigüedad, borrarlo (1 hora = 3600000 ms)
+                    if (now - stats.mtimeMs > 3600000) {
+                        fs.unlinkSync(filePath);
+                        deletedCount++;
+                    }
+                } catch (e) {
+                    // Ignorar error de ENOENT si el archivo fue borrado concurrentemente
+                    if (e.code !== 'ENOENT') {
+                        console.error(`[Cleanup] Error procesando archivo ${filePath}:`, e);
+                    }
+                }
+            }
+        });
+        console.log(`[Cleanup] Limpieza de /tmp finalizada. Archivos borrados: ${deletedCount}`);
+    } catch (err) {
+        console.error('[Cleanup] Error durante la limpieza de /tmp:', err);
+    } finally {
+        isTmpCleanupRunning = false;
+    }
+}, 3600000); // 1 hora
+
+// 2. Limpieza de Supabase Storage (cada 24 horas - verificamos cada hora)
+setInterval(async () => {
+    if (isStorageCleanupRunning) return;
+    isStorageCleanupRunning = true;
+    try {
+        console.log('[Cleanup] Iniciando limpieza periódica de Supabase Storage...');
+
+        // El frontend y otras partes suben a 'media_bodega' (como bucket), y nosotros subimos a 'media_assets'
+        const bucketsToClean = [
+            { bucketName: 'media_assets', folder: 'recortes' },
+            { bucketName: 'media_assets', folder: 'media_bodega' },
+            { bucketName: 'media_bodega', folder: '' } // Bucket principal usado por otras integraciones
+        ];
+
+        const now = new Date();
+        const TWENTY_FOUR_HOURS = 24 * 60 * 60 * 1000;
+        let deletedCount = 0;
+
+        for (const target of bucketsToClean) {
+            // Listar archivos en el bucket/carpeta
+            const { data: files, error } = await supabase.storage.from(target.bucketName).list(target.folder);
+
+            if (error) {
+                console.error(`[Cleanup] Error listando archivos en bucket ${target.bucketName} (carpeta: '${target.folder}'):`, error);
+                continue;
+            }
+
+            if (!files || files.length === 0) continue;
+
+            for (const file of files) {
+                // ignorar placeholder vacío o subdirectorios
+                if (!file.name || file.name === '.emptyFolderPlaceholder') continue;
+
+                const fileCreatedAt = new Date(file.created_at);
+                if (now - fileCreatedAt > TWENTY_FOUR_HOURS) {
+                    const filePath = target.folder ? `${target.folder}/${file.name}` : file.name;
+                    const { error: deleteError } = await supabase.storage.from(target.bucketName).remove([filePath]);
+                    if (deleteError) {
+                        console.error(`[Cleanup] Error borrando ${filePath} del bucket ${target.bucketName}:`, deleteError);
+                    } else {
+                        console.log(`[Cleanup] Archivo borrado por expiración (24h): ${target.bucketName}/${filePath}`);
+                        deletedCount++;
+                    }
+                }
+            }
+        }
+        console.log(`[Cleanup] Limpieza de Supabase Storage finalizada. Archivos borrados: ${deletedCount}`);
+    } catch (err) {
+        console.error('[Cleanup] Error general durante la limpieza de Supabase Storage:', err);
+    } finally {
+        isStorageCleanupRunning = false;
+    }
+}, 3600000); // Se ejecuta cada 1 hora (y verifica si los archivos superan las 24h)
 app.use(express.json());
 
 // --- Cola de procesamiento (Queue) ---
