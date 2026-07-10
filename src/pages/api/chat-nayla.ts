@@ -21,15 +21,25 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(500).json({ error: 'Configuración de servidor incompleta.' });
   }
 
-  const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
+  let supabaseAdmin;
+  try {
+    console.log("[ORACLE-DIAG] Inicializando cliente con URL:", process.env.NEXT_PUBLIC_SUPABASE_URL);
+    supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
+  } catch (err) {
+    console.error("[ORACLE-DIAG] CRASH AL CREAR CLIENTE SUPABASE:", err);
+    return res.status(500).json({ error: 'Error inicializando la base de datos.' });
+  }
 
-  let apiUrl = process.env.MANUS_API_URL || 'https://api.manus.im/v1/chat/completions';
-  if (!apiUrl.startsWith('http')) apiUrl = `https://${apiUrl}`;
+  const apiUrl = 'https://api.manus.im/v1/chat/completions';
 
   const aiName = process.env.NEXT_PUBLIC_AI_NAME || 'Nayla';
-  const flashModel = process.env.NAYLA_MODEL_FLASH || 'manus-flash';
-  const proModel = process.env.NAYLA_MODEL_PRO || 'manus-pro';
-  const targetModel = model === 'manus-flash' ? flashModel : proModel;
+
+  let targetModel = 'manus-1.5-light'; // default
+  if (model === 'Nayla V1-Flash') {
+    targetModel = 'manus-1.5-light';
+  } else if (model === 'Nayla V2-Strong') {
+    targetModel = 'manus-1.5';
+  }
 
   const systemMessage = `Hola, soy ${aiName}. Estoy aquí para ayudarte a crear el mejor contenido y gestionar tus redes sociales.`;
 
