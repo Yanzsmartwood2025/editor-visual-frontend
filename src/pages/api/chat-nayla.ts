@@ -30,9 +30,19 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(500).json({ error: 'Error inicializando la base de datos.' });
   }
 
-  const baseUrl = process.env.MANUS_API_URL || 'https://api.manus.ai';
-  const createUrl = `${baseUrl.replace(/\/$/, '')}/v2/task.create`;
-  const listMessagesUrl = `${baseUrl.replace(/\/$/, '')}/v2/task.listMessages`;
+  let baseUrlStr = process.env.MANUS_API_URL || 'https://api.manus.ai';
+  let cleanBaseUrl = 'https://api.manus.ai';
+  try {
+    // Extract just the origin to avoid appending to legacy paths like /v1/chat/completions
+    // If baseUrlStr is not a valid URL (e.g. missing https://), it might throw.
+    // We ensure it has a protocol first if it's missing one.
+    if (!/^https?:\/\//i.test(baseUrlStr)) baseUrlStr = 'https://' + baseUrlStr;
+    cleanBaseUrl = new URL(baseUrlStr).origin;
+  } catch (e) {
+    console.warn('[chat-nayla] Invalid MANUS_API_URL, falling back to https://api.manus.ai');
+  }
+  const createUrl = `${cleanBaseUrl}/v2/task.create`;
+  const listMessagesUrl = `${cleanBaseUrl}/v2/task.listMessages`;
 
   const aiName = process.env.NEXT_PUBLIC_AI_NAME || 'Nayla';
   const systemMessage = `Instrucciones del sistema: Eres ${aiName}. Estás aquí para ayudar a crear el mejor contenido y gestionar redes sociales.\n\n`;
