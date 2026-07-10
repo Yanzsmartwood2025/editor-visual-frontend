@@ -7,7 +7,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  const { prompt, model } = req.body;
+  const { prompt } = req.body;
 
   if (!prompt || typeof prompt !== 'string') {
     return res.status(400).json({ error: 'Prompt es requerido.' });
@@ -30,51 +30,127 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(500).json({ error: 'Error inicializando la base de datos.' });
   }
 
-  const apiUrl = 'https://api.manus.im/v1/chat/completions';
+  const baseUrl = process.env.MANUS_API_URL || 'https://api.manus.ai';
+  const createUrl = `${baseUrl.replace(/\/$/, '')}/v2/task.create`;
+  const listMessagesUrl = `${baseUrl.replace(/\/$/, '')}/v2/task.listMessages`;
 
   const aiName = process.env.NEXT_PUBLIC_AI_NAME || 'Nayla';
+  const systemMessage = `Instrucciones del sistema: Eres ${aiName}. Estás aquí para ayudar a crear el mejor contenido y gestionar redes sociales.\n\n`;
+  const fullPrompt = systemMessage + prompt;
 
-  let targetModel = 'manus-1.5-light'; // default
-  if (model === 'Nayla V1-Flash') {
-    targetModel = 'manus-1.5-light';
-  } else if (model === 'Nayla V2-Strong') {
-    targetModel = 'manus-1.5';
-  }
+  const runManusTask = async (apiKey: string) => {
+    // 1. Create the task
+    const createRes = await fetch(createUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-manus-api-key': apiKey,
+      },
+      body: JSON.stringify({
+        message: {
+          content: [
+            { type: "text", text: fullPrompt }
+          ]
+        }
+      })
+    });
 
-  const systemMessage = `Hola, soy ${aiName}. Estoy aquí para ayudarte a crear el mejor contenido y gestionar tus redes sociales.`;
+    if (!createRes.ok) {
+      const errorData = await createRes.text();
+      if (createRes.status === 429) {
+        throw { status: 429, message: errorData || 'Rate limit' };
+      }
+      throw new Error(`Nayla API Create Task Error: ${createRes.status} - ${errorData}`);
+    }
+
+    const createData = await createRes.json();
+    if (!createData.ok || !createData.task_id) {
+      throw new Error(`Failed to create task: ${JSON.stringify(createData)}`);
+    }
+
+    const taskId = createData.task_id;
+
+    // 2. Poll for results
+    const maxPollingTime = 90000; // 90 seconds
+    const startTime = Date.now();
+    const pollInterval = 3000; // 3 seconds
+
+    while (Date.now() - startTime < maxPollingTime) {
+      await new Promise(resolve => setTimeout(resolve, pollInterval));
+
+      const pollRes = await fetch(`${listMessagesUrl}?task_id=${taskId}&order=asc`, {
+        method: 'GET',
+        headers: {
+          'x-manus-api-key': apiKey,
+        }
+      });
+
+      if (!pollRes.ok) {
+        const errorData = await pollRes.text();
+        console.warn(`[chat-nayla] Polling warning: ${pollRes.status} - ${errorData}`);
+        continue; // Keep polling, maybe it's a transient error
+      }
+
+      const pollData = await pollRes.json();
+      if (!pollData.ok) {
+        console.warn(`[chat-nayla] Polling returned not ok: ${JSON.stringify(pollData)}`);
+        continue;
+      }
+
+      const messages = pollData.messages || [];
+      let isTaskFinished = false;
+
+      // Check agent status
+      for (const msg of messages) {
+        if (msg.type === 'status_update' && msg.status_update?.agent_status) {
+           const status = msg.status_update.agent_status;
+           if (status === 'stopped' || status === 'error' || status === 'waiting') {
+             isTaskFinished = true;
+             break;
+           }
+        }
+      }
+
+      if (isTaskFinished) {
+         // Find the last assistant message
+         let finalAnswer = "";
+         for (let i = messages.length - 1; i >= 0; i--) {
+           const msg = messages[i];
+           if (msg.type === 'assistant_message' && msg.assistant_message?.content) {
+              finalAnswer = msg.assistant_message.content;
+              break;
+           }
+         }
+
+         if (finalAnswer) {
+           return finalAnswer;
+         } else {
+           // Check if there's an error message
+           for (const msg of messages) {
+             if (msg.type === 'error_message' && msg.error_message?.content) {
+               throw new Error(`Nayla Task Error: ${msg.error_message.content}`);
+             }
+           }
+           // Check if it's waiting
+           for (const msg of messages) {
+            if (msg.type === 'status_update' && msg.status_update?.agent_status === 'waiting') {
+              throw new Error(`Nayla Task is waiting for user input and cannot continue autonomously.`);
+            }
+          }
+           throw new Error("Task completed but no assistant message found.");
+         }
+      }
+    }
+
+    throw new Error(`Timeout: Task did not complete within ${maxPollingTime / 1000} seconds.`);
+  };
 
   try {
     const manusResponseText = await executeWithApiKey(
       supabaseAdmin,
       'manus_ai',
       async (apiKey: string) => {
-        const response = await fetch(apiUrl, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${apiKey}`
-          },
-          body: JSON.stringify({
-            model: targetModel,
-            messages: [
-              { role: "system", content: systemMessage },
-              { role: "user", content: prompt }
-            ],
-            stream: false
-          })
-        });
-
-        if (!response.ok) {
-          const errorData = await response.text();
-          if (response.status === 429) {
-            throw { status: 429, message: errorData || 'Rate limit' };
-          }
-          throw new Error(`Nayla API Error: ${response.status} - ${errorData}`);
-        }
-
-        const data = await response.json();
-        // Assuming standard OpenAI format response
-        return data.choices?.[0]?.message?.content || "";
+        return await runManusTask(apiKey);
       },
       async () => {
         // Fallback to env var if no key found in pool
@@ -82,30 +158,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         if (!fallbackKey) {
            throw new Error('No MANUS_API_KEY in environment variables.');
         }
-
-        const response = await fetch(apiUrl, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${fallbackKey}`
-          },
-          body: JSON.stringify({
-            model: targetModel,
-            messages: [
-              { role: "system", content: systemMessage },
-              { role: "user", content: prompt }
-            ],
-            stream: false
-          })
-        });
-
-        if (!response.ok) {
-          const errorData = await response.text();
-          throw new Error(`Nayla API Fallback Error: ${response.status} - ${errorData}`);
-        }
-
-        const data = await response.json();
-        return data.choices?.[0]?.message?.content || "";
+        return await runManusTask(fallbackKey);
       }
     );
 
