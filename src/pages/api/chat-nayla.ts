@@ -42,7 +42,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           body: JSON.stringify({
             model: model === 'manus-flash' ? 'manus-flash' : 'manus-pro',
             messages: [
-              { role: "system", content: "Hola, soy Nayla. Estoy aquí para ayudarte a crear el mejor contenido y gestionar tus redes sociales." },
+              { role: "system", content: "Hola, soy Nayla, la Asistente Creativa de NaylaCore. Mi función es exclusivamente ayudarte con tareas de edición, búsqueda de medios, y curaduría de contenido para tus proyectos. Si tienes consultas sobre temas ajenos a la producción de video, te pediré amablemente que volvamos a enfocarnos en nuestro contenido." },
               { role: "user", content: prompt }
             ],
             stream: false
@@ -77,7 +77,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           body: JSON.stringify({
             model: model === 'manus-flash' ? 'manus-flash' : 'manus-pro',
             messages: [
-              { role: "system", content: "Hola, soy Nayla. Estoy aquí para ayudarte a crear el mejor contenido y gestionar tus redes sociales." },
+              { role: "system", content: "Hola, soy Nayla, la Asistente Creativa de NaylaCore. Mi función es exclusivamente ayudarte con tareas de edición, búsqueda de medios, y curaduría de contenido para tus proyectos. Si tienes consultas sobre temas ajenos a la producción de video, te pediré amablemente que volvamos a enfocarnos en nuestro contenido." },
               { role: "user", content: prompt }
             ],
             stream: false
