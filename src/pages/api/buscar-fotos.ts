@@ -1,12 +1,13 @@
 import { NextApiRequest, NextApiResponse } from 'next';
 import { createClient } from '@supabase/supabase-js';
+import { registrarMemoriaUniversal } from '../../utils/memoriaUniversal';
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  const { query, email } = req.body;
+  const { query, email, personaje_id, contexto_programa } = req.body;
 
   if (!query) {
     return res.status(400).json({ error: 'Query es requerido.' });
@@ -83,20 +84,19 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
             const finalUrl = publicUrlData.publicUrl;
 
-            // 4. Insertar en memoria_nayla o galeria_multimedia para que el frontend lo detecte
-            // El frontend usa la tabla memoria_nayla para auto-ingestar, según la memoria:
-            // "The frontend UI polls this table (public.memoria_nayla) every 5 seconds..."
-            const { error: dbError } = await supabase
-                .from('memoria_nayla')
-                .insert({
+            try {
+                await registrarMemoriaUniversal(supabase, {
                     url: finalUrl,
                     tipo: 'foto',
                     nombre: `Pixabay Foto: ${query}`,
-                    estado: 'completado'
+                    estado: 'completado',
+                    metadata: { originalUrl: imageUrl, source: 'pixabay' },
+                    personaje_id: personaje_id || 'Nayla',
+                    contexto_programa: contexto_programa || `Búsqueda de fotos: ${query}`
                 });
-
-            if (!dbError) {
                 resultados.push(finalUrl);
+            } catch (dbError) {
+                console.error("Error registrando en memoria universal:", dbError);
             }
         } catch (downloadError) {
              console.error("Error procesando imagen individual:", downloadError);

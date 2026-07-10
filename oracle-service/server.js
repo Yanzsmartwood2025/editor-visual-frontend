@@ -206,20 +206,52 @@ app.post('/api/process-clip', async (req, res) => {
                 clipName: clipName || 'Clip Generado'
             };
 
-            const { error: dbError } = await supabase
-                .from('memoria_nayla')
-                .insert([
-                    {
-                        tipo: 'video_clip',
-                        url: finalUrl,
-                        metadata: metadata
-                    }
-                ]);
+            // Call the centralized Next.js API for universal memory
+            const memoryApiUrl = process.env.NEXT_PUBLIC_URL ? `${process.env.NEXT_PUBLIC_URL}/api/registrar-memoria` : 'http://localhost:3000/api/registrar-memoria';
 
-            if (dbError) {
-                console.error(`[Job ${jobId}] Error al registrar en la base de datos:`, dbError);
-            } else {
-                console.log(`[Job ${jobId}] Clip registrado exitosamente en memoria_nayla`);
+            try {
+                const response = await fetch(memoryApiUrl, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${process.env.ORACLE_SECRET}`
+                    },
+                    body: JSON.stringify({
+                        url: finalUrl,
+                        tipo: 'video_clip',
+                        nombre: clipName || 'Clip Generado',
+                        metadata: metadata,
+                        personaje_id: req.body.personaje_id || 'Nayla',
+                        contexto_programa: req.body.contexto_programa || `Recorte de video: ${videoUrl}`,
+                        estado: 'completado'
+                    })
+                });
+
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    console.error(`[Job ${jobId}] Error al registrar en la memoria universal:`, errorText);
+                } else {
+                    console.log(`[Job ${jobId}] Clip registrado exitosamente en memoria_nayla vía API centralizada`);
+                }
+            } catch (fetchErr) {
+                console.error(`[Job ${jobId}] Failed to reach Next.js API:`, fetchErr.message);
+
+                // Fallback to direct supabase insertion just in case
+                const { error: dbError } = await supabase
+                    .from('memoria_nayla')
+                    .insert([
+                        {
+                            tipo: 'video_clip',
+                            url: finalUrl,
+                            metadata: metadata
+                        }
+                    ]);
+
+                if (dbError) {
+                    console.error(`[Job ${jobId}] Error al registrar directamente en la base de datos (fallback):`, dbError);
+                } else {
+                    console.log(`[Job ${jobId}] Clip registrado exitosamente mediante fallback directo`);
+                }
             }
 
         } catch (e) {
