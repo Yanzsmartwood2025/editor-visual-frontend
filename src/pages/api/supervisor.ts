@@ -1,7 +1,7 @@
 import { NextApiRequest, NextApiResponse } from 'next';
 import { createClient } from '@supabase/supabase-js';
 import { GoogleGenerativeAI } from '@google/generative-ai';
-import { executeWithGeminiKey, RateLimitError } from '../../utils/apiKeyManager';
+import { executeWithApiKey, RateLimitError } from '../../utils/apiKeyManager';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
 const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
@@ -102,8 +102,7 @@ La galería actual del usuario contiene los siguientes elementos: ${JSON.stringi
         } else {
             // Admin flow using pool
             const fallbackKey = process.env.GEMINI_API_KEY;
-            finalCode = await executeWithGeminiKey(
-                supabase,
+            finalCode = await executeWithApiKey(supabase, "gemini",
                 executeGemini,
                 fallbackKey ? () => executeGemini(fallbackKey) : undefined
             );

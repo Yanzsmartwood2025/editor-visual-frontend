@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { syncKeyWindows, executeWithGeminiKey, RateLimitError, ApiKeyRecord } from '../utils/apiKeyManager';
+import { syncKeyWindows, executeWithApiKey, RateLimitError, ApiKeyRecord } from '../utils/apiKeyManager';
 import { SupabaseClient } from '@supabase/supabase-js';
 
 // Mock Supabase
@@ -105,7 +105,7 @@ describe('apiKeyManager', () => {
     });
   });
 
-  describe('executeWithGeminiKey', () => {
+  describe('executeWithApiKey', () => {
     const keys: ApiKeyRecord[] = [
       { id: '1', api_key: 'key-1', service_provider: 'gemini', resource_type: 'llm', requests_in_current_minute: 9, requests_today: 50, last_used_at: null, minute_window_started_at: '2024-01-02T12:00:00Z', day_window_started_at: '2024-01-02T00:00:00Z', is_exhausted_today: false, rpm_limit: 10, rpd_limit: 250, character_name: 'arIA' },
       { id: '2', api_key: 'key-2', service_provider: 'gemini', resource_type: 'llm', requests_in_current_minute: 2, requests_today: 50, last_used_at: null, minute_window_started_at: '2024-01-02T12:00:00Z', day_window_started_at: '2024-01-02T00:00:00Z', is_exhausted_today: false, rpm_limit: 10, rpd_limit: 250, character_name: 'Nayla_1' },
@@ -117,7 +117,7 @@ describe('apiKeyManager', () => {
 
       const action = vi.fn().mockResolvedValue('success');
 
-      await executeWithGeminiKey(mockSupabase, action);
+      await executeWithApiKey(mockSupabase, "gemini", action);
 
       // key-2 has the lowest usage (2)
       expect(action).toHaveBeenCalledWith('key-2');
@@ -143,7 +143,7 @@ describe('apiKeyManager', () => {
         .mockRejectedValueOnce(new RateLimitError('RPM Hit', false)) // fails key-3
         .mockResolvedValueOnce('success'); // succeeds on key-1
 
-      await executeWithGeminiKey(mockSupabase, action);
+      await executeWithApiKey(mockSupabase, "gemini", action);
 
       // Should have skipped key-4 entirely before calling action because it had 10 >= rpm_limit
       expect(action).not.toHaveBeenCalledWith('key-4');
@@ -161,7 +161,7 @@ describe('apiKeyManager', () => {
         .mockRejectedValueOnce(new RateLimitError('Quota Exceeded', true)) // fails key-2 (Daily)
         .mockResolvedValueOnce('success'); // succeeds on key-3
 
-      await executeWithGeminiKey(mockSupabase, action);
+      await executeWithApiKey(mockSupabase, "gemini", action);
 
       // Verify key-2 was marked exhausted in DB
       expect(mockUpdate).toHaveBeenCalledWith(expect.objectContaining({
@@ -182,7 +182,7 @@ describe('apiKeyManager', () => {
 
       const action = vi.fn().mockRejectedValue(new RateLimitError('RPM Hit', false));
 
-      await expect(executeWithGeminiKey(mockSupabase, action)).rejects.toThrow('Límite de Gemini alcanzado en todas las cuentas disponibles, intenta en unos minutos.');
+      await expect(executeWithApiKey(mockSupabase, "gemini", action)).rejects.toThrow('Límite de gemini alcanzado en todas las cuentas disponibles, intenta en unos minutos.');
     });
 
     it('should execute fallback if all keys fail and fallback is provided', async () => {
@@ -190,7 +190,7 @@ describe('apiKeyManager', () => {
        const action = vi.fn().mockRejectedValue(new RateLimitError('RPM Hit', false));
        const fallback = vi.fn().mockResolvedValue('fallback_success');
 
-       const result = await executeWithGeminiKey(mockSupabase, action, fallback);
+       const result = await executeWithApiKey(mockSupabase, "gemini", action, fallback);
        expect(result).toBe('fallback_success');
        expect(fallback).toHaveBeenCalled();
     });

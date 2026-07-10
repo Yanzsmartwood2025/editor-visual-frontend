@@ -1,6 +1,6 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { createClient } from '@supabase/supabase-js';
-import { executeWithGeminiKey, RateLimitError } from '../../utils/apiKeyManager';
+import { executeWithApiKey, RateLimitError } from '../../utils/apiKeyManager';
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== 'POST') {
@@ -66,8 +66,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   const supabase = createClient(supabaseUrl, supabaseKey);
 
   try {
-    return await executeWithGeminiKey(
-      supabase,
+    return await executeWithApiKey(supabase, "gemini",
       async (apiKey: string) => {
         console.log(`[extract-video] Delegando extracción a Oracle con IA: ${ORACLE_SERVER_URL}/api/extract-meta`);
         const oracleRes = await fetch(`${ORACLE_SERVER_URL}/api/extract-meta`, {
