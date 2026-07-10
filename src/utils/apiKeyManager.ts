@@ -96,11 +96,14 @@ export async function executeWithApiKey<T>(
   const { data: keysData, error: keysError } = await supabase
     .from('api_keys_pool')
     .select('*')
-    .eq('service_provider', provider)
+    .ilike('service_provider', `%${provider}%`)
     .eq('is_active', true)
     .eq('resource_type', 'llm')
     .order('created_at', { ascending: false })
     .not('api_key', 'is', null);
+
+  console.log(`[ORACLE-DIAG] Buscando en: ${process.env.NEXT_PUBLIC_SUPABASE_URL}`);
+  console.log(`[ORACLE-DIAG] Llaves encontradas: ${keysData?.length || 0}. Error: ${keysError?.message || 'ninguno'}`);
 
   let candidateKeys: ApiKeyRecord[] = [];
 
