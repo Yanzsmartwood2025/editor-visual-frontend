@@ -164,13 +164,14 @@ export default function NaylaCore() {
   const [extrayendoVideo, setExtrayendoVideo] = useState(false);
   const [queueProgress, setQueueProgress] = useState(0);
 
-  // Manus Chat States
+  // Nayla Chat States
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [chatInput, setChatInput] = useState('');
   const [chatMessages, setChatMessages] = useState<{role: 'user' | 'ai', text: string}[]>([]);
   const [chatProcessing, setChatProcessing] = useState(false);
+  const [chatModel, setChatModel] = useState<'flash' | 'pro'>('flash');
 
-  const sendManusMessage = async () => {
+  const sendNaylaMessage = async () => {
     if (!chatInput.trim()) return;
     const newMessages = [...chatMessages, { role: 'user', text: chatInput }];
     setChatMessages(newMessages as any);
@@ -178,10 +179,10 @@ export default function NaylaCore() {
     setChatProcessing(true);
 
     try {
-      const res = await fetch('/api/chat-manus', {
+      const res = await fetch('/api/chat-nayla', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt: chatInput })
+        body: JSON.stringify({ prompt: chatInput, model: chatModel === 'flash' ? 'manus-flash' : 'manus-pro' })
       });
       const data = await res.json();
 
@@ -204,7 +205,7 @@ export default function NaylaCore() {
           });
 
           if(resApi.status === 202) {
-             console.log("Manus clip curado enviado a cola exitosamente");
+             console.log("Nayla clip curado enviado a cola exitosamente");
           } else {
              console.error("Error al enviar clip a procesar:", await resApi.json());
           }
@@ -215,7 +216,7 @@ export default function NaylaCore() {
           }, 3000);
 
         } catch (e) {
-          console.error("Error procesando clip de Manus:", e);
+          console.error("Error procesando clip de Nayla:", e);
           setExtrayendoVideo(false);
         }
       }
@@ -1582,7 +1583,7 @@ export default function NaylaCore() {
 
         </div>
 
-        {/* MANUS CHAT SIDEBAR */}
+        {/* NAYLA CHAT SIDEBAR */}
         {isChatOpen && (
           <div style={{
             position: 'absolute',
@@ -1603,7 +1604,24 @@ export default function NaylaCore() {
             <div style={{ padding: '16px', borderBottom: `1px solid ${darkMode ? '#1a1a1a' : '#e5e7eb'}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <div style={{ width: '8px', height: '8px', backgroundColor: '#00cc66', borderRadius: '50%', boxShadow: '0 0 10px #00cc66' }}></div>
-                <h3 style={{ margin: 0, color: darkMode ? '#fff' : '#000', fontSize: '1rem', fontWeight: 'bold' }}>Manus AI</h3>
+                <h3 style={{ margin: 0, color: darkMode ? '#fff' : '#000', fontSize: '1rem', fontWeight: 'bold' }}>Nayla</h3>
+                <select
+                  value={chatModel}
+                  onChange={(e) => setChatModel(e.target.value as 'flash' | 'pro')}
+                  style={{
+                    marginLeft: '10px',
+                    backgroundColor: darkMode ? '#333' : '#f3f4f6',
+                    color: darkMode ? '#fff' : '#000',
+                    border: 'none',
+                    borderRadius: '4px',
+                    padding: '2px 6px',
+                    fontSize: '0.8rem',
+                    outline: 'none'
+                  }}
+                >
+                  <option value="flash">Nayla Flash</option>
+                  <option value="pro">Nayla Pro</option>
+                </select>
               </div>
               <button onClick={() => setIsChatOpen(false)} style={{ background: 'none', border: 'none', color: darkMode ? '#fff' : '#000', cursor: 'pointer' }}>
                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
@@ -1614,7 +1632,7 @@ export default function NaylaCore() {
             <div style={{ flex: 1, padding: '16px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '12px' }}>
               {chatMessages.length === 0 ? (
                 <div style={{ textAlign: 'center', color: '#666', marginTop: '20px', fontSize: '0.9rem' }}>
-                  ¡Hola! Soy Manus, tu curador de contenido inteligente. Pega un enlace o dime qué necesitas.
+                  ¡Hola! Soy Nayla, tu curador de contenido inteligente. Pega un enlace o dime qué necesitas.
                 </div>
               ) : (
                 chatMessages.map((msg, i) => (
@@ -1634,7 +1652,7 @@ export default function NaylaCore() {
               )}
               {chatProcessing && (
                 <div style={{ alignSelf: 'flex-start', color: '#666', padding: '10px 14px', fontSize: '0.9rem', fontStyle: 'italic' }}>
-                  Manus está pensando...
+                  Nayla está pensando...
                 </div>
               )}
               {extrayendoVideo && (
@@ -1654,7 +1672,7 @@ export default function NaylaCore() {
                   type="text"
                   value={chatInput}
                   onChange={(e) => setChatInput(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && sendManusMessage()}
+                  onKeyDown={(e) => e.key === 'Enter' && sendNaylaMessage()}
                   placeholder="Escribe aquí..."
                   style={{
                     flex: 1,
@@ -1668,7 +1686,7 @@ export default function NaylaCore() {
                   }}
                 />
                 <button
-                  onClick={sendManusMessage}
+                  onClick={sendNaylaMessage}
                   disabled={chatProcessing || extrayendoVideo}
                   style={{
                     padding: '10px',
