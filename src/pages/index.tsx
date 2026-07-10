@@ -164,6 +164,69 @@ export default function NaylaCore() {
   const [extrayendoVideo, setExtrayendoVideo] = useState(false);
   const [queueProgress, setQueueProgress] = useState(0);
 
+  // Manus Chat States
+  const [isChatOpen, setIsChatOpen] = useState(false);
+  const [chatInput, setChatInput] = useState('');
+  const [chatMessages, setChatMessages] = useState<{role: 'user' | 'ai', text: string}[]>([]);
+  const [chatProcessing, setChatProcessing] = useState(false);
+
+  const sendManusMessage = async () => {
+    if (!chatInput.trim()) return;
+    const newMessages = [...chatMessages, { role: 'user', text: chatInput }];
+    setChatMessages(newMessages as any);
+    setChatInput('');
+    setChatProcessing(true);
+
+    try {
+      const res = await fetch('/api/chat-manus', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt: chatInput })
+      });
+      const data = await res.json();
+
+      setChatMessages(prev => [...prev, { role: 'ai', text: data.text }]);
+
+      if (data.action === 'CLIP_VIDEO' && data.payload) {
+        // Enviar a procesar el clip con el Oráculo
+        setExtrayendoVideo(true);
+
+        try {
+          const resApi = await fetch('/api/process-clip', {
+             method: 'POST',
+             headers: { 'Content-Type': 'application/json' },
+             body: JSON.stringify({
+               videoUrl: data.payload.url,
+               startTime: data.payload.start,
+               endTime: data.payload.end,
+               clipName: data.payload.title
+             })
+          });
+
+          if(resApi.status === 202) {
+             console.log("Manus clip curado enviado a cola exitosamente");
+          } else {
+             console.error("Error al enviar clip a procesar:", await resApi.json());
+          }
+          // No seteamos extrayendoVideo a false inmediatamente porque el proceso es en background
+          // Podemos dejar la barra por unos segundos para indicar feedback.
+          setTimeout(() => {
+            setExtrayendoVideo(false);
+          }, 3000);
+
+        } catch (e) {
+          console.error("Error procesando clip de Manus:", e);
+          setExtrayendoVideo(false);
+        }
+      }
+    } catch (error) {
+      console.error(error);
+      setChatMessages(prev => [...prev, { role: 'ai', text: 'Lo siento, ocurrió un error procesando tu solicitud.' }]);
+    } finally {
+      setChatProcessing(false);
+    }
+  };
+
   const descargarIndividual = async (url: string, nombre: string, tipo: string) => {
     try {
       const res = await fetch(url);
@@ -1506,6 +1569,9 @@ export default function NaylaCore() {
         <div className={`grid grid-cols-4 gap-2 w-full p-3 ${darkMode ? 'bg-black' : 'bg-white'}`}>
           {MAIN_TOOLS.map((tool) => (
             <button key={tool.id} className={`main-btn w-full ${mainNav === tool.id ? 'active' : ''} ${!darkMode ? 'bg-gray-100 border-gray-300 text-black' : ''}`} style={{ backgroundColor: !darkMode ? (mainNav === tool.id ? '#000' : '#f3f4f6') : undefined, color: !darkMode ? (mainNav === tool.id ? '#fff' : '#000') : undefined }} onClick={() => {
+              if (tool.id === 'ia') {
+                setIsChatOpen(!isChatOpen);
+              }
               setMainNav(tool.id);
               setSubTool(null);
             }}>
@@ -1515,6 +1581,119 @@ export default function NaylaCore() {
           ))}
 
         </div>
+
+        {/* MANUS CHAT SIDEBAR */}
+        {isChatOpen && (
+          <div style={{
+            position: 'absolute',
+            top: 0,
+            right: 0,
+            width: '350px',
+            height: '100%',
+            backgroundColor: darkMode ? '#050505' : '#fff',
+            borderLeft: `1px solid ${darkMode ? '#1a1a1a' : '#e5e7eb'}`,
+            display: 'flex',
+            flexDirection: 'column',
+            zIndex: 100,
+            boxShadow: '-4px 0 15px rgba(0,0,0,0.5)',
+            transform: isChatOpen ? 'translateX(0)' : 'translateX(100%)',
+            transition: 'transform 0.3s ease-in-out'
+          }}>
+            {/* Header Sidebar */}
+            <div style={{ padding: '16px', borderBottom: `1px solid ${darkMode ? '#1a1a1a' : '#e5e7eb'}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <div style={{ width: '8px', height: '8px', backgroundColor: '#00cc66', borderRadius: '50%', boxShadow: '0 0 10px #00cc66' }}></div>
+                <h3 style={{ margin: 0, color: darkMode ? '#fff' : '#000', fontSize: '1rem', fontWeight: 'bold' }}>Manus AI</h3>
+              </div>
+              <button onClick={() => setIsChatOpen(false)} style={{ background: 'none', border: 'none', color: darkMode ? '#fff' : '#000', cursor: 'pointer' }}>
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+              </button>
+            </div>
+
+            {/* Mensajes */}
+            <div style={{ flex: 1, padding: '16px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              {chatMessages.length === 0 ? (
+                <div style={{ textAlign: 'center', color: '#666', marginTop: '20px', fontSize: '0.9rem' }}>
+                  ¡Hola! Soy Manus, tu curador de contenido inteligente. Pega un enlace o dime qué necesitas.
+                </div>
+              ) : (
+                chatMessages.map((msg, i) => (
+                  <div key={i} style={{
+                    alignSelf: msg.role === 'user' ? 'flex-end' : 'flex-start',
+                    backgroundColor: msg.role === 'user' ? (darkMode ? '#1a1a1a' : '#f3f4f6') : (darkMode ? '#0a0a0a' : '#e5e7eb'),
+                    color: darkMode ? '#fff' : '#000',
+                    padding: '10px 14px',
+                    borderRadius: '12px',
+                    maxWidth: '85%',
+                    border: msg.role === 'ai' ? `1px solid ${darkMode ? '#262626' : '#d1d5db'}` : 'none',
+                    fontSize: '0.9rem'
+                  }}>
+                    {msg.text}
+                  </div>
+                ))
+              )}
+              {chatProcessing && (
+                <div style={{ alignSelf: 'flex-start', color: '#666', padding: '10px 14px', fontSize: '0.9rem', fontStyle: 'italic' }}>
+                  Manus está pensando...
+                </div>
+              )}
+              {extrayendoVideo && (
+                <div style={{ alignSelf: 'center', width: '100%', marginTop: '10px' }}>
+                  <div style={{ fontSize: '0.8rem', color: '#00cc66', marginBottom: '4px', textAlign: 'center' }}>Procesando video...</div>
+                  <div style={{ width: '100%', backgroundColor: '#262626', height: '4px', borderRadius: '2px', overflow: 'hidden' }}>
+                    <div style={{ height: '100%', width: '100%', backgroundColor: '#00cc66', animation: 'progress-bar 2s infinite ease-in-out' }} />
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Input Área */}
+            <div style={{ padding: '16px', borderTop: `1px solid ${darkMode ? '#1a1a1a' : '#e5e7eb'}` }}>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <input
+                  type="text"
+                  value={chatInput}
+                  onChange={(e) => setChatInput(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && sendManusMessage()}
+                  placeholder="Escribe aquí..."
+                  style={{
+                    flex: 1,
+                    padding: '10px 14px',
+                    backgroundColor: darkMode ? '#111' : '#f9fafb',
+                    border: `1px solid ${darkMode ? '#333' : '#d1d5db'}`,
+                    borderRadius: '8px',
+                    color: darkMode ? '#fff' : '#000',
+                    outline: 'none',
+                    fontSize: '0.9rem'
+                  }}
+                />
+                <button
+                  onClick={sendManusMessage}
+                  disabled={chatProcessing || extrayendoVideo}
+                  style={{
+                    padding: '10px',
+                    backgroundColor: chatProcessing || extrayendoVideo ? '#333' : '#00cc66',
+                    color: '#000',
+                    border: 'none',
+                    borderRadius: '8px',
+                    cursor: chatProcessing || extrayendoVideo ? 'not-allowed' : 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center'
+                  }}
+                >
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+                </button>
+              </div>
+            </div>
+            <style>{`
+              @keyframes progress-bar {
+                0% { transform: translateX(-100%); }
+                100% { transform: translateX(100%); }
+              }
+            `}</style>
+          </div>
+        )}
 
         </div>
       </div>

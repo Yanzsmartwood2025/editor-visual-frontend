@@ -10,6 +10,27 @@ const { GoogleGenerativeAI } = require('@google/generative-ai');
 
 const app = express();
 app.use(express.json());
+
+// --- Cola de procesamiento (Queue) ---
+const MAX_CONCURRENT_JOBS = 2;
+let activeJobs = 0;
+const jobQueue = [];
+
+function processNextJob() {
+    if (activeJobs >= MAX_CONCURRENT_JOBS || jobQueue.length === 0) {
+        return;
+    }
+    activeJobs++;
+    const job = jobQueue.shift();
+    console.log(`[Queue] Iniciando job. Activos: ${activeJobs}, En espera: ${jobQueue.length}`);
+
+    // Ejecutamos la tarea
+    job().finally(() => {
+        activeJobs--;
+        console.log(`[Queue] Job finalizado. Activos: ${activeJobs}, En espera: ${jobQueue.length}`);
+        processNextJob(); // Intentar procesar el siguiente
+    });
+}
 app.use(cors());
 
 // Configuración de Supabase
@@ -107,104 +128,111 @@ app.post('/api/process-clip', async (req, res) => {
     const outputFilename = `clip_${jobId}.mp4`;
     const outputPath = path.join('/tmp', outputFilename);
 
-    try {
-        console.log(`[Job ${jobId}] Iniciando procesamiento de recortes: ${videoUrl}`);
+    const task = async () => {
+        try {
+            console.log(`[Job ${jobId}] Iniciando procesamiento de recortes: ${videoUrl}`);
 
-        const ytDlpArgs = [
-            '-f', 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
-            '--download-sections', `*${startTime}-${endTime}`
-        ];
+            const ytDlpArgs = [
+                '-f', 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
+                '--download-sections', `*${startTime}-${endTime}`
+            ];
 
-        if (process.env.YTDLP_COOKIES_PATH && fs.existsSync(process.env.YTDLP_COOKIES_PATH)) {
-            ytDlpArgs.push('--cookies', process.env.YTDLP_COOKIES_PATH);
-        }
-
-        ytDlpArgs.push(
-            videoUrl,
-            '-o', outputPath,
-            '--force-keyframes-at-cuts'
-        );
-
-        console.log(`[Job ${jobId}] Ejecutando yt-dlp...`);
-
-        const ytProcess = spawn('yt-dlp', ytDlpArgs);
-
-        let stderrOutput = '';
-
-        ytProcess.stderr.on('data', (data) => {
-            stderrOutput += data.toString();
-        });
-
-        ytProcess.on('close', async (code) => {
-            if (code !== 0) {
-                console.error(`[Job ${jobId}] Error ejecutando yt-dlp. Exit code: ${code}. Output:`, stderrOutput);
-                return;
+            if (process.env.YTDLP_COOKIES_PATH && fs.existsSync(process.env.YTDLP_COOKIES_PATH)) {
+                ytDlpArgs.push('--cookies', process.env.YTDLP_COOKIES_PATH);
             }
+
+            ytDlpArgs.push(
+                videoUrl,
+                '-o', outputPath,
+                '--force-keyframes-at-cuts'
+            );
+
+            console.log(`[Job ${jobId}] Ejecutando yt-dlp...`);
+
+            const ytProcess = spawn('yt-dlp', ytDlpArgs);
+
+            let stderrOutput = '';
+
+            ytProcess.stdout.on('data', () => {}); // Consumir stdout para evitar llenar el buffer
+
+            ytProcess.stderr.on('data', (data) => {
+                stderrOutput += data.toString();
+            });
+
+            await new Promise((resolve, reject) => {
+                ytProcess.on('close', (code) => {
+                    if (code !== 0) {
+                        reject(new Error(`yt-dlp exit code: ${code}. Output: ${stderrOutput}`));
+                    } else {
+                        resolve();
+                    }
+                });
+                ytProcess.on('error', (err) => {
+                    reject(err);
+                });
+            });
 
             console.log(`[Job ${jobId}] Video recortado exitosamente: ${outputPath}`);
 
-            try {
-                if (!fs.existsSync(outputPath)) {
-                    console.error(`[Job ${jobId}] El archivo de salida no existe: ${outputPath}`);
-                    return;
-                }
-
-                const fileBuffer = fs.readFileSync(outputPath);
-                const storagePath = `recortes/${outputFilename}`;
-
-                console.log(`[Job ${jobId}] Subiendo a Supabase Storage...`);
-                const { data: uploadData, error: uploadError } = await supabase.storage
-                    .from('media_assets')
-                    .upload(storagePath, fileBuffer, {
-                        contentType: 'video/mp4',
-                        cacheControl: '3600',
-                        upsert: false
-                    });
-
-                if (uploadError) throw uploadError;
-
-                const { data: publicUrlData } = supabase.storage
-                    .from('media_assets')
-                    .getPublicUrl(storagePath);
-
-                const finalUrl = publicUrlData.publicUrl;
-                console.log(`[Job ${jobId}] Archivo subido con éxito: ${finalUrl}`);
-
-                const metadata = {
-                    originalUrl: videoUrl,
-                    startTime,
-                    endTime,
-                    clipName: clipName || 'Clip Generado'
-                };
-
-                const { error: dbError } = await supabase
-                    .from('memoria_nayla')
-                    .insert([
-                        {
-                            tipo: 'video_clip',
-                            url: finalUrl,
-                            metadata: metadata
-                        }
-                    ]);
-
-                if (dbError) {
-                    console.error(`[Job ${jobId}] Error al registrar en la base de datos:`, dbError);
-                } else {
-                    console.log(`[Job ${jobId}] Clip registrado exitosamente en memoria_nayla`);
-                }
-
-            } catch (e) {
-                console.error(`[Job ${jobId}] Error durante subida/registro:`, e);
-            } finally {
-                if (fs.existsSync(outputPath)) {
-                    fs.unlinkSync(outputPath);
-                }
+            if (!fs.existsSync(outputPath)) {
+                 throw new Error(`El archivo de salida no existe: ${outputPath}`);
             }
-        });
 
-    } catch (e) {
-        console.error(`[Job ${jobId}] Excepción inesperada:`, e);
-    }
+            const fileBuffer = fs.readFileSync(outputPath);
+            const storagePath = `recortes/${outputFilename}`;
+
+            console.log(`[Job ${jobId}] Subiendo a Supabase Storage...`);
+            const { data: uploadData, error: uploadError } = await supabase.storage
+                .from('media_assets')
+                .upload(storagePath, fileBuffer, {
+                    contentType: 'video/mp4',
+                    cacheControl: '3600',
+                    upsert: false
+                });
+
+            if (uploadError) throw uploadError;
+
+            const { data: publicUrlData } = supabase.storage
+                .from('media_assets')
+                .getPublicUrl(storagePath);
+
+            const finalUrl = publicUrlData.publicUrl;
+            console.log(`[Job ${jobId}] Archivo subido con éxito: ${finalUrl}`);
+
+            const metadata = {
+                originalUrl: videoUrl,
+                startTime,
+                endTime,
+                clipName: clipName || 'Clip Generado'
+            };
+
+            const { error: dbError } = await supabase
+                .from('memoria_nayla')
+                .insert([
+                    {
+                        tipo: 'video_clip',
+                        url: finalUrl,
+                        metadata: metadata
+                    }
+                ]);
+
+            if (dbError) {
+                console.error(`[Job ${jobId}] Error al registrar en la base de datos:`, dbError);
+            } else {
+                console.log(`[Job ${jobId}] Clip registrado exitosamente en memoria_nayla`);
+            }
+
+        } catch (e) {
+            console.error(`[Job ${jobId}] Error durante procesamiento/subida/registro:`, e);
+        } finally {
+            if (fs.existsSync(outputPath)) {
+                fs.unlinkSync(outputPath);
+            }
+        }
+    };
+
+    jobQueue.push(task);
+    processNextJob();
 });
 
 
