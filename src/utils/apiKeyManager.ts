@@ -96,7 +96,7 @@ export async function executeWithApiKey<T>(
   const { data: keysData, error: keysError } = await supabase
     .from('api_keys_pool')
     .select('*')
-    .eq('service_provider', provider)
+    .ilike('service_provider', `%${provider}%`)
     .eq('is_active', true)
     .eq('resource_type', 'llm')
     .order('created_at', { ascending: false })

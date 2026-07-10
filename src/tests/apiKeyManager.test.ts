@@ -16,17 +16,14 @@ const mockOrder = vi.fn().mockReturnValue({ not: mockNot });
 const mockEq3 = vi.fn().mockReturnValue({ order: mockOrder });
 const mockEq2 = vi.fn().mockReturnValue({ eq: mockEq3 });
 const mockEq1 = vi.fn().mockReturnValue({ eq: mockEq2 });
+const mockIlikeReturn = vi.fn().mockReturnValue({ eq: mockEq2 });
 
 const mockSupabase = {
   from: vi.fn().mockReturnValue({
     update: mockUpdate,
     select: mockSelect.mockReturnValue({
       eq: mockEq1,
-      ilike: mockIlike.mockReturnValue({
-        eq: mockEq.mockReturnValue({
-          not: mockNot
-        })
-      })
+      ilike: mockIlikeReturn
     })
   })
 } as unknown as SupabaseClient;
