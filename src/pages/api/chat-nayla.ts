@@ -23,10 +23,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
 
-  let apiUrl = process.env.MANUS_API_URL || 'https://api.manus.im/v1/chat/completions';
-  if (!apiUrl.includes('/chat/completions')) {
-    apiUrl = apiUrl.replace(/\/+$/, '') + (apiUrl.endsWith('/v1') ? '/chat/completions' : '/v1/chat/completions');
-  }
+  const apiUrl = 'https://api.manus.im/v1/chat/completions';
 
   try {
     const manusResponseText = await executeWithApiKey(
