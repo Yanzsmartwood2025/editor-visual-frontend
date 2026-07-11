@@ -164,6 +164,9 @@ export default function NaylaCore() {
   const [extrayendoVideo, setExtrayendoVideo] = useState(false);
   const [queueProgress, setQueueProgress] = useState(0);
 
+  // Estado para seguimiento individual de descargas
+  const [descargasActivas, setDescargasActivas] = useState<{ id: string; url: string; status: 'procesando' | 'listo' | 'error' }[]>([]);
+
   // Nayla Chat States
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [chatInput, setChatInput] = useState('');
@@ -645,7 +648,7 @@ export default function NaylaCore() {
     const a = document.createElement('a'); a.href = url; a.download = `Nayla_Export_${calidadExportacion}_${Date.now()}.mp4`; a.click();
   };
 
-  const procesarEnlaceIndividual = async (url: string, index: number) => {
+  const procesarEnlaceIndividual = async (url: string, index: number, descargaId: string): Promise<MediaItem | null> => {
     try {
       const resApi = await fetch('/api/extract-video', {
         method: 'POST',
@@ -661,50 +664,59 @@ export default function NaylaCore() {
 
       const finalMediaUrl = dataApi.videoUrl;
 
-      // 1. Calcular de forma síncrona usando el estado actual (fuera del updater)
-      const countVideo = galeriaMultimedia.filter(item => item.tipo === 'video').length + 1;
-      const id = Date.now().toString() + index;
+      // Calcular id base
+      const id = Date.now().toString() + index + Math.random().toString().slice(2, 6);
+
+      // Obtenemos count aproximado local o usando galeria actual más un offset
+      // Como esto corre asíncrono, para evitar duplicados en concurrencia le sumamos el index + offset local
+      const actualCount = galeriaMultimedia.filter(item => item.tipo === 'video').length + index + 1;
 
       const nuevoItem: MediaItem = {
         id,
         url: finalMediaUrl,
         tipo: 'video',
-        nombre: `Meta_Video_${countVideo}.mp4`,
+        nombre: `Meta_Video_${actualCount}.mp4`,
         creado_en: new Date().toLocaleTimeString(),
         esOverlay: false,
-        etiqueta: `V${countVideo}`
+        etiqueta: `V${actualCount}`
       };
 
-      // 2. Comprobar si es el primer video usando el estado actual
-      const esPrimerVideo = galeriaMultimedia.length === 0 || !galeriaMultimedia.find(i => i.tipo === 'video');
+      let esPrimerVideo = galeriaMultimedia.length === 0 || !galeriaMultimedia.find(i => i.tipo === 'video');
 
-      // 3. Hacer el setState updater solo para la galeria
+      if (session) {
+        // Ejecutar base de datos de manera limpia, sin estado react
+        supabase
+          .from('galeria_multimedia')
+          .insert([{ ...nuevoItem, user_id: session.user.id }])
+          .then(({ error }) => {
+            if (error) console.error('Error insertando en Supabase:', error);
+          });
+      }
+
+      // Actualizamos estado puramente
       setGaleriaMultimedia(prev => {
-        // En caso de concurrencia aseguramos nombres/etiquetas únicas basadas en "prev" también
-        const actualCount = prev.filter(item => item.tipo === 'video').length + 1;
-        const itemActualizado = { ...nuevoItem, nombre: `Meta_Video_${actualCount}.mp4`, etiqueta: `V${actualCount}` };
-
-        if (session) {
-          supabase
-            .from('galeria_multimedia')
-            .insert([{ ...itemActualizado, user_id: session.user.id }])
-            .then(({ error }) => {
-              if (error) console.error('Error insertando en Supabase:', error);
-            });
-        }
-        return [...prev, itemActualizado];
+        // En caso de que se agreguen varios al mismo tiempo, el calculo base arriba funciona
+        // pero podemos mejorar asegurando que no se duplique al retornar
+        return [...prev, nuevoItem];
       });
 
-      // 4. Si era el primer video, disparamos los otros setState de manera independiente y segura
       if (esPrimerVideo) {
         setMediaActivaUrl(nuevoItem.url);
         setClipSeleccionado(nuevoItem.id);
         setVideoResultadoUrl(null);
       }
 
+      // Actualizar estado de descarga a listo
+      setDescargasActivas(prev => prev.map(d => d.id === descargaId ? { ...d, status: 'listo' } : d));
+
+      return nuevoItem;
+
     } catch (err: any) {
       console.error(err);
-      alert(`Error extrayendo video: ${err.message}`);
+      // Actualizar estado de descarga a error
+      setDescargasActivas(prev => prev.map(d => d.id === descargaId ? { ...d, status: 'error' } : d));
+      // No usar alert para no bloquear el paralelismo
+      return null;
     }
   };
 
@@ -737,20 +749,74 @@ export default function NaylaCore() {
 
 
   const getEngineContext = () => ({
-        agregar: (etiquetas: string[]) => {
-          let agregados = 0;
+        agregar: async (items: string[]) => {
+          const nuevasDescargas = items
+            .filter(item => item.startsWith('http://') || item.startsWith('https://'))
+            .map((url, i) => ({ id: `engine-descarga-${Date.now()}-${i}`, url, status: 'procesando' as const }));
+
+          if (nuevasDescargas.length > 0) {
+            setDescargasActivas(prev => [...prev, ...nuevasDescargas]);
+          }
+
+          // Procesar las descargas en paralelo para obtener los objetos MediaItem
+          const promesas = items.map(async (item, i) => {
+            if (item.startsWith('http://') || item.startsWith('https://')) {
+              const descargaId = nuevasDescargas.find(d => d.url === item)?.id || '';
+              return await procesarEnlaceIndividual(item, i, descargaId);
+            }
+            return item; // Retorna la etiqueta original (string) si no es URL
+          });
+
+          const itemsProcesados = await Promise.all(promesas);
+
+          if (nuevasDescargas.length > 0) {
+             setTimeout(() => {
+                setDescargasActivas(prev => prev.filter(d => nuevasDescargas.every(nd => nd.id !== d.id)));
+             }, 3000);
+          }
+
+          // Ahora obtenemos una instantánea de la galería actualizda para buscar las etiquetas
           setLineaDeTiempo(prevLinea => {
              const nuevaLinea = [...prevLinea];
-             etiquetas.forEach(etiqueta => {
-                const media = galeriaMultimedia.find(m => m.etiqueta === etiqueta);
-                if (media) {
+             let agregados = 0;
+
+             // Necesitamos el estado mas reciente de galeria para evitar closures desactualizados de etiquetas
+             // Como setLineaDeTiempo es sincrono por lotes, confiaremos en un fetch asincrono de refs o el estado previo para los que no son urls.
+             // Para simplificar, obtenemos la galeria actual directamente desde el ref o del ultimo render. Pero como estamos en el cuerpo de async,
+             // galeriaMultimedia puede estar obsoleto si procesarEnlaceIndividual acaba de actualizarlo.
+             // Sin embargo procesarEnlaceIndividual devuelve directamente el objeto MediaItem.
+
+             itemsProcesados.forEach(item => {
+                if (typeof item === 'string') {
+                  // Es una etiqueta preexistente
+                  // Advertencia: si esto se mezcla con asincronía el estado galeriaMultimedia podría estar obsoleto del render inicial.
+                  // Pero como estamos dentro del setState de setLineaDeTiempo que es un callback posterior a await,
+                  // la buena práctica sería usar un estado ref o resolver los items despues, pero para simplificar
+                  // buscaremos en galeriaMultimedia. En React los closures asíncronos atrapan la variable original.
+                  // Usaremos setLineaDeTiempo que ya pasa prevLinea, pero no tenemos prevGaleria.
+                  // Para resolver esto: si procesarEnlaceIndividual devuelve el MediaItem, lo usamos directo!
+                  const media = galeriaMultimedia.find(m => m.etiqueta === item);
+                  if (media) {
+                    nuevaLinea.push({
+                      id: Date.now().toString() + Math.random().toString(),
+                      mediaId: media.id,
+                      tipo: media.tipo,
+                      nombre: media.nombre,
+                      etiqueta: media.etiqueta,
+                      url: media.url,
+                      durationInSeconds: 5
+                    });
+                    agregados++;
+                  }
+                } else if (item && typeof item === 'object') {
+                  // Es un nuevo MediaItem recién descargado y retornado por procesarEnlaceIndividual
                   nuevaLinea.push({
                     id: Date.now().toString() + Math.random().toString(),
-                    mediaId: media.id,
-                    tipo: media.tipo,
-                    nombre: media.nombre,
-                    etiqueta: media.etiqueta,
-                    url: media.url,
+                    mediaId: item.id,
+                    tipo: item.tipo,
+                    nombre: item.nombre,
+                    etiqueta: item.etiqueta,
+                    url: item.url,
                     durationInSeconds: 5
                   });
                   agregados++;
@@ -783,14 +849,15 @@ export default function NaylaCore() {
         }
   });
 
-  const ejecutarScript = () => {
+  const ejecutarScript = async () => {
     try {
       // Definir la API disponible en el script
       const NaylaEngine = getEngineContext();
 
-      // Ejecutar el script ingresado en el contexto proporcionado usando Function (más seguro que eval)
-      const execute = new Function('NaylaEngine', codigoJsInput);
-      execute(NaylaEngine);
+      // Ejecutar el script ingresado de forma asíncrona usando el constructor AsyncFunction
+      const AsyncFunction = Object.getPrototypeOf(async function(){}).constructor;
+      const execute = new AsyncFunction('NaylaEngine', codigoJsInput);
+      await execute(NaylaEngine);
 
     } catch (e: any) {
       alert('Error en el script: ' + e.message);
@@ -812,24 +879,30 @@ export default function NaylaCore() {
     }
 
     setExtrayendoVideo(true);
-    setQueueProgress(0);
 
-    const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+    // Inicializar estado de descargas
+    const nuevasDescargas = urls.map((url, i) => ({
+      id: `descarga-${Date.now()}-${i}`,
+      url,
+      status: 'procesando' as const
+    }));
 
-    for (let i = 0; i < urls.length; i++) {
-      await procesarEnlaceIndividual(urls[i], i);
-      setQueueProgress(Math.round(((i + 1) / urls.length) * 100));
+    setDescargasActivas(prev => [...prev, ...nuevasDescargas]);
+    setEnlaceInput('');
 
-      // Respiro de 5 segundos entre requests, excepto para el último
-      if (i < urls.length - 1) {
-        await delay(5000);
-      }
-    }
+    // Procesar en paralelo
+    const promesas = urls.map((url, index) =>
+      procesarEnlaceIndividual(url, index, nuevasDescargas[index].id)
+    );
+
+    await Promise.all(promesas);
 
     setExtrayendoVideo(false);
-    setEnlaceInput('');
-    // Removemos setShowEnlaceInput(false) para no colapsar la vista al terminar y que el usuario vea los nuevos clips
-    setTimeout(() => setQueueProgress(0), 1000); // Limpiar progreso despues de 1s
+
+    // Limpiar descargas después de 3 segundos para que el usuario pueda ver el resultado final
+    setTimeout(() => {
+      setDescargasActivas(prev => prev.filter(d => nuevasDescargas.every(nd => nd.id !== d.id)));
+    }, 3000);
   };
 
   const processVideo = async (motorElegido: 'nube' | 'local') => {
@@ -1335,8 +1408,9 @@ export default function NaylaCore() {
 
                           console.log("Código IA:", data.code);
                           const NaylaEngine = getEngineContext();
-                          const execute = new Function('NaylaEngine', data.code);
-                          execute(NaylaEngine);
+                          const AsyncFunction = Object.getPrototypeOf(async function(){}).constructor;
+                          const execute = new AsyncFunction('NaylaEngine', data.code);
+                          await execute(NaylaEngine);
                           alert('Ejecución IA finalizada');
                        } catch(err: any) {
                           alert("Error en IA: " + err.message);
@@ -1412,15 +1486,27 @@ export default function NaylaCore() {
                 />
                 <button
                   onClick={handleExtraerDesdeEnlace}
-                  disabled={extrayendoVideo || !enlaceInput}
+                  disabled={descargasActivas.some(d => d.status === 'procesando') || !enlaceInput}
                   className="neon-btn nav-btn"
-                  style={{ padding: '0.8rem', backgroundColor: extrayendoVideo ? '#404040' : '#fff', color: extrayendoVideo ? '#a3a3a3' : '#000', fontWeight: 'bold' }}
+                  style={{ padding: '0.8rem', backgroundColor: descargasActivas.some(d => d.status === 'procesando') ? '#404040' : '#fff', color: descargasActivas.some(d => d.status === 'procesando') ? '#a3a3a3' : '#000', fontWeight: 'bold' }}
                 >
-                  {extrayendoVideo ? 'PROCESANDO ENLACES EN COLA...' : 'PROCESAR ENLACES EN COLA'}
+                  {descargasActivas.some(d => d.status === 'procesando') ? 'PROCESANDO ENLACES EN COLA...' : 'PROCESAR ENLACES EN COLA'}
                 </button>
-                {(extrayendoVideo || queueProgress > 0) && (
-                  <div style={{ width: '100%', backgroundColor: '#262626', height: '4px', borderRadius: '2px', overflow: 'hidden' }}>
-                    <div style={{ height: '100%', width: `${queueProgress}%`, backgroundColor: '#00ffcc', transition: 'width 0.3s ease' }} />
+                {descargasActivas.length > 0 && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '8px' }}>
+                    {descargasActivas.map(d => (
+                      <div key={d.id} style={{ display: 'flex', alignItems: 'center', fontSize: '0.8rem', color: darkMode ? '#ccc' : '#666', backgroundColor: darkMode ? '#1a1a1a' : '#f0f0f0', padding: '4px 8px', borderRadius: '4px' }}>
+                        <span style={{ marginRight: '8px', fontSize: '1rem' }}>
+                          {d.status === 'procesando' ? '🔄' : d.status === 'listo' ? '✅' : '❌'}
+                        </span>
+                        <span style={{ flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                          {d.url}
+                        </span>
+                        <span>
+                          {d.status === 'procesando' ? 'Descargando...' : d.status === 'listo' ? 'Listo' : 'Error'}
+                        </span>
+                      </div>
+                    ))}
                   </div>
                 )}
               </div>
