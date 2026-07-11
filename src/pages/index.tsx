@@ -97,7 +97,7 @@ export default function NaylaCore() {
   const [filtroGaleria, setFiltroGaleria] = useState<string>('todo'); // todo, videos, fotos, audios
   const [searchQuery, setSearchQuery] = useState('');
   const [codigoJsInput, setCodigoJsInput] = useState('// Inyecta comandos JS aquí\n// Ej: NaylaEngine.agregar(["V1", "V2", "A1"]);\n// NaylaEngine.agregarSubtitulos([{ texto: "Hola", inicio: 0, fin: 5 }]);');
-  const [moldesScripts, setMoldesScripts] = useState<{ nombre: string; codigo: string }[]>([]);
+  const [moldesScripts, setMoldesScripts] = useState<{ id?: string, nombre: string; codigo: string }[]>([]);
   const [moldeActivo, setMoldeActivo] = useState<string>('');
   const [toolMessage, setToolMessage] = useState<string | null>(null);
   const [marcoConfig, setMarcoConfig] = useState<MarcoConfig>({ posicion: 'derecha+abajo', grosor: 80, color: '#ffffff' });
@@ -285,13 +285,6 @@ export default function NaylaCore() {
   }, [isPlaying, isUserScrolling]);
 
   useEffect(() => {
-    try {
-      const moldesGuardados = localStorage.getItem('nayla_moldes_scripts');
-      if (moldesGuardados) {
-        setMoldesScripts(JSON.parse(moldesGuardados));
-      }
-    } catch (e) { console.error('Error cargando moldes:', e); }
-
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
       if (session) cargarDatosUsuario(session.user.id);
@@ -330,6 +323,21 @@ export default function NaylaCore() {
           etiqueta: item.etiqueta
         }));
         setGaleriaMultimedia(galeria);
+      }
+
+      // Cargar Plantillas (Moldes)
+      const { data: plantillasData, error: plantillasError } = await supabase
+        .from('plantillas_usuario')
+        .select('*')
+        .eq('user_id', userId)
+        .order('created_at', { ascending: true });
+
+      if (!plantillasError && plantillasData) {
+        setMoldesScripts(plantillasData.map(p => ({
+          id: p.id,
+          nombre: p.nombre,
+          codigo: p.codigo_script
+        })));
       }
 
       // Cargar Línea de Tiempo
@@ -728,13 +736,31 @@ export default function NaylaCore() {
     }
   };
 
-  const guardarMolde = () => {
-    const nombre = prompt('Nombre para este molde:', 'Molde Nuevo');
+  const guardarMolde = async () => {
+    if (!session) return alert("Debes iniciar sesión para guardar plantillas.");
+    const nombre = prompt('Nombre para esta plantilla:', 'Plantilla Nueva');
     if (!nombre) return;
-    const nuevosMoldes = [...moldesScripts, { nombre, codigo: codigoJsInput }];
-    setMoldesScripts(nuevosMoldes);
-    localStorage.setItem('nayla_moldes_scripts', JSON.stringify(nuevosMoldes));
-    setMoldeActivo(nombre);
+
+    try {
+      const { data, error } = await supabase
+        .from('plantillas_usuario')
+        .insert([{
+          user_id: session.user.id,
+          nombre: nombre,
+          codigo_script: codigoJsInput
+        }])
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      const nuevosMoldes = [...moldesScripts, { id: data.id, nombre: data.nombre, codigo: data.codigo_script }];
+      setMoldesScripts(nuevosMoldes);
+      setMoldeActivo(data.nombre);
+    } catch (e) {
+      console.error("Error guardando plantilla:", e);
+      alert("Hubo un error al guardar la plantilla.");
+    }
   };
 
   const cargarMolde = (e: React.ChangeEvent<HTMLSelectElement>) => {
@@ -746,13 +772,29 @@ export default function NaylaCore() {
     }
   };
 
-  const eliminarMoldeActivo = () => {
-    if (!moldeActivo) return;
-    const nuevosMoldes = moldesScripts.filter(m => m.nombre !== moldeActivo);
-    setMoldesScripts(nuevosMoldes);
-    localStorage.setItem('nayla_moldes_scripts', JSON.stringify(nuevosMoldes));
-    setMoldeActivo('');
-    setCodigoJsInput('// Inyecta comandos JS aquí\n// Ej: NaylaEngine.agregar(["V1", "V2", "A1"]);\n// NaylaEngine.agregarSubtitulos([{ texto: "Hola", inicio: 0, fin: 5 }]);');
+  const eliminarMoldeActivo = async () => {
+    if (!moldeActivo || !session) return;
+
+    const molde = moldesScripts.find(m => m.nombre === moldeActivo);
+    if (!molde || !molde.id) return;
+
+    try {
+      const { error } = await supabase
+        .from('plantillas_usuario')
+        .delete()
+        .eq('id', molde.id)
+        .eq('user_id', session.user.id);
+
+      if (error) throw error;
+
+      const nuevosMoldes = moldesScripts.filter(m => m.nombre !== moldeActivo);
+      setMoldesScripts(nuevosMoldes);
+      setMoldeActivo('');
+      setCodigoJsInput('// Inyecta comandos JS aquí\n// Ej: NaylaEngine.agregar(["V1", "V2", "A1"]);\n// NaylaEngine.agregarSubtitulos([{ texto: "Hola", inicio: 0, fin: 5 }]);');
+    } catch (e) {
+      console.error("Error eliminando plantilla:", e);
+      alert("Hubo un error al eliminar la plantilla.");
+    }
   };
 
 
@@ -1037,7 +1079,21 @@ export default function NaylaCore() {
         <Head><title>NAYLA - AUTENTICACIÓN</title></Head>
         <style>{globalStyles}</style>
         <div style={{ width: '100%', maxWidth: '400px', border: '1px solid #262626', backgroundColor: '#050505', padding: '2.5rem', borderRadius: '24px', textAlign: 'center', opacity: otpEnviado ? 0.5 : 1, transition: 'opacity 0.3s' }}>
-          <h1 style={{ fontSize: '1rem', letterSpacing: '4px', margin: '0 0 2rem 0', textTransform: 'uppercase' }}>NAYLA</h1>
+                    <h1 style={{ fontSize: '1rem', letterSpacing: '4px', margin: '0 0 2rem 0', textTransform: 'uppercase' }}>NAYLA</h1>
+          {process.env.NODE_ENV === 'development' && (
+            <button
+              id="dev-login-bypass"
+              type="button"
+              onClick={() => {
+                setSession({ user: { id: 'test-user-id', email: 'test@example.com' } });
+                setShowIntro(true);
+                setTimeout(() => setShowIntro(false), 100);
+              }}
+              style={{ padding: '10px', backgroundColor: '#333', color: 'white', marginBottom: '10px', width: '100%' }}
+            >
+              DEV LOGIN
+            </button>
+          )}
           <form onSubmit={handleEmailAuth}>
             <input type="email" placeholder="CORREO MAESTRO" value={emailInput} onChange={(e) => setEmailInput(e.target.value)} disabled={otpEnviado} style={{ width: '100%', padding: '1rem', backgroundColor: '#0a0a0a', border: '1px solid #404040', borderRadius: '16px', color: darkMode ? '#fff' : '#000', fontSize: '0.8rem', marginBottom: '1rem', textAlign: 'center', outline: 'none' }} />
             <button type="submit" disabled={authLoading || otpEnviado} className="neon-btn nav-btn" style={{ width: '100%', marginBottom: '1rem' }}>{authLoading && !otpEnviado ? 'PROCESANDO...' : 'SOLICITAR ACCESO'}</button>
@@ -1291,17 +1347,17 @@ export default function NaylaCore() {
             {subTool === 'script' && (
               <div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-                  <p style={{ fontSize: '0.75rem', color: darkMode ? '#fff' : '#000', fontWeight: 'bold', letterSpacing: '1px' }}>SCRIPT MANUAL / MOLDES</p>
+                  <p style={{ fontSize: '0.75rem', color: darkMode ? '#fff' : '#000', fontWeight: 'bold', letterSpacing: '1px' }}>SCRIPT MANUAL / PLANTILLAS</p>
                   <div style={{ display: 'flex', gap: '8px' }}>
                     {moldesScripts.length > 0 && (
                       <select value={moldeActivo} onChange={cargarMolde} style={{ backgroundColor: '#0a0a0a', color: darkMode ? '#fff' : '#000', border: '1px solid #404040', borderRadius: '8px', padding: '4px 8px', fontSize: '0.65rem' }}>
-                        <option value="">-- Seleccionar Molde --</option>
+                        <option value="">-- Seleccionar Plantilla --</option>
                         {moldesScripts.map(m => (
                           <option key={m.nombre} value={m.nombre}>{m.nombre}</option>
                         ))}
                       </select>
                     )}
-                    <button onClick={guardarMolde} className="neon-btn nav-btn" style={{ padding: '4px 10px', fontSize: '0.6rem' }}>GUARDAR MOLDE</button>
+                    <button onClick={guardarMolde} className="neon-btn nav-btn" style={{ padding: '4px 10px', fontSize: '0.6rem' }}>GUARDAR PLANTILLA</button>
                     {moldeActivo && <button onClick={eliminarMoldeActivo} className="neon-btn nav-btn" style={{ padding: '4px 10px', fontSize: '0.6rem', color: '#ff4444' }}>X</button>}
                   </div>
                 </div>
