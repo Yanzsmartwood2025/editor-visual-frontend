@@ -6,7 +6,6 @@ import { SupabaseClient } from '@supabase/supabase-js';
 const mockUpdate = vi.fn();
 const mockEq = vi.fn().mockReturnValue({ data: null, error: null });
 const mockSelect = vi.fn();
-const mockIlike = vi.fn();
 const mockNot = vi.fn();
 
 mockUpdate.mockReturnValue({ eq: mockEq });

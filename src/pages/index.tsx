@@ -116,6 +116,7 @@ export default function NaylaCore() {
   const [videoResultadoUrl, setVideoResultadoUrl] = useState<string | null>(null);
   const [videoMetadata, setVideoMetadata] = useState({ width: 1080, height: 1920 });
   const [isPlaying, setIsPlaying] = useState(false);
+  const [isScriptRunning, setIsScriptRunning] = useState(false);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
@@ -893,6 +894,7 @@ export default function NaylaCore() {
   });
 
   const ejecutarScript = async () => {
+    setIsScriptRunning(true);
     try {
       // Definir la API disponible en el script
       const NaylaEngine = getEngineContext();
@@ -905,6 +907,8 @@ export default function NaylaCore() {
     } catch (e: any) {
       alert('Error en el script: ' + e.message);
       console.error('Script Error:', e);
+    } finally {
+      setIsScriptRunning(false);
     }
   };
 
@@ -1370,7 +1374,9 @@ export default function NaylaCore() {
                   <code style={{ color: '#00ffcc' }}>NaylaEngine.limpiar();</code> - Borra pista y subtítulos.
                 </p>
                 <textarea value={codigoJsInput} onChange={(e) => setCodigoJsInput(e.target.value)} style={{ width: '100%', height: '100px', backgroundColor: '#0a0a0a', border: '1px solid #262626', borderRadius: '12px', color: '#00ffcc', padding: '1rem', fontFamily: 'monospace', outline: 'none', marginBottom: '1rem', resize: 'vertical' }} />
-                <button onClick={ejecutarScript} className="neon-btn nav-btn" style={{ width: '100%', backgroundColor: '#fff', color: '#000', fontWeight: 'bold' }}>EJECUTAR SCRIPT ▶</button>
+                <button onClick={ejecutarScript} disabled={isScriptRunning} className="neon-btn nav-btn" style={{ width: '100%', backgroundColor: isScriptRunning ? '#404040' : '#fff', color: isScriptRunning ? '#a3a3a3' : '#000', fontWeight: 'bold' }}>
+                  {isScriptRunning ? 'EJECUTANDO SCRIPT...' : 'EJECUTAR SCRIPT ▶'}
+                </button>
               </div>
             )}
 
@@ -1439,11 +1445,11 @@ export default function NaylaCore() {
                       alert('Error: ' + err.message);
                     }
                   }}
-                  disabled={isProcessing}
+                  disabled={isProcessing || isScriptRunning}
                   className="neon-btn nav-btn"
-                  style={{ width: '100%', backgroundColor: isProcessing ? '#404040' : '#fff', color: isProcessing ? '#a3a3a3' : '#000', fontWeight: 'bold', padding: '12px' }}
+                  style={{ width: '100%', backgroundColor: isProcessing || isScriptRunning ? '#404040' : '#fff', color: isProcessing || isScriptRunning ? '#a3a3a3' : '#000', fontWeight: 'bold', padding: '12px' }}
                 >
-                  {isProcessing ? 'RENDERIZANDO EN LA NUBE... (ESPERE)' : 'INICIAR RENDER (REMOTION) ▶'}
+                  {isProcessing ? 'RENDERIZANDO EN LA NUBE... (ESPERE)' : (isScriptRunning ? 'ESPERANDO SCRIPT...' : 'INICIAR RENDER (REMOTION) ▶')}
                 </button>
               </div>
             )}
