@@ -559,6 +559,101 @@ Si no encuentras ningún video, devuelve:
     }
 });
 
+app.post('/api/render-remotion', async (req, res) => {
+    const authHeader = req.headers.authorization;
+    if (authHeader !== `Bearer ${process.env.ORACLE_SECRET}`) {
+        return res.status(401).json({ error: 'Unauthorized: Invalid ORACLE_SECRET' });
+    }
+
+    const { inputProps } = req.body;
+    if (!inputProps) {
+        return res.status(400).json({ error: 'Faltan inputProps para el renderizado' });
+    }
+
+    console.log(`[render-remotion] Solicitud de renderizado recibida.`);
+
+    // Responder inmediatamente (HTTP 202 Accepted)
+    res.status(202).json({
+        message: 'Renderizado encolado en background.',
+    });
+
+    const jobId = uuidv4();
+    const propsFilename = `props_${jobId}.json`;
+    const propsPath = path.join('/tmp', propsFilename);
+    const outputFilename = `render_${jobId}.mp4`;
+    const outputPath = path.join('/tmp', outputFilename);
+
+    try {
+        console.log(`[Job ${jobId}] Iniciando renderizado de Remotion en background...`);
+        fs.writeFileSync(propsPath, JSON.stringify(inputProps));
+
+        const remotionArgs = [
+            'remotion', 'render',
+            'remotion/index.ts',
+            'MainVideo',
+            outputPath,
+            `--props=${propsPath}`
+        ];
+
+        console.log(`[Job ${jobId}] Ejecutando comando: npx ${remotionArgs.join(' ')}`);
+
+        const remotionProcess = spawn('npx', remotionArgs);
+        let stdoutOutput = '';
+        let stderrOutput = '';
+
+        remotionProcess.stdout.on('data', (data) => { stdoutOutput += data.toString(); });
+        remotionProcess.stderr.on('data', (data) => { stderrOutput += data.toString(); });
+
+        await new Promise((resolve, reject) => {
+            remotionProcess.on('error', (err) => {
+                reject(new Error(`Fallo al ejecutar Remotion: ${err.message}`));
+            });
+            remotionProcess.on('close', (code) => {
+                if (code !== 0) {
+                    reject(new Error(`Remotion exit code ${code}. Output: ${stderrOutput}`));
+                } else {
+                    resolve();
+                }
+            });
+        });
+
+        console.log(`[Job ${jobId}] Remotion terminó el renderizado. Subiendo archivo...`);
+
+        if (!fs.existsSync(outputPath)) {
+            throw new Error(`El archivo de salida de Remotion no existe: ${outputPath}`);
+        }
+
+        const fileStream = fs.createReadStream(outputPath);
+        const storagePath = `media_bodega/${outputFilename}`;
+
+        const { data: uploadData, error: uploadError } = await supabase.storage
+            .from('media_assets')
+            .upload(storagePath, fileStream, {
+                contentType: 'video/mp4',
+                cacheControl: '3600',
+                upsert: false,
+                duplex: 'half'
+            });
+
+        if (uploadError) throw uploadError;
+
+        const { data: publicUrlData } = supabase.storage
+            .from('media_assets')
+            .getPublicUrl(storagePath);
+
+        const finalUrl = publicUrlData.publicUrl;
+        console.log(`[Job ${jobId}] Archivo de Remotion subido con éxito: ${finalUrl}`);
+
+        // TODO: (Opcional) Notificar al cliente mediante Websockets (wss) cuando Nayla necesite saber que terminó
+
+    } catch (e) {
+        console.error(`[Job ${jobId}] Error en proceso de renderizado en background:`, e);
+    } finally {
+        if (fs.existsSync(propsPath)) fs.unlinkSync(propsPath);
+        if (fs.existsSync(outputPath)) fs.unlinkSync(outputPath);
+    }
+});
+
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {
     console.log(`Oracle Servidor iniciado en el puerto ${PORT}`);

@@ -9,7 +9,13 @@ RUN apk update && \
     curl \
     nodejs \
     npm \
-    deno
+    deno \
+    chromium \
+    nss \
+    freetype \
+    harfbuzz \
+    ca-certificates \
+    ttf-freefont
 
 # Instalar yt-dlp y curl_cffi usando pip
 RUN pip install -U yt-dlp curl_cffi --break-system-packages
