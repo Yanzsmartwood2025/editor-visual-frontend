@@ -648,7 +648,7 @@ export default function NaylaCore() {
     const a = document.createElement('a'); a.href = url; a.download = `Nayla_Export_${calidadExportacion}_${Date.now()}.mp4`; a.click();
   };
 
-  const procesarEnlaceIndividual = async (url: string, index: number, descargaId: string): Promise<MediaItem | null> => {
+  const procesarEnlaceIndividual = async (url: string, index: number, descargaId: string): Promise<(MediaItem & { durationInSeconds?: number }) | null> => {
     try {
       const resApi = await fetch('/api/extract-video', {
         method: 'POST',
@@ -663,6 +663,14 @@ export default function NaylaCore() {
       }
 
       const finalMediaUrl = dataApi.videoUrl;
+
+      let durationInSeconds = 5;
+      try {
+        const metadata = await getVideoMetadata(finalMediaUrl);
+        durationInSeconds = metadata.durationInSeconds;
+      } catch (e) {
+        console.warn('No se pudo cargar la metadata para', finalMediaUrl);
+      }
 
       // Calcular id base
       const id = Date.now().toString() + index + Math.random().toString().slice(2, 6);
@@ -709,7 +717,7 @@ export default function NaylaCore() {
       // Actualizar estado de descarga a listo
       setDescargasActivas(prev => prev.map(d => d.id === descargaId ? { ...d, status: 'listo' } : d));
 
-      return nuevoItem;
+      return { ...nuevoItem, durationInSeconds };
 
     } catch (err: any) {
       console.error(err);
@@ -775,49 +783,42 @@ export default function NaylaCore() {
              }, 3000);
           }
 
+          // We need to fetch metadata for pre-existing labels too to avoid setting 5s default
+          const itemsWithMetadata = await Promise.all(itemsProcesados.map(async (item) => {
+             if (typeof item === 'string') {
+               const media = galeriaMultimedia.find(m => m.etiqueta === item);
+               if (media) {
+                 let durationInSeconds = 5;
+                 if (media.tipo === 'video' || media.tipo === 'audio') {
+                   try {
+                     const metadata = await getVideoMetadata(media.url);
+                     durationInSeconds = metadata.durationInSeconds;
+                   } catch (e) {
+                     console.warn('Could not load metadata for', media.url);
+                   }
+                 }
+                 return { ...media, durationInSeconds };
+               }
+               return null;
+             }
+             return item;
+          }));
+
           // Ahora obtenemos una instantánea de la galería actualizda para buscar las etiquetas
           setLineaDeTiempo(prevLinea => {
              const nuevaLinea = [...prevLinea];
              let agregados = 0;
 
-             // Necesitamos el estado mas reciente de galeria para evitar closures desactualizados de etiquetas
-             // Como setLineaDeTiempo es sincrono por lotes, confiaremos en un fetch asincrono de refs o el estado previo para los que no son urls.
-             // Para simplificar, obtenemos la galeria actual directamente desde el ref o del ultimo render. Pero como estamos en el cuerpo de async,
-             // galeriaMultimedia puede estar obsoleto si procesarEnlaceIndividual acaba de actualizarlo.
-             // Sin embargo procesarEnlaceIndividual devuelve directamente el objeto MediaItem.
-
-             itemsProcesados.forEach(item => {
-                if (typeof item === 'string') {
-                  // Es una etiqueta preexistente
-                  // Advertencia: si esto se mezcla con asincronía el estado galeriaMultimedia podría estar obsoleto del render inicial.
-                  // Pero como estamos dentro del setState de setLineaDeTiempo que es un callback posterior a await,
-                  // la buena práctica sería usar un estado ref o resolver los items despues, pero para simplificar
-                  // buscaremos en galeriaMultimedia. En React los closures asíncronos atrapan la variable original.
-                  // Usaremos setLineaDeTiempo que ya pasa prevLinea, pero no tenemos prevGaleria.
-                  // Para resolver esto: si procesarEnlaceIndividual devuelve el MediaItem, lo usamos directo!
-                  const media = galeriaMultimedia.find(m => m.etiqueta === item);
-                  if (media) {
-                    nuevaLinea.push({
-                      id: Date.now().toString() + Math.random().toString(),
-                      mediaId: media.id,
-                      tipo: media.tipo,
-                      nombre: media.nombre,
-                      etiqueta: media.etiqueta,
-                      url: media.url,
-                      durationInSeconds: 5
-                    });
-                    agregados++;
-                  }
-                } else if (item && typeof item === 'object') {
-                  // Es un nuevo MediaItem recién descargado y retornado por procesarEnlaceIndividual
+             itemsWithMetadata.forEach(item => {
+                if (item && typeof item === 'object') {
                   nuevaLinea.push({
                     id: Date.now().toString() + Math.random().toString(),
                     mediaId: item.id,
-                    tipo: item.tipo,
+                    tipo: item.tipo as any,
                     nombre: item.nombre,
                     etiqueta: item.etiqueta,
                     url: item.url,
-                    durationInSeconds: 5
+                    durationInSeconds: (item as any).durationInSeconds || 5
                   });
                   agregados++;
                 }
@@ -1351,18 +1352,42 @@ export default function NaylaCore() {
                       });
                       const data = await res.json();
                       if (!res.ok) throw new Error(data.error || 'Error al solicitar renderizado');
-                      alert('Renderizado encolado con éxito. MP4 se procesará en backend.');
+
+                      const jobId = data.jobId;
+                      if (jobId) {
+                        const pollInterval = setInterval(async () => {
+                          try {
+                            const statusRes = await fetch(`/api/render-status?jobId=${jobId}`);
+                            const statusData = await statusRes.json();
+                            if (statusData.status === 'completed') {
+                              clearInterval(pollInterval);
+                              setVideoResultadoUrl(statusData.url);
+                              setIsProcessing(false);
+                              alert('Renderizado completado exitosamente.');
+                            } else if (statusData.status === 'error') {
+                              clearInterval(pollInterval);
+                              setIsProcessing(false);
+                              alert('Fallo en la nube: ' + (statusData.error || 'Desconocido'));
+                            }
+                          } catch (err: any) {
+                             clearInterval(pollInterval);
+                             setIsProcessing(false);
+                             alert('Error chequeando estado: ' + err.message);
+                          }
+                        }, 3000);
+                      } else {
+                        setIsProcessing(false);
+                      }
                     } catch (err: any) {
-                      alert('Error: ' + err.message);
-                    } finally {
                       setIsProcessing(false);
+                      alert('Error: ' + err.message);
                     }
                   }}
                   disabled={isProcessing}
                   className="neon-btn nav-btn"
                   style={{ width: '100%', backgroundColor: isProcessing ? '#404040' : '#fff', color: isProcessing ? '#a3a3a3' : '#000', fontWeight: 'bold', padding: '12px' }}
                 >
-                  {isProcessing ? 'SOLICITANDO RENDER...' : 'INICIAR RENDER (REMOTION) ▶'}
+                  {isProcessing ? 'RENDERIZANDO EN LA NUBE... (ESPERE)' : 'INICIAR RENDER (REMOTION) ▶'}
                 </button>
               </div>
             )}

@@ -10,6 +10,9 @@ const { GoogleGenerativeAI } = require('@google/generative-ai');
 
 const app = express();
 
+// Registro en memoria de jobs de renderizado de Remotion
+global.renderJobs = global.renderJobs || {};
+
 // --- Tareas de Limpieza Automática ---
 let isTmpCleanupRunning = false;
 let isStorageCleanupRunning = false;
@@ -572,12 +575,15 @@ app.post('/api/render-remotion', async (req, res) => {
 
     console.log(`[render-remotion] Solicitud de renderizado recibida.`);
 
+    const jobId = uuidv4();
+    global.renderJobs[jobId] = { status: 'processing', url: null, error: null };
+
     // Responder inmediatamente (HTTP 202 Accepted)
     res.status(202).json({
         message: 'Renderizado encolado en background.',
+        jobId: jobId
     });
 
-    const jobId = uuidv4();
     const propsFilename = `props_${jobId}.json`;
     const propsPath = path.join('/tmp', propsFilename);
     const outputFilename = `render_${jobId}.mp4`;
@@ -644,14 +650,33 @@ app.post('/api/render-remotion', async (req, res) => {
         const finalUrl = publicUrlData.publicUrl;
         console.log(`[Job ${jobId}] Archivo de Remotion subido con éxito: ${finalUrl}`);
 
+        global.renderJobs[jobId] = { status: 'completed', url: finalUrl, error: null };
+
         // TODO: (Opcional) Notificar al cliente mediante Websockets (wss) cuando Nayla necesite saber que terminó
 
     } catch (e) {
         console.error(`[Job ${jobId}] Error en proceso de renderizado en background:`, e);
+        global.renderJobs[jobId] = { status: 'error', url: null, error: e.message };
     } finally {
         if (fs.existsSync(propsPath)) fs.unlinkSync(propsPath);
         if (fs.existsSync(outputPath)) fs.unlinkSync(outputPath);
     }
+});
+
+app.get('/api/render-status/:jobId', (req, res) => {
+    const authHeader = req.headers.authorization;
+    if (authHeader !== `Bearer ${process.env.ORACLE_SECRET}`) {
+        return res.status(401).json({ error: 'Unauthorized: Invalid ORACLE_SECRET' });
+    }
+
+    const { jobId } = req.params;
+    const job = global.renderJobs[jobId];
+
+    if (!job) {
+        return res.status(404).json({ error: 'Job no encontrado.' });
+    }
+
+    return res.status(200).json(job);
 });
 
 const PORT = process.env.PORT || 3001;
