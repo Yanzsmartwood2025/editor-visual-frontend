@@ -1155,7 +1155,7 @@ export default function NaylaCore() {
           <div className="panel-container" style={{ position: 'relative', bottom: 'auto', flex: 1, minHeight: '35vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             <div style={{ textAlign: 'center', padding: '2rem', color: '#a3a3a3', fontSize: '1rem', letterSpacing: '2px' }}>{toolMessage}</div>
           </div>
-        ) : subTool && ['marco', 'delogo', 'script', 'supervisor'].includes(subTool) ? (
+        ) : subTool && ['marco', 'delogo', 'script', 'supervisor', 'render'].includes(subTool) ? (
           <div className="panel-container" style={{ position: 'relative', bottom: 'auto', flex: 1, minHeight: '35vh', overflowY: 'auto' }}>
             {/* COMPONENTES DE PANELES COMPLEJOS */}
             {subTool === 'marco' && (
@@ -1241,6 +1241,56 @@ export default function NaylaCore() {
                 </p>
                 <textarea value={codigoJsInput} onChange={(e) => setCodigoJsInput(e.target.value)} style={{ width: '100%', height: '100px', backgroundColor: '#0a0a0a', border: '1px solid #262626', borderRadius: '12px', color: '#00ffcc', padding: '1rem', fontFamily: 'monospace', outline: 'none', marginBottom: '1rem', resize: 'vertical' }} />
                 <button onClick={ejecutarScript} className="neon-btn nav-btn" style={{ width: '100%', backgroundColor: '#fff', color: '#000', fontWeight: 'bold' }}>EJECUTAR SCRIPT ▶</button>
+              </div>
+            )}
+
+
+            {subTool === 'render' && (
+              <div style={{ padding: '10px' }}>
+                <div style={{ fontWeight: 'bold', letterSpacing: '2px', color: '#a3a3a3', marginBottom: '15px' }}>RENDERIZAR VIDEO</div>
+                <div style={{ marginBottom: '15px', backgroundColor: '#0a0a0a', border: '1px solid #262626', padding: '15px', borderRadius: '8px' }}>
+                  <p style={{ fontSize: '0.8rem', color: '#737373', marginBottom: '10px' }}>
+                    Se enviará el estado actual del timeline para ser procesado por Remotion.
+                  </p>
+                  <ul style={{ fontSize: '0.8rem', color: '#00ffcc', listStyle: 'none', padding: 0 }}>
+                    <li>Clips en timeline: {lineaDeTiempo.length}</li>
+                    <li>Subtítulos: {subtitulos.length}</li>
+                    <li>Formato (Canvas Ratio): {canvasRatio}</li>
+                  </ul>
+                </div>
+                <button
+                  onClick={async () => {
+                    if (lineaDeTiempo.length === 0) {
+                      alert('La línea de tiempo está vacía. Añade al menos un clip.');
+                      return;
+                    }
+                    setIsProcessing(true);
+                    try {
+                      const inputProps = {
+                        timeline: lineaDeTiempo,
+                        subtitles: subtitulos,
+                        canvasRatio
+                      };
+                      const res = await fetch('/api/render', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ inputProps })
+                      });
+                      const data = await res.json();
+                      if (!res.ok) throw new Error(data.error || 'Error al solicitar renderizado');
+                      alert('Renderizado encolado con éxito. MP4 se procesará en backend.');
+                    } catch (err: any) {
+                      alert('Error: ' + err.message);
+                    } finally {
+                      setIsProcessing(false);
+                    }
+                  }}
+                  disabled={isProcessing}
+                  className="neon-btn nav-btn"
+                  style={{ width: '100%', backgroundColor: isProcessing ? '#404040' : '#fff', color: isProcessing ? '#a3a3a3' : '#000', fontWeight: 'bold', padding: '12px' }}
+                >
+                  {isProcessing ? 'SOLICITANDO RENDER...' : 'INICIAR RENDER (REMOTION) ▶'}
+                </button>
               </div>
             )}
 
@@ -1552,7 +1602,7 @@ export default function NaylaCore() {
                   setToolMessage(null);
                 } else {
                   setSubTool(tool.id);
-                  if (['marco', 'delogo', 'script', 'supervisor', 'youtube', 'pixabay', 'musicastock', 'noticias', 'artistas', 'stockvideo', 'sonidos', 'iafoto', 'enlace'].includes(tool.id)) {
+                  if (['marco', 'delogo', 'script', 'supervisor', 'youtube', 'pixabay', 'musicastock', 'noticias', 'artistas', 'stockvideo', 'sonidos', 'iafoto', 'enlace', 'render'].includes(tool.id)) {
                     setToolMessage(null);
                   } else {
                     setToolMessage('PRÓXIMAMENTE');
