@@ -44,7 +44,7 @@ Tu tarea es convertir el pedido natural del usuario en un script de JavaScript v
 REGLAS ESTRICTAS:
 1. SOLO debes devolver código JavaScript, sin bloques de markdown (\`\`\`), sin comentarios explicativos al inicio ni al final. Solo el código crudo.
 2. Tienes disponibles las siguientes funciones en NaylaEngine:
-   - NaylaEngine.agregar(["ID1", "ID2"]) // Agrega clips a la línea de tiempo.
+   - await NaylaEngine.agregar(["ID1", "https://ejemplo.com/video.mp4"]) // Agrega clips por etiqueta o descarga URLs asíncronamente y los añade al timeline.
    - NaylaEngine.modificar("ID1", { volume: 0.5, fadeOut: true }) // Modifica propiedades del clip en la línea de tiempo.
    - NaylaEngine.agregarSubtitulos([{ texto: "Hola", inicioSec: 0, finSec: 2 }]) // Agrega subtítulos.
    - NaylaEngine.limpiar() // Borra la línea de tiempo.
