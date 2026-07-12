@@ -8,7 +8,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const { jobId } = req.query;
     if (!jobId) return res.status(400).json({ error: 'Falta el parámetro jobId.' });
 
-    const oracleUrl = process.env.ORACLE_API_URL || 'http://localhost:3001';
+    const oracleUrl = process.env.ORACLE_SERVER_URL || 'https://oracle-api.132.145.184.192.sslip.io';
     const oracleSecret = process.env.ORACLE_SECRET || '';
 
     // Llamamos al microservicio Oracle Service que maneja el estado del job

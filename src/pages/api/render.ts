@@ -18,7 +18,7 @@ export default async function handler(req, res) {
     const { inputProps } = req.body;
     if (!inputProps) return res.status(400).json({ error: 'Faltan inputProps para el render.' });
 
-    const oracleUrl = process.env.ORACLE_API_URL || 'http://localhost:3001';
+    const oracleUrl = process.env.ORACLE_SERVER_URL || 'https://oracle-api.132.145.184.192.sslip.io';
     const oracleSecret = process.env.ORACLE_SECRET || '';
 
     // Llamamos al microservicio Oracle Service que maneja remotion
