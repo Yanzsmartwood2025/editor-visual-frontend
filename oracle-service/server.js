@@ -689,7 +689,8 @@ app.post('/api/render-remotion', async (req, res) => {
             'remotion/index.ts',
             'MainVideo',
             outputPath,
-            `--props=${propsPath}`
+            `--props=${propsPath}`,
+            '--browser-executable-path=/usr/bin/chromium-browser'
         ];
 
         console.log(`[Job ${jobId}] Ejecutando comando: npx ${remotionArgs.join(' ')}`);
