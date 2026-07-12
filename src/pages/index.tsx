@@ -657,6 +657,7 @@ export default function NaylaCore() {
     const a = document.createElement('a'); a.href = url; a.download = `Nayla_Export_${calidadExportacion}_${Date.now()}.mp4`; a.click();
   };
 
+
   const procesarEnlaceIndividual = async (url: string, index: number, descargaId: string): Promise<(MediaItem & { durationInSeconds?: number }) | null> => {
     try {
       const resApi = await fetch('/api/extract-video', {
@@ -668,7 +669,9 @@ export default function NaylaCore() {
       const dataApi = await resApi.json();
 
       if (!resApi.ok || !dataApi.videoUrl) {
-        throw new Error(dataApi.error || `No se pudo extraer: ${url}`);
+        const errorMsg = dataApi.error || `No se pudo extraer: ${url}`;
+        alert(`Error descargando ${url}: ${errorMsg}`);
+        throw new Error(errorMsg);
       }
 
       const finalMediaUrl = dataApi.videoUrl;

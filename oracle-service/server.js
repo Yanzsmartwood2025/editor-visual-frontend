@@ -369,6 +369,97 @@ app.post('/api/process-clip', async (req, res) => {
 });
 
 
+
+app.post('/api/extract-direct', async (req, res) => {
+    const authHeader = req.headers.authorization;
+    if (authHeader !== `Bearer ${process.env.ORACLE_SECRET}`) {
+        return res.status(401).json({ error: 'Unauthorized: Invalid ORACLE_SECRET' });
+    }
+
+    const { url } = req.body;
+    if (!url || typeof url !== 'string') {
+        return res.status(400).json({ error: 'URL no proporcionada' });
+    }
+
+    console.log(`[extract-direct] Recibida solicitud para extraer directamente: ${url}`);
+
+    const jobId = uuidv4();
+
+    // Extraer extensión de la URL si es posible
+    let ext = '.mp4';
+    try {
+        const pathname = new URL(url).pathname;
+        const matches = pathname.match(/\.([a-zA-Z0-9]+)$/);
+        if (matches) ext = '.' + matches[1];
+    } catch(e) {}
+
+    const outputFilename = `direct_${jobId}${ext}`;
+    const outputPath = path.join('/tmp', outputFilename);
+
+    try {
+        console.log(`[extract-direct] Descargando de forma manual: ${url}`);
+
+        const response = await fetch(url, {
+             headers: {
+                  'User-Agent': 'Mozilla/5.0'
+             }
+        });
+
+        if (!response.ok) {
+             throw new Error(`Error descargando archivo directo. HTTP ${response.status}`);
+        }
+
+        const fileStreamLocal = fs.createWriteStream(outputPath);
+
+        await new Promise((resolve, reject) => {
+             const { Readable } = require('stream');
+             Readable.fromWeb(response.body).pipe(fileStreamLocal);
+
+             fileStreamLocal.on('finish', resolve);
+             fileStreamLocal.on('error', reject);
+        });
+
+        console.log(`[extract-direct] Archivo descargado exitosamente a ${outputPath}`);
+
+        const fileStream = fs.createReadStream(outputPath);
+        const storagePath = `media_bodega/${outputFilename}`;
+
+        console.log(`[extract-direct] Subiendo a Supabase Storage...`);
+        const { data: uploadData, error: uploadError } = await supabase.storage
+            .from('media_assets')
+            .upload(storagePath, fileStream, {
+                cacheControl: '3600',
+                upsert: false,
+                duplex: 'half'
+            });
+
+        if (uploadError) throw uploadError;
+
+        const { data: publicUrlData } = supabase.storage
+            .from('media_assets')
+            .getPublicUrl(storagePath);
+
+        const finalUrl = publicUrlData.publicUrl;
+        console.log(`[extract-direct] Archivo subido con éxito: ${finalUrl}`);
+
+        if (fs.existsSync(outputPath)) {
+            fs.unlinkSync(outputPath);
+        }
+
+        return res.status(200).json({ videoUrl: finalUrl });
+
+    } catch (e) {
+        console.error(`[extract-direct] Error en Motor Manual:`, e.message);
+
+        if (fs.existsSync(outputPath)) {
+            fs.unlinkSync(outputPath);
+        }
+
+        return res.status(500).json({ error: 'Error en descarga directa', details: e.message });
+    }
+});
+
+
 app.post('/api/extract-meta', async (req, res) => {
     const authHeader = req.headers.authorization;
     if (authHeader !== `Bearer ${process.env.ORACLE_SECRET}`) {
@@ -647,12 +738,55 @@ app.post('/api/render-remotion', async (req, res) => {
             .from('media_assets')
             .getPublicUrl(storagePath);
 
+
         const finalUrl = publicUrlData.publicUrl;
         console.log(`[Job ${jobId}] Archivo de Remotion subido con éxito: ${finalUrl}`);
 
         global.renderJobs[jobId] = { status: 'completed', url: finalUrl, error: null };
 
+        // Realizar limpieza de archivos temporales (media_bodega/direct_*) subidos durante la sesión actual
+        // El bucket ya tiene política de 24hs, pero el Motor Manual requiere limpieza rápida.
+        try {
+            console.log(`[Job ${jobId}] Ejecutando limpieza automática de archivos origen temporales...`);
+            // Buscar si en inputProps vienen las URLs temporales
+            if (inputProps && inputProps.timeline) {
+                 const directPaths = inputProps.timeline
+                      .map(item => item.url)
+                      .filter(url => url && url.includes('media_bodega/direct_'))
+                      .map(url => {
+                           try {
+                               // Extraer la ruta relativa para el bucket
+                               const urlObj = new URL(url);
+                               const pathSegments = urlObj.pathname.split('/');
+                               const bodegaIndex = pathSegments.indexOf('media_bodega');
+                               if (bodegaIndex !== -1) {
+                                   return pathSegments.slice(bodegaIndex).join('/');
+                               }
+                           } catch(e) {}
+                           return null;
+                      })
+                      .filter(Boolean);
+
+                 if (directPaths.length > 0) {
+                     const { error: deleteError } = await supabase.storage
+                         .from('media_assets')
+                         .remove(directPaths);
+
+                     if (deleteError) {
+                         console.error(`[Job ${jobId}] Error al limpiar archivos temporales:`, deleteError);
+                     } else {
+                         console.log(`[Job ${jobId}] Limpiados ${directPaths.length} archivos temporales exitosamente.`);
+                     }
+                 } else {
+                     console.log(`[Job ${jobId}] No se encontraron archivos temporales para limpiar.`);
+                 }
+            }
+        } catch(cleanupErr) {
+            console.error(`[Job ${jobId}] Error general durante cleanup:`, cleanupErr);
+        }
+
         // TODO: (Opcional) Notificar al cliente mediante Websockets (wss) cuando Nayla necesite saber que terminó
+
 
     } catch (e) {
         console.error(`[Job ${jobId}] Error en proceso de renderizado en background:`, e);
