@@ -18,7 +18,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     if (parsedUrl.protocol !== 'https:' && parsedUrl.protocol !== 'http:') {
         return res.status(400).json({ error: 'La URL debe usar el protocolo HTTP o HTTPS.' });
     }
-  } catch (e) {
+  } catch {
     return res.status(400).json({ error: 'Formato de URL inválido.' });
   }
 
@@ -33,7 +33,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
   };
 
-  const ORACLE_SERVER_URL = process.env.ORACLE_SERVER_URL || 'http://oracle-service:3001';
+  const ORACLE_SERVER_URL = process.env.ORACLE_SERVER_URL || 'https://oracle-api.132.145.184.192.sslip.io';
   const ORACLE_SECRET = process.env.ORACLE_SECRET;
 
   if (!ORACLE_SERVER_URL || !ORACLE_SECRET) {

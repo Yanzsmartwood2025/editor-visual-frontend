@@ -11,7 +11,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(400).json({ error: 'URL no proporcionada o formato inválido.' });
   }
 
-  const ORACLE_SERVER_URL = process.env.ORACLE_SERVER_URL || 'http://oracle-service:3001';
+  const ORACLE_SERVER_URL = process.env.ORACLE_SERVER_URL || 'https://oracle-api.132.145.184.192.sslip.io';
   const ORACLE_SECRET = process.env.ORACLE_SECRET;
 
   if (!ORACLE_SERVER_URL || !ORACLE_SECRET) {

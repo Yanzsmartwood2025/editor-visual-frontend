@@ -422,7 +422,7 @@ app.post('/api/extract-direct', async (req, res) => {
         console.log(`[extract-direct] Archivo descargado exitosamente a ${outputPath}`);
 
         const fileStream = fs.createReadStream(outputPath);
-        const storagePath = `media_bodega/${outputFilename}`;
+        const storagePath = `${outputFilename}`;
 
         console.log(`[extract-direct] Subiendo a Supabase Storage...`);
         const { data: uploadData, error: uploadError } = await supabase.storage
@@ -523,7 +523,7 @@ app.post('/api/extract-meta', async (req, res) => {
         }
 
         const fileStream = fs.createReadStream(outputPath);
-        const storagePath = `media_bodega/${outputFilename}`;
+        const storagePath = `${outputFilename}`;
 
         console.log(`[extract-meta] Subiendo a Supabase Storage mediante stream...`);
         const { data: uploadData, error: uploadError } = await supabase.storage
@@ -721,7 +721,7 @@ app.post('/api/render-remotion', async (req, res) => {
         }
 
         const fileStream = fs.createReadStream(outputPath);
-        const storagePath = `media_bodega/${outputFilename}`;
+        const storagePath = `${outputFilename}`;
 
         const { data: uploadData, error: uploadError } = await supabase.storage
             .from('media_bodega')
