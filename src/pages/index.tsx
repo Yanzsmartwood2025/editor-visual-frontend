@@ -31,7 +31,8 @@ const MAIN_TOOLS = [
   { id: 'editor', nombre: 'EDITOR', icon: <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><line x1="20" y1="4" x2="8.12" y2="15.88"/><line x1="14.47" y1="14.48" x2="20" y2="20"/><line x1="8.12" y1="8.12" x2="12" y2="12"/></svg> },
   { id: 'boveda', nombre: 'BÓVEDA', icon: <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg> },
   { id: 'buscar', nombre: 'BUSCAR', icon: <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg> },
-  { id: 'ia', nombre: 'IA', icon: <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="11" width="18" height="10" rx="2"/><circle cx="12" cy="5" r="2"/><path d="M12 7v4"/><line x1="8" y1="16" x2="8" y2="16"/><line x1="16" y1="16" x2="16" y2="16"/></svg> }
+  { id: 'ia', nombre: 'IA', icon: <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="11" width="18" height="10" rx="2"/><circle cx="12" cy="5" r="2"/><path d="M12 7v4"/><line x1="8" y1="16" x2="8" y2="16"/><line x1="16" y1="16" x2="16" y2="16"/></svg> },
+  { id: 'nube', nombre: 'NUBE', icon: <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"/></svg> }
 ];
 
 const SUB_TOOLS: Record<string, any[]> = {
@@ -117,6 +118,10 @@ export default function NaylaCore() {
   const [videoMetadata, setVideoMetadata] = useState({ width: 1080, height: 1920 });
   const [isPlaying, setIsPlaying] = useState(false);
   const [isScriptRunning, setIsScriptRunning] = useState(false);
+
+  // Storage Viewer States
+  const [storageFiles, setStorageFiles] = useState<any[]>([]);
+  const [isLoadingStorage, setIsLoadingStorage] = useState<boolean>(false);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
@@ -302,6 +307,42 @@ export default function NaylaCore() {
       subscription.unsubscribe();
     };
   }, []);
+
+  useEffect(() => {
+    if (mainNav === 'nube') {
+      fetchStorageFiles();
+    }
+  }, [mainNav]);
+
+  const fetchStorageFiles = async () => {
+    setIsLoadingStorage(true);
+    try {
+      const { data, error } = await supabase.storage.from('media_bodega').list();
+      if (error) {
+        console.error('Error fetching storage files:', error);
+        alert('Error cargando archivos de la nube: ' + error.message);
+      } else {
+        setStorageFiles(data || []);
+      }
+    } catch (err: any) {
+      console.error('Exception fetching storage files:', err);
+      alert('Error: ' + err.message);
+    } finally {
+      setIsLoadingStorage(false);
+    }
+  };
+
+  const deleteStorageFile = async (filename: string) => {
+    if (!confirm(`¿Estás seguro de que quieres borrar el archivo ${filename}?`)) return;
+    try {
+      const { error } = await supabase.storage.from('media_bodega').remove([filename]);
+      if (error) throw error;
+      await fetchStorageFiles();
+    } catch (err: any) {
+      console.error('Error deleting file:', err);
+      alert('Error al borrar: ' + err.message);
+    }
+  };
 
   const cargarDatosUsuario = async (userId: string) => {
     try {
@@ -1292,6 +1333,48 @@ export default function NaylaCore() {
           <div className="panel-container" style={{ position: 'relative', bottom: 'auto', flex: 1, minHeight: '35vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             <div style={{ textAlign: 'center', padding: '2rem', color: '#a3a3a3', fontSize: '1rem', letterSpacing: '2px' }}>{toolMessage}</div>
           </div>
+        ) : mainNav === 'nube' ? (
+          <div className="panel-container" style={{ position: 'relative', bottom: 'auto', flex: 1, minHeight: '35vh', overflowY: 'auto', padding: '16px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+              <p style={{ fontSize: '0.75rem', color: darkMode ? '#fff' : '#000', fontWeight: 'bold', letterSpacing: '1px' }}>EXPLORADOR DE STORAGE (media_bodega)</p>
+              <button className="neon-btn nav-btn" onClick={fetchStorageFiles} style={{ padding: '6px 12px', fontSize: '0.7rem' }}>
+                {isLoadingStorage ? 'Cargando...' : 'Actualizar'}
+              </button>
+            </div>
+
+            {isLoadingStorage ? (
+              <div style={{ textAlign: 'center', padding: '2rem', color: '#737373', fontSize: '0.8rem' }}>Cargando archivos...</div>
+            ) : storageFiles.length === 0 ? (
+              <div style={{ textAlign: 'center', padding: '2rem', color: '#737373', fontSize: '0.8rem' }}>No hay archivos en la bodega.</div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                {storageFiles.map((file, i) => {
+                  const isFolder = file.id === null && !file.name.includes('.');
+                  if (isFolder || file.name === '.emptyFolderPlaceholder') return null; // Saltar carpetas o placeholders
+
+                  const size = file.metadata?.size;
+                  const sizeFormatted = size ? (size / 1024 / 1024).toFixed(2) + ' MB' : 'Desconocido';
+                  const dateFormatted = file.created_at ? new Date(file.created_at).toLocaleString() : '';
+
+                  return (
+                    <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: darkMode ? '#111' : '#f9f9f9', border: `1px solid ${darkMode ? '#222' : '#e5e5e5'}`, padding: '10px 12px', borderRadius: '8px' }}>
+                      <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1, marginRight: '10px' }}>
+                        <p style={{ fontSize: '0.8rem', color: darkMode ? '#fff' : '#000', margin: 0, fontWeight: '500', overflow: 'hidden', textOverflow: 'ellipsis' }}>{file.name}</p>
+                        <p style={{ fontSize: '0.65rem', color: '#737373', margin: '4px 0 0 0' }}>{sizeFormatted} • {dateFormatted}</p>
+                      </div>
+                      <button
+                        onClick={() => deleteStorageFile(file.name)}
+                        style={{ background: 'none', border: 'none', color: '#ff4444', cursor: 'pointer', padding: '4px' }}
+                        title="Eliminar archivo"
+                      >
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
         ) : subTool && ['marco', 'delogo', 'script', 'supervisor', 'render'].includes(subTool) ? (
           <div className="panel-container" style={{ position: 'relative', bottom: 'auto', flex: 1, minHeight: '35vh', overflowY: 'auto' }}>
             {/* COMPONENTES DE PANELES COMPLEJOS */}
@@ -1793,7 +1876,7 @@ export default function NaylaCore() {
         </div>
 
         {/* FILA DE BOTONES PRINCIPALES */}
-        <div className={`grid grid-cols-4 gap-2 w-full p-3 ${darkMode ? 'bg-black' : 'bg-white'}`}>
+        <div className={`grid grid-cols-5 gap-2 w-full p-3 ${darkMode ? 'bg-black' : 'bg-white'}`}>
           {MAIN_TOOLS.map((tool) => (
             <button key={tool.id} className={`main-btn w-full ${mainNav === tool.id ? 'active' : ''} ${!darkMode ? 'bg-gray-100 border-gray-300 text-black' : ''}`} style={{ backgroundColor: !darkMode ? (mainNav === tool.id ? '#000' : '#f3f4f6') : undefined, color: !darkMode ? (mainNav === tool.id ? '#fff' : '#000') : undefined }} onClick={() => {
               if (tool.id === 'ia') {
