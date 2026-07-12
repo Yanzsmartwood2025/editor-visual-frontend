@@ -22,12 +22,50 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(400).json({ error: 'Formato de URL inválido.' });
   }
 
+
+  const isDirectUrl = (testUrl: string) => {
+    try {
+      const parsed = new URL(testUrl);
+      const pathname = parsed.pathname.toLowerCase();
+      return pathname.endsWith('.mp4') || pathname.endsWith('.webm') || pathname.endsWith('.mov') || pathname.endsWith('.mp3') || pathname.endsWith('.wav');
+    } catch {
+      return false;
+    }
+  };
+
   const ORACLE_SERVER_URL = process.env.ORACLE_SERVER_URL || 'http://oracle-service:3001';
   const ORACLE_SECRET = process.env.ORACLE_SECRET;
 
   if (!ORACLE_SERVER_URL || !ORACLE_SECRET) {
     console.error('[extract-video] ORACLE_SERVER_URL o ORACLE_SECRET no configurados.');
     return res.status(500).json({ error: 'El servicio de extracción (Oráculo) no está configurado.' });
+  }
+
+
+  if (isDirectUrl(url)) {
+    console.log(`[extract-video] URL detectada como archivo directo: ${url}. Delegando al Motor Manual de Oracle.`);
+    try {
+      const oracleRes = await fetch(`${ORACLE_SERVER_URL}/api/extract-direct`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${ORACLE_SECRET}`
+        },
+        body: JSON.stringify({ url }),
+        signal: AbortSignal.timeout(60000)
+      });
+
+      if (oracleRes.ok) {
+        const oracleData = await oracleRes.json();
+        return res.status(200).json({ videoUrl: oracleData.videoUrl });
+      } else {
+        const err = await oracleRes.json().catch(() => ({}));
+        return res.status(oracleRes.status).json(err);
+      }
+    } catch (e: any) {
+      console.error('[extract-video] Error conectando al Motor Manual (Oracle)', e);
+      return res.status(500).json({ error: 'Error conectando al servicio de Motor Manual.', details: e.message });
+    }
   }
 
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
