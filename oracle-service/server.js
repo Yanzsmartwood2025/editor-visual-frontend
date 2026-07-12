@@ -284,7 +284,7 @@ app.post('/api/process-clip', async (req, res) => {
 
             console.log(`[Job ${jobId}] Subiendo a Supabase Storage...`);
             const { data: uploadData, error: uploadError } = await supabase.storage
-                .from('media_assets')
+                .from('media_bodega')
                 .upload(storagePath, fileBuffer, {
                     contentType: 'video/mp4',
                     cacheControl: '3600',
@@ -294,7 +294,7 @@ app.post('/api/process-clip', async (req, res) => {
             if (uploadError) throw uploadError;
 
             const { data: publicUrlData } = supabase.storage
-                .from('media_assets')
+                .from('media_bodega')
                 .getPublicUrl(storagePath);
 
             const finalUrl = publicUrlData.publicUrl;
@@ -426,7 +426,7 @@ app.post('/api/extract-direct', async (req, res) => {
 
         console.log(`[extract-direct] Subiendo a Supabase Storage...`);
         const { data: uploadData, error: uploadError } = await supabase.storage
-            .from('media_assets')
+            .from('media_bodega')
             .upload(storagePath, fileStream, {
                 cacheControl: '3600',
                 upsert: false,
@@ -436,7 +436,7 @@ app.post('/api/extract-direct', async (req, res) => {
         if (uploadError) throw uploadError;
 
         const { data: publicUrlData } = supabase.storage
-            .from('media_assets')
+            .from('media_bodega')
             .getPublicUrl(storagePath);
 
         const finalUrl = publicUrlData.publicUrl;
@@ -527,7 +527,7 @@ app.post('/api/extract-meta', async (req, res) => {
 
         console.log(`[extract-meta] Subiendo a Supabase Storage mediante stream...`);
         const { data: uploadData, error: uploadError } = await supabase.storage
-            .from('media_assets')
+            .from('media_bodega')
             .upload(storagePath, fileStream, {
                 contentType: 'video/mp4',
                 cacheControl: '3600',
@@ -538,7 +538,7 @@ app.post('/api/extract-meta', async (req, res) => {
         if (uploadError) throw uploadError;
 
         const { data: publicUrlData } = supabase.storage
-            .from('media_assets')
+            .from('media_bodega')
             .getPublicUrl(storagePath);
 
         const finalUrl = publicUrlData.publicUrl;
@@ -724,7 +724,7 @@ app.post('/api/render-remotion', async (req, res) => {
         const storagePath = `media_bodega/${outputFilename}`;
 
         const { data: uploadData, error: uploadError } = await supabase.storage
-            .from('media_assets')
+            .from('media_bodega')
             .upload(storagePath, fileStream, {
                 contentType: 'video/mp4',
                 cacheControl: '3600',
@@ -735,7 +735,7 @@ app.post('/api/render-remotion', async (req, res) => {
         if (uploadError) throw uploadError;
 
         const { data: publicUrlData } = supabase.storage
-            .from('media_assets')
+            .from('media_bodega')
             .getPublicUrl(storagePath);
 
 
@@ -769,7 +769,7 @@ app.post('/api/render-remotion', async (req, res) => {
 
                  if (directPaths.length > 0) {
                      const { error: deleteError } = await supabase.storage
-                         .from('media_assets')
+                         .from('media_bodega')
                          .remove(directPaths);
 
                      if (deleteError) {
