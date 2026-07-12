@@ -28,6 +28,7 @@ RUN npm install
 
 # Copiar el resto del código del servidor
 COPY server.js .
+COPY remotion/ ./remotion/
 
 EXPOSE 3001
 
