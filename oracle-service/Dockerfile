@@ -32,4 +32,7 @@ COPY remotion/ ./remotion/
 
 EXPOSE 3001
 
+ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
+ENV CHROMIUM_PATH=/usr/bin/chromium-browser
+
 CMD ["npm", "start"]
