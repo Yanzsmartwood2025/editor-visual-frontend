@@ -667,7 +667,7 @@ app.post('/api/render-remotion', async (req, res) => {
     console.log(`[render-remotion] Solicitud de renderizado recibida.`);
 
     const jobId = uuidv4();
-    global.renderJobs[jobId] = { status: 'processing', url: null, error: null };
+    global.renderJobs[jobId] = { status: 'processing', url: null, error: null, logs: [] };
 
     // Responder inmediatamente (HTTP 202 Accepted)
     res.status(202).json({
@@ -699,8 +699,24 @@ app.post('/api/render-remotion', async (req, res) => {
         let stdoutOutput = '';
         let stderrOutput = '';
 
-        remotionProcess.stdout.on('data', (data) => { stdoutOutput += data.toString(); });
-        remotionProcess.stderr.on('data', (data) => { stderrOutput += data.toString(); });
+        const pushLog = (data) => {
+            if (global.renderJobs[jobId]) {
+                const lines = data.toString().split('\n').filter(l => l.trim() !== '');
+                global.renderJobs[jobId].logs.push(...lines);
+                if (global.renderJobs[jobId].logs.length > 100) {
+                    global.renderJobs[jobId].logs = global.renderJobs[jobId].logs.slice(-100);
+                }
+            }
+        };
+
+        remotionProcess.stdout.on('data', (data) => {
+            stdoutOutput += data.toString();
+            pushLog(data);
+        });
+        remotionProcess.stderr.on('data', (data) => {
+            stderrOutput += data.toString();
+            pushLog(data);
+        });
 
         await new Promise((resolve, reject) => {
             remotionProcess.on('error', (err) => {
@@ -743,7 +759,7 @@ app.post('/api/render-remotion', async (req, res) => {
         const finalUrl = publicUrlData.publicUrl;
         console.log(`[Job ${jobId}] Archivo de Remotion subido con éxito: ${finalUrl}`);
 
-        global.renderJobs[jobId] = { status: 'completed', url: finalUrl, error: null };
+        global.renderJobs[jobId] = { status: 'completed', url: finalUrl, error: null, logs: global.renderJobs[jobId].logs };
 
         // Realizar limpieza de archivos temporales (media_bodega/direct_*) subidos durante la sesión actual
         // El bucket ya tiene política de 24hs, pero el Motor Manual requiere limpieza rápida.
@@ -791,7 +807,7 @@ app.post('/api/render-remotion', async (req, res) => {
 
     } catch (e) {
         console.error(`[Job ${jobId}] Error en proceso de renderizado en background:`, e);
-        global.renderJobs[jobId] = { status: 'error', url: null, error: e.message };
+        global.renderJobs[jobId] = { status: 'error', url: null, error: e.message, logs: global.renderJobs[jobId] ? global.renderJobs[jobId].logs : [] };
     } finally {
         if (fs.existsSync(propsPath)) fs.unlinkSync(propsPath);
         if (fs.existsSync(outputPath)) fs.unlinkSync(outputPath);

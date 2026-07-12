@@ -113,6 +113,8 @@ export default function NaylaCore() {
   const [showIntro, setShowIntro] = useState(true);
   const [videoFile, setVideoFile] = useState<File | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [renderLogs, setRenderLogs] = useState<string[]>([]);
+  const logsEndRef = useRef<HTMLDivElement | null>(null);
   const [mediaActivaUrl, setMediaActivaUrl] = useState<string | null>(null);
   const [videoResultadoUrl, setVideoResultadoUrl] = useState<string | null>(null);
   const [videoMetadata, setVideoMetadata] = useState({ width: 1080, height: 1920 });
@@ -313,6 +315,12 @@ export default function NaylaCore() {
       fetchStorageFiles();
     }
   }, [mainNav]);
+
+  useEffect(() => {
+    if (logsEndRef.current) {
+      logsEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [renderLogs]);
 
   const fetchStorageFiles = async () => {
     setIsLoadingStorage(true);
@@ -1167,6 +1175,76 @@ export default function NaylaCore() {
 
   return (
     <div className={`min-h-screen w-full flex flex-col overflow-x-hidden select-none ${darkMode ? 'bg-black text-gray-200' : 'bg-white text-gray-800'}`} style={{ fontFamily: 'system-ui, sans-serif' }}>
+
+      {/* Modal para Consola Visual */}
+      {isProcessing && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0, 0, 0, 0.8)',
+          zIndex: 9999,
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          padding: '20px'
+        }}>
+          <div style={{
+            backgroundColor: '#0a0a0a',
+            border: '1px solid #333',
+            borderRadius: '12px',
+            width: '100%',
+            maxWidth: '600px',
+            maxHeight: '80vh',
+            display: 'flex',
+            flexDirection: 'column',
+            boxShadow: '0 0 20px rgba(0,0,0,0.5)',
+            overflow: 'hidden'
+          }}>
+            <div style={{
+              backgroundColor: '#1a1a1a',
+              padding: '10px 15px',
+              borderBottom: '1px solid #333',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center'
+            }}>
+              <span style={{ color: '#fff', fontSize: '0.8rem', fontWeight: 'bold', fontFamily: 'monospace' }}>
+                Terminal Remotion Render
+              </span>
+              <div style={{ display: 'flex', gap: '5px' }}>
+                <div style={{ width: '10px', height: '10px', borderRadius: '50%', backgroundColor: '#ff5f56' }}></div>
+                <div style={{ width: '10px', height: '10px', borderRadius: '50%', backgroundColor: '#ffbd2e' }}></div>
+                <div style={{ width: '10px', height: '10px', borderRadius: '50%', backgroundColor: '#27c93f' }}></div>
+              </div>
+            </div>
+
+            <div style={{
+              flex: 1,
+              padding: '15px',
+              overflowY: 'auto',
+              fontFamily: 'monospace',
+              fontSize: '0.75rem',
+              color: '#00ffcc',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '4px'
+            }}>
+              {renderLogs.length === 0 ? (
+                <div style={{ color: '#888' }}>Esperando logs del servidor...</div>
+              ) : (
+                renderLogs.map((log, index) => (
+                  <div key={index} style={{ wordBreak: 'break-all' }}>{log}</div>
+                ))
+              )}
+              <div ref={logsEndRef} />
+            </div>
+          </div>
+        </div>
+      )}
+
       <Head><title>NAYLA CORE</title></Head>
       <style>{globalStyles}</style>
 
@@ -1507,6 +1585,11 @@ export default function NaylaCore() {
                           try {
                             const statusRes = await fetch(`/api/render-status?jobId=${jobId}`);
                             const statusData = await statusRes.json();
+
+                            if (statusData.logs) {
+                              setRenderLogs(statusData.logs);
+                            }
+
                             if (statusData.status === 'completed') {
                               clearInterval(pollInterval);
                               setVideoResultadoUrl(statusData.url);
