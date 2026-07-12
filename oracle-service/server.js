@@ -667,7 +667,16 @@ app.post('/api/render-remotion', async (req, res) => {
     console.log(`[render-remotion] Solicitud de renderizado recibida.`);
 
     const jobId = uuidv4();
-    global.renderJobs[jobId] = { status: 'processing', url: null, error: null };
+    global.renderJobs[jobId] = { status: 'processing', url: null, error: null, logs: ['[oracle-service] Iniciando job en cola...'] };
+
+    function pushLog(message) {
+        if (!global.renderJobs[jobId]) return;
+        const timestamp = new Date().toLocaleTimeString();
+        global.renderJobs[jobId].logs.push(`[${timestamp}] ${message}`);
+        if (global.renderJobs[jobId].logs.length > 100) {
+            global.renderJobs[jobId].logs.shift(); // Mantener max 100
+        }
+    }
 
     // Responder inmediatamente (HTTP 202 Accepted)
     res.status(202).json({
@@ -695,12 +704,22 @@ app.post('/api/render-remotion', async (req, res) => {
 
         console.log(`[Job ${jobId}] Ejecutando comando: npx ${remotionArgs.join(' ')}`);
 
+        pushLog(`Ejecutando comando: npx ${remotionArgs.join(' ')}`);
+
         const remotionProcess = spawn('npx', remotionArgs);
         let stdoutOutput = '';
         let stderrOutput = '';
 
-        remotionProcess.stdout.on('data', (data) => { stdoutOutput += data.toString(); });
-        remotionProcess.stderr.on('data', (data) => { stderrOutput += data.toString(); });
+        remotionProcess.stdout.on('data', (data) => {
+             const chunk = data.toString();
+             stdoutOutput += chunk;
+             chunk.split('\n').filter(l => l.trim()).forEach(l => pushLog(l.trim()));
+        });
+        remotionProcess.stderr.on('data', (data) => {
+             const chunk = data.toString();
+             stderrOutput += chunk;
+             chunk.split('\n').filter(l => l.trim()).forEach(l => pushLog(`[WARN/ERR] ${l.trim()}`));
+        });
 
         await new Promise((resolve, reject) => {
             remotionProcess.on('error', (err) => {
@@ -742,8 +761,10 @@ app.post('/api/render-remotion', async (req, res) => {
 
         const finalUrl = publicUrlData.publicUrl;
         console.log(`[Job ${jobId}] Archivo de Remotion subido con éxito: ${finalUrl}`);
+        pushLog(`[EXITO] Archivo de Remotion subido con éxito. URL lista.`);
 
-        global.renderJobs[jobId] = { status: 'completed', url: finalUrl, error: null };
+        // Preservamos los logs al marcar como completado
+        global.renderJobs[jobId] = { status: 'completed', url: finalUrl, error: null, logs: global.renderJobs[jobId].logs };
 
         // Realizar limpieza de archivos temporales (media_bodega/direct_*) subidos durante la sesión actual
         // El bucket ya tiene política de 24hs, pero el Motor Manual requiere limpieza rápida.
@@ -791,7 +812,11 @@ app.post('/api/render-remotion', async (req, res) => {
 
     } catch (e) {
         console.error(`[Job ${jobId}] Error en proceso de renderizado en background:`, e);
-        global.renderJobs[jobId] = { status: 'error', url: null, error: e.message };
+        const currentLogs = global.renderJobs[jobId] ? global.renderJobs[jobId].logs : [];
+        if (global.renderJobs[jobId]) {
+            pushLog(`[ERROR FATAL] ${e.message}`);
+            global.renderJobs[jobId] = { status: 'error', url: null, error: e.message, logs: global.renderJobs[jobId].logs };
+        }
     } finally {
         if (fs.existsSync(propsPath)) fs.unlinkSync(propsPath);
         if (fs.existsSync(outputPath)) fs.unlinkSync(outputPath);

@@ -113,7 +113,16 @@ export default function NaylaCore() {
   const [showIntro, setShowIntro] = useState(true);
   const [videoFile, setVideoFile] = useState<File | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [renderLogs, setRenderLogs] = useState<string[]>([]);
+  const renderLogsRef = useRef<HTMLDivElement>(null);
   const [mediaActivaUrl, setMediaActivaUrl] = useState<string | null>(null);
+
+  // Auto-scroll logs
+  useEffect(() => {
+    if (renderLogsRef.current) {
+      renderLogsRef.current.scrollTop = renderLogsRef.current.scrollHeight;
+    }
+  }, [renderLogs]);
   const [videoResultadoUrl, setVideoResultadoUrl] = useState<string | null>(null);
   const [videoMetadata, setVideoMetadata] = useState({ width: 1080, height: 1920 });
   const [isPlaying, setIsPlaying] = useState(false);
@@ -1170,6 +1179,54 @@ export default function NaylaCore() {
       <Head><title>NAYLA CORE</title></Head>
       <style>{globalStyles}</style>
 
+      {/* Modal Terminal Logs (Solo visible durante renderizado) */}
+      {isProcessing && renderLogs.length > 0 && (
+        <div style={{
+          position: 'fixed',
+          top: 0, left: 0, right: 0, bottom: 0,
+          backgroundColor: 'rgba(0,0,0,0.8)',
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          zIndex: 9999
+        }}>
+          <div style={{
+            backgroundColor: '#1e1e1e',
+            color: '#00ff00',
+            fontFamily: 'monospace',
+            width: '90%',
+            maxWidth: '800px',
+            height: '60vh',
+            borderRadius: '8px',
+            border: '1px solid #333',
+            display: 'flex',
+            flexDirection: 'column',
+            boxShadow: '0 0 20px rgba(0,0,0,1)'
+          }}>
+            <div style={{ padding: '10px', backgroundColor: '#2d2d2d', borderTopLeftRadius: '8px', borderTopRightRadius: '8px', color: '#fff', fontSize: '0.9rem', display: 'flex', justifyContent: 'space-between' }}>
+              <span>TERMINAL - PROCESANDO VIDEO</span>
+              <button onClick={() => setIsProcessing(false)} style={{ background: 'none', border: 'none', color: '#ff4444', cursor: 'pointer' }}>X</button>
+            </div>
+            <div
+              ref={renderLogsRef}
+              style={{
+                flex: 1,
+                padding: '15px',
+                overflowY: 'auto',
+                whiteSpace: 'pre-wrap',
+                wordBreak: 'break-all',
+                fontSize: '0.85rem',
+                lineHeight: '1.4'
+              }}
+            >
+              {renderLogs.map((log, idx) => (
+                <div key={idx} style={{ color: log.includes('ERROR') || log.includes('WARN') ? '#ff4444' : '#00ff00' }}>{log}</div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
       <header style={{ borderBottom: '1px solid #1a1a1a', padding: '1rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#050505' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
           <img src="/assets/imagenes/Icono-intro.jpeg" alt="NAYLA" style={{ width: '35px', height: '35px', borderRadius: '8px', objectFit: 'cover' }} />
@@ -1503,14 +1560,20 @@ export default function NaylaCore() {
 
                       const jobId = data.jobId;
                       if (jobId) {
+                        setRenderLogs(['[CLIENTE] Job encolado. Esperando logs del servidor...']);
                         const pollInterval = setInterval(async () => {
                           try {
                             const statusRes = await fetch(`/api/render-status?jobId=${jobId}`);
                             const statusData = await statusRes.json();
+
+                            if (statusData.logs && Array.isArray(statusData.logs)) {
+                                setRenderLogs(statusData.logs);
+                            }
+
                             if (statusData.status === 'completed') {
                               clearInterval(pollInterval);
                               setVideoResultadoUrl(statusData.url);
-                              setIsProcessing(false);
+                              setTimeout(() => setIsProcessing(false), 3000); // Dar tiempo a ver el último log antes de cerrar
                               alert('Renderizado completado exitosamente.');
                             } else if (statusData.status === 'error') {
                               clearInterval(pollInterval);
