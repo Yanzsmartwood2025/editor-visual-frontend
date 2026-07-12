@@ -17,10 +17,16 @@ RUN apk update && \
     ca-certificates \
     ttf-freefont
 
+RUN which chromium || which chromium-browser || echo 'chromium not found'
+
 # Instalar yt-dlp y curl_cffi usando pip
 RUN pip install -U yt-dlp curl_cffi --break-system-packages
 
 WORKDIR /app
+
+# Configurar Playwright para usar Chromium nativo
+ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
+ENV PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium-browser
 
 # Copiar archivos de Node.js e instalar
 COPY package.json package-lock.json* ./
@@ -31,8 +37,5 @@ COPY server.js .
 COPY remotion/ ./remotion/
 
 EXPOSE 3001
-
-ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
-ENV CHROMIUM_PATH=/usr/bin/chromium-browser
 
 CMD ["npm", "start"]
