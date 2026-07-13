@@ -24,9 +24,13 @@ RUN pip install -U yt-dlp curl_cffi --break-system-packages
 
 WORKDIR /app
 
-# Configurar Playwright para usar Chromium nativo
+# Dependencias adicionales para Chromium headless en Alpine (fontconfig, dbus, etc)
+RUN apk add --no-cache fontconfig dbus mesa-gl
+
+# Configurar Playwright y Remotion para usar Chromium nativo
 ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
 ENV PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium-browser
+ENV REMOTION_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium-browser
 
 # Copiar archivos de Node.js e instalar
 COPY package.json package-lock.json* ./
