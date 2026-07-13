@@ -690,9 +690,10 @@ app.post('/api/render-remotion', async (req, res) => {
             'MainVideo',
             outputPath,
             `--props=${propsPath}`,
-            '--browser-executable-path=/usr/bin/chromium-browser'
+            '--browser-executable=/usr/bin/chromium'
         ];
 
+        console.log(`[Job ${jobId}] Usando binario de Chromium en: /usr/bin/chromium`);
         console.log(`[Job ${jobId}] Ejecutando comando: npx ${remotionArgs.join(' ')}`);
 
         const remotionProcess = spawn('npx', remotionArgs);
