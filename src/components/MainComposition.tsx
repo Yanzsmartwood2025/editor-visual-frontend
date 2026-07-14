@@ -2,7 +2,7 @@ import React, { useMemo } from 'react';
 import { AbsoluteFill, Sequence, Video, Img, Audio, useVideoConfig, useCurrentFrame, interpolate } from 'remotion';
 
 // Interfaces based on main file
-type TimelineItem = { id: string; mediaId: string; tipo: 'foto' | 'video' | 'audio'; nombre: string; etiqueta: string; url: string; durationInSeconds?: number; volume?: number; fadeIn?: number; fadeOut?: number };
+type TimelineItem = { id: string; mediaId: string; tipo: 'foto' | 'video' | 'audio'; nombre: string; etiqueta: string; url: string; durationInSeconds?: number; volume?: number; fadeIn?: number; fadeOut?: number; scale?: number; delay?: number; startFrom?: number; loop?: boolean; };
 type SubtitleItem = { id: string; texto: string; inicioSec: number; finSec: number; };
 
 interface MainCompositionProps {
@@ -51,6 +51,10 @@ export const MainComposition: React.FC<MainCompositionProps> = ({ timeline, subt
       throw new Error(`Critical Error: Clip '${clip.nombre || clip.etiqueta}' (URL: ${clip.url}) was passed to Remotion Composition without a valid durationInSeconds.`);
     }
 
+    if (clip.delay) {
+      currentVisualFrame += Math.round(clip.delay * fps);
+    }
+
     const durationInFrames = Math.round((clip.durationInSeconds !== undefined ? clip.durationInSeconds : (clip.tipo === 'foto' ? 5 : 5)) * fps);
     const sequence = { ...clip, startFrame: currentVisualFrame, durationInFrames };
     currentVisualFrame += durationInFrames;
@@ -77,12 +81,14 @@ export const MainComposition: React.FC<MainCompositionProps> = ({ timeline, subt
               <Video
                 src={clip.url}
                 volume={clip.volume !== undefined ? clip.volume : 1}
-                style={{ width: '100%', height: '100%', objectFit: 'contain' }}
+                startFrom={clip.startFrom ? Math.round(clip.startFrom * fps) : undefined}
+                loop={clip.loop}
+                style={{ width: '100%', height: '100%', objectFit: 'contain', transform: clip.scale !== undefined ? `scale(${clip.scale})` : undefined }}
               />
             ) : (
               <Img
                 src={clip.url}
-                style={{ width: '100%', height: '100%', objectFit: 'contain' }}
+                style={{ width: '100%', height: '100%', objectFit: 'contain', transform: clip.scale !== undefined ? `scale(${clip.scale})` : undefined }}
               />
             )}
           </ClipWithFades>
@@ -91,8 +97,13 @@ export const MainComposition: React.FC<MainCompositionProps> = ({ timeline, subt
 
       {/* For simplicity, audio clips start at frame 0 and loop/play their duration. We can improve this later to position them. */}
       {audioClips.map((clip) => (
-        <Sequence key={clip.id} from={0}>
-           <Audio src={clip.url} volume={clip.volume !== undefined ? clip.volume : 1} />
+        <Sequence key={clip.id} from={clip.delay ? Math.round(clip.delay * fps) : 0}>
+           <Audio
+             src={clip.url}
+             volume={clip.volume !== undefined ? clip.volume : 1}
+             startFrom={clip.startFrom ? Math.round(clip.startFrom * fps) : undefined}
+             loop={clip.loop}
+           />
         </Sequence>
       ))}
 
