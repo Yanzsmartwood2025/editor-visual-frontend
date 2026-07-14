@@ -1674,6 +1674,23 @@ export default function NaylaCore() {
                               clearInterval(pollInterval);
                               setVideoResultadoUrl(statusData.url);
                               setIsProcessing(false);
+
+                              // Add the rendered video to the gallery
+                              setGaleriaMultimedia(prev => {
+                                const renderCount = prev.filter(item => item.etiqueta.startsWith('R')).length + 1;
+                                const renderItem: MediaItem = {
+                                  id: `render-${Date.now()}`,
+                                  url: statusData.url,
+                                  tipo: 'video',
+                                  nombre: `Render ${renderCount}`,
+                                  creado_en: new Date().toLocaleTimeString(),
+                                  esOverlay: false,
+                                  etiqueta: `R${renderCount}`,
+                                  fuente: 'render'
+                                };
+                                return [...prev, renderItem];
+                              });
+
                               alert('Renderizado completado exitosamente.');
                             } else if (statusData.status === 'error') {
                               clearInterval(pollInterval);
@@ -1943,10 +1960,11 @@ export default function NaylaCore() {
                     if (srcFuente === 'youtube') { bgBadge = 'yt'; txtBadge = 'YT'; }
                     else if (srcFuente === 'pixabay' || srcFuente === 'noticias' || srcFuente === 'artistas' || srcFuente === 'musicastock' || srcFuente === 'stockvideo') { bgBadge = 'px'; txtBadge = 'PX'; }
                     else if (srcFuente === 'ia' || srcFuente === 'sonidos' || srcFuente === 'iafoto') { bgBadge = 'ia'; txtBadge = 'IA'; }
+                    else if (srcFuente === 'render') { bgBadge = 'render'; txtBadge = 'RENDER'; }
 
                     return (
-                      <div key={item.id} className="neon-btn" style={{ minHeight: '120px', padding: '10px', borderRadius: '12px', borderStyle: 'solid', borderColor: 'transparent', flexDirection: 'column', position: 'relative', justifyContent: 'space-between', width: '100%' }}>
-                        <div className={`source-badge ${bgBadge}`}>{txtBadge}</div>
+                      <div key={item.id} className="neon-btn" style={{ minHeight: '120px', padding: '10px', borderRadius: '12px', borderStyle: 'solid', borderColor: srcFuente === 'render' ? '#00ffcc' : 'transparent', flexDirection: 'column', position: 'relative', justifyContent: 'space-between', width: '100%' }}>
+                        <div className={`source-badge ${bgBadge}`} style={srcFuente === 'render' ? { backgroundColor: '#00ffcc', color: '#000' } : {}}>{txtBadge}</div>
                         <div style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                           <span style={{ fontSize: '0.65rem', backgroundColor: '#262626', padding: '2px 6px', borderRadius: '4px', color: darkMode ? '#fff' : '#000', fontWeight: 'bold' }}>{item.etiqueta}</span>
                           <div style={{ display: 'flex', gap: '4px', zIndex: 10 }}>
@@ -1976,7 +1994,22 @@ export default function NaylaCore() {
                           <input type="text" value={item.nombre} onChange={(e) => renombrarItem(item.id, e.target.value)} style={{ background: 'transparent', border: 'none', color: darkMode ? '#fff' : '#000', outline: 'none', width: '100%', textAlign: 'center', fontSize: '0.55rem', marginTop: '8px', textOverflow: 'ellipsis', whiteSpace: 'nowrap', overflow: 'hidden' }} title={item.nombre} />
                         </div>
 
-                        <button onClick={() => agregarAlTimeline(item)} style={{ padding: '6px', fontSize: '0.5rem', width: '100%', marginTop: 'auto', backgroundColor: '#fff', color: '#000', border: 'none', borderRadius: '100px', fontWeight: 'bold', cursor: 'pointer' }}>+ PISTA</button>
+                        {srcFuente === 'render' ? (
+                          <div style={{ display: 'flex', gap: '8px', width: '100%', marginTop: 'auto' }}>
+                             <button onClick={() => {
+                                setMediaActivaUrl(item.url);
+                                setClipSeleccionado(item.id);
+                                setVideoResultadoUrl(item.url);
+                                if (playerRef.current) {
+                                  const playPromise = playerRef.current.play(); if (playPromise !== undefined) { playPromise.catch(error => console.log('Autoplay prevented:', error)); }
+                                  setIsPlaying(true);
+                                }
+                             }} style={{ padding: '6px', fontSize: '0.5rem', flex: 1, backgroundColor: '#00ffcc', color: '#000', border: 'none', borderRadius: '100px', fontWeight: 'bold', cursor: 'pointer' }}>▶ REPRODUCIR</button>
+                             <button onClick={() => descargarIndividual(item.url, item.nombre, item.tipo)} style={{ padding: '6px', fontSize: '0.5rem', flex: 1, backgroundColor: 'transparent', color: '#00ffcc', border: '1px solid #00ffcc', borderRadius: '100px', fontWeight: 'bold', cursor: 'pointer' }}>⬇ DESCARGAR</button>
+                          </div>
+                        ) : (
+                          <button onClick={() => agregarAlTimeline(item)} style={{ padding: '6px', fontSize: '0.5rem', width: '100%', marginTop: 'auto', backgroundColor: '#fff', color: '#000', border: 'none', borderRadius: '100px', fontWeight: 'bold', cursor: 'pointer' }}>+ PISTA</button>
+                        )}
                       </div>
                     );
                 })}
