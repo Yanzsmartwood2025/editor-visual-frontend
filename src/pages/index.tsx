@@ -969,7 +969,7 @@ export default function NaylaCore() {
           });
         },
         modificar: (etiqueta: string, opciones: any) => {
-          const opcionesPermitidas = ['volume', 'fadeIn', 'fadeOut', 'scale', 'delay', 'startFrom', 'loop', 'url', 'nombre', 'durationInSeconds'];
+          const opcionesPermitidas = ['volume', 'fadeIn', 'fadeOut', 'scale', 'delay', 'startFrom', 'loop', 'url', 'nombre', 'durationInSeconds', 'playbackRate', 'transitionDuration', 'transitionType'];
           const opcionesDesconocidas = Object.keys(opciones).filter(k => !opcionesPermitidas.includes(k));
 
           if (opcionesDesconocidas.length > 0) {
