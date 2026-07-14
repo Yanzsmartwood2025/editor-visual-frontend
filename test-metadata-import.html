@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Test Media Utils</title>
+</head>
+<body>
+  <script type="module">
+    import { getVideoMetadata, getAudioDurationInSeconds } from 'https://cdn.jsdelivr.net/npm/@remotion/media-utils@4.0.483/+esm';
+    const url = 'https://supabasekong-kictdox9jtcqpgc0oaxgi6ot.132.145.184.192.sslip.io/storage/v1/object/public/media_bodega/direct_c003d3cc-e646-424c-82db-9138e8c27cc6.wav';
+
+    async function test() {
+      try {
+        const metadata = await getVideoMetadata(url);
+        console.log('Video Metadata:', metadata);
+      } catch (e) {
+        console.error('getVideoMetadata failed:', e);
+      }
+
+      try {
+        const duration = await getAudioDurationInSeconds(url);
+        console.log('Audio Duration:', duration);
+      } catch (e) {
+        console.error('getAudioDurationInSeconds failed:', e);
+      }
+    }
+    test();
+  </script>
+</body>
+</html>
