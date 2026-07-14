@@ -1,8 +1,10 @@
 import React, { useMemo } from 'react';
 import { AbsoluteFill, Sequence, Video, Img, Audio, useVideoConfig, useCurrentFrame, interpolate } from 'remotion';
+import { TransitionSeries, linearTiming } from '@remotion/transitions';
+import { fade } from '@remotion/transitions/fade';
 
 // Interfaces based on main file
-type TimelineItem = { id: string; mediaId: string; tipo: 'foto' | 'video' | 'audio'; nombre: string; etiqueta: string; url: string; durationInSeconds?: number; volume?: number; fadeIn?: number; fadeOut?: number; scale?: number; delay?: number; startFrom?: number; loop?: boolean; };
+type TimelineItem = { id: string; mediaId: string; tipo: 'foto' | 'video' | 'audio'; nombre: string; etiqueta: string; url: string; durationInSeconds?: number; volume?: number; fadeIn?: number; fadeOut?: number; scale?: number; delay?: number; startFrom?: number; loop?: boolean; playbackRate?: number; transitionDuration?: number; transitionType?: 'fade' | 'none'; };
 type SubtitleItem = { id: string; texto: string; inicioSec: number; finSec: number; };
 
 interface MainCompositionProps {
@@ -37,6 +39,33 @@ const ClipWithFades: React.FC<{ clip: TimelineItem, durationInFrames: number, ch
   return <AbsoluteFill style={{ opacity }}>{children}</AbsoluteFill>;
 };
 
+// Component to handle volume interpolation based on fadeIn/fadeOut for Audio and Video clips
+const AnimatedVolume: React.FC<{ clip: TimelineItem, durationInFrames: number, render: (volume: number) => React.ReactNode }> = ({ clip, durationInFrames, render }) => {
+  const frame = useCurrentFrame();
+  const { fps } = useVideoConfig();
+
+  const fadeInFrames = Math.max(1, Math.round((clip.fadeIn || 0) * fps));
+  const fadeOutFrames = Math.max(1, Math.round((clip.fadeOut || 0) * fps));
+
+  const inputRange = [
+    0,
+    fadeInFrames,
+    Math.max(fadeInFrames + 1, durationInFrames - fadeOutFrames - 1),
+    Math.max(fadeInFrames + 2, durationInFrames - 1)
+  ];
+
+  const targetVolume = clip.volume !== undefined ? clip.volume : 1;
+
+  const currentVolume = interpolate(
+    frame,
+    inputRange,
+    [(clip.fadeIn || 0) > 0 ? 0 : targetVolume, targetVolume, targetVolume, (clip.fadeOut || 0) > 0 ? 0 : targetVolume],
+    { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' }
+  );
+
+  return <>{render(currentVolume)}</>;
+};
+
 export const MainComposition: React.FC<MainCompositionProps> = ({ timeline, subtitles = [] }) => {
   const { fps } = useVideoConfig();
 
@@ -44,22 +73,16 @@ export const MainComposition: React.FC<MainCompositionProps> = ({ timeline, subt
   const visualClips = useMemo(() => timeline.filter(t => t.tipo === 'video' || t.tipo === 'foto'), [timeline]);
   const audioClips = useMemo(() => timeline.filter(t => t.tipo === 'audio'), [timeline]);
 
-  // Calculate starting frames for visual clips to sequence them back-to-back
-  let currentVisualFrame = 0;
-  const visualSequences = visualClips.map(clip => {
-    if (clip.tipo === 'video' && clip.durationInSeconds === undefined) {
-      throw new Error(`Critical Error: Clip '${clip.nombre || clip.etiqueta}' (URL: ${clip.url}) was passed to Remotion Composition without a valid durationInSeconds.`);
-    }
-
-    if (clip.delay) {
-      currentVisualFrame += Math.round(clip.delay * fps);
-    }
-
-    const durationInFrames = Math.round((clip.durationInSeconds !== undefined ? clip.durationInSeconds : (clip.tipo === 'foto' ? 5 : 5)) * fps);
-    const sequence = { ...clip, startFrame: currentVisualFrame, durationInFrames };
-    currentVisualFrame += durationInFrames;
-    return sequence;
-  });
+  const visualSequences = useMemo(() => {
+    return visualClips.map(clip => {
+      if (clip.tipo === 'video' && clip.durationInSeconds === undefined) {
+        throw new Error(`Critical Error: Clip '${clip.nombre || clip.etiqueta}' (URL: ${clip.url}) was passed to Remotion Composition without a valid durationInSeconds.`);
+      }
+      const baseDurationSec = clip.durationInSeconds !== undefined ? clip.durationInSeconds : (clip.tipo === 'foto' ? 5 : 5);
+      const durationInFrames = Math.round((baseDurationSec / (clip.playbackRate || 1)) * fps);
+      return { ...clip, durationInFrames };
+    });
+  }, [visualClips, fps]);
 
   // Verify Audio Clips as well
   audioClips.forEach(clip => {
@@ -70,42 +93,78 @@ export const MainComposition: React.FC<MainCompositionProps> = ({ timeline, subt
 
   return (
     <AbsoluteFill style={{ backgroundColor: 'black' }}>
-      {visualSequences.map((clip) => (
-        <Sequence
-          key={clip.id}
-          from={clip.startFrame}
-          durationInFrames={clip.durationInFrames}
-        >
-          <ClipWithFades clip={clip} durationInFrames={clip.durationInFrames}>
-            {clip.tipo === 'video' ? (
-              <Video
-                src={clip.url}
-                volume={clip.volume !== undefined ? clip.volume : 1}
-                startFrom={clip.startFrom ? Math.round(clip.startFrom * fps) : undefined}
-                loop={clip.loop}
-                style={{ width: '100%', height: '100%', objectFit: 'contain', transform: clip.scale !== undefined ? `scale(${clip.scale})` : undefined }}
-              />
-            ) : (
-              <Img
-                src={clip.url}
-                style={{ width: '100%', height: '100%', objectFit: 'contain', transform: clip.scale !== undefined ? `scale(${clip.scale})` : undefined }}
-              />
-            )}
-          </ClipWithFades>
-        </Sequence>
-      ))}
+      <TransitionSeries>
+        {visualSequences.map((clip, index) => {
+          const elements = [];
+
+          if (clip.delay && clip.delay > 0) {
+            const delayFrames = Math.round(clip.delay * fps);
+            elements.push(
+              <TransitionSeries.Sequence key={`spacer-${clip.id}`} durationInFrames={delayFrames}>
+                 <AbsoluteFill style={{ backgroundColor: 'transparent' }} />
+              </TransitionSeries.Sequence>
+            );
+          }
+
+          elements.push(
+            <TransitionSeries.Sequence key={clip.id} durationInFrames={clip.durationInFrames}>
+              <ClipWithFades clip={clip} durationInFrames={clip.durationInFrames}>
+                {clip.tipo === 'video' ? (
+                  <AnimatedVolume clip={clip} durationInFrames={clip.durationInFrames} render={(volume) => (
+                    <Video
+                      src={clip.url}
+                      volume={volume}
+                      startFrom={clip.startFrom ? Math.round(clip.startFrom * fps) : undefined}
+                      loop={clip.loop}
+                      playbackRate={clip.playbackRate || 1}
+                      style={{ width: '100%', height: '100%', objectFit: 'contain', transform: clip.scale !== undefined ? `scale(${clip.scale})` : undefined }}
+                    />
+                  )} />
+                ) : (
+                  <Img
+                    src={clip.url}
+                    style={{ width: '100%', height: '100%', objectFit: 'contain', transform: clip.scale !== undefined ? `scale(${clip.scale})` : undefined }}
+                  />
+                )}
+              </ClipWithFades>
+            </TransitionSeries.Sequence>
+          );
+
+          if (index < visualSequences.length - 1) {
+             const nextClip = visualSequences[index + 1];
+             if (nextClip.transitionType === 'fade' && nextClip.transitionDuration) {
+                const transDurationFrames = Math.round(nextClip.transitionDuration * fps);
+                elements.push(
+                  <TransitionSeries.Transition
+                    key={`transition-${clip.id}-${nextClip.id}`}
+                    presentation={fade()}
+                    timing={linearTiming({ durationInFrames: transDurationFrames })}
+                  />
+                );
+             }
+          }
+
+          return elements;
+        })}
+      </TransitionSeries>
 
       {/* For simplicity, audio clips start at frame 0 and loop/play their duration. We can improve this later to position them. */}
-      {audioClips.map((clip) => (
-        <Sequence key={clip.id} from={clip.delay ? Math.round(clip.delay * fps) : 0}>
-           <Audio
-             src={clip.url}
-             volume={clip.volume !== undefined ? clip.volume : 1}
-             startFrom={clip.startFrom ? Math.round(clip.startFrom * fps) : undefined}
-             loop={clip.loop}
-           />
-        </Sequence>
-      ))}
+      {audioClips.map((clip) => {
+        const audioDurationInFrames = Math.round((clip.durationInSeconds || 5) / (clip.playbackRate || 1) * fps);
+        return (
+          <Sequence key={clip.id} from={clip.delay ? Math.round(clip.delay * fps) : 0} durationInFrames={audioDurationInFrames}>
+            <AnimatedVolume clip={clip} durationInFrames={audioDurationInFrames} render={(volume) => (
+               <Audio
+                 src={clip.url}
+                 volume={volume}
+                 startFrom={clip.startFrom ? Math.round(clip.startFrom * fps) : undefined}
+                 loop={clip.loop}
+                 playbackRate={clip.playbackRate || 1}
+               />
+            )} />
+          </Sequence>
+        );
+      })}
 
       {/* Subtitles Overlay */}
       {subtitles.map(sub => {
