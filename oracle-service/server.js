@@ -690,12 +690,14 @@ app.post('/api/render-remotion', async (req, res) => {
             'MainVideo',
             outputPath,
             `--props=${propsPath}`,
-            '--browser-executable=/usr/bin/chromium'
+            '--browser-executable=/usr/bin/chromium',
+            '--concurrency=3'
         ];
 
         console.log(`[Job ${jobId}] Usando binario de Chromium en: /usr/bin/chromium`);
         console.log(`[Job ${jobId}] Ejecutando comando: npx ${remotionArgs.join(' ')}`);
 
+        const renderStartTime = Date.now();
         const remotionProcess = spawn('npx', remotionArgs);
         let stdoutOutput = '';
         let stderrOutput = '';
@@ -732,7 +734,10 @@ app.post('/api/render-remotion', async (req, res) => {
             });
         });
 
-        console.log(`[Job ${jobId}] Remotion terminó el renderizado. Subiendo archivo...`);
+        const renderEndTime = Date.now();
+        const renderDurationSec = ((renderEndTime - renderStartTime) / 1000).toFixed(2);
+
+        console.log(`[Job ${jobId}] Remotion terminó el renderizado en ${renderDurationSec} segundos. Subiendo archivo...`);
 
         if (!fs.existsSync(outputPath)) {
             throw new Error(`El archivo de salida de Remotion no existe: ${outputPath}`);
