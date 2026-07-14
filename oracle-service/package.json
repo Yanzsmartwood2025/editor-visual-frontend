@@ -17,6 +17,10 @@
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
     "remotion": "^4.0.483",
+    "@remotion/transitions": "^4.0.483",
+    "@remotion/effects": "^4.0.483",
+    "@remotion/lottie": "^4.0.483",
+    "@remotion/google-fonts": "^4.0.483",
     "typescript": "5.9.3",
     "uuid": "^10.0.0",
     "ws": "^8.18.0"
