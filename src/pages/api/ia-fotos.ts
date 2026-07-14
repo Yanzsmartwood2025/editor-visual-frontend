@@ -7,7 +7,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
 
   // La UI pasa fotoBaseUrl, prompt, email
-  const { fotoBaseUrl: _unused, prompt, email } = req.body;
+  const { prompt, email } = req.body;
 
   if (!prompt || !email) {
     return res.status(400).json({ error: 'El prompt y el email son requeridos.' });

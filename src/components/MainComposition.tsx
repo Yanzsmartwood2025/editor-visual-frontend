@@ -2,9 +2,12 @@ import React, { useMemo } from 'react';
 import { AbsoluteFill, Sequence, Video, Img, Audio, useVideoConfig, useCurrentFrame, interpolate } from 'remotion';
 import { TransitionSeries, linearTiming } from '@remotion/transitions';
 import { fade } from '@remotion/transitions/fade';
+import { wipe } from '@remotion/transitions/wipe';
+import { slide } from '@remotion/transitions/slide';
+import { zoomInOut } from '@remotion/transitions/zoom-in-out';
 
 // Interfaces based on main file
-type TimelineItem = { id: string; mediaId: string; tipo: 'foto' | 'video' | 'audio'; nombre: string; etiqueta: string; url: string; durationInSeconds?: number; volume?: number; fadeIn?: number; fadeOut?: number; scale?: number; delay?: number; startFrom?: number; loop?: boolean; playbackRate?: number; transitionDuration?: number; transitionType?: 'fade' | 'none'; };
+type TimelineItem = { id: string; mediaId: string; tipo: 'foto' | 'video' | 'audio'; nombre: string; etiqueta: string; url: string; durationInSeconds?: number; volume?: number; fadeIn?: number; fadeOut?: number; scale?: number; delay?: number; startFrom?: number; loop?: boolean; playbackRate?: number; transitionDuration?: number; transitionType?: 'fade' | 'none' | 'wipe' | 'slide' | 'zoom'; efecto?: string; brightness?: number; contrast?: number; saturation?: number; };
 type SubtitleItem = { id: string; texto: string; inicioSec: number; finSec: number; };
 
 interface MainCompositionProps {
@@ -40,6 +43,40 @@ const ClipWithFades: React.FC<{ clip: TimelineItem, durationInFrames: number, ch
 };
 
 // Component to handle volume interpolation based on fadeIn/fadeOut for Audio and Video clips
+// Helper to get CSS filter string based on clip properties
+const getFilterStyle = (clip: TimelineItem): string | undefined => {
+  const filters: string[] = [];
+
+  if (clip.efecto) {
+    switch (clip.efecto) {
+      case 'grayscale':
+        filters.push('grayscale(100%)');
+        break;
+      case 'sepia':
+        filters.push('sepia(100%)');
+        break;
+      case 'vintage':
+        filters.push('sepia(50%) contrast(1.2) brightness(0.9)');
+        break;
+      case 'cinematic':
+        filters.push('contrast(1.3) brightness(0.9) saturate(1.2)');
+        break;
+      case 'blur':
+        filters.push('blur(10px)');
+        break;
+      // You can add more predefined effects here if needed
+    }
+  }
+
+  if (clip.brightness !== undefined) filters.push(`brightness(${clip.brightness})`);
+  if (clip.contrast !== undefined) filters.push(`contrast(${clip.contrast})`);
+  if (clip.saturation !== undefined) filters.push(`saturate(${clip.saturation})`);
+  // If the user manually provided a blur number instead of string effect
+  if ((clip as any).blur !== undefined && typeof (clip as any).blur === 'number') filters.push(`blur(${(clip as any).blur}px)`);
+
+  return filters.length > 0 ? filters.join(' ') : undefined;
+};
+
 const AnimatedVolume: React.FC<{ clip: TimelineItem, durationInFrames: number, render: (volume: number) => React.ReactNode }> = ({ clip, durationInFrames, render }) => {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
@@ -117,13 +154,13 @@ export const MainComposition: React.FC<MainCompositionProps> = ({ timeline, subt
                       startFrom={clip.startFrom ? Math.round(clip.startFrom * fps) : undefined}
                       loop={clip.loop}
                       playbackRate={clip.playbackRate || 1}
-                      style={{ width: '100%', height: '100%', objectFit: 'contain', transform: clip.scale !== undefined ? `scale(${clip.scale})` : undefined }}
+                      style={{ width: '100%', height: '100%', objectFit: 'contain', transform: clip.scale !== undefined ? `scale(${clip.scale})` : undefined, filter: getFilterStyle(clip) }}
                     />
                   )} />
                 ) : (
                   <Img
                     src={clip.url}
-                    style={{ width: '100%', height: '100%', objectFit: 'contain', transform: clip.scale !== undefined ? `scale(${clip.scale})` : undefined }}
+                    style={{ width: '100%', height: '100%', objectFit: 'contain', transform: clip.scale !== undefined ? `scale(${clip.scale})` : undefined, filter: getFilterStyle(clip) }}
                   />
                 )}
               </ClipWithFades>
@@ -132,12 +169,18 @@ export const MainComposition: React.FC<MainCompositionProps> = ({ timeline, subt
 
           if (index < visualSequences.length - 1) {
              const nextClip = visualSequences[index + 1];
-             if (nextClip.transitionType === 'fade' && nextClip.transitionDuration) {
+             if (nextClip.transitionType && nextClip.transitionType !== 'none' && nextClip.transitionDuration) {
                 const transDurationFrames = Math.round(nextClip.transitionDuration * fps);
+
+                let presentation: any = fade();
+                if (nextClip.transitionType === 'wipe') presentation = wipe();
+                else if (nextClip.transitionType === 'slide') presentation = slide();
+                else if (nextClip.transitionType === 'zoom') presentation = zoomInOut({});
+
                 elements.push(
                   <TransitionSeries.Transition
                     key={`transition-${clip.id}-${nextClip.id}`}
-                    presentation={fade()}
+                    presentation={presentation}
                     timing={linearTiming({ durationInFrames: transDurationFrames })}
                   />
                 );
