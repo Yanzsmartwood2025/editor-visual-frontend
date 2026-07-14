@@ -97,7 +97,7 @@ export default function NaylaCore() {
   const [subTool, setSubTool] = useState<string | null>(null);
   const [filtroGaleria, setFiltroGaleria] = useState<string>('todo'); // todo, videos, fotos, audios
   const [searchQuery, setSearchQuery] = useState('');
-  const [codigoJsInput, setCodigoJsInput] = useState('// Inyecta comandos JS aquí\n// Ej: NaylaEngine.agregar(["V1", "V2", "A1"]);\n// NaylaEngine.agregarSubtitulos([{ texto: "Hola", inicio: 0, fin: 5 }]);');
+  const [codigoJsInput, setCodigoJsInput] = useState('// Inyecta comandos JS aquí\n// Ej: NaylaEngine.agregar(["V1", "V2", "A1"]);\n// NaylaEngine.agregarSubtitulos([{ texto: "Hola", inicioSec: 0, finSec: 5 }]);');
   const [moldesScripts, setMoldesScripts] = useState<{ id?: string, nombre: string; codigo: string }[]>([]);
   const [moldeActivo, setMoldeActivo] = useState<string>('');
   const [toolMessage, setToolMessage] = useState<string | null>(null);
@@ -615,7 +615,7 @@ export default function NaylaCore() {
   };
 
   const agregarAlTimeline = async (item: MediaItem) => {
-    let durationInSeconds = 5;
+    let durationInSeconds: number | undefined = undefined;
     if (item.tipo === 'video' || item.tipo === 'audio') {
       try {
         const metadata = await getVideoMetadata(item.url);
@@ -623,6 +623,8 @@ export default function NaylaCore() {
       } catch (e) {
         console.warn('Could not load metadata for', item.url);
       }
+    } else if (item.tipo === 'foto') {
+      durationInSeconds = 5;
     }
 
     const nuevo: TimelineItem = { id: Date.now().toString(), mediaId: item.id, tipo: item.tipo, nombre: item.nombre, etiqueta: item.etiqueta, url: item.url, durationInSeconds };
@@ -725,7 +727,7 @@ export default function NaylaCore() {
 
       const finalMediaUrl = dataApi.videoUrl;
 
-      let durationInSeconds = 5;
+      let durationInSeconds: number | undefined = undefined;
       try {
         const metadata = await getVideoMetadata(finalMediaUrl);
         durationInSeconds = metadata.durationInSeconds;
@@ -843,7 +845,7 @@ export default function NaylaCore() {
       const nuevosMoldes = moldesScripts.filter(m => m.nombre !== moldeActivo);
       setMoldesScripts(nuevosMoldes);
       setMoldeActivo('');
-      setCodigoJsInput('// Inyecta comandos JS aquí\n// Ej: NaylaEngine.agregar(["V1", "V2", "A1"]);\n// NaylaEngine.agregarSubtitulos([{ texto: "Hola", inicio: 0, fin: 5 }]);');
+      setCodigoJsInput('// Inyecta comandos JS aquí\n// Ej: NaylaEngine.agregar(["V1", "V2", "A1"]);\n// NaylaEngine.agregarSubtitulos([{ texto: "Hola", inicioSec: 0, finSec: 5 }]);');
     } catch (e) {
       console.error("Error eliminando plantilla:", e);
       alert("Hubo un error al eliminar la plantilla.");
@@ -883,7 +885,7 @@ export default function NaylaCore() {
              if (typeof item === 'string') {
                const media = galeriaMultimedia.find(m => m.etiqueta === item);
                if (media) {
-                 let durationInSeconds = 5;
+                 let durationInSeconds: number | undefined = undefined;
                  if (media.tipo === 'video' || media.tipo === 'audio') {
                    try {
                      const metadata = await getVideoMetadata(media.url);
@@ -891,6 +893,8 @@ export default function NaylaCore() {
                    } catch (e) {
                      console.warn('Could not load metadata for', media.url);
                    }
+                 } else if (media.tipo === 'foto') {
+                   durationInSeconds = 5;
                  }
                  return { ...media, durationInSeconds };
                }
@@ -913,7 +917,7 @@ export default function NaylaCore() {
                     nombre: item.nombre,
                     etiqueta: item.etiqueta,
                     url: item.url,
-                    durationInSeconds: (item as any).durationInSeconds || 5
+                    durationInSeconds: (item as any).durationInSeconds !== undefined ? (item as any).durationInSeconds : (item.tipo === 'foto' ? 5 : undefined)
                   });
                   agregados++;
                 }
@@ -934,7 +938,11 @@ export default function NaylaCore() {
           });
         },
         agregarSubtitulos: (nuevosSubtitulos: any[]) => {
-          const subsAInsertar = nuevosSubtitulos.map(sub => ({ ...sub, id: Date.now().toString() + Math.random().toString() }));
+          const subsAInsertar = nuevosSubtitulos.map(sub => {
+            const inicioSec = sub.inicioSec !== undefined ? sub.inicioSec : (sub.inicio !== undefined ? sub.inicio : 0);
+            const finSec = sub.finSec !== undefined ? sub.finSec : (sub.fin !== undefined ? sub.fin : 0);
+            return { ...sub, inicioSec, finSec, id: Date.now().toString() + Math.random().toString() };
+          });
           setSubtitulos(prev => [...prev, ...subsAInsertar]);
         },
         limpiarSubtitulos: () => setSubtitulos([]),
@@ -1564,10 +1572,29 @@ export default function NaylaCore() {
                       alert('La línea de tiempo está vacía. Añade al menos un clip.');
                       return;
                     }
+
                     setIsProcessing(true);
                     try {
+                      // Validar duraciones antes de enviar a render
+                      const lineaValidada = [...lineaDeTiempo];
+                      for (let i = 0; i < lineaValidada.length; i++) {
+                        const item = lineaValidada[i];
+                        if ((item.tipo === 'video' || item.tipo === 'audio') && item.durationInSeconds === undefined) {
+                           try {
+                             const metadata = await getVideoMetadata(item.url);
+                             if (metadata && metadata.durationInSeconds !== undefined) {
+                               lineaValidada[i] = { ...item, durationInSeconds: metadata.durationInSeconds };
+                             } else {
+                               throw new Error("No duration returned");
+                             }
+                           } catch (e) {
+                             throw new Error(`El archivo ${item.nombre || item.etiqueta} (${item.url}) no tiene una duración válida y no se pudo obtener. Verifica que el archivo sea accesible y esté en un formato soportado.`);
+                           }
+                        }
+                      }
+
                       const inputProps = {
-                        timeline: lineaDeTiempo,
+                        timeline: lineaValidada,
                         subtitles: subtitulos,
                         canvasRatio
                       };

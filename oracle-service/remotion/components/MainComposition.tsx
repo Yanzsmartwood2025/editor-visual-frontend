@@ -47,11 +47,21 @@ export const MainComposition: React.FC<MainCompositionProps> = ({ timeline, subt
   // Calculate starting frames for visual clips to sequence them back-to-back
   let currentVisualFrame = 0;
   const visualSequences = visualClips.map(clip => {
-    // Default fallback to 5 seconds if not loaded/known yet. In real-world Remotion, you fetch metadata first.
-    const durationInFrames = Math.round((clip.durationInSeconds || 5) * fps);
+    if (clip.tipo === 'video' && clip.durationInSeconds === undefined) {
+      throw new Error(`Critical Error: Clip '${clip.nombre || clip.etiqueta}' (URL: ${clip.url}) was passed to Remotion Composition without a valid durationInSeconds.`);
+    }
+
+    const durationInFrames = Math.round((clip.durationInSeconds !== undefined ? clip.durationInSeconds : (clip.tipo === 'foto' ? 5 : 5)) * fps);
     const sequence = { ...clip, startFrame: currentVisualFrame, durationInFrames };
     currentVisualFrame += durationInFrames;
     return sequence;
+  });
+
+  // Verify Audio Clips as well
+  audioClips.forEach(clip => {
+     if (clip.durationInSeconds === undefined) {
+        throw new Error(`Critical Error: Audio Clip '${clip.nombre || clip.etiqueta}' (URL: ${clip.url}) was passed to Remotion Composition without a valid durationInSeconds.`);
+     }
   });
 
   return (
