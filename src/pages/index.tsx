@@ -5,7 +5,7 @@ import Head from 'next/head';
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
 import { arrayMove, SortableContext, horizontalListSortingStrategy } from '@dnd-kit/sortable';
 import { SortableTimelineItem } from '../components/SortableTimelineItem';
-import { getVideoMetadata } from '@remotion/media-utils';
+import { getVideoMetadata, getAudioDurationInSeconds } from '@remotion/media-utils';
 import { createClient } from '@supabase/supabase-js';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://dummy.supabase.co';
@@ -616,7 +616,13 @@ export default function NaylaCore() {
 
   const agregarAlTimeline = async (item: MediaItem) => {
     let durationInSeconds: number | undefined = undefined;
-    if (item.tipo === 'video' || item.tipo === 'audio') {
+    if (item.tipo === 'audio') {
+      try {
+        durationInSeconds = await getAudioDurationInSeconds(item.url);
+      } catch (e) {
+        console.warn('Could not load audio duration for', item.url);
+      }
+    } else if (item.tipo === 'video') {
       try {
         const metadata = await getVideoMetadata(item.url);
         durationInSeconds = metadata.durationInSeconds;
@@ -727,10 +733,29 @@ export default function NaylaCore() {
 
       const finalMediaUrl = dataApi.videoUrl;
 
+      let resolvedTipo: 'video' | 'audio' | 'foto' = 'video';
+      try {
+        const parsed = new URL(finalMediaUrl);
+        const path = parsed.pathname.toLowerCase();
+        if (path.endsWith('.mp3') || path.endsWith('.wav') || path.endsWith('.m4a') || path.endsWith('.ogg')) {
+          resolvedTipo = 'audio';
+        } else if (path.endsWith('.jpg') || path.endsWith('.jpeg') || path.endsWith('.png') || path.endsWith('.webp')) {
+          resolvedTipo = 'foto';
+        }
+      } catch (e) {
+        // fallback a video
+      }
+
       let durationInSeconds: number | undefined = undefined;
       try {
-        const metadata = await getVideoMetadata(finalMediaUrl);
-        durationInSeconds = metadata.durationInSeconds;
+        if (resolvedTipo === 'audio') {
+          durationInSeconds = await getAudioDurationInSeconds(finalMediaUrl);
+        } else if (resolvedTipo === 'video') {
+          const metadata = await getVideoMetadata(finalMediaUrl);
+          durationInSeconds = metadata.durationInSeconds;
+        } else if (resolvedTipo === 'foto') {
+          durationInSeconds = 5;
+        }
       } catch (e) {
         console.warn('No se pudo cargar la metadata para', finalMediaUrl);
       }
@@ -740,16 +765,27 @@ export default function NaylaCore() {
 
       // Obtenemos count aproximado local o usando galeria actual más un offset
       // Como esto corre asíncrono, para evitar duplicados en concurrencia le sumamos el index + offset local
-      const actualCount = galeriaMultimedia.filter(item => item.tipo === 'video').length + index + 1;
+      const actualCount = galeriaMultimedia.filter(item => item.tipo === resolvedTipo).length + index + 1;
+
+      let nombreBase = `Meta_Video_${actualCount}.mp4`;
+      let etiquetaBase = `V${actualCount}`;
+
+      if (resolvedTipo === 'audio') {
+        nombreBase = `Meta_Audio_${actualCount}.mp3`;
+        etiquetaBase = `A${actualCount}`;
+      } else if (resolvedTipo === 'foto') {
+        nombreBase = `Meta_Foto_${actualCount}.jpg`;
+        etiquetaBase = `F${actualCount}`;
+      }
 
       const nuevoItem: MediaItem = {
         id,
         url: finalMediaUrl,
-        tipo: 'video',
-        nombre: `Meta_Video_${actualCount}.mp4`,
+        tipo: resolvedTipo,
+        nombre: nombreBase,
         creado_en: new Date().toLocaleTimeString(),
         esOverlay: false,
-        etiqueta: `V${actualCount}`
+        etiqueta: etiquetaBase
       };
 
       let esPrimerVideo = galeriaMultimedia.length === 0 || !galeriaMultimedia.find(i => i.tipo === 'video');
@@ -886,7 +922,13 @@ export default function NaylaCore() {
                const media = galeriaMultimedia.find(m => m.etiqueta === item);
                if (media) {
                  let durationInSeconds: number | undefined = undefined;
-                 if (media.tipo === 'video' || media.tipo === 'audio') {
+                 if (media.tipo === 'audio') {
+                   try {
+                     durationInSeconds = await getAudioDurationInSeconds(media.url);
+                   } catch (e) {
+                     console.warn('Could not load audio duration for', media.url);
+                   }
+                 } else if (media.tipo === 'video') {
                    try {
                      const metadata = await getVideoMetadata(media.url);
                      durationInSeconds = metadata.durationInSeconds;
@@ -1579,7 +1621,18 @@ export default function NaylaCore() {
                       const lineaValidada = [...lineaDeTiempo];
                       for (let i = 0; i < lineaValidada.length; i++) {
                         const item = lineaValidada[i];
-                        if ((item.tipo === 'video' || item.tipo === 'audio') && item.durationInSeconds === undefined) {
+                        if (item.tipo === 'audio' && item.durationInSeconds === undefined) {
+                           try {
+                             const duration = await getAudioDurationInSeconds(item.url);
+                             if (duration !== undefined) {
+                               lineaValidada[i] = { ...item, durationInSeconds: duration };
+                             } else {
+                               throw new Error("No duration returned");
+                             }
+                           } catch (e) {
+                             throw new Error(`El archivo ${item.nombre || item.etiqueta} (${item.url}) no tiene una duración de audio válida y no se pudo obtener. Verifica que el archivo sea accesible y esté en un formato soportado.`);
+                           }
+                        } else if (item.tipo === 'video' && item.durationInSeconds === undefined) {
                            try {
                              const metadata = await getVideoMetadata(item.url);
                              if (metadata && metadata.durationInSeconds !== undefined) {
