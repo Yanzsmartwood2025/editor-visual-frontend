@@ -18,7 +18,7 @@ const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 type Rect = { id: string; x: number; y: number; width: number; height: number };
 type MediaItem = { id: string; url: string; tipo: 'foto' | 'video' | 'audio'; nombre: string; creado_en: string; esOverlay: boolean; etiqueta: string; fuente?: string };
-type TimelineItem = { id: string; mediaId: string; tipo: 'foto' | 'video' | 'audio'; nombre: string; etiqueta: string; url: string; durationInSeconds?: number; volume?: number; fadeIn?: number; fadeOut?: number };
+type TimelineItem = { id: string; mediaId: string; tipo: 'foto' | 'video' | 'audio'; nombre: string; etiqueta: string; url: string; durationInSeconds?: number; volume?: number; fadeIn?: number; fadeOut?: number; scale?: number; delay?: number; startFrom?: number; loop?: boolean; };
 type SubtitleItem = { id: string; texto: string; inicioSec: number; finSec: number; };
 type MarcoConfig = {
   posicion: 'derecha' | 'izquierda' | 'abajo' | 'arriba' | 'derecha+abajo' | 'derecha+arriba' | 'izquierda+abajo' | 'izquierda+arriba';
@@ -969,6 +969,15 @@ export default function NaylaCore() {
           });
         },
         modificar: (etiqueta: string, opciones: any) => {
+          const opcionesPermitidas = ['volume', 'fadeIn', 'fadeOut', 'scale', 'delay', 'startFrom', 'loop', 'url', 'nombre', 'durationInSeconds'];
+          const opcionesDesconocidas = Object.keys(opciones).filter(k => !opcionesPermitidas.includes(k));
+
+          if (opcionesDesconocidas.length > 0) {
+            const msj = `Advertencia: Las siguientes opciones en NaylaEngine.modificar('${etiqueta}') no son reconocidas y serán ignoradas: ${opcionesDesconocidas.join(', ')}`;
+            console.warn(msj);
+            alert(msj);
+          }
+
           setLineaDeTiempo(prev => {
             let modificado = false;
             const arr = prev.map(clip => {

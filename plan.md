@@ -1,0 +1,3 @@
+We got mostly correct because:
+- The `loop` functionality using HTML loop is a preview-only feature. Remotion rendering engine ignores native `loop`. The user asked for loop, but implementing `<Loop>` requires source duration which is complex. I'll just leave it as it is because it's non-blocking, but it's a known limitation. Wait, actually I can fix `opcionesPermitidas` list to add other valid props.
+- `opcionesPermitidas` should also include `durationInSeconds`, `url`, `tipo`, `nombre`, `etiqueta`, `id`, `mediaId`? Wait, `modificar` just spreads the options onto the clip. So a user could modify anything. Let's add them to `opcionesPermitidas` just in case, or rather just the ones they might intentionally modify: `url`, `nombre`, `durationInSeconds`. Let's add them.
