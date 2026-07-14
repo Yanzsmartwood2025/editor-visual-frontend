@@ -92,11 +92,20 @@ export default function NaylaCore() {
   const [iaFotosFotoBase, setIaFotosFotoBase] = useState('');
   const [iaFotosPrompt, setIaFotosPrompt] = useState('');
 
+  const [customAlertMsg, setCustomAlertMsg] = useState<string | null>(null);
+
+  const showAlert = (msg: string) => {
+    setCustomAlertMsg(msg);
+  };
+
   const [message, setMessage] = useState('');
   const [mainNav, setMainNav] = useState<string>('boveda');
   const [subTool, setSubTool] = useState<string | null>(null);
   const [filtroGaleria, setFiltroGaleria] = useState<string>('todo'); // todo, videos, fotos, audios
   const [searchQuery, setSearchQuery] = useState('');
+
+  const [isMultiSelectMode, setIsMultiSelectMode] = useState(false);
+  const [selectedMediaIds, setSelectedMediaIds] = useState<string[]>([]);
   const [codigoJsInput, setCodigoJsInput] = useState('// Inyecta comandos JS aquí\n// Ej: NaylaEngine.agregar(["V1", "V2", "A1"]);\n// NaylaEngine.agregarSubtitulos([{ texto: "Hola", inicioSec: 0, finSec: 5 }]);');
   const [moldesScripts, setMoldesScripts] = useState<{ id?: string, nombre: string; codigo: string }[]>([]);
   const [moldeActivo, setMoldeActivo] = useState<string>('');
@@ -328,13 +337,13 @@ export default function NaylaCore() {
       const { data, error } = await supabase.storage.from('media_bodega').list();
       if (error) {
         console.error('Error fetching storage files:', error);
-        alert('Error cargando archivos de la nube: ' + error.message);
+        showAlert('Error cargando archivos de la nube: ' + error.message);
       } else {
         setStorageFiles(data || []);
       }
     } catch (err: any) {
       console.error('Exception fetching storage files:', err);
-      alert('Error: ' + err.message);
+      showAlert('Error: ' + err.message);
     } finally {
       setIsLoadingStorage(false);
     }
@@ -348,7 +357,7 @@ export default function NaylaCore() {
       await fetchStorageFiles();
     } catch (err: any) {
       console.error('Error deleting file:', err);
-      alert('Error al borrar: ' + err.message);
+      showAlert('Error al borrar: ' + err.message);
     }
   };
 
@@ -444,7 +453,7 @@ export default function NaylaCore() {
 
   const procesarImagenesConMarco = async () => {
     const fotos = galeriaMultimedia.filter(item => item.tipo === 'foto');
-    if (fotos.length === 0) return alert('No hay fotos en la bodega. Sube fotos primero.');
+    if (fotos.length === 0) return showAlert('No hay fotos en la bodega. Sube fotos primero.');
     setMarcoProcesando(true);
     const resultados = [];
     for (const foto of fotos) {
@@ -570,30 +579,70 @@ export default function NaylaCore() {
       }
     } catch (err) {
       console.error('Error procesando subida:', err);
-      alert('Hubo un error al procesar los archivos.');
+      showAlert('Hubo un error al procesar los archivos.');
     } finally {
       setSubiendoArchivo(false);
     }
   };
 
-  const eliminarDeGaleria = async (id: string) => {
-    setGaleriaMultimedia(galeriaMultimedia.filter(item => item.id !== id));
-    setLineaDeTiempo(lineaDeTiempo.filter(item => item.mediaId !== id));
+  const eliminarItemsGaleria = async (ids: string[]) => {
+    if (!session || ids.length === 0) return;
 
-    if (session) {
-      const { error } = await supabase
-        .from('galeria_multimedia')
-        .delete()
-        .eq('id', id)
-        .eq('user_id', session.user.id);
+    // Identificar los items a borrar para extraer las URLs antes de quitarlos del estado
+    const itemsToDelete = galeriaMultimedia.filter(item => ids.includes(item.id));
 
-      if (error) {
-        console.error('Error eliminando de Supabase:', error);
-      }
+    // 1. Borrar de la UI
+    const nuevaGaleria = galeriaMultimedia.filter(item => !ids.includes(item.id));
+    const nuevaLinea = lineaDeTiempo.filter(item => !ids.includes(item.mediaId));
 
-      // La línea de tiempo también debe actualizarse si se eliminó de ahí
-      sincronizarLineaDeTiempo(lineaDeTiempo.filter(item => item.mediaId !== id));
+    setGaleriaMultimedia(nuevaGaleria);
+    setLineaDeTiempo(nuevaLinea);
+    sincronizarLineaDeTiempo(nuevaLinea);
+
+    // Si el clip seleccionado está entre los borrados, limpiarlo
+    if (clipSeleccionado && ids.includes(clipSeleccionado)) {
+      setClipSeleccionado(null);
+      setMediaActivaUrl(null);
     }
+
+    // 2. Borrar archivos físicos del Storage si están hospedados en Supabase
+    for (const item of itemsToDelete) {
+      if (item.url && item.url.includes('.supabase.co/storage/v1/object/public/')) {
+        try {
+          const parts = item.url.split('.supabase.co/storage/v1/object/public/');
+          if (parts.length === 2) {
+            const pathParts = parts[1].split('/');
+            const bucketName = pathParts[0];
+            const fileName = pathParts.slice(1).join('/');
+
+            if (bucketName && fileName) {
+              const { error: storageError } = await supabase.storage.from(bucketName).remove([fileName]);
+              if (storageError) {
+                console.error(`Error borrando ${fileName} del bucket ${bucketName}:`, storageError);
+              }
+            }
+          }
+        } catch (e) {
+          console.error("Error parseando URL para borrar de Storage", e);
+        }
+      }
+    }
+
+    // 3. Borrar registros de la base de datos
+    const { error } = await supabase
+      .from('galeria_multimedia')
+      .delete()
+      .in('id', ids)
+      .eq('user_id', session.user.id);
+
+    if (error) {
+      console.error('Error eliminando de Supabase BD:', error);
+      showAlert('Error al eliminar de la base de datos: ' + error.message);
+    }
+  };
+
+  const eliminarDeGaleria = async (id: string) => {
+    await eliminarItemsGaleria([id]);
   };
 
   const sincronizarLineaDeTiempo = async (nuevaLinea: TimelineItem[]) => {
@@ -710,7 +759,7 @@ export default function NaylaCore() {
 
   const handleDescargar = () => {
     const url = videoResultadoUrl || mediaActivaUrl;
-    if (!url) return alert('No hay ningún video cargado para descargar.');
+    if (!url) return showAlert('No hay ningún video cargado para descargar.');
     const a = document.createElement('a'); a.href = url; a.download = `Nayla_Export_${calidadExportacion}_${Date.now()}.mp4`; a.click();
   };
 
@@ -727,7 +776,7 @@ export default function NaylaCore() {
 
       if (!resApi.ok || !dataApi.videoUrl) {
         const errorMsg = dataApi.error || `No se pudo extraer: ${url}`;
-        alert(`Error descargando ${url}: ${errorMsg}`);
+        showAlert(`Error descargando ${url}: ${errorMsg}`);
         throw new Error(errorMsg);
       }
 
@@ -828,7 +877,7 @@ export default function NaylaCore() {
   };
 
   const guardarMolde = async () => {
-    if (!session) return alert("Debes iniciar sesión para guardar plantillas.");
+    if (!session) return showAlert("Debes iniciar sesión para guardar plantillas.");
     const nombre = prompt('Nombre para esta plantilla:', 'Plantilla Nueva');
     if (!nombre) return;
 
@@ -850,7 +899,7 @@ export default function NaylaCore() {
       setMoldeActivo(data.nombre);
     } catch (e) {
       console.error("Error guardando plantilla:", e);
-      alert("Hubo un error al guardar la plantilla.");
+      showAlert("Hubo un error al guardar la plantilla.");
     }
   };
 
@@ -884,7 +933,7 @@ export default function NaylaCore() {
       setCodigoJsInput('// Inyecta comandos JS aquí\n// Ej: NaylaEngine.agregar(["V1", "V2", "A1"]);\n// NaylaEngine.agregarSubtitulos([{ texto: "Hola", inicioSec: 0, finSec: 5 }]);');
     } catch (e) {
       console.error("Error eliminando plantilla:", e);
-      alert("Hubo un error al eliminar la plantilla.");
+      showAlert("Hubo un error al eliminar la plantilla.");
     }
   };
 
@@ -975,7 +1024,7 @@ export default function NaylaCore() {
           if (opcionesDesconocidas.length > 0) {
             const msj = `Advertencia: Las siguientes opciones en NaylaEngine.modificar('${etiqueta}') no son reconocidas y serán ignoradas: ${opcionesDesconocidas.join(', ')}`;
             console.warn(msj);
-            alert(msj);
+            showAlert(msj);
           }
 
           setLineaDeTiempo(prev => {
@@ -1016,7 +1065,7 @@ export default function NaylaCore() {
       await execute(NaylaEngine);
 
     } catch (e: any) {
-      alert('Error en el script: ' + e.message);
+      showAlert('Error en el script: ' + e.message);
       console.error('Script Error:', e);
     } finally {
       setIsScriptRunning(false);
@@ -1032,7 +1081,7 @@ export default function NaylaCore() {
     const urls = urlsBrutas.filter(u => u.startsWith('http://') || u.startsWith('https://'));
 
     if (urls.length === 0) {
-      alert('No se encontraron enlaces válidos (http:// o https://) en el texto.');
+      showAlert('No se encontraron enlaces válidos (http:// o https://) en el texto.');
       return;
     }
 
@@ -1064,17 +1113,17 @@ export default function NaylaCore() {
   };
 
   const processVideo = async (motorElegido: 'nube' | 'local') => {
-    if (!videoFile) return alert('Por favor, sube un video primero.');
-    if (rects.length === 0) return alert('Dibuja al menos un recuadro sobre la marca de agua.');
+    if (!videoFile) return showAlert('Por favor, sube un video primero.');
+    if (rects.length === 0) return showAlert('Dibuja al menos un recuadro sobre la marca de agua.');
     setIsProcessing(true);
     try {
       const formData = new FormData();
       formData.append('video', videoFile); formData.append('coordenadas', JSON.stringify(rects)); formData.append('motor', motorElegido);
       const res = await fetch('/api/clean-video', { method: 'POST', body: formData });
       const data = await res.json();
-      if (res.ok && data.success) { setVideoResultadoUrl(data.url); setRects([]); alert(`Supresión completada: ${motorElegido.toUpperCase()}`); }
+      if (res.ok && data.success) { setVideoResultadoUrl(data.url); setRects([]); showAlert(`Supresión completada: ${motorElegido.toUpperCase()}`); }
       else throw new Error(data.error || 'Fallo en el servidor');
-    } catch (err: any) { alert('Error: ' + err.message); }
+    } catch (err: any) { showAlert('Error: ' + err.message); }
     finally { setIsProcessing(false); }
   };
 
@@ -1620,7 +1669,7 @@ export default function NaylaCore() {
                 <button
                   onClick={async () => {
                     if (lineaDeTiempo.length === 0) {
-                      alert('La línea de tiempo está vacía. Añade al menos un clip.');
+                      showAlert('La línea de tiempo está vacía. Añade al menos un clip.');
                       return;
                     }
 
@@ -1700,16 +1749,16 @@ export default function NaylaCore() {
                                 return [...prev, renderItem];
                               });
 
-                              alert('Renderizado completado exitosamente.');
+                              showAlert('Renderizado completado exitosamente.');
                             } else if (statusData.status === 'error') {
                               clearInterval(pollInterval);
                               setIsProcessing(false);
-                              alert('Fallo en la nube: ' + (statusData.error || 'Desconocido'));
+                              showAlert('Fallo en la nube: ' + (statusData.error || 'Desconocido'));
                             }
                           } catch (err: any) {
                              clearInterval(pollInterval);
                              setIsProcessing(false);
-                             alert('Error chequeando estado: ' + err.message);
+                             showAlert('Error chequeando estado: ' + err.message);
                           }
                         }, 3000);
                       } else {
@@ -1717,7 +1766,7 @@ export default function NaylaCore() {
                       }
                     } catch (err: any) {
                       setIsProcessing(false);
-                      alert('Error: ' + err.message);
+                      showAlert('Error: ' + err.message);
                     }
                   }}
                   disabled={isProcessing || isScriptRunning}
@@ -1773,9 +1822,9 @@ export default function NaylaCore() {
                           const AsyncFunction = Object.getPrototypeOf(async function(){}).constructor;
                           const execute = new AsyncFunction('NaylaEngine', data.code);
                           await execute(NaylaEngine);
-                          alert('Ejecución IA finalizada');
+                          showAlert('Ejecución IA finalizada');
                        } catch(err: any) {
-                          alert("Error en IA: " + err.message);
+                          showAlert("Error en IA: " + err.message);
                        } finally {
                           setIaLoading(false);
                        }
@@ -1886,7 +1935,7 @@ export default function NaylaCore() {
                   className="neon-btn nav-btn"
                   style={{ backgroundColor: '#00cc66', color: '#000', fontWeight: 'bold' }}
                   onClick={async () => {
-                    if (!iaAudioTexto) return alert('Ingresa texto primero');
+                    if (!iaAudioTexto) return showAlert('Ingresa texto primero');
                     try {
                       const res = await fetch('/api/ia-audio', {
                         method: 'POST',
@@ -1896,10 +1945,10 @@ export default function NaylaCore() {
                       const data = await res.json();
                       if (data.error) throw new Error(data.error);
 
-                      alert(`Audio generado (Simulado). URL: ${data.url}`);
+                      showAlert(`Audio generado (Simulado). URL: ${data.url}`);
                       setGaleriaMultimedia(prev => [...prev, { id: `ia-audio-${Date.now()}`, nombre: 'Audio Generado IA', tipo: 'audio', url: data.url, etiqueta: 'A_IA', fuente: 'ia' }]);
                     } catch (err: any) {
-                      alert("Error IA Audio: " + err.message);
+                      showAlert("Error IA Audio: " + err.message);
                     }
                   }}
                 >
@@ -1930,7 +1979,7 @@ export default function NaylaCore() {
                   className="neon-btn nav-btn"
                   style={{ backgroundColor: '#00cc66', color: '#000', fontWeight: 'bold' }}
                   onClick={async () => {
-                    if (!iaFotosFotoBase || !iaFotosPrompt) return alert('Selecciona foto base y escribe el prompt');
+                    if (!iaFotosFotoBase || !iaFotosPrompt) return showAlert('Selecciona foto base y escribe el prompt');
                     try {
                       const res = await fetch('/api/ia-fotos', {
                         method: 'POST',
@@ -1940,10 +1989,10 @@ export default function NaylaCore() {
                       const data = await res.json();
                       if (data.error) throw new Error(data.error);
 
-                      alert(`Foto generada (Simulada). URL: ${data.url}`);
+                      showAlert(`Foto generada (Simulada). URL: ${data.url}`);
                       setGaleriaMultimedia(prev => [...prev, { id: `ia-foto-${Date.now()}`, nombre: 'Foto Generada IA', tipo: 'foto', url: data.url, etiqueta: 'I_IA', fuente: 'ia' }]);
                     } catch (err: any) {
-                      alert("Error IA Fotos: " + err.message);
+                      showAlert("Error IA Fotos: " + err.message);
                     }
                   }}
                 >
@@ -1954,6 +2003,58 @@ export default function NaylaCore() {
 
             {/* GALERÍA SIEMPRE VISIBLE */}
             <div style={{ flex: 1, padding: '16px', overflowY: 'auto' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                <button
+                  onClick={() => {
+                    setIsMultiSelectMode(!isMultiSelectMode);
+                    if (isMultiSelectMode) setSelectedMediaIds([]);
+                  }}
+                  style={{
+                    backgroundColor: isMultiSelectMode ? '#333' : 'transparent',
+                    border: '1px solid #555',
+                    color: '#fff',
+                    padding: '6px 12px',
+                    borderRadius: '6px',
+                    cursor: 'pointer',
+                    fontSize: '0.8rem',
+                    fontWeight: 'bold',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px'
+                  }}
+                >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+                  {isMultiSelectMode ? 'Cancelar Selección' : 'Selección Múltiple'}
+                </button>
+
+                {isMultiSelectMode && selectedMediaIds.length > 0 && (
+                  <button
+                    onClick={async () => {
+                      if (!confirm(`¿Eliminar ${selectedMediaIds.length} elemento(s)?`)) return;
+                      await eliminarItemsGaleria(selectedMediaIds);
+                      setSelectedMediaIds([]);
+                      setIsMultiSelectMode(false);
+                    }}
+                    style={{
+                      backgroundColor: '#ff4444',
+                      border: 'none',
+                      color: '#fff',
+                      padding: '6px 12px',
+                      borderRadius: '6px',
+                      cursor: 'pointer',
+                      fontSize: '0.8rem',
+                      fontWeight: 'bold',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px'
+                    }}
+                  >
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                    Eliminar ({selectedMediaIds.length})
+                  </button>
+                )}
+              </div>
+
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(110px, 1fr))', gap: '10px' }}>
                 {galeriaMultimedia
                   .filter(item => {
@@ -1971,8 +2072,20 @@ export default function NaylaCore() {
                     else if (srcFuente === 'ia' || srcFuente === 'sonidos' || srcFuente === 'iafoto') { bgBadge = 'ia'; txtBadge = 'IA'; }
                     else if (srcFuente === 'render') { bgBadge = 'render'; txtBadge = 'RENDER'; }
 
+                    const isSelected = isMultiSelectMode && selectedMediaIds.includes(item.id);
+
+                    let computedBorderColor = 'transparent';
+                    let computedBorderWidth = '1px';
+                    if (isSelected) {
+                      computedBorderColor = '#ff4444';
+                      computedBorderWidth = '3px';
+                    } else if (srcFuente === 'render') {
+                      computedBorderColor = '#00ffcc';
+                      computedBorderWidth = '1px';
+                    }
+
                     return (
-                      <div key={item.id} className="neon-btn" style={{ minHeight: '120px', padding: '10px', borderRadius: '12px', borderStyle: 'solid', borderColor: srcFuente === 'render' ? '#00ffcc' : 'transparent', flexDirection: 'column', position: 'relative', justifyContent: 'space-between', width: '100%' }}>
+                      <div key={item.id} className="neon-btn" style={{ minHeight: '120px', padding: '10px', borderRadius: '12px', borderStyle: 'solid', borderColor: computedBorderColor, borderWidth: computedBorderWidth, flexDirection: 'column', position: 'relative', justifyContent: 'space-between', width: '100%' }}>
                         <div className={`source-badge ${bgBadge}`} style={srcFuente === 'render' ? { backgroundColor: '#00ffcc', color: '#000' } : {}}>{txtBadge}</div>
                         <div style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                           <span style={{ fontSize: '0.65rem', backgroundColor: '#262626', padding: '2px 6px', borderRadius: '4px', color: darkMode ? '#fff' : '#000', fontWeight: 'bold' }}>{item.etiqueta}</span>
@@ -1988,6 +2101,14 @@ export default function NaylaCore() {
 
                         <div
                           onClick={() => {
+                            if (isMultiSelectMode) {
+                              if (selectedMediaIds.includes(item.id)) {
+                                setSelectedMediaIds(selectedMediaIds.filter(id => id !== item.id));
+                              } else {
+                                setSelectedMediaIds([...selectedMediaIds, item.id]);
+                              }
+                              return;
+                            }
                             setMediaActivaUrl(item.url);
                             setClipSeleccionado(item.id);
                             setVideoResultadoUrl(null);
@@ -2229,6 +2350,67 @@ export default function NaylaCore() {
 
         </div>
       </div>
+
+      {customAlertMsg && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0,0,0,0.8)',
+          zIndex: 99999,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}>
+          <div style={{
+            backgroundColor: '#1a1a1a',
+            border: '1px solid #444',
+            borderRadius: '12px',
+            padding: '24px',
+            maxWidth: '400px',
+            width: '90%',
+            textAlign: 'center',
+            position: 'relative',
+            boxShadow: '0 4px 20px rgba(0,0,0,0.5)'
+          }}>
+            <button
+              onClick={() => setCustomAlertMsg(null)}
+              style={{
+                position: 'absolute',
+                top: '12px',
+                right: '12px',
+                background: 'none',
+                border: 'none',
+                color: '#fff',
+                cursor: 'pointer',
+                padding: '4px'
+              }}
+            >
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+            <h3 style={{ color: '#fff', marginTop: 0, marginBottom: '16px', fontSize: '1.2rem' }}>Aviso</h3>
+            <p style={{ color: '#ccc', margin: 0, fontSize: '1rem', lineHeight: '1.5' }}>{customAlertMsg}</p>
+            <button
+              onClick={() => setCustomAlertMsg(null)}
+              style={{
+                marginTop: '24px',
+                backgroundColor: '#333',
+                color: '#fff',
+                border: '1px solid #555',
+                borderRadius: '8px',
+                padding: '8px 24px',
+                cursor: 'pointer',
+                fontSize: '1rem'
+              }}
+            >
+              Aceptar
+            </button>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }
