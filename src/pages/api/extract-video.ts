@@ -27,7 +27,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     try {
       const parsed = new URL(testUrl);
       const pathname = parsed.pathname.toLowerCase();
-      return pathname.endsWith('.mp4') || pathname.endsWith('.webm') || pathname.endsWith('.mov') || pathname.endsWith('.mp3') || pathname.endsWith('.wav');
+      return pathname.endsWith('.mp4') || pathname.endsWith('.webm') || pathname.endsWith('.mov') ||
+             pathname.endsWith('.mp3') || pathname.endsWith('.wav') ||
+             pathname.endsWith('.jpg') || pathname.endsWith('.jpeg') ||
+             pathname.endsWith('.png') || pathname.endsWith('.webp');
     } catch {
       return false;
     }

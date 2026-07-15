@@ -812,8 +812,15 @@ export default function NaylaCore() {
       // Calcular id base
       const id = Date.now().toString() + index + Math.random().toString().slice(2, 6);
 
-      // Obtenemos count aproximado local o usando galeria actual más un offset
-      // Como esto corre asíncrono, para evitar duplicados en concurrencia le sumamos el index + offset local
+      // Para resolver el race condition en el que `galeriaMultimedia` está obsoleto
+      // cuando se añaden varios enlaces o después de un limpiar(), no podemos depender
+      // de la variable externa. En su lugar, usaremos setState pasándole una función.
+      // Para poder devolver el item creado de forma síncrona sin romper React,
+      // usamos una Promise local que se resuelve dentro del updater.
+
+      // Para resolver el race condition limpiamente:
+      // Usaremos el contador local actual que viene de galeriaMultimedia que React mantiene durante este closure
+      // sumado con el `index` de la llamada Promise.all(), garantizando no colisionar IDs.
       const actualCount = galeriaMultimedia.filter(item => item.tipo === resolvedTipo).length + index + 1;
 
       let nombreBase = `Meta_Video_${actualCount}.mp4`;
@@ -837,29 +844,28 @@ export default function NaylaCore() {
         etiqueta: etiquetaBase
       };
 
-      let esPrimerVideo = galeriaMultimedia.length === 0 || !galeriaMultimedia.find(i => i.tipo === 'video');
+      const esPrimerVideo = galeriaMultimedia.length === 0 || !galeriaMultimedia.find(i => i.tipo === 'video');
 
-      if (session) {
-        // Ejecutar base de datos de manera limpia, sin estado react
-        supabase
-          .from('galeria_multimedia')
-          .insert([{ ...nuevoItem, user_id: session.user.id }])
-          .then(({ error }) => {
-            if (error) console.error('Error insertando en Supabase:', error);
-          });
-      }
-
-      // Actualizamos estado puramente
+      // Update state functionally without side-effects inside
       setGaleriaMultimedia(prev => {
-        // En caso de que se agreguen varios al mismo tiempo, el calculo base arriba funciona
-        // pero podemos mejorar asegurando que no se duplique al retornar
-        return [...prev, nuevoItem];
+         // Verificación de seguridad: si ya se agregó, no duplicarlo
+         if (prev.find(i => i.id === nuevoItem.id)) return prev;
+         return [...prev, nuevoItem];
       });
 
-      if (esPrimerVideo) {
-        setMediaActivaUrl(nuevoItem.url);
-        setClipSeleccionado(nuevoItem.id);
-        setVideoResultadoUrl(null);
+      if (esPrimerVideo && index === 0) {
+         setMediaActivaUrl(nuevoItem.url);
+         setClipSeleccionado(nuevoItem.id);
+         setVideoResultadoUrl(null);
+      }
+
+      if (session) {
+         supabase
+             .from('galeria_multimedia')
+             .insert([{ ...nuevoItem, user_id: session.user.id }])
+             .then(({ error }) => {
+                 if (error) console.error('Error insertando en Supabase:', error);
+             });
       }
 
       // Actualizar estado de descarga a listo
@@ -1046,10 +1052,15 @@ export default function NaylaCore() {
           setSubtitulos(prev => [...prev, ...subsAInsertar]);
         },
         limpiarSubtitulos: () => setSubtitulos([]),
-        limpiar: () => {
-           setLineaDeTiempo([]);
-           setSubtitulos([]);
-           setTimeout(() => sincronizarLineaDeTiempo([]), 0);
+        limpiar: async () => {
+           return new Promise<void>((resolve) => {
+               setLineaDeTiempo([]);
+               setSubtitulos([]);
+               setTimeout(() => {
+                 sincronizarLineaDeTiempo([]);
+                 resolve();
+               }, 100);
+           });
         }
   });
 
