@@ -33,9 +33,15 @@ const defaultProps = {
 
 export default function RemotionPreview() {
   const fps = 30;
-  const totalDurationSeconds = defaultProps.timeline
-    .filter(c => c.tipo === 'video' || c.tipo === 'foto')
-    .reduce((acc, curr) => acc + (curr.durationInSeconds || 5), 0);
+  const visualClips = defaultProps.timeline.filter(c => c.tipo === 'video' || c.tipo === 'foto');
+  const totalDurationSeconds = visualClips.reduce((acc, curr, index) => {
+      let duration = curr.durationInSeconds !== undefined ? curr.durationInSeconds : 5;
+
+      if (index > 0 && (curr as any).transitionType && (curr as any).transitionType !== 'none' && (curr as any).transitionDuration) {
+         duration -= (curr as any).transitionDuration;
+      }
+      return acc + duration;
+  }, 0);
 
   const durationInFrames = Math.max(1, Math.round(totalDurationSeconds * fps));
 

@@ -41,9 +41,19 @@ export const RemotionRoot: React.FC = () => {
 
   let totalDurationSeconds = 0;
   if (propsToUse.timeline && Array.isArray(propsToUse.timeline)) {
-    totalDurationSeconds = propsToUse.timeline
-      .filter((c: any) => c.tipo === 'video' || c.tipo === 'foto')
-      .reduce((acc: number, curr: any) => acc + (curr.durationInSeconds || 5), 0);
+    const visualClips = propsToUse.timeline.filter((c: any) => c.tipo === 'video' || c.tipo === 'foto');
+    totalDurationSeconds = visualClips.reduce((acc: number, curr: any, index: number) => {
+      let duration = curr.durationInSeconds !== undefined ? curr.durationInSeconds : 5;
+
+
+      // If there's a transition from the *previous* clip to this one, they overlap.
+      // We subtract the transitionDuration because that time is shared between both clips.
+      if (index > 0 && curr.transitionType && curr.transitionType !== 'none' && curr.transitionDuration) {
+         duration -= curr.transitionDuration;
+      }
+
+      return acc + duration;
+    }, 0);
   }
 
   const durationInFrames = Math.max(1, Math.round(totalDurationSeconds * fps));
