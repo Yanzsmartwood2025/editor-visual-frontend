@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { AbsoluteFill, Sequence, Video, Img, Audio, useVideoConfig, useCurrentFrame, interpolate } from 'remotion';
+import { AbsoluteFill, Sequence, Video, Audio, useVideoConfig, useCurrentFrame, interpolate, delayRender, continueRender } from 'remotion';
 import { TransitionSeries, linearTiming } from '@remotion/transitions';
 import { fade } from '@remotion/transitions/fade';
 import { wipe } from '@remotion/transitions/wipe';
@@ -19,6 +19,22 @@ interface MainCompositionProps {
   };
 }
 
+
+const PreloadedImage: React.FC<{ src: string; style?: React.CSSProperties }> = ({ src, style }) => {
+  const [handle] = React.useState(() => delayRender());
+
+  return (
+    <img
+      src={src}
+      style={style}
+      onLoad={() => continueRender(handle)}
+      onError={(e) => {
+        console.error(`Failed to load image: ${src}`, e);
+        continueRender(handle); // still continue to prevent hanging indefinitely
+      }}
+    />
+  );
+};
 
 const ClipWithFades: React.FC<{ clip: TimelineItem, durationInFrames: number, children: React.ReactNode }> = ({ clip, durationInFrames, children }) => {
   const frame = useCurrentFrame();
@@ -88,7 +104,7 @@ const GlobalFadeOverlay: React.FC<{ durationInFrames: number }> = ({ durationInF
     [0, 1],
     { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' }
   );
-  return <div style={{ backgroundColor: 'black', width: '100%', height: '100%', opacity }} />;
+  return <AbsoluteFill style={{ backgroundColor: 'black', opacity }} />;
 };
 
 const AnimatedVolume: React.FC<{ clip: TimelineItem, durationInFrames: number, render: (volume: number) => React.ReactNode, absoluteStartFrame?: number, totalCompositionFrames?: number, globalFadeOutFrames?: number }> = ({ clip, durationInFrames, render, absoluteStartFrame, totalCompositionFrames, globalFadeOutFrames }) => {
@@ -216,7 +232,7 @@ export const MainComposition: React.FC<MainCompositionProps> = ({ timeline, subt
                     />
                   )} />
                 ) : (
-                  <Img
+                  <PreloadedImage
                     src={clip.url}
                     style={{ width: '100%', height: '100%', objectFit: 'contain', transform: clip.scale !== undefined ? `scale(${clip.scale})` : undefined, filter: getFilterStyle(clip) }}
                   />
