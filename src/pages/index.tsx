@@ -18,7 +18,7 @@ const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 type Rect = { id: string; x: number; y: number; width: number; height: number };
 type MediaItem = { id: string; url: string; tipo: 'foto' | 'video' | 'audio'; nombre: string; creado_en: string; esOverlay: boolean; etiqueta: string; fuente?: string };
-type TimelineItem = { id: string; mediaId: string; tipo: 'foto' | 'video' | 'audio'; nombre: string; etiqueta: string; url: string; durationInSeconds?: number; volume?: number; fadeIn?: number; fadeOut?: number; scale?: number; delay?: number; startFrom?: number; loop?: boolean; };
+type TimelineItem = { id: string; mediaId: string; tipo: 'foto' | 'video' | 'audio'; nombre: string; etiqueta: string; url: string; durationInSeconds?: number; originalDurationInSeconds?: number; volume?: number; fadeIn?: number; fadeOut?: number; scale?: number; delay?: number; startFrom?: number; loop?: boolean; };
 type SubtitleItem = { id: string; texto: string; inicioSec: number; finSec: number; };
 type MarcoConfig = {
   posicion: 'derecha' | 'izquierda' | 'abajo' | 'arriba' | 'derecha+abajo' | 'derecha+arriba' | 'izquierda+abajo' | 'izquierda+arriba';
@@ -105,6 +105,7 @@ export default function NaylaCore() {
   const [searchQuery, setSearchQuery] = useState('');
 
   const [isMultiSelectMode, setIsMultiSelectMode] = useState(false);
+  const longPressTimerRef = useRef<NodeJS.Timeout | null>(null);
   const [selectedMediaIds, setSelectedMediaIds] = useState<string[]>([]);
   const [codigoJsInput, setCodigoJsInput] = useState('// Inyecta comandos JS aquí\n// Ej: NaylaEngine.agregar(["V1", "V2", "A1"]);\n// NaylaEngine.agregarSubtitulos([{ texto: "Hola", inicioSec: 0, finSec: 5 }]);');
   const [moldesScripts, setMoldesScripts] = useState<{ id?: string, nombre: string; codigo: string }[]>([]);
@@ -682,7 +683,7 @@ export default function NaylaCore() {
       durationInSeconds = 5;
     }
 
-    const nuevo: TimelineItem = { id: Date.now().toString(), mediaId: item.id, tipo: item.tipo, nombre: item.nombre, etiqueta: item.etiqueta, url: item.url, durationInSeconds };
+    const nuevo: TimelineItem = { id: Date.now().toString(), mediaId: item.id, tipo: item.tipo, nombre: item.nombre, etiqueta: item.etiqueta, url: item.url, durationInSeconds, originalDurationInSeconds: durationInSeconds };
     const nuevaLinea = [...lineaDeTiempo, nuevo];
     setLineaDeTiempo(nuevaLinea);
 
@@ -871,7 +872,7 @@ export default function NaylaCore() {
       // Actualizar estado de descarga a listo
       setDescargasActivas(prev => prev.map(d => d.id === descargaId ? { ...d, status: 'listo' } : d));
 
-      return { ...nuevoItem, durationInSeconds };
+      return { ...nuevoItem, durationInSeconds, originalDurationInSeconds: durationInSeconds };
 
     } catch (err: any) {
       console.error(err);
@@ -993,7 +994,7 @@ export default function NaylaCore() {
                  } else if (media.tipo === 'foto') {
                    durationInSeconds = 5;
                  }
-                 return { ...media, durationInSeconds };
+                 return { ...media, durationInSeconds, originalDurationInSeconds: durationInSeconds };
                }
                return null;
              }
@@ -1014,7 +1015,8 @@ export default function NaylaCore() {
                     nombre: item.nombre,
                     etiqueta: item.etiqueta,
                     url: item.url,
-                    durationInSeconds: (item as any).durationInSeconds !== undefined ? (item as any).durationInSeconds : (item.tipo === 'foto' ? 5 : undefined)
+                    durationInSeconds: (item as any).durationInSeconds !== undefined ? (item as any).durationInSeconds : (item.tipo === 'foto' ? 5 : undefined),
+                    originalDurationInSeconds: (item as any).originalDurationInSeconds !== undefined ? (item as any).originalDurationInSeconds : ((item as any).durationInSeconds !== undefined ? (item as any).durationInSeconds : (item.tipo === 'foto' ? 5 : undefined))
                   });
                   agregados++;
                 }
@@ -1694,7 +1696,7 @@ export default function NaylaCore() {
                            try {
                              const duration = await getAudioDurationInSeconds(item.url);
                              if (duration !== undefined) {
-                               lineaValidada[i] = { ...item, durationInSeconds: duration };
+                               lineaValidada[i] = { ...item, durationInSeconds: duration, originalDurationInSeconds: item.originalDurationInSeconds || duration };
                              } else {
                                throw new Error("No duration returned");
                              }
@@ -1705,7 +1707,7 @@ export default function NaylaCore() {
                            try {
                              const metadata = await getVideoMetadata(item.url);
                              if (metadata && metadata.durationInSeconds !== undefined) {
-                               lineaValidada[i] = { ...item, durationInSeconds: metadata.durationInSeconds };
+                               lineaValidada[i] = { ...item, durationInSeconds: metadata.durationInSeconds, originalDurationInSeconds: item.originalDurationInSeconds || metadata.durationInSeconds };
                              } else {
                                throw new Error("No duration returned");
                              }
@@ -2096,7 +2098,40 @@ export default function NaylaCore() {
                     }
 
                     return (
-                      <div key={item.id} className="neon-btn" style={{ minHeight: '120px', padding: '10px', borderRadius: '12px', borderStyle: 'solid', borderColor: computedBorderColor, borderWidth: computedBorderWidth, flexDirection: 'column', position: 'relative', justifyContent: 'space-between', width: '100%' }}>
+                      <div key={item.id} className="neon-btn"
+                        onPointerDown={() => {
+                          longPressTimerRef.current = setTimeout(() => {
+                            if (!isMultiSelectMode) {
+                              setIsMultiSelectMode(true);
+                              setSelectedMediaIds([item.id]);
+                            }
+                          }, 600);
+                        }}
+                        onPointerUp={() => {
+                          if (longPressTimerRef.current) {
+                            clearTimeout(longPressTimerRef.current);
+                            longPressTimerRef.current = null;
+                          }
+                        }}
+                        onPointerLeave={() => {
+                          if (longPressTimerRef.current) {
+                            clearTimeout(longPressTimerRef.current);
+                            longPressTimerRef.current = null;
+                          }
+                        }}
+                        onPointerMove={() => {
+                          if (longPressTimerRef.current) {
+                            clearTimeout(longPressTimerRef.current);
+                            longPressTimerRef.current = null;
+                          }
+                        }}
+                        onPointerCancel={() => {
+                          if (longPressTimerRef.current) {
+                            clearTimeout(longPressTimerRef.current);
+                            longPressTimerRef.current = null;
+                          }
+                        }}
+                        style={{ minHeight: '120px', padding: '10px', borderRadius: '12px', borderStyle: 'solid', borderColor: computedBorderColor, borderWidth: computedBorderWidth, flexDirection: 'column', position: 'relative', justifyContent: 'space-between', width: '100%' }}>
                         <div className={`source-badge ${bgBadge}`} style={srcFuente === 'render' ? { backgroundColor: '#00ffcc', color: '#000' } : {}}>{txtBadge}</div>
                         <div style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                           <span style={{ fontSize: '0.65rem', backgroundColor: '#262626', padding: '2px 6px', borderRadius: '4px', color: darkMode ? '#fff' : '#000', fontWeight: 'bold' }}>{item.etiqueta}</span>

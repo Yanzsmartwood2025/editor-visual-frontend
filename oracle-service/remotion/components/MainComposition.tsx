@@ -7,7 +7,7 @@ import { slide } from '@remotion/transitions/slide';
 import { zoomInOut } from '@remotion/transitions/zoom-in-out';
 
 // Interfaces based on main file
-type TimelineItem = { id: string; mediaId: string; tipo: 'foto' | 'video' | 'audio'; nombre: string; etiqueta: string; url: string; durationInSeconds?: number; volume?: number; fadeIn?: number; fadeOut?: number; scale?: number; delay?: number; startFrom?: number; loop?: boolean; playbackRate?: number; transitionDuration?: number; transitionType?: 'fade' | 'none' | 'wipe' | 'slide' | 'zoom'; efecto?: string; brightness?: number; contrast?: number; saturation?: number; };
+type TimelineItem = { id: string; mediaId: string; tipo: 'foto' | 'video' | 'audio'; nombre: string; etiqueta: string; url: string; durationInSeconds?: number; originalDurationInSeconds?: number; volume?: number; fadeIn?: number; fadeOut?: number; scale?: number; delay?: number; startFrom?: number; loop?: boolean; playbackRate?: number; transitionDuration?: number; transitionType?: 'fade' | 'none' | 'wipe' | 'slide' | 'zoom'; efecto?: string; brightness?: number; contrast?: number; saturation?: number; };
 type SubtitleItem = { id: string; texto: string; inicioSec: number; finSec: number; };
 
 interface MainCompositionProps {
@@ -115,9 +115,19 @@ export const MainComposition: React.FC<MainCompositionProps> = ({ timeline, subt
       if (clip.tipo === 'video' && clip.durationInSeconds === undefined) {
         throw new Error(`Critical Error: Clip '${clip.nombre || clip.etiqueta}' (URL: ${clip.url}) was passed to Remotion Composition without a valid durationInSeconds.`);
       }
-      const baseDurationSec = clip.durationInSeconds !== undefined ? clip.durationInSeconds : (clip.tipo === 'foto' ? 5 : 5);
-      const durationInFrames = Math.round((baseDurationSec / (clip.playbackRate || 1)) * fps);
-      return { ...clip, durationInFrames };
+
+      let effectivePlaybackRate = clip.playbackRate || 1;
+      if (clip.durationInSeconds !== undefined && clip.originalDurationInSeconds !== undefined && clip.durationInSeconds !== clip.originalDurationInSeconds) {
+        // Automatically stretch/compress by overriding playbackRate ONLY if duration was changed
+        effectivePlaybackRate = clip.originalDurationInSeconds / clip.durationInSeconds;
+      }
+
+      const targetDurationSec = clip.durationInSeconds !== undefined ? clip.durationInSeconds : (clip.tipo === 'foto' ? 5 : 5);
+      // If we calculate playbackRate, the media plays at effectivePlaybackRate.
+      // The duration in frames is just the target duration * fps.
+      const durationInFrames = Math.round(targetDurationSec * fps);
+
+      return { ...clip, durationInFrames, playbackRate: effectivePlaybackRate };
     });
   }, [visualClips, fps]);
 
@@ -193,7 +203,14 @@ export const MainComposition: React.FC<MainCompositionProps> = ({ timeline, subt
 
       {/* For simplicity, audio clips start at frame 0 and loop/play their duration. We can improve this later to position them. */}
       {audioClips.map((clip) => {
-        const audioDurationInFrames = Math.round((clip.durationInSeconds || 5) / (clip.playbackRate || 1) * fps);
+        let effectivePlaybackRate = clip.playbackRate || 1;
+        if (clip.durationInSeconds !== undefined && clip.originalDurationInSeconds !== undefined && clip.durationInSeconds !== clip.originalDurationInSeconds) {
+          effectivePlaybackRate = clip.originalDurationInSeconds / clip.durationInSeconds;
+        }
+
+        const targetDurationSec = clip.durationInSeconds || 5;
+        const audioDurationInFrames = Math.round(targetDurationSec * fps);
+
         return (
           <Sequence key={clip.id} from={clip.delay ? Math.round(clip.delay * fps) : 0} durationInFrames={audioDurationInFrames}>
             <AnimatedVolume clip={clip} durationInFrames={audioDurationInFrames} render={(volume) => (
@@ -202,7 +219,7 @@ export const MainComposition: React.FC<MainCompositionProps> = ({ timeline, subt
                  volume={volume}
                  startFrom={clip.startFrom ? Math.round(clip.startFrom * fps) : undefined}
                  loop={clip.loop}
-                 playbackRate={clip.playbackRate || 1}
+                 playbackRate={effectivePlaybackRate}
                />
             )} />
           </Sequence>
