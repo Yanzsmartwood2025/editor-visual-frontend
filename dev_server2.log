@@ -1,0 +1,41 @@
+npm warn Unknown project config "auto-install-peers". This will stop working in the next major version of npm. See `npm help npmrc` for supported config options.
+
+> template-next-pages@0.1.0 dev
+> next dev
+
+▲ Next.js 16.2.10 (Turbopack)
+- Local:         http://localhost:3000
+- Network:       http://192.168.0.2:3000
+✓ Ready in 520ms
+
+ERROR CRÍTICO: Variables de entorno de Supabase no configuradas.
+ GET / 200 in 420ms (next.js: 363ms, application-code: 57ms)
+[browser] ERROR CRÍTICO: Variables de entorno de Supabase no configuradas.
+    at module evaluation (src/pages/index.tsx:15:11)
+  13 |
+  14 | if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
+> 15 |   console.error('ERROR CRÍTICO: Variables de entorno de Supabase no configuradas.');
+     |           ^
+  16 | }
+  17 | const supabase = createClient(supabaseUrl, supabaseAnonKey);
+  18 | (src/pages/index.tsx:15:11)
+ GET / 200 in 25ms (next.js: 6ms, application-code: 19ms)
+[browser] ERROR CRÍTICO: Variables de entorno de Supabase no configuradas.
+    at module evaluation (src/pages/index.tsx:15:11)
+  13 |
+  14 | if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
+> 15 |   console.error('ERROR CRÍTICO: Variables de entorno de Supabase no configuradas.');
+     |           ^
+  16 | }
+  17 | const supabase = createClient(supabaseUrl, supabaseAnonKey);
+  18 | (src/pages/index.tsx:15:11)
+ GET / 200 in 18ms (next.js: 4ms, application-code: 14ms)
+[browser] ERROR CRÍTICO: Variables de entorno de Supabase no configuradas.
+    at module evaluation (src/pages/index.tsx:15:11)
+  13 |
+  14 | if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
+> 15 |   console.error('ERROR CRÍTICO: Variables de entorno de Supabase no configuradas.');
+     |           ^
+  16 | }
+  17 | const supabase = createClient(supabaseUrl, supabaseAnonKey);
+  18 | (src/pages/index.tsx:15:11)
