@@ -14,6 +14,9 @@ interface MainCompositionProps {
   timeline: TimelineItem[];
   canvasRatio: '9/16' | '16/9' | '1/1' | '4/5';
   subtitles?: SubtitleItem[];
+  settings?: {
+    fadeOutFinal?: number;
+  };
 }
 
 
@@ -77,7 +80,18 @@ const getFilterStyle = (clip: TimelineItem): string | undefined => {
   return filters.length > 0 ? filters.join(' ') : undefined;
 };
 
-const AnimatedVolume: React.FC<{ clip: TimelineItem, durationInFrames: number, render: (volume: number) => React.ReactNode }> = ({ clip, durationInFrames, render }) => {
+const GlobalFadeOverlay: React.FC<{ durationInFrames: number }> = ({ durationInFrames }) => {
+  const frame = useCurrentFrame();
+  const opacity = interpolate(
+    frame,
+    [0, durationInFrames - 1],
+    [0, 1],
+    { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' }
+  );
+  return <div style={{ backgroundColor: 'black', width: '100%', height: '100%', opacity }} />;
+};
+
+const AnimatedVolume: React.FC<{ clip: TimelineItem, durationInFrames: number, render: (volume: number) => React.ReactNode, absoluteStartFrame?: number, totalCompositionFrames?: number, globalFadeOutFrames?: number }> = ({ clip, durationInFrames, render, absoluteStartFrame, totalCompositionFrames, globalFadeOutFrames }) => {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
 
@@ -91,19 +105,34 @@ const AnimatedVolume: React.FC<{ clip: TimelineItem, durationInFrames: number, r
     Math.max(fadeInFrames + 2, durationInFrames - 1)
   ];
 
-  const targetVolume = clip.volume !== undefined ? clip.volume : 1;
+  const targetVolume = clip.volume !== undefined ? Number(clip.volume) : 1;
 
-  const currentVolume = interpolate(
+  let currentVolume = interpolate(
     frame,
     inputRange,
     [(clip.fadeIn || 0) > 0 ? 0 : targetVolume, targetVolume, targetVolume, (clip.fadeOut || 0) > 0 ? 0 : targetVolume],
     { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' }
   );
 
+  if (globalFadeOutFrames && globalFadeOutFrames > 0 && absoluteStartFrame !== undefined && totalCompositionFrames !== undefined) {
+      const globalFadeStartFrame = totalCompositionFrames - globalFadeOutFrames;
+      const absoluteCurrentFrame = absoluteStartFrame + frame;
+
+      if (absoluteCurrentFrame >= globalFadeStartFrame) {
+         const fadeOutProgress = interpolate(
+             absoluteCurrentFrame,
+             [globalFadeStartFrame, totalCompositionFrames],
+             [1, 0],
+             { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' }
+         );
+         currentVolume = currentVolume * fadeOutProgress;
+      }
+  }
+
   return <>{render(currentVolume)}</>;
 };
 
-export const MainComposition: React.FC<MainCompositionProps> = ({ timeline, subtitles = [] }) => {
+export const MainComposition: React.FC<MainCompositionProps> = ({ timeline, subtitles = [], settings = {} }) => {
   const { fps } = useVideoConfig();
 
   // We filter out videos and photos to build the main visual sequence
@@ -111,15 +140,33 @@ export const MainComposition: React.FC<MainCompositionProps> = ({ timeline, subt
   const audioClips = useMemo(() => timeline.filter(t => t.tipo === 'audio'), [timeline]);
 
   const visualSequences = useMemo(() => {
-    return visualClips.map(clip => {
+    let currentAbsoluteFrame = 0;
+    return visualClips.map((clip, index) => {
       if (clip.tipo === 'video' && clip.durationInSeconds === undefined) {
         throw new Error(`Critical Error: Clip '${clip.nombre || clip.etiqueta}' (URL: ${clip.url}) was passed to Remotion Composition without a valid durationInSeconds.`);
       }
       const baseDurationSec = clip.durationInSeconds !== undefined ? clip.durationInSeconds : (clip.tipo === 'foto' ? 5 : 5);
       const durationInFrames = Math.round((baseDurationSec / (clip.playbackRate || 1)) * fps);
-      return { ...clip, durationInFrames };
+
+      const absoluteStartFrame = currentAbsoluteFrame;
+      currentAbsoluteFrame += durationInFrames;
+
+      // If there is a transition from this clip to the next, we subtract the transition duration
+      // from the absolute progression so the next clip starts earlier.
+      if (index < visualClips.length - 1) {
+         const nextClip = visualClips[index + 1];
+         if (nextClip.transitionType && nextClip.transitionType !== 'none' && nextClip.transitionDuration) {
+             currentAbsoluteFrame -= Math.round(nextClip.transitionDuration * fps);
+         }
+      }
+
+      return { ...clip, durationInFrames, absoluteStartFrame };
     });
   }, [visualClips, fps]);
+
+  const totalCompositionFrames = visualSequences.length > 0
+    ? visualSequences[visualSequences.length - 1].absoluteStartFrame + visualSequences[visualSequences.length - 1].durationInFrames
+    : 0;
 
   // Verify Audio Clips as well
   audioClips.forEach(clip => {
@@ -127,6 +174,8 @@ export const MainComposition: React.FC<MainCompositionProps> = ({ timeline, subt
         throw new Error(`Critical Error: Audio Clip '${clip.nombre || clip.etiqueta}' (URL: ${clip.url}) was passed to Remotion Composition without a valid durationInSeconds.`);
      }
   });
+
+  const globalFadeOutFrames = settings?.fadeOutFinal ? Math.round(settings.fadeOutFinal * fps) : 0;
 
   return (
     <AbsoluteFill style={{ backgroundColor: 'black' }}>
@@ -147,7 +196,7 @@ export const MainComposition: React.FC<MainCompositionProps> = ({ timeline, subt
             <TransitionSeries.Sequence key={clip.id} durationInFrames={clip.durationInFrames}>
               <ClipWithFades clip={clip} durationInFrames={clip.durationInFrames}>
                 {clip.tipo === 'video' ? (
-                  <AnimatedVolume clip={clip} durationInFrames={clip.durationInFrames} render={(volume) => (
+                  <AnimatedVolume clip={clip} durationInFrames={clip.durationInFrames} absoluteStartFrame={clip.absoluteStartFrame} totalCompositionFrames={totalCompositionFrames} globalFadeOutFrames={globalFadeOutFrames} render={(volume) => (
                     <Video
                       src={clip.url}
                       volume={volume}
@@ -194,9 +243,10 @@ export const MainComposition: React.FC<MainCompositionProps> = ({ timeline, subt
       {/* For simplicity, audio clips start at frame 0 and loop/play their duration. We can improve this later to position them. */}
       {audioClips.map((clip) => {
         const audioDurationInFrames = Math.round((clip.durationInSeconds || 5) / (clip.playbackRate || 1) * fps);
+        const startFrame = clip.delay ? Math.round(clip.delay * fps) : 0;
         return (
-          <Sequence key={clip.id} from={clip.delay ? Math.round(clip.delay * fps) : 0} durationInFrames={audioDurationInFrames}>
-            <AnimatedVolume clip={clip} durationInFrames={audioDurationInFrames} render={(volume) => (
+          <Sequence key={clip.id} from={startFrame} durationInFrames={audioDurationInFrames}>
+            <AnimatedVolume clip={clip} durationInFrames={audioDurationInFrames} absoluteStartFrame={startFrame} totalCompositionFrames={totalCompositionFrames} globalFadeOutFrames={globalFadeOutFrames} render={(volume) => (
                <Audio
                  src={clip.url}
                  volume={volume}
@@ -208,6 +258,15 @@ export const MainComposition: React.FC<MainCompositionProps> = ({ timeline, subt
           </Sequence>
         );
       })}
+
+      {/* Global Fade-Out Overlay (visuals only, placed under subtitles) */}
+      {globalFadeOutFrames > 0 && totalCompositionFrames > 0 && (
+          <Sequence from={totalCompositionFrames - globalFadeOutFrames} durationInFrames={globalFadeOutFrames}>
+             <AbsoluteFill>
+                 <GlobalFadeOverlay durationInFrames={globalFadeOutFrames} />
+             </AbsoluteFill>
+          </Sequence>
+      )}
 
       {/* Subtitles Overlay */}
       {subtitles.map(sub => {

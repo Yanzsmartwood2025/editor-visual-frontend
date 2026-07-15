@@ -119,6 +119,7 @@ export default function NaylaCore() {
   const [galeriaMultimedia, setGaleriaMultimedia] = useState<MediaItem[]>([]);
   const [lineaDeTiempo, setLineaDeTiempo] = useState<TimelineItem[]>([]);
   const [subtitulos, setSubtitulos] = useState<SubtitleItem[]>([]);
+  const [globalSettings, setGlobalSettings] = useState<{ fadeOutFinal?: number }>({});
   const [clipSeleccionado, setClipSeleccionado] = useState<string | null>(null);
   const [canvasRatio, setCanvasRatio] = useState<'9/16' | '16/9' | '1/1' | '4/5'>('9/16');
   const [calidadExportacion, setCalidadExportacion] = useState('1080p');
@@ -1042,6 +1043,18 @@ export default function NaylaCore() {
           });
         },
         modificar: (etiqueta: string, opciones: any) => {
+          if (etiqueta === 'global') {
+            const opcionesGlobalesPermitidas = ['fadeOutFinal'];
+            const opcionesDesconocidas = Object.keys(opciones).filter(k => !opcionesGlobalesPermitidas.includes(k));
+            if (opcionesDesconocidas.length > 0) {
+              const msj = `Advertencia: Las siguientes opciones en NaylaEngine.modificar('global') no son reconocidas y serán ignoradas: ${opcionesDesconocidas.join(', ')}`;
+              console.warn(msj);
+              showAlert(msj);
+            }
+            setGlobalSettings(prev => ({ ...prev, ...opciones }));
+            return;
+          }
+
           const opcionesPermitidas = ['volume', 'fadeIn', 'fadeOut', 'scale', 'delay', 'startFrom', 'loop', 'url', 'nombre', 'durationInSeconds', 'playbackRate', 'transitionDuration', 'transitionType', 'efecto', 'brightness', 'contrast', 'saturation', 'blur'];
           const opcionesDesconocidas = Object.keys(opciones).filter(k => !opcionesPermitidas.includes(k));
 
@@ -1074,6 +1087,7 @@ export default function NaylaCore() {
            return new Promise<void>((resolve) => {
                setLineaDeTiempo([]);
                setSubtitulos([]);
+               setGlobalSettings({});
                setTimeout(() => {
                  sincronizarLineaDeTiempo([]);
                  resolve();
@@ -1771,6 +1785,7 @@ export default function NaylaCore() {
                   Comandos disponibles: <br />
                   <code style={{ color: '#00ffcc' }}>NaylaEngine.agregar(["V1", "V2"]);</code> - Agrega clips por etiqueta.<br />
                   <code style={{ color: '#00ffcc' }}>{"NaylaEngine.modificar('V1', { volume: 0.5 });"}</code> - Cambia volumen y efectos.<br />
+                  <code style={{ color: '#00ffcc' }}>{"NaylaEngine.modificar('global', { fadeOutFinal: 2 });"}</code> - Fade a negro (2s) al final.<br />
                   <code style={{ color: '#00ffcc' }}>{"NaylaEngine.agregarSubtitulos([{ texto: \"Hola\", inicioSec: 0, finSec: 2 }]);"}</code> - Agrega subtítulos.<br />
                   <code style={{ color: '#00ffcc' }}>NaylaEngine.limpiarSubtitulos();</code> - Borra los subtítulos.<br />
                   <code style={{ color: '#00ffcc' }}>NaylaEngine.limpiar();</code> - Borra pista y subtítulos.
@@ -1837,7 +1852,8 @@ export default function NaylaCore() {
                       const inputProps = {
                         timeline: lineaValidada,
                         subtitles: subtitulos,
-                        canvasRatio
+                        canvasRatio,
+                        settings: globalSettings
                       };
                       const res = await fetch('/api/render', {
                         method: 'POST',
