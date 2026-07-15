@@ -107,6 +107,8 @@ export default function NaylaCore() {
   const [isMultiSelectMode, setIsMultiSelectMode] = useState(false);
   const longPressTimerRef = useRef<NodeJS.Timeout | null>(null);
   const [selectedMediaIds, setSelectedMediaIds] = useState<string[]>([]);
+  const [isMultiSelectStorageMode, setIsMultiSelectStorageMode] = useState(false);
+  const [selectedStorageFiles, setSelectedStorageFiles] = useState<string[]>([]);
   const [codigoJsInput, setCodigoJsInput] = useState('// Inyecta comandos JS aquí\n// Ej: NaylaEngine.agregar(["V1", "V2", "A1"]);\n// NaylaEngine.agregarSubtitulos([{ texto: "Hola", inicioSec: 0, finSec: 5 }]);');
   const [moldesScripts, setMoldesScripts] = useState<{ id?: string, nombre: string; codigo: string }[]>([]);
   const [moldeActivo, setMoldeActivo] = useState<string>('');
@@ -359,6 +361,20 @@ export default function NaylaCore() {
     } catch (err: any) {
       console.error('Error deleting file:', err);
       showAlert('Error al borrar: ' + err.message);
+    }
+  };
+
+  const deleteStorageFiles = async (filenames: string[]) => {
+    if (!confirm(`¿Estás seguro de que quieres borrar ${filenames.length} archivo(s)?`)) return;
+    try {
+      const { error } = await supabase.storage.from('media_bodega').remove(filenames);
+      if (error) throw error;
+      await fetchStorageFiles();
+      setSelectedStorageFiles([]);
+      setIsMultiSelectStorageMode(false);
+    } catch (err: any) {
+      console.error('Error deleting files:', err);
+      showAlert('Error al borrar múltiples archivos: ' + err.message);
     }
   };
 
@@ -1534,11 +1550,60 @@ export default function NaylaCore() {
           </div>
         ) : mainNav === 'nube' ? (
           <div className="panel-container" style={{ position: 'relative', bottom: 'auto', flex: 1, minHeight: '35vh', overflowY: 'auto', padding: '16px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-              <p style={{ fontSize: '0.75rem', color: darkMode ? '#fff' : '#000', fontWeight: 'bold', letterSpacing: '1px' }}>EXPLORADOR DE STORAGE (media_bodega)</p>
-              <button className="neon-btn nav-btn" onClick={fetchStorageFiles} style={{ padding: '6px 12px', fontSize: '0.7rem' }}>
-                {isLoadingStorage ? 'Cargando...' : 'Actualizar'}
-              </button>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '1rem' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <p style={{ fontSize: '0.75rem', color: darkMode ? '#fff' : '#000', fontWeight: 'bold', letterSpacing: '1px', margin: 0 }}>EXPLORADOR DE STORAGE (media_bodega)</p>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <button className="neon-btn nav-btn" onClick={fetchStorageFiles} style={{ padding: '6px 12px', fontSize: '0.7rem' }}>
+                    {isLoadingStorage ? 'Cargando...' : 'Actualizar'}
+                  </button>
+                </div>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <button
+                  onClick={() => {
+                    setIsMultiSelectStorageMode(!isMultiSelectStorageMode);
+                    if (isMultiSelectStorageMode) setSelectedStorageFiles([]);
+                  }}
+                  style={{
+                    backgroundColor: isMultiSelectStorageMode ? '#333' : 'transparent',
+                    border: '1px solid #555',
+                    color: '#fff',
+                    padding: '6px 12px',
+                    borderRadius: '6px',
+                    cursor: 'pointer',
+                    fontSize: '0.7rem',
+                    fontWeight: 'bold',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px'
+                  }}
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+                  {isMultiSelectStorageMode ? 'Cancelar Selección' : 'Selección Múltiple'}
+                </button>
+                {isMultiSelectStorageMode && selectedStorageFiles.length > 0 && (
+                  <button
+                    onClick={() => deleteStorageFiles(selectedStorageFiles)}
+                    style={{
+                      backgroundColor: '#ff4444',
+                      border: 'none',
+                      color: '#fff',
+                      padding: '6px 12px',
+                      borderRadius: '6px',
+                      cursor: 'pointer',
+                      fontSize: '0.7rem',
+                      fontWeight: 'bold',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px'
+                    }}
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                    Eliminar ({selectedStorageFiles.length})
+                  </button>
+                )}
+              </div>
             </div>
 
             {isLoadingStorage ? (
@@ -1555,15 +1620,67 @@ export default function NaylaCore() {
                   const sizeFormatted = size ? (size / 1024 / 1024).toFixed(2) + ' MB' : 'Desconocido';
                   const dateFormatted = file.created_at ? new Date(file.created_at).toLocaleString() : '';
 
+                  const isSelected = isMultiSelectStorageMode && selectedStorageFiles.includes(file.name);
+                  const computedBorderColor = isSelected ? '#ff4444' : (darkMode ? '#222' : '#e5e5e5');
+                  const computedBorderWidth = isSelected ? '2px' : '1px';
+
                   return (
-                    <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: darkMode ? '#111' : '#f9f9f9', border: `1px solid ${darkMode ? '#222' : '#e5e5e5'}`, padding: '10px 12px', borderRadius: '8px' }}>
+                    <div key={i}
+                      onContextMenu={(e) => e.preventDefault()}
+                      onPointerDown={() => {
+                        longPressTimerRef.current = setTimeout(() => {
+                          if (!isMultiSelectStorageMode) {
+                            setIsMultiSelectStorageMode(true);
+                            setSelectedStorageFiles([file.name]);
+                          }
+                        }, 600);
+                      }}
+                      onPointerUp={() => {
+                        if (longPressTimerRef.current) {
+                          clearTimeout(longPressTimerRef.current);
+                          longPressTimerRef.current = null;
+                        }
+                      }}
+                      onPointerLeave={() => {
+                        if (longPressTimerRef.current) {
+                          clearTimeout(longPressTimerRef.current);
+                          longPressTimerRef.current = null;
+                        }
+                      }}
+                      onPointerMove={() => {
+                        if (longPressTimerRef.current) {
+                          clearTimeout(longPressTimerRef.current);
+                          longPressTimerRef.current = null;
+                        }
+                      }}
+                      onPointerCancel={() => {
+                        if (longPressTimerRef.current) {
+                          clearTimeout(longPressTimerRef.current);
+                          longPressTimerRef.current = null;
+                        }
+                      }}
+                      onClick={() => {
+                        if (isMultiSelectStorageMode) {
+                          if (selectedStorageFiles.includes(file.name)) {
+                            setSelectedStorageFiles(selectedStorageFiles.filter(name => name !== file.name));
+                          } else {
+                            setSelectedStorageFiles([...selectedStorageFiles, file.name]);
+                          }
+                        }
+                      }}
+                      style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: darkMode ? '#111' : '#f9f9f9', borderStyle: 'solid', borderColor: computedBorderColor, borderWidth: computedBorderWidth, padding: '10px 12px', borderRadius: '8px', cursor: isMultiSelectStorageMode ? 'pointer' : 'default', WebkitTouchCallout: 'none', WebkitUserSelect: 'none', userSelect: 'none' }}>
                       <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1, marginRight: '10px' }}>
                         <p style={{ fontSize: '0.8rem', color: darkMode ? '#fff' : '#000', margin: 0, fontWeight: '500', overflow: 'hidden', textOverflow: 'ellipsis' }}>{file.name}</p>
                         <p style={{ fontSize: '0.65rem', color: '#737373', margin: '4px 0 0 0' }}>{sizeFormatted} • {dateFormatted}</p>
                       </div>
                       <button
-                        onClick={() => deleteStorageFile(file.name)}
-                        style={{ background: 'none', border: 'none', color: '#ff4444', cursor: 'pointer', padding: '4px' }}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (!isMultiSelectStorageMode) {
+                            deleteStorageFile(file.name);
+                          }
+                        }}
+                        style={{ background: 'none', border: 'none', color: '#ff4444', cursor: 'pointer', padding: '4px', opacity: isMultiSelectStorageMode ? 0.3 : 1, pointerEvents: isMultiSelectStorageMode ? 'none' : 'auto' }}
                         title="Eliminar archivo"
                       >
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
@@ -2099,6 +2216,7 @@ export default function NaylaCore() {
 
                     return (
                       <div key={item.id} className="neon-btn"
+                        onContextMenu={(e) => e.preventDefault()}
                         onPointerDown={() => {
                           longPressTimerRef.current = setTimeout(() => {
                             if (!isMultiSelectMode) {
@@ -2131,7 +2249,7 @@ export default function NaylaCore() {
                             longPressTimerRef.current = null;
                           }
                         }}
-                        style={{ minHeight: '120px', padding: '10px', borderRadius: '12px', borderStyle: 'solid', borderColor: computedBorderColor, borderWidth: computedBorderWidth, flexDirection: 'column', position: 'relative', justifyContent: 'space-between', width: '100%' }}>
+                        style={{ minHeight: '120px', padding: '10px', borderRadius: '12px', borderStyle: 'solid', borderColor: computedBorderColor, borderWidth: computedBorderWidth, flexDirection: 'column', position: 'relative', justifyContent: 'space-between', width: '100%', WebkitTouchCallout: 'none', WebkitUserSelect: 'none', userSelect: 'none' }}>
                         <div className={`source-badge ${bgBadge}`} style={srcFuente === 'render' ? { backgroundColor: '#00ffcc', color: '#000' } : {}}>{txtBadge}</div>
                         <div style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                           <span style={{ fontSize: '0.65rem', backgroundColor: '#262626', padding: '2px 6px', borderRadius: '4px', color: darkMode ? '#fff' : '#000', fontWeight: 'bold' }}>{item.etiqueta}</span>
