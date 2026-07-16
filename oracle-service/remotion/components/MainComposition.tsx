@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { AbsoluteFill, Sequence, Video, Audio, useVideoConfig, useCurrentFrame, interpolate, delayRender, continueRender } from 'remotion';
+import { AbsoluteFill, Sequence, Video, Audio, useVideoConfig, useCurrentFrame, interpolate, Img } from 'remotion';
 import { TransitionSeries, linearTiming } from '@remotion/transitions';
 import { fade } from '@remotion/transitions/fade';
 import { wipe } from '@remotion/transitions/wipe';
@@ -21,16 +21,12 @@ interface MainCompositionProps {
 
 
 const PreloadedImage: React.FC<{ src: string; style?: React.CSSProperties }> = ({ src, style }) => {
-  const [handle] = React.useState(() => delayRender());
-
   return (
-    <img
+    <Img
       src={src}
       style={style}
-      onLoad={() => continueRender(handle)}
       onError={(e) => {
         console.error(`Failed to load image: ${src}`, e);
-        continueRender(handle); // still continue to prevent hanging indefinitely
       }}
     />
   );
