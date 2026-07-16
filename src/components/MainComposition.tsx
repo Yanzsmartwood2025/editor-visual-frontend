@@ -7,7 +7,7 @@ import { slide } from '@remotion/transitions/slide';
 import { zoomInOut } from '@remotion/transitions/zoom-in-out';
 
 // Interfaces based on main file
-type TimelineItem = { id: string; mediaId: string; tipo: 'foto' | 'video' | 'audio'; nombre: string; etiqueta: string; url: string; durationInSeconds?: number; originalDurationInSeconds?: number; volume?: number; fadeIn?: number; fadeOut?: number; scale?: number; delay?: number; startFrom?: number; loop?: boolean; playbackRate?: number; transitionDuration?: number; transitionType?: 'fade' | 'none' | 'wipe' | 'slide' | 'zoom'; efecto?: string; brightness?: number; contrast?: number; saturation?: number; overlay?: string; overlayIntensity?: number; };
+type TimelineItem = { id: string; mediaId: string; tipo: 'foto' | 'video' | 'audio'; nombre: string; etiqueta: string; url: string; durationInSeconds?: number; originalDurationInSeconds?: number; volume?: number; fadeIn?: number; fadeOut?: number; scale?: number; delay?: number; startFrom?: number; trimBefore?: number; trimAfter?: number; loop?: boolean; playbackRate?: number; transitionDuration?: number; transitionType?: 'fade' | 'none' | 'wipe' | 'slide' | 'zoom'; efecto?: string; brightness?: number; contrast?: number; saturation?: number; overlay?: string; overlayIntensity?: number; };
 type SubtitleItem = { id: string; texto: string; inicioSec: number; finSec: number; };
 
 interface MainCompositionProps {
@@ -229,7 +229,8 @@ export const MainComposition: React.FC<MainCompositionProps> = ({ timeline, subt
                     <Video
                       src={clip.url}
                       volume={volume}
-                      startFrom={clip.startFrom ? Math.round(clip.startFrom * fps) : undefined}
+                      trimBefore={clip.trimBefore !== undefined ? Math.round(clip.trimBefore * fps) : (clip.startFrom ? Math.round(clip.startFrom * fps) : undefined)}
+                      trimAfter={clip.trimAfter !== undefined ? Math.round(clip.trimAfter * fps) : undefined}
                       loop={clip.loop}
                       playbackRate={clip.playbackRate || 1}
                       style={{ width: '100%', height: '100%', objectFit: 'contain', transform: clip.scale !== undefined ? `scale(${clip.scale})` : undefined, filter: getFilterStyle(clip) }}
@@ -308,7 +309,8 @@ export const MainComposition: React.FC<MainCompositionProps> = ({ timeline, subt
                <Audio
                  src={clip.url}
                  volume={volume}
-                 startFrom={clip.startFrom ? Math.round(clip.startFrom * fps) : undefined}
+                 trimBefore={clip.trimBefore !== undefined ? Math.round(clip.trimBefore * fps) : (clip.startFrom ? Math.round(clip.startFrom * fps) : undefined)}
+                      trimAfter={clip.trimAfter !== undefined ? Math.round(clip.trimAfter * fps) : undefined}
                  loop={clip.loop}
                  playbackRate={clip.playbackRate || 1}
                />
