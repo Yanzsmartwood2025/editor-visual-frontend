@@ -9,10 +9,12 @@ import { zoomInOut } from '@remotion/transitions/zoom-in-out';
 // Interfaces based on main file
 type TimelineItem = { id: string; mediaId: string; tipo: 'foto' | 'video' | 'audio'; nombre: string; etiqueta: string; url: string; durationInSeconds?: number; originalDurationInSeconds?: number; volume?: number; fadeIn?: number; fadeOut?: number; scale?: number; delay?: number; startFrom?: number; trimBefore?: number; trimAfter?: number; loop?: boolean; playbackRate?: number; transitionDuration?: number; transitionType?: 'fade' | 'none' | 'wipe' | 'slide' | 'zoom'; efecto?: string; brightness?: number; contrast?: number; saturation?: number; overlay?: string; overlayIntensity?: number; };
 type SubtitleItem = { id: string; texto: string; inicioSec: number; finSec: number; };
+type LogoItem = { id: string; url: string; x: number; y: number; scale: number; opacity: number; inicioSec?: number; finSec?: number; fadeIn?: number; fadeOut?: number; };
 
 interface MainCompositionProps {
   timeline: TimelineItem[];
   canvasRatio: '9/16' | '16/9' | '1/1' | '4/5';
+  logos?: LogoItem[];
   subtitles?: SubtitleItem[];
   settings?: {
     fadeOutFinal?: number;
@@ -95,6 +97,38 @@ const getFilterStyle = (clip: TimelineItem): string | undefined => {
   return filters.length > 0 ? filters.join(' ') : undefined;
 };
 
+
+const LogoWithFades: React.FC<{ logo: LogoItem, durationInFrames: number, fps: number }> = ({ logo, durationInFrames, fps }) => {
+  const frame = useCurrentFrame();
+
+  const fadeInFrames = logo.fadeIn ? Math.round(logo.fadeIn * fps) : 0;
+  const fadeOutFrames = logo.fadeOut ? Math.round(logo.fadeOut * fps) : 0;
+
+  let opacity = logo.opacity;
+
+  if (fadeInFrames > 0 && frame <= fadeInFrames) {
+      opacity = interpolate(frame, [0, fadeInFrames], [0, logo.opacity], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' });
+  } else if (fadeOutFrames > 0 && frame >= durationInFrames - fadeOutFrames) {
+      opacity = interpolate(frame, [durationInFrames - fadeOutFrames, durationInFrames], [logo.opacity, 0], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' });
+  }
+
+  return (
+    <AbsoluteFill style={{ pointerEvents: 'none' }}>
+      <Img
+        src={logo.url}
+        style={{
+          position: 'absolute',
+          left: `${logo.x}%`,
+          top: `${logo.y}%`,
+          transform: `translate(-50%, -50%) scale(${logo.scale})`,
+          opacity: opacity,
+          objectFit: 'contain'
+        }}
+      />
+    </AbsoluteFill>
+  );
+};
+
 const GlobalFadeOverlay: React.FC<{ durationInFrames: number }> = ({ durationInFrames }) => {
   const frame = useCurrentFrame();
   const opacity = interpolate(
@@ -161,7 +195,7 @@ const AnimatedVolume: React.FC<{ clip: TimelineItem, durationInFrames: number, r
   return <>{render(currentVolume)}</>;
 };
 
-export const MainComposition: React.FC<MainCompositionProps> = ({ timeline, subtitles = [], settings = {} }) => {
+export const MainComposition: React.FC<MainCompositionProps> = ({ timeline, subtitles = [], logos = [], settings = {} }) => {
   const { fps } = useVideoConfig();
 
   // We filter out videos and photos to build the main visual sequence
@@ -357,6 +391,31 @@ export const MainComposition: React.FC<MainCompositionProps> = ({ timeline, subt
               </AbsoluteFill>
             </Sequence>
          )
+      })}
+
+      {/* Global Logos Overlay */}
+      {logos.map(logo => {
+         let fromFrame = 0;
+         let durationInFrames = totalCompositionFrames;
+
+         if (logo.inicioSec !== undefined) {
+             fromFrame = Math.round(logo.inicioSec * fps);
+             durationInFrames -= fromFrame; // Adjust duration so it doesn't exceed total if no finSec
+         }
+
+         if (logo.finSec !== undefined) {
+             const endFrame = Math.round(logo.finSec * fps);
+             const durationFrames = endFrame - fromFrame;
+             if (durationFrames > 0) {
+                 durationInFrames = durationFrames;
+             }
+         }
+
+         return (
+            <Sequence key={logo.id} from={fromFrame} durationInFrames={durationInFrames}>
+               <LogoWithFades logo={logo} durationInFrames={durationInFrames} fps={fps} />
+            </Sequence>
+         );
       })}
     </AbsoluteFill>
   );

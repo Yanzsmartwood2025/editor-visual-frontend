@@ -20,7 +20,7 @@ type Rect = { id: string; x: number; y: number; width: number; height: number };
 type MediaItem = { id: string; url: string; tipo: 'foto' | 'video' | 'audio'; nombre: string; creado_en: string; esOverlay: boolean; etiqueta: string; fuente?: string };
 type TimelineItem = { id: string; mediaId: string; tipo: 'foto' | 'video' | 'audio'; nombre: string; etiqueta: string; url: string; durationInSeconds?: number; originalDurationInSeconds?: number; volume?: number; fadeIn?: number; fadeOut?: number; scale?: number; delay?: number; startFrom?: number; trimBefore?: number; trimAfter?: number; loop?: boolean; overlay?: string; overlayIntensity?: number; };
 type SubtitleItem = { id: string; texto: string; inicioSec: number; finSec: number; };
-type LogoItem = { id: string; url: string; x: number; y: number; scale: number; opacity: number; };
+type LogoItem = { id: string; url: string; x: number; y: number; scale: number; opacity: number; inicioSec?: number; finSec?: number; fadeIn?: number; fadeOut?: number; };
 type MarcoConfig = {
   posicion: 'derecha' | 'izquierda' | 'abajo' | 'arriba' | 'derecha+abajo' | 'derecha+arriba' | 'izquierda+abajo' | 'izquierda+arriba';
   grosor: number;
@@ -1085,14 +1085,18 @@ export default function NaylaCore() {
           setSubtitulos(prev => [...prev, ...subsAInsertar]);
         },
         limpiarSubtitulos: () => setSubtitulos([]),
-        agregarLogo: (url: string, opciones?: { x?: number, y?: number, scale?: number, opacity?: number }) => {
+        agregarLogo: (url: string, opciones?: { x?: number, y?: number, scale?: number, opacity?: number, inicioSec?: number, finSec?: number, fadeIn?: number, fadeOut?: number }) => {
           const nuevoLogo: LogoItem = {
              id: Date.now().toString() + Math.random().toString(),
              url,
              x: opciones?.x !== undefined ? opciones.x : 50,
              y: opciones?.y !== undefined ? opciones.y : 50,
              scale: opciones?.scale !== undefined ? opciones.scale : 1,
-             opacity: opciones?.opacity !== undefined ? opciones.opacity : 1
+             opacity: opciones?.opacity !== undefined ? opciones.opacity : 1,
+             inicioSec: opciones?.inicioSec,
+             finSec: opciones?.finSec,
+             fadeIn: opciones?.fadeIn,
+             fadeOut: opciones?.fadeOut
           };
           setLogos(prev => [...prev, nuevoLogo]);
         },

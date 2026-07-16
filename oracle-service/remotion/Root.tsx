@@ -28,7 +28,8 @@ const defaultProps = {
   subtitles: [
     { id: 's1', texto: 'Existe un lugar al pie del monte Fuji...', inicioSec: 0, finSec: 5 },
     { id: 's2', texto: 'Donde el silencio parece tener vida propia.', inicioSec: 5, finSec: 10 }
-  ]
+  ],
+  logos: []
 };
 
 export const RemotionRoot: React.FC = () => {
