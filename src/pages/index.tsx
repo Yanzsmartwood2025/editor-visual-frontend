@@ -18,7 +18,7 @@ const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 type Rect = { id: string; x: number; y: number; width: number; height: number };
 type MediaItem = { id: string; url: string; tipo: 'foto' | 'video' | 'audio'; nombre: string; creado_en: string; esOverlay: boolean; etiqueta: string; fuente?: string };
-type TimelineItem = { id: string; mediaId: string; tipo: 'foto' | 'video' | 'audio'; nombre: string; etiqueta: string; url: string; durationInSeconds?: number; originalDurationInSeconds?: number; volume?: number; fadeIn?: number; fadeOut?: number; scale?: number; delay?: number; startFrom?: number; loop?: boolean; overlay?: string; overlayIntensity?: number; };
+type TimelineItem = { id: string; mediaId: string; tipo: 'foto' | 'video' | 'audio'; nombre: string; etiqueta: string; url: string; durationInSeconds?: number; originalDurationInSeconds?: number; volume?: number; fadeIn?: number; fadeOut?: number; scale?: number; delay?: number; startFrom?: number; loop?: boolean; };
 type SubtitleItem = { id: string; texto: string; inicioSec: number; finSec: number; };
 type MarcoConfig = {
   posicion: 'derecha' | 'izquierda' | 'abajo' | 'arriba' | 'derecha+abajo' | 'derecha+arriba' | 'izquierda+abajo' | 'izquierda+arriba';
@@ -119,6 +119,7 @@ export default function NaylaCore() {
   const [galeriaMultimedia, setGaleriaMultimedia] = useState<MediaItem[]>([]);
   const [lineaDeTiempo, setLineaDeTiempo] = useState<TimelineItem[]>([]);
   const [subtitulos, setSubtitulos] = useState<SubtitleItem[]>([]);
+  const [logos, setLogos] = useState<LogoItem[]>([]);
   const [globalSettings, setGlobalSettings] = useState<{ fadeOutFinal?: number }>({});
   const [clipSeleccionado, setClipSeleccionado] = useState<string | null>(null);
   const [canvasRatio, setCanvasRatio] = useState<'9/16' | '16/9' | '1/1' | '4/5'>('9/16');
@@ -1055,7 +1056,7 @@ export default function NaylaCore() {
             return;
           }
 
-          const opcionesPermitidas = ['volume', 'fadeIn', 'fadeOut', 'scale', 'delay', 'startFrom', 'loop', 'url', 'nombre', 'durationInSeconds', 'playbackRate', 'transitionDuration', 'transitionType', 'efecto', 'brightness', 'contrast', 'saturation', 'blur', 'overlay', 'overlayIntensity'];
+          const opcionesPermitidas = ['volume', 'fadeIn', 'fadeOut', 'scale', 'delay', 'startFrom', 'loop', 'url', 'nombre', 'durationInSeconds', 'playbackRate', 'transitionDuration', 'transitionType', 'efecto', 'brightness', 'contrast', 'saturation', 'blur'];
           const opcionesDesconocidas = Object.keys(opciones).filter(k => !opcionesPermitidas.includes(k));
 
           if (opcionesDesconocidas.length > 0) {
@@ -1074,6 +1075,9 @@ export default function NaylaCore() {
             return arr;
           });
         },
+                agregarLogo: (url: string, opciones?: { x?: number; y?: number; scale?: number; opacity?: number; }) => {
+          setLogos(prev => [...prev, { id: `logo-${Date.now()}-${Math.random()}`, url, ...opciones }]);
+        },
         agregarSubtitulos: (nuevosSubtitulos: any[]) => {
           const subsAInsertar = nuevosSubtitulos.map(sub => {
             const inicioSec = sub.inicioSec !== undefined ? sub.inicioSec : (sub.inicio !== undefined ? sub.inicio : 0);
@@ -1087,6 +1091,7 @@ export default function NaylaCore() {
            return new Promise<void>((resolve) => {
                setLineaDeTiempo([]);
                setSubtitulos([]);
+               setLogos([]);
                setGlobalSettings({});
                setTimeout(() => {
                  sincronizarLineaDeTiempo([]);
@@ -1788,6 +1793,7 @@ export default function NaylaCore() {
                   <code style={{ color: '#00ffcc' }}>{"NaylaEngine.modificar('global', { fadeOutFinal: 2 });"}</code> - Fade a negro (2s) al final.<br />
                   <code style={{ color: '#00ffcc' }}>{"NaylaEngine.agregarSubtitulos([{ texto: \"Hola\", inicioSec: 0, finSec: 2 }]);"}</code> - Agrega subtítulos.<br />
                   <code style={{ color: '#00ffcc' }}>NaylaEngine.limpiarSubtitulos();</code> - Borra los subtítulos.<br />
+                  <code style={{ color: '#00ffcc' }}>{"NaylaEngine.agregarLogo('url', { x: 50, y: 50, scale: 1 });"}</code> - Agrega logo PIP.<br />
                   <code style={{ color: '#00ffcc' }}>NaylaEngine.limpiar();</code> - Borra pista y subtítulos.
                 </p>
                 <textarea value={codigoJsInput} onChange={(e) => setCodigoJsInput(e.target.value)} style={{ width: '100%', height: '100px', backgroundColor: '#0a0a0a', border: '1px solid #262626', borderRadius: '12px', color: '#00ffcc', padding: '1rem', fontFamily: 'monospace', outline: 'none', marginBottom: '1rem', resize: 'vertical' }} />
@@ -1852,6 +1858,7 @@ export default function NaylaCore() {
                       const inputProps = {
                         timeline: lineaValidada,
                         subtitles: subtitulos,
+          logos: logos,
                         canvasRatio,
                         settings: globalSettings
                       };

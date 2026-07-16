@@ -9,11 +9,13 @@ import { zoomInOut } from '@remotion/transitions/zoom-in-out';
 // Interfaces based on main file
 type TimelineItem = { id: string; mediaId: string; tipo: 'foto' | 'video' | 'audio'; nombre: string; etiqueta: string; url: string; durationInSeconds?: number; originalDurationInSeconds?: number; volume?: number; fadeIn?: number; fadeOut?: number; scale?: number; delay?: number; startFrom?: number; loop?: boolean; playbackRate?: number; transitionDuration?: number; transitionType?: 'fade' | 'none' | 'wipe' | 'slide' | 'zoom'; efecto?: string; brightness?: number; contrast?: number; saturation?: number; overlay?: string; overlayIntensity?: number; };
 type SubtitleItem = { id: string; texto: string; inicioSec: number; finSec: number; };
+type LogoItem = { id: string; url: string; x?: number; y?: number; scale?: number; opacity?: number; };
 
 interface MainCompositionProps {
   timeline: TimelineItem[];
   canvasRatio: '9/16' | '16/9' | '1/1' | '4/5';
   subtitles?: SubtitleItem[];
+  logos?: LogoItem[];
   settings?: {
     fadeOutFinal?: number;
   };
@@ -161,7 +163,7 @@ const AnimatedVolume: React.FC<{ clip: TimelineItem, durationInFrames: number, r
   return <>{render(currentVolume)}</>;
 };
 
-export const MainComposition: React.FC<MainCompositionProps> = ({ timeline, subtitles = [], settings = {} }) => {
+export const MainComposition: React.FC<MainCompositionProps> = ({ timeline, subtitles = [], logos = [], settings = {} }) => {
   const { fps } = useVideoConfig();
 
   // We filter out videos and photos to build the main visual sequence
@@ -325,6 +327,32 @@ export const MainComposition: React.FC<MainCompositionProps> = ({ timeline, subt
              </AbsoluteFill>
           </Sequence>
       )}
+
+            {/* Logos / PIP Overlays */}
+      {logos && logos.map(logo => {
+         return (
+             <AbsoluteFill key={logo.id} style={{
+                pointerEvents: 'none',
+                display: 'flex',
+                justifyContent: 'center',
+                alignItems: 'center'
+             }}>
+                 <Img
+                    src={logo.url}
+                    style={{
+                        position: 'absolute',
+                        left: logo.x !== undefined ? `${logo.x}%` : '50%',
+                        top: logo.y !== undefined ? `${logo.y}%` : '50%',
+                        transform: `translate(-50%, -50%) scale(${logo.scale !== undefined ? logo.scale : 1})`,
+                        opacity: logo.opacity !== undefined ? logo.opacity : 1,
+                        maxWidth: '100%',
+                        maxHeight: '100%',
+                        objectFit: 'contain'
+                    }}
+                 />
+             </AbsoluteFill>
+         );
+      })}
 
       {/* Subtitles Overlay */}
       {subtitles.map(sub => {
