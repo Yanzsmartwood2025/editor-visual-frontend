@@ -107,24 +107,38 @@ const AnimatedVolume: React.FC<{ clip: TimelineItem, durationInFrames: number, r
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
 
-  const fadeInFrames = Math.max(1, Math.round((clip.fadeIn || 0) * fps));
-  const fadeOutFrames = Math.max(1, Math.round((clip.fadeOut || 0) * fps));
-
-  const inputRange = [
-    0,
-    fadeInFrames,
-    Math.max(fadeInFrames + 1, durationInFrames - fadeOutFrames - 1),
-    Math.max(fadeInFrames + 2, durationInFrames - 1)
-  ];
-
+  const hasFade = (clip.fadeIn || 0) > 0 || (clip.fadeOut || 0) > 0;
   const targetVolume = clip.volume !== undefined ? Number(clip.volume) : 1;
 
-  let currentVolume = interpolate(
-    frame,
-    inputRange,
-    [(clip.fadeIn || 0) > 0 ? 0 : targetVolume, targetVolume, targetVolume, (clip.fadeOut || 0) > 0 ? 0 : targetVolume],
-    { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' }
-  );
+  let currentVolume = targetVolume;
+
+  if (hasFade) {
+    let effectiveFrame = frame;
+    let effectiveDuration = durationInFrames;
+
+    if (clip.loop && clip.originalDurationInSeconds) {
+      const loopDurationFrames = Math.max(1, Math.round(clip.originalDurationInSeconds * fps));
+      effectiveFrame = frame % loopDurationFrames;
+      effectiveDuration = loopDurationFrames;
+    }
+
+    const fadeInFrames = Math.max(1, Math.round((clip.fadeIn || 0) * fps));
+    const fadeOutFrames = Math.max(1, Math.round((clip.fadeOut || 0) * fps));
+
+    const inputRange = [
+      0,
+      fadeInFrames,
+      Math.max(fadeInFrames + 1, effectiveDuration - fadeOutFrames - 1),
+      Math.max(fadeInFrames + 2, effectiveDuration - 1)
+    ];
+
+    currentVolume = interpolate(
+      effectiveFrame,
+      inputRange,
+      [(clip.fadeIn || 0) > 0 ? 0 : targetVolume, targetVolume, targetVolume, (clip.fadeOut || 0) > 0 ? 0 : targetVolume],
+      { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' }
+    );
+  }
 
   if (globalFadeOutFrames && globalFadeOutFrames > 0 && absoluteStartFrame !== undefined && totalCompositionFrames !== undefined) {
       const globalFadeStartFrame = totalCompositionFrames - globalFadeOutFrames;
