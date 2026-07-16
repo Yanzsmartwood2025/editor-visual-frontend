@@ -20,6 +20,7 @@ type Rect = { id: string; x: number; y: number; width: number; height: number };
 type MediaItem = { id: string; url: string; tipo: 'foto' | 'video' | 'audio'; nombre: string; creado_en: string; esOverlay: boolean; etiqueta: string; fuente?: string };
 type TimelineItem = { id: string; mediaId: string; tipo: 'foto' | 'video' | 'audio'; nombre: string; etiqueta: string; url: string; durationInSeconds?: number; originalDurationInSeconds?: number; volume?: number; fadeIn?: number; fadeOut?: number; scale?: number; delay?: number; startFrom?: number; loop?: boolean; overlay?: string; overlayIntensity?: number; };
 type SubtitleItem = { id: string; texto: string; inicioSec: number; finSec: number; };
+type LogoItem = { id: string; url: string; x: number; y: number; scale: number; opacity: number; };
 type MarcoConfig = {
   posicion: 'derecha' | 'izquierda' | 'abajo' | 'arriba' | 'derecha+abajo' | 'derecha+arriba' | 'izquierda+abajo' | 'izquierda+arriba';
   grosor: number;
@@ -119,6 +120,7 @@ export default function NaylaCore() {
   const [galeriaMultimedia, setGaleriaMultimedia] = useState<MediaItem[]>([]);
   const [lineaDeTiempo, setLineaDeTiempo] = useState<TimelineItem[]>([]);
   const [subtitulos, setSubtitulos] = useState<SubtitleItem[]>([]);
+  const [logos, setLogos] = useState<LogoItem[]>([]);
   const [globalSettings, setGlobalSettings] = useState<{ fadeOutFinal?: number }>({});
   const [clipSeleccionado, setClipSeleccionado] = useState<string | null>(null);
   const [canvasRatio, setCanvasRatio] = useState<'9/16' | '16/9' | '1/1' | '4/5'>('9/16');
@@ -1083,10 +1085,22 @@ export default function NaylaCore() {
           setSubtitulos(prev => [...prev, ...subsAInsertar]);
         },
         limpiarSubtitulos: () => setSubtitulos([]),
+        agregarLogo: (url: string, opciones?: { x?: number, y?: number, scale?: number, opacity?: number }) => {
+          const nuevoLogo: LogoItem = {
+             id: Date.now().toString() + Math.random().toString(),
+             url,
+             x: opciones?.x !== undefined ? opciones.x : 50,
+             y: opciones?.y !== undefined ? opciones.y : 50,
+             scale: opciones?.scale !== undefined ? opciones.scale : 1,
+             opacity: opciones?.opacity !== undefined ? opciones.opacity : 1
+          };
+          setLogos(prev => [...prev, nuevoLogo]);
+        },
         limpiar: async () => {
            return new Promise<void>((resolve) => {
                setLineaDeTiempo([]);
                setSubtitulos([]);
+               setLogos([]);
                setGlobalSettings({});
                setTimeout(() => {
                  sincronizarLineaDeTiempo([]);
@@ -1852,6 +1866,7 @@ export default function NaylaCore() {
                       const inputProps = {
                         timeline: lineaValidada,
                         subtitles: subtitulos,
+                        logos: logos,
                         canvasRatio,
                         settings: globalSettings
                       };

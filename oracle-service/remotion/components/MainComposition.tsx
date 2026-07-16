@@ -9,11 +9,13 @@ import { zoomInOut } from '@remotion/transitions/zoom-in-out';
 // Interfaces based on main file
 type TimelineItem = { id: string; mediaId: string; tipo: 'foto' | 'video' | 'audio'; nombre: string; etiqueta: string; url: string; durationInSeconds?: number; originalDurationInSeconds?: number; volume?: number; fadeIn?: number; fadeOut?: number; scale?: number; delay?: number; startFrom?: number; loop?: boolean; playbackRate?: number; transitionDuration?: number; transitionType?: 'fade' | 'none' | 'wipe' | 'slide' | 'zoom'; efecto?: string; brightness?: number; contrast?: number; saturation?: number; overlay?: string; overlayIntensity?: number; };
 type SubtitleItem = { id: string; texto: string; inicioSec: number; finSec: number; };
+type LogoItem = { id: string; url: string; x: number; y: number; scale: number; opacity: number; };
 
 interface MainCompositionProps {
   timeline: TimelineItem[];
   canvasRatio: '9/16' | '16/9' | '1/1' | '4/5';
   subtitles?: SubtitleItem[];
+  logos?: LogoItem[];
   settings?: {
     fadeOutFinal?: number;
   };
@@ -161,7 +163,7 @@ const AnimatedVolume: React.FC<{ clip: TimelineItem, durationInFrames: number, r
   return <>{render(currentVolume)}</>;
 };
 
-export const MainComposition: React.FC<MainCompositionProps> = ({ timeline, subtitles = [], settings = {} }) => {
+export const MainComposition: React.FC<MainCompositionProps> = ({ timeline, subtitles = [], logos = [], settings = {} }) => {
   const { fps } = useVideoConfig();
 
   // We filter out videos and photos to build the main visual sequence
@@ -356,6 +358,23 @@ export const MainComposition: React.FC<MainCompositionProps> = ({ timeline, subt
             </Sequence>
          )
       })}
+
+      {/* Global Logos Overlay */}
+      {logos.map(logo => (
+         <AbsoluteFill key={logo.id} style={{ pointerEvents: 'none' }}>
+           <Img
+             src={logo.url}
+             style={{
+               position: 'absolute',
+               left: `${logo.x}%`,
+               top: `${logo.y}%`,
+               transform: `translate(-50%, -50%) scale(${logo.scale})`,
+               opacity: logo.opacity,
+               objectFit: 'contain'
+             }}
+           />
+         </AbsoluteFill>
+      ))}
     </AbsoluteFill>
   );
 };
