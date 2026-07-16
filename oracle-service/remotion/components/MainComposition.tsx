@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { AbsoluteFill, Sequence, Video, Audio, useVideoConfig, useCurrentFrame, interpolate, Img } from 'remotion';
+import { AbsoluteFill, Sequence, Video, Audio, useVideoConfig, useCurrentFrame, interpolate, Img, Loop } from 'remotion';
 import { TransitionSeries, linearTiming } from '@remotion/transitions';
 import { fade } from '@remotion/transitions/fade';
 import { wipe } from '@remotion/transitions/wipe';
@@ -7,7 +7,7 @@ import { slide } from '@remotion/transitions/slide';
 import { zoomInOut } from '@remotion/transitions/zoom-in-out';
 
 // Interfaces based on main file
-type TimelineItem = { id: string; mediaId: string; tipo: 'foto' | 'video' | 'audio'; nombre: string; etiqueta: string; url: string; durationInSeconds?: number; originalDurationInSeconds?: number; volume?: number; fadeIn?: number; fadeOut?: number; scale?: number; delay?: number; startFrom?: number; loop?: boolean; playbackRate?: number; transitionDuration?: number; transitionType?: 'fade' | 'none' | 'wipe' | 'slide' | 'zoom'; efecto?: string; brightness?: number; contrast?: number; saturation?: number; };
+type TimelineItem = { id: string; mediaId: string; tipo: 'foto' | 'video' | 'audio'; nombre: string; etiqueta: string; url: string; durationInSeconds?: number; originalDurationInSeconds?: number; volume?: number; fadeIn?: number; fadeOut?: number; scale?: number; delay?: number; startFrom?: number; loop?: boolean; playbackRate?: number; transitionDuration?: number; transitionType?: 'fade' | 'none' | 'wipe' | 'slide' | 'zoom'; efecto?: string; brightness?: number; contrast?: number; saturation?: number; overlay?: string; overlayIntensity?: number; };
 type SubtitleItem = { id: string; texto: string; inicioSec: number; finSec: number; };
 
 interface MainCompositionProps {
@@ -87,7 +87,10 @@ const getFilterStyle = (clip: TimelineItem): string | undefined => {
   if (clip.contrast !== undefined) filters.push(`contrast(${clip.contrast})`);
   if (clip.saturation !== undefined) filters.push(`saturate(${clip.saturation})`);
   // If the user manually provided a blur number instead of string effect
-  if ((clip as any).blur !== undefined && typeof (clip as any).blur === 'number') filters.push(`blur(${(clip as any).blur}px)`);
+  if (/* eslint-disable-next-line @typescript-eslint/no-explicit-any */
+  (clip as any).blur !== undefined && typeof /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
+  (clip as any).blur === 'number') filters.push(`blur(${/* eslint-disable-next-line @typescript-eslint/no-explicit-any */
+  (clip as any).blur}px)`);
 
   return filters.length > 0 ? filters.join(' ') : undefined;
 };
@@ -171,17 +174,8 @@ export const MainComposition: React.FC<MainCompositionProps> = ({ timeline, subt
       if (clip.tipo === 'video' && clip.durationInSeconds === undefined) {
         throw new Error(`Critical Error: Clip '${clip.nombre || clip.etiqueta}' (URL: ${clip.url}) was passed to Remotion Composition without a valid durationInSeconds.`);
       }
-
-      let effectivePlaybackRate = clip.playbackRate || 1;
-      if (clip.durationInSeconds !== undefined && clip.originalDurationInSeconds !== undefined && clip.durationInSeconds !== clip.originalDurationInSeconds) {
-        // Automatically stretch/compress by overriding playbackRate ONLY if duration was changed
-        effectivePlaybackRate = clip.originalDurationInSeconds / clip.durationInSeconds;
-      }
-
-      const targetDurationSec = clip.durationInSeconds !== undefined ? clip.durationInSeconds : (clip.tipo === 'foto' ? 5 : 5);
-      // If we calculate playbackRate, the media plays at effectivePlaybackRate.
-      // The duration in frames is just the target duration * fps.
-      const durationInFrames = Math.round(targetDurationSec * fps);
+      const baseDurationSec = clip.durationInSeconds !== undefined ? clip.durationInSeconds : (clip.tipo === 'foto' ? 5 : 5);
+      const durationInFrames = Math.round((baseDurationSec / (clip.playbackRate || 1)) * fps);
 
       const absoluteStartFrame = currentAbsoluteFrame;
       currentAbsoluteFrame += durationInFrames;
@@ -195,7 +189,7 @@ export const MainComposition: React.FC<MainCompositionProps> = ({ timeline, subt
          }
       }
 
-      return { ...clip, durationInFrames, playbackRate: effectivePlaybackRate, absoluteStartFrame };
+      return { ...clip, durationInFrames, absoluteStartFrame };
     });
   }, [visualClips, fps]);
 
@@ -247,6 +241,34 @@ export const MainComposition: React.FC<MainCompositionProps> = ({ timeline, subt
                     style={{ width: '100%', height: '100%', objectFit: 'contain', transform: clip.scale !== undefined ? `scale(${clip.scale})` : undefined, filter: getFilterStyle(clip) }}
                   />
                 )}
+                {clip.overlay === 'vignette' && (
+                    <AbsoluteFill style={{
+                        pointerEvents: 'none',
+                        background: `radial-gradient(circle, transparent 50%, rgba(0,0,0,${clip.overlayIntensity !== undefined ? clip.overlayIntensity : 0.5}) 100%)`
+                    }} />
+                )}
+                {clip.overlay === 'film-grain' && (
+                    <AbsoluteFill style={{
+                        pointerEvents: 'none',
+                        opacity: clip.overlayIntensity !== undefined ? clip.overlayIntensity : 0.5,
+                        mixBlendMode: 'overlay',
+                        backgroundImage: `url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E")`,
+                    }} />
+                )}
+                {clip.overlay === 'light-leak' && (
+                    <AbsoluteFill style={{
+                        pointerEvents: 'none',
+                        opacity: clip.overlayIntensity !== undefined ? clip.overlayIntensity : 0.5,
+                        mixBlendMode: 'screen',
+                    }}>
+                        <Loop durationInFrames={150}>
+                            <Video
+                                src="https://assets.mixkit.co/videos/48011/48011-720.mp4"
+                                style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                            />
+                        </Loop>
+                    </AbsoluteFill>
+                )}
               </ClipWithFades>
             </TransitionSeries.Sequence>
           );
@@ -256,6 +278,7 @@ export const MainComposition: React.FC<MainCompositionProps> = ({ timeline, subt
              if (nextClip.transitionType && nextClip.transitionType !== 'none' && nextClip.transitionDuration) {
                 const transDurationFrames = Math.round(nextClip.transitionDuration * fps);
 
+                /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
                 let presentation: any = fade();
                 if (nextClip.transitionType === 'wipe') presentation = wipe();
                 else if (nextClip.transitionType === 'slide') presentation = slide();
@@ -277,14 +300,7 @@ export const MainComposition: React.FC<MainCompositionProps> = ({ timeline, subt
 
       {/* For simplicity, audio clips start at frame 0 and loop/play their duration. We can improve this later to position them. */}
       {audioClips.map((clip) => {
-        let effectivePlaybackRate = clip.playbackRate || 1;
-        if (clip.durationInSeconds !== undefined && clip.originalDurationInSeconds !== undefined && clip.durationInSeconds !== clip.originalDurationInSeconds) {
-          effectivePlaybackRate = clip.originalDurationInSeconds / clip.durationInSeconds;
-        }
-
-        const targetDurationSec = clip.durationInSeconds || 5;
-        const audioDurationInFrames = Math.round(targetDurationSec * fps);
-
+        const audioDurationInFrames = Math.round((clip.durationInSeconds || 5) / (clip.playbackRate || 1) * fps);
         const startFrame = clip.delay ? Math.round(clip.delay * fps) : 0;
         return (
           <Sequence key={clip.id} from={startFrame} durationInFrames={audioDurationInFrames}>
@@ -294,7 +310,7 @@ export const MainComposition: React.FC<MainCompositionProps> = ({ timeline, subt
                  volume={volume}
                  startFrom={clip.startFrom ? Math.round(clip.startFrom * fps) : undefined}
                  loop={clip.loop}
-                 playbackRate={effectivePlaybackRate}
+                 playbackRate={clip.playbackRate || 1}
                />
             )} />
           </Sequence>
