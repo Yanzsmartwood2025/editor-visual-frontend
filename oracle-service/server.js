@@ -10,8 +10,137 @@ const { GoogleGenerativeAI } = require('@google/generative-ai');
 
 const app = express();
 
+
 // Registro en memoria de jobs de renderizado de Remotion
 global.renderJobs = global.renderJobs || {};
+
+// Sistema de Cola para Renders
+const renderQueue = [];
+let isRenderProcessing = false;
+let activeRemotionProcess = null; // Para poder matarlo si se cancela
+
+async function processRenderQueue() {
+    if (isRenderProcessing || renderQueue.length === 0) {
+        return;
+    }
+
+    isRenderProcessing = true;
+    const jobId = renderQueue.shift();
+    const job = global.renderJobs[jobId];
+
+    if (!job || job.status === 'cancelled') {
+        // Job was cancelled while in queue
+        isRenderProcessing = false;
+        processRenderQueue();
+        return;
+    }
+
+    job.status = 'processing';
+    const { inputProps, propsPath, outputPath } = job.internalData;
+
+    try {
+        console.log(`[Job ${jobId}] Iniciando renderizado de Remotion en background...`);
+        fs.writeFileSync(propsPath, JSON.stringify(inputProps));
+
+        const remotionArgs = [
+            'remotion', 'render',
+            'remotion/index.ts',
+            'MainVideo',
+            outputPath,
+            `--props=${propsPath}`,
+            '--browser-executable=/usr/bin/chromium',
+            '--concurrency=3'
+        ];
+
+        console.log(`[Job ${jobId}] Usando binario de Chromium en: /usr/bin/chromium`);
+        console.log(`[Job ${jobId}] Ejecutando comando: npx ${remotionArgs.join(' ')}`);
+
+        const renderStartTime = Date.now();
+        const { spawn } = require('child_process');
+        activeRemotionProcess = spawn('npx', remotionArgs);
+
+        let stdoutOutput = '';
+        let stderrOutput = '';
+
+        const pushLog = (data) => {
+            if (global.renderJobs[jobId]) {
+                const lines = data.toString().split('\n').filter(l => l.trim() !== '');
+                global.renderJobs[jobId].logs.push(...lines);
+                if (global.renderJobs[jobId].logs.length > 100) {
+                    global.renderJobs[jobId].logs = global.renderJobs[jobId].logs.slice(-100);
+                }
+            }
+        };
+
+        activeRemotionProcess.stdout.on('data', (data) => {
+            stdoutOutput += data.toString();
+            pushLog(data);
+        });
+        activeRemotionProcess.stderr.on('data', (data) => {
+            stderrOutput += data.toString();
+            pushLog(data);
+        });
+
+        await new Promise((resolve, reject) => {
+            activeRemotionProcess.on('error', (err) => {
+                reject(new Error(`Fallo al ejecutar Remotion: ${err.message}`));
+            });
+            activeRemotionProcess.on('close', (code) => {
+                if (code === 0) {
+                    resolve();
+                } else {
+                    reject(new Error(`Remotion salió con código ${code}`));
+                }
+            });
+        });
+
+        // If it was cancelled while running, don't upload
+        if (global.renderJobs[jobId].status === 'cancelled') {
+             throw new Error('El render fue cancelado por el usuario.');
+        }
+
+        console.log(`[Job ${jobId}] Render completado localmente en ${Date.now() - renderStartTime}ms. Subiendo a Supabase...`);
+
+        const fileBuffer = fs.readFileSync(outputPath);
+        const storagePath = `render_${jobId}_${Date.now()}.mp4`;
+
+        const { data: uploadData, error: uploadError } = await supabase.storage
+            .from('media_bodega')
+            .upload(storagePath, fileBuffer, {
+                contentType: 'video/mp4',
+                upsert: false
+            });
+
+        if (uploadError) throw new Error(`Error subiendo a Supabase: ${uploadError.message}`);
+
+        const { data: publicUrlData } = supabase.storage
+            .from('media_bodega')
+            .getPublicUrl(storagePath);
+
+        console.log(`[Job ${jobId}] Subida exitosa. URL: ${publicUrlData.publicUrl}`);
+
+        global.renderJobs[jobId].status = 'completed';
+        global.renderJobs[jobId].url = publicUrlData.publicUrl;
+        global.renderJobs[jobId].logs.push('Renderizado y subida completados exitosamente.');
+
+    } catch (err) {
+        console.error(`[Job ${jobId}] Error general de renderizado:`, err);
+        if (global.renderJobs[jobId].status !== 'cancelled') {
+            global.renderJobs[jobId].status = 'error';
+            global.renderJobs[jobId].error = err.message;
+            global.renderJobs[jobId].logs.push(`ERROR: ${err.message}`);
+        }
+    } finally {
+        activeRemotionProcess = null;
+        if (fs.existsSync(propsPath)) fs.unlinkSync(propsPath);
+        if (fs.existsSync(outputPath)) fs.unlinkSync(outputPath);
+
+        isRenderProcessing = false;
+        // Proceed to next job
+        processRenderQueue();
+    }
+}
+
 
 // --- Tareas de Limpieza Automática ---
 let isTmpCleanupRunning = false;
@@ -667,7 +796,20 @@ app.post('/api/render-remotion', async (req, res) => {
     console.log(`[render-remotion] Solicitud de renderizado recibida.`);
 
     const jobId = uuidv4();
-    global.renderJobs[jobId] = { status: 'processing', url: null, error: null, logs: [] };
+    const propsFilename = `props_${jobId}.json`;
+    const propsPath = path.join('/tmp', propsFilename);
+    const outputFilename = `render_${jobId}.mp4`;
+    const outputPath = path.join('/tmp', outputFilename);
+
+    global.renderJobs[jobId] = {
+        status: 'queued',
+        url: null,
+        error: null,
+        logs: ['Job añadido a la cola...'],
+        internalData: { inputProps, propsPath, outputPath } // Guardamos datos para procesar luego
+    };
+
+    renderQueue.push(jobId);
 
     // Responder inmediatamente (HTTP 202 Accepted)
     res.status(202).json({
@@ -675,148 +817,55 @@ app.post('/api/render-remotion', async (req, res) => {
         jobId: jobId
     });
 
-    const propsFilename = `props_${jobId}.json`;
-    const propsPath = path.join('/tmp', propsFilename);
-    const outputFilename = `render_${jobId}.mp4`;
-    const outputPath = path.join('/tmp', outputFilename);
+    // Iniciar procesamiento si no hay ninguno activo
+    processRenderQueue();
+});
 
-    try {
-        console.log(`[Job ${jobId}] Iniciando renderizado de Remotion en background...`);
-        fs.writeFileSync(propsPath, JSON.stringify(inputProps));
+app.delete('/api/render-cancel/:jobId', (req, res) => {
+    const authHeader = req.headers.authorization;
+    if (authHeader !== `Bearer ${process.env.ORACLE_SECRET}`) {
+        return res.status(401).json({ error: 'Unauthorized: Invalid ORACLE_SECRET' });
+    }
 
-        const remotionArgs = [
-            'remotion', 'render',
-            'remotion/index.ts',
-            'MainVideo',
-            outputPath,
-            `--props=${propsPath}`,
-            '--browser-executable=/usr/bin/chromium',
-            '--concurrency=3'
-        ];
+    const { jobId } = req.params;
+    const job = global.renderJobs[jobId];
 
-        console.log(`[Job ${jobId}] Usando binario de Chromium en: /usr/bin/chromium`);
-        console.log(`[Job ${jobId}] Ejecutando comando: npx ${remotionArgs.join(' ')}`);
+    if (!job) {
+        return res.status(404).json({ error: 'Job no encontrado.' });
+    }
 
-        const renderStartTime = Date.now();
-        const remotionProcess = spawn('npx', remotionArgs);
-        let stdoutOutput = '';
-        let stderrOutput = '';
+    if (job.status === 'completed' || job.status === 'error' || job.status === 'cancelled') {
+        return res.status(400).json({ error: `El job ya finalizó con estado: ${job.status}` });
+    }
 
-        const pushLog = (data) => {
-            if (global.renderJobs[jobId]) {
-                const lines = data.toString().split('\n').filter(l => l.trim() !== '');
-                global.renderJobs[jobId].logs.push(...lines);
-                if (global.renderJobs[jobId].logs.length > 100) {
-                    global.renderJobs[jobId].logs = global.renderJobs[jobId].logs.slice(-100);
-                }
-            }
-        };
+    console.log(`[render-cancel] Cancelando job ${jobId}...`);
 
-        remotionProcess.stdout.on('data', (data) => {
-            stdoutOutput += data.toString();
-            pushLog(data);
-        });
-        remotionProcess.stderr.on('data', (data) => {
-            stderrOutput += data.toString();
-            pushLog(data);
-        });
-
-        await new Promise((resolve, reject) => {
-            remotionProcess.on('error', (err) => {
-                reject(new Error(`Fallo al ejecutar Remotion: ${err.message}`));
-            });
-            remotionProcess.on('close', (code) => {
-                if (code !== 0) {
-                    reject(new Error(`Remotion exit code ${code}. Output: ${stderrOutput}`));
-                } else {
-                    resolve();
-                }
-            });
-        });
-
-        const renderEndTime = Date.now();
-        const renderDurationSec = ((renderEndTime - renderStartTime) / 1000).toFixed(2);
-
-        console.log(`[Job ${jobId}] Remotion terminó el renderizado en ${renderDurationSec} segundos. Subiendo archivo...`);
-
-        if (!fs.existsSync(outputPath)) {
-            throw new Error(`El archivo de salida de Remotion no existe: ${outputPath}`);
+    if (job.status === 'queued') {
+        // Lo sacamos de la cola
+        const index = renderQueue.indexOf(jobId);
+        if (index > -1) {
+            renderQueue.splice(index, 1);
         }
+        job.status = 'cancelled';
+        job.logs.push('Render cancelado por el usuario (estaba en cola).');
+        return res.status(200).json({ message: 'Job cancelado exitosamente desde la cola.' });
+    }
 
-        const fileStream = fs.createReadStream(outputPath);
-        const storagePath = `${outputFilename}`;
-
-        const { data: uploadData, error: uploadError } = await supabase.storage
-            .from('media_bodega')
-            .upload(storagePath, fileStream, {
-                contentType: 'video/mp4',
-                cacheControl: '3600',
-                upsert: false,
-                duplex: 'half'
-            });
-
-        if (uploadError) throw uploadError;
-
-        const { data: publicUrlData } = supabase.storage
-            .from('media_bodega')
-            .getPublicUrl(storagePath);
-
-
-        const finalUrl = publicUrlData.publicUrl;
-        console.log(`[Job ${jobId}] Archivo de Remotion subido con éxito: ${finalUrl}`);
-
-        global.renderJobs[jobId] = { status: 'completed', url: finalUrl, error: null, logs: global.renderJobs[jobId].logs };
-
-        // Realizar limpieza de archivos temporales (media_bodega/direct_*) subidos durante la sesión actual
-        // El bucket ya tiene política de 24hs, pero el Motor Manual requiere limpieza rápida.
-        try {
-            console.log(`[Job ${jobId}] Ejecutando limpieza automática de archivos origen temporales...`);
-            // Buscar si en inputProps vienen las URLs temporales
-            if (inputProps && inputProps.timeline) {
-                 const directPaths = inputProps.timeline
-                      .map(item => item.url)
-                      .filter(url => url && url.includes('media_bodega/direct_'))
-                      .map(url => {
-                           try {
-                               // Extraer la ruta relativa para el bucket
-                               const urlObj = new URL(url);
-                               const pathSegments = urlObj.pathname.split('/');
-                               const bodegaIndex = pathSegments.indexOf('media_bodega');
-                               if (bodegaIndex !== -1) {
-                                   return pathSegments.slice(bodegaIndex).join('/');
-                               }
-                           } catch(e) {}
-                           return null;
-                      })
-                      .filter(Boolean);
-
-                 if (directPaths.length > 0) {
-                     const { error: deleteError } = await supabase.storage
-                         .from('media_bodega')
-                         .remove(directPaths);
-
-                     if (deleteError) {
-                         console.error(`[Job ${jobId}] Error al limpiar archivos temporales:`, deleteError);
-                     } else {
-                         console.log(`[Job ${jobId}] Limpiados ${directPaths.length} archivos temporales exitosamente.`);
-                     }
-                 } else {
-                     console.log(`[Job ${jobId}] No se encontraron archivos temporales para limpiar.`);
-                 }
-            }
-        } catch(cleanupErr) {
-            console.error(`[Job ${jobId}] Error general durante cleanup:`, cleanupErr);
+    if (job.status === 'processing') {
+        job.status = 'cancelled';
+        job.logs.push('Render cancelado por el usuario (estaba en proceso).');
+        if (activeRemotionProcess) {
+            // Matar el proceso de Chromium/Remotion
+            console.log(`[render-cancel] Matando proceso Remotion activo para ${jobId}...`);
+            activeRemotionProcess.kill('SIGTERM');
+            // Intentar forzar después de un margen de tiempo
+            setTimeout(() => {
+                if (activeRemotionProcess) {
+                    activeRemotionProcess.kill('SIGKILL');
+                }
+            }, 2000);
         }
-
-        // TODO: (Opcional) Notificar al cliente mediante Websockets (wss) cuando Nayla necesite saber que terminó
-
-
-    } catch (e) {
-        console.error(`[Job ${jobId}] Error en proceso de renderizado en background:`, e);
-        global.renderJobs[jobId] = { status: 'error', url: null, error: e.message, logs: global.renderJobs[jobId] ? global.renderJobs[jobId].logs : [] };
-    } finally {
-        if (fs.existsSync(propsPath)) fs.unlinkSync(propsPath);
-        if (fs.existsSync(outputPath)) fs.unlinkSync(outputPath);
+        return res.status(200).json({ message: 'Se envió la señal de cancelación al job en proceso.' });
     }
 });
 
