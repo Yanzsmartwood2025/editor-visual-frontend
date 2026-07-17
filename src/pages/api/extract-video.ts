@@ -23,16 +23,47 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
 
 
-  const isDirectUrl = (testUrl: string) => {
+  const checkDirectUrl = async (testUrl: string): Promise<{ isDirect: boolean; error?: string }> => {
     try {
       const parsed = new URL(testUrl);
       const pathname = parsed.pathname.toLowerCase();
-      return pathname.endsWith('.mp4') || pathname.endsWith('.webm') || pathname.endsWith('.mov') ||
+      const hasExtension = pathname.endsWith('.mp4') || pathname.endsWith('.webm') || pathname.endsWith('.mov') ||
              pathname.endsWith('.mp3') || pathname.endsWith('.wav') ||
              pathname.endsWith('.jpg') || pathname.endsWith('.jpeg') ||
              pathname.endsWith('.png') || pathname.endsWith('.webp');
+
+      if (hasExtension) {
+        return { isDirect: true };
+      }
+
+      // Si no tiene extensión, hacemos un HEAD request para ver el Content-Type
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 5000);
+      try {
+
+        const headRes = await fetch(testUrl, {
+          method: 'HEAD',
+          signal: controller.signal
+        });
+
+        if (headRes.ok) {
+          const contentType = headRes.headers.get('content-type') || '';
+          if (contentType.startsWith('image/') || contentType.startsWith('video/') || contentType.startsWith('audio/')) {
+            return { isDirect: true };
+          }
+        }
+        return { isDirect: false };
+      } catch (e: any) {
+        if (e.name === 'AbortError') {
+           return { isDirect: false, error: 'Timeout al verificar el tipo de archivo de la URL.' };
+        }
+        return { isDirect: false, error: 'Error al verificar el tipo de archivo de la URL.' };
+      } finally {
+        clearTimeout(timeoutId);
+      }
+
     } catch {
-      return false;
+      return { isDirect: false, error: 'Formato de URL inválido.' };
     }
   };
 
@@ -44,8 +75,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(500).json({ error: 'El servicio de extracción (Oráculo) no está configurado.' });
   }
 
+  const directCheck = await checkDirectUrl(url);
 
-  if (isDirectUrl(url)) {
+  if (directCheck.error) {
+    return res.status(400).json({ error: directCheck.error });
+  }
+
+  if (directCheck.isDirect) {
     console.log(`[extract-video] URL detectada como archivo directo: ${url}. Delegando al Motor Manual de Oracle.`);
     try {
       const oracleRes = await fetch(`${ORACLE_SERVER_URL}/api/extract-direct`, {
