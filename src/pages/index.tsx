@@ -21,6 +21,15 @@ type MediaItem = { id: string; url: string; tipo: 'foto' | 'video' | 'audio'; no
 type TimelineItem = { id: string; mediaId: string; tipo: 'foto' | 'video' | 'audio'; nombre: string; etiqueta: string; url: string; durationInSeconds?: number; originalDurationInSeconds?: number; volume?: number; fadeIn?: number; fadeOut?: number; scale?: number; delay?: number; startFrom?: number; trimBefore?: number; trimAfter?: number; loop?: boolean; overlay?: string; overlayIntensity?: number; };
 type SubtitleItem = { id: string; texto: string; inicioSec: number; finSec: number; };
 type LogoItem = { id: string; url: string; x: number; y: number; scale: number; opacity: number; inicioSec?: number; finSec?: number; fadeIn?: number; fadeOut?: number; };
+
+type RenderJob = {
+  jobId: string;
+  status: 'queued' | 'processing' | 'completed' | 'error' | 'cancelled';
+  url: string | null;
+  error: string | null;
+  logs: string[];
+};
+
 type MarcoConfig = {
   posicion: 'derecha' | 'izquierda' | 'abajo' | 'arriba' | 'derecha+abajo' | 'derecha+arriba' | 'izquierda+abajo' | 'izquierda+arriba';
   grosor: number;
@@ -128,6 +137,11 @@ export default function NaylaCore() {
   const [showIntro, setShowIntro] = useState(true);
   const [videoFile, setVideoFile] = useState<File | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
+
+  // Render Jobs State
+  const [activeRenderJobs, setActiveRenderJobs] = useState<Record<string, RenderJob>>({});
+  const [isRenderQueueVisible, setIsRenderQueueVisible] = useState(false);
+
   const [renderLogs, setRenderLogs] = useState<string[]>([]);
   const logsEndRef = useRef<HTMLDivElement | null>(null);
   const [mediaActivaUrl, setMediaActivaUrl] = useState<string | null>(null);
@@ -165,6 +179,108 @@ export default function NaylaCore() {
       });
     }
   };
+
+
+  // Load active jobs from localStorage on mount
+  useEffect(() => {
+    try {
+      const storedJobs = localStorage.getItem('activeRenderJobs');
+      if (storedJobs) {
+        setActiveRenderJobs(JSON.parse(storedJobs));
+      }
+    } catch (e) {
+      console.error('Error loading jobs from localStorage', e);
+    }
+  }, []);
+
+  // Poll for job updates
+  useEffect(() => {
+    const jobIds = Object.keys(activeRenderJobs).filter(id => {
+      const status = activeRenderJobs[id].status;
+      return status === 'queued' || status === 'processing';
+    });
+
+    if (jobIds.length === 0) return;
+
+    const interval = setInterval(async () => {
+      let updatedJobs = { ...activeRenderJobs };
+      let hasChanges = false;
+
+      for (const jobId of jobIds) {
+        try {
+          const res = await fetch(`/api/render-status?jobId=${jobId}`);
+          if (res.ok) {
+            const statusData = await res.json();
+
+            if (
+              updatedJobs[jobId].status !== statusData.status ||
+              (updatedJobs[jobId].logs?.length || 0) !== (statusData.logs?.length || 0)
+            ) {
+               updatedJobs[jobId] = { ...updatedJobs[jobId], ...statusData };
+               hasChanges = true;
+
+               if (statusData.status === 'completed' && statusData.url) {
+                  setGaleriaMultimedia(prev => {
+                    if (prev.some(item => item.url === statusData.url)) return prev;
+
+                    const renderCount = prev.filter(item => item.etiqueta.startsWith('R')).length + 1;
+                    const renderItem: MediaItem = {
+                      id: `render-${Date.now()}-${Math.random().toString(36).substring(7)}`,
+                      url: statusData.url,
+                      tipo: 'video',
+                      nombre: `Render ${renderCount}`,
+                      creado_en: new Date().toLocaleTimeString(),
+                      esOverlay: false,
+                      etiqueta: `R${renderCount}`,
+                      fuente: 'render'
+                    };
+                    return [...prev, renderItem];
+                  });
+                  showAlert('Renderizado completado exitosamente.');
+               } else if (statusData.status === 'error') {
+                  showAlert('Fallo en la nube: ' + (statusData.error || 'Desconocido'));
+               }
+            }
+          }
+        } catch (e) {
+          console.error(`Error polling job ${jobId}`, e);
+        }
+      }
+
+      if (hasChanges) {
+        setActiveRenderJobs(updatedJobs);
+        localStorage.setItem('activeRenderJobs', JSON.stringify(updatedJobs));
+      }
+
+    }, 3000);
+
+    return () => clearInterval(interval);
+  }, [activeRenderJobs]);
+
+  const cancelRenderJob = async (jobId: string) => {
+    try {
+      const res = await fetch(`/api/render-cancel?jobId=${jobId}`, { method: 'DELETE' });
+      if (res.ok) {
+         showAlert('Render cancelado correctamente.');
+         const updatedJobs = { ...activeRenderJobs, [jobId]: { ...activeRenderJobs[jobId], status: 'cancelled' as any } };
+         setActiveRenderJobs(updatedJobs as any);
+         localStorage.setItem('activeRenderJobs', JSON.stringify(updatedJobs));
+      } else {
+         const data = await res.json();
+         showAlert('Error cancelando render: ' + (data.error || 'Desconocido'));
+      }
+    } catch (e: any) {
+      showAlert('Error de red al cancelar: ' + e.message);
+    }
+  };
+
+  const removeRenderJob = (jobId: string) => {
+      const updatedJobs = { ...activeRenderJobs };
+      delete updatedJobs[jobId];
+      setActiveRenderJobs(updatedJobs);
+      localStorage.setItem('activeRenderJobs', JSON.stringify(updatedJobs));
+  };
+
 
   const [isUserScrolling, setIsUserScrolling] = useState(false);
 
@@ -1345,6 +1461,177 @@ export default function NaylaCore() {
   return (
     <div className={`min-h-screen w-full flex flex-col overflow-x-hidden select-none ${darkMode ? 'bg-black text-gray-200' : 'bg-white text-gray-800'}`} style={{ fontFamily: 'system-ui, sans-serif' }}>
 
+  {/* Modal y Barra del Administrador de Cola de Renders */}
+  {Object.keys(activeRenderJobs).length > 0 && (
+    <>
+      {/* Barra minimizada en la parte inferior */}
+      <div
+        onClick={() => setIsRenderQueueVisible(true)}
+        style={{
+          position: 'fixed',
+          bottom: '20px',
+          left: '50%',
+          transform: 'translateX(-50%)',
+          backgroundColor: '#111',
+          border: '1px solid #333',
+          borderRadius: '20px',
+          padding: '10px 20px',
+          color: '#fff',
+          zIndex: 9998,
+          cursor: 'pointer',
+          display: 'flex',
+          alignItems: 'center',
+          boxShadow: '0 4px 12px rgba(0,0,0,0.5)',
+          gap: '10px',
+          fontSize: '14px',
+          fontWeight: 'bold',
+          transition: 'all 0.2s'
+        }}
+        className="render-queue-bar"
+      >
+        <div style={{
+          width: '10px',
+          height: '10px',
+          borderRadius: '50%',
+          backgroundColor: Object.values(activeRenderJobs).some(j => j.status === 'processing') ? '#00ff00' :
+                           Object.values(activeRenderJobs).some(j => j.status === 'error') ? '#ff4444' :
+                           Object.values(activeRenderJobs).every(j => j.status === 'completed' || j.status === 'cancelled') ? '#888' : '#eab308',
+          animation: Object.values(activeRenderJobs).some(j => j.status === 'processing') ? 'pulse 1.5s infinite' : 'none'
+        }} />
+        RENDERS: {Object.values(activeRenderJobs).filter(j => j.status === 'processing' || j.status === 'queued').length} ACTIVOS
+      </div>
+
+      {/* Modal Expandido */}
+      {isRenderQueueVisible && (
+        <div style={{
+          position: 'fixed',
+          top: 0, left: 0, right: 0, bottom: 0,
+          backgroundColor: 'rgba(0,0,0,0.85)',
+          zIndex: 9999,
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          backdropFilter: 'blur(5px)'
+        }}>
+          <div style={{
+            backgroundColor: '#111',
+            border: '1px solid #333',
+            borderRadius: '12px',
+            width: '95%',
+            maxWidth: '600px',
+            maxHeight: '90vh',
+            display: 'flex',
+            flexDirection: 'column',
+            overflow: 'hidden'
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '15px 20px', borderBottom: '1px solid #333', backgroundColor: '#0a0a0a' }}>
+              <h3 style={{ margin: 0, color: '#fff', fontSize: '1.2rem' }}>Cola de Renders</h3>
+              <button
+                onClick={() => setIsRenderQueueVisible(false)}
+                style={{ background: 'none', border: 'none', color: '#888', cursor: 'pointer', fontSize: '20px' }}
+              >×</button>
+            </div>
+
+            <div style={{ padding: '20px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '15px' }}>
+              {Object.values(activeRenderJobs).map((job, index) => (
+                <div key={job.jobId} style={{
+                  backgroundColor: '#1a1a1a',
+                  border: '1px solid #333',
+                  borderRadius: '8px',
+                  padding: '15px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '10px'
+                }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div style={{ fontWeight: 'bold', color: '#fff' }}>Render #{index + 1}</div>
+                    <div style={{
+                      fontSize: '12px',
+                      padding: '4px 8px',
+                      borderRadius: '4px',
+                      backgroundColor: job.status === 'processing' ? 'rgba(0,255,0,0.1)' :
+                                       job.status === 'queued' ? 'rgba(234, 179, 8, 0.1)' :
+                                       job.status === 'error' ? 'rgba(255,0,0,0.1)' :
+                                       job.status === 'cancelled' ? 'rgba(136,136,136,0.1)' : 'rgba(0,150,255,0.1)',
+                      color: job.status === 'processing' ? '#00ff00' :
+                             job.status === 'queued' ? '#eab308' :
+                             job.status === 'error' ? '#ff4444' :
+                             job.status === 'cancelled' ? '#888' : '#3b82f6',
+                      fontWeight: 'bold'
+                    }}>
+                      {job.status.toUpperCase()}
+                    </div>
+                  </div>
+
+                  {/* Logs solo para procesando o error */}
+                  {(job.status === 'processing' || job.status === 'error') && (
+                    <div style={{
+                      backgroundColor: '#000',
+                      border: '1px solid #222',
+                      borderRadius: '4px',
+                      padding: '10px',
+                      height: '100px',
+                      overflowY: 'auto',
+                      fontSize: '11px',
+                      fontFamily: 'monospace',
+                      color: job.status === 'error' ? '#ff4444' : '#00ff00'
+                    }}>
+                       {job.logs && job.logs.length > 0 ? job.logs.map((log, i) => <div key={i}>{log}</div>) : 'Iniciando...'}
+                       <div ref={logsEndRef} />
+                    </div>
+                  )}
+
+                  <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '5px' }}>
+                     {(job.status === 'queued' || job.status === 'processing') && (
+                        <button
+                          onClick={() => cancelRenderJob(job.jobId)}
+                          style={{ backgroundColor: '#441111', color: '#ff4444', border: '1px solid #ff4444', padding: '6px 12px', borderRadius: '4px', fontSize: '12px', cursor: 'pointer', fontWeight: 'bold' }}
+                        >
+                          CANCELAR
+                        </button>
+                     )}
+                     {(job.status === 'completed' || job.status === 'error' || job.status === 'cancelled') && (
+                        <button
+                          onClick={() => removeRenderJob(job.jobId)}
+                          style={{ backgroundColor: '#222', color: '#fff', border: '1px solid #444', padding: '6px 12px', borderRadius: '4px', fontSize: '12px', cursor: 'pointer' }}
+                        >
+                          CERRAR
+                        </button>
+                     )}
+                  </div>
+                </div>
+              ))}
+
+              {Object.keys(activeRenderJobs).length === 0 && (
+                <div style={{ color: '#888', textAlign: 'center', padding: '20px' }}>No hay renders en cola.</div>
+              )}
+            </div>
+
+            <div style={{ padding: '15px 20px', borderTop: '1px solid #333', backgroundColor: '#0a0a0a', textAlign: 'center' }}>
+               <button
+                 onClick={() => setIsRenderQueueVisible(false)}
+                 style={{ backgroundColor: '#fff', color: '#000', border: 'none', padding: '8px 20px', borderRadius: '4px', fontWeight: 'bold', cursor: 'pointer' }}
+               >
+                 MINIMIZAR
+               </button>
+            </div>
+          </div>
+        </div>
+      )}
+      <style>{`
+        @keyframes pulse {
+          0% { opacity: 1; }
+          50% { opacity: 0.4; }
+          100% { opacity: 1; }
+        }
+        .render-queue-bar:hover {
+          background-color: #222 !important;
+        }
+      `}</style>
+    </>
+  )}
+
+
       {/* Modal para Consola Visual */}
       {isProcessing && (
         <div style={{
@@ -1884,48 +2171,14 @@ export default function NaylaCore() {
 
                       const jobId = data.jobId;
                       if (jobId) {
-                        const pollInterval = setInterval(async () => {
-                          try {
-                            const statusRes = await fetch(`/api/render-status?jobId=${jobId}`);
-                            const statusData = await statusRes.json();
+                          const newJob = { jobId, status: 'queued', url: null, error: null, logs: ['Job añadido a la cola...'] };
+                          const updatedJobs = { ...activeRenderJobs, [jobId]: newJob };
+                          setActiveRenderJobs(updatedJobs as any);
+                          localStorage.setItem('activeRenderJobs', JSON.stringify(updatedJobs));
+                          setIsRenderQueueVisible(true);
 
-                            if (statusData.logs) {
-                              setRenderLogs(statusData.logs);
-                            }
-
-                            if (statusData.status === 'completed') {
-                              clearInterval(pollInterval);
-                              setVideoResultadoUrl(statusData.url);
-                              setIsProcessing(false);
-
-                              // Add the rendered video to the gallery
-                              setGaleriaMultimedia(prev => {
-                                const renderCount = prev.filter(item => item.etiqueta.startsWith('R')).length + 1;
-                                const renderItem: MediaItem = {
-                                  id: `render-${Date.now()}`,
-                                  url: statusData.url,
-                                  tipo: 'video',
-                                  nombre: `Render ${renderCount}`,
-                                  creado_en: new Date().toLocaleTimeString(),
-                                  esOverlay: false,
-                                  etiqueta: `R${renderCount}`,
-                                  fuente: 'render'
-                                };
-                                return [...prev, renderItem];
-                              });
-
-                              showAlert('Renderizado completado exitosamente.');
-                            } else if (statusData.status === 'error') {
-                              clearInterval(pollInterval);
-                              setIsProcessing(false);
-                              showAlert('Fallo en la nube: ' + (statusData.error || 'Desconocido'));
-                            }
-                          } catch (err: any) {
-                             clearInterval(pollInterval);
-                             setIsProcessing(false);
-                             showAlert('Error chequeando estado: ' + err.message);
-                          }
-                        }, 3000);
+                          // No bloqueamos la UI globalmente, el nuevo modal manejará la vista.
+                          setIsProcessing(false);
                       } else {
                         setIsProcessing(false);
                       }
