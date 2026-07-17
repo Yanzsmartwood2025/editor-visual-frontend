@@ -514,17 +514,6 @@ app.post('/api/extract-direct', async (req, res) => {
 
     const jobId = uuidv4();
 
-    // Extraer extensión de la URL si es posible
-    let ext = '.mp4';
-    try {
-        const pathname = new URL(url).pathname;
-        const matches = pathname.match(/\.([a-zA-Z0-9]+)$/);
-        if (matches) ext = '.' + matches[1];
-    } catch(e) {}
-
-    const outputFilename = `direct_${jobId}${ext}`;
-    const outputPath = path.join('/tmp', outputFilename);
-
     try {
         console.log(`[extract-direct] Descargando de forma manual: ${url}`);
 
@@ -537,6 +526,31 @@ app.post('/api/extract-direct', async (req, res) => {
         if (!response.ok) {
              throw new Error(`Error descargando archivo directo. HTTP ${response.status}`);
         }
+
+        // Extraer extensión de la URL si es posible, o usar content-type
+        let ext = '';
+        try {
+            const pathname = new URL(url).pathname;
+            const matches = pathname.match(/\.([a-zA-Z0-9]+)$/);
+            if (matches) ext = '.' + matches[1];
+        } catch(e) {}
+
+        if (!ext) {
+             const contentType = response.headers.get('content-type') || '';
+             if (contentType.startsWith('image/jpeg')) ext = '.jpg';
+             else if (contentType.startsWith('image/png')) ext = '.png';
+             else if (contentType.startsWith('image/webp')) ext = '.webp';
+             else if (contentType.startsWith('image/gif')) ext = '.gif';
+             else if (contentType.startsWith('video/mp4')) ext = '.mp4';
+             else if (contentType.startsWith('video/webm')) ext = '.webm';
+             else if (contentType.startsWith('video/quicktime')) ext = '.mov';
+             else if (contentType.startsWith('audio/mpeg')) ext = '.mp3';
+             else if (contentType.startsWith('audio/wav')) ext = '.wav';
+             else ext = '.mp4'; // fallback final
+        }
+
+        const outputFilename = `direct_${jobId}${ext}`;
+        const outputPath = path.join('/tmp', outputFilename);
 
         const fileStreamLocal = fs.createWriteStream(outputPath);
 
@@ -580,9 +594,16 @@ app.post('/api/extract-direct', async (req, res) => {
     } catch (e) {
         console.error(`[extract-direct] Error en Motor Manual:`, e.message);
 
-        if (fs.existsSync(outputPath)) {
-            fs.unlinkSync(outputPath);
-        }
+        // Intentar limpiar si la ruta se definió antes del error
+        try {
+            // Buscamos cualquier archivo que empiece por direct_${jobId} en /tmp por si falló tras calcular ext
+            const tmpFiles = fs.readdirSync('/tmp');
+            tmpFiles.forEach(f => {
+                 if (f.startsWith(`direct_${jobId}`)) {
+                      fs.unlinkSync(path.join('/tmp', f));
+                 }
+            });
+        } catch (cleanupErr) {}
 
         return res.status(500).json({ error: 'Error en descarga directa', details: e.message });
     }
