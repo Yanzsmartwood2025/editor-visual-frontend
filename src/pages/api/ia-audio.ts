@@ -1,6 +1,4 @@
 import { NextApiRequest, NextApiResponse } from 'next';
-import { createClient } from '@supabase/supabase-js';
-import { executeWithApiKey } from '../../utils/apiKeyManager';
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== 'POST') {
@@ -24,31 +22,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(500).json({ error: 'Llaves de base de datos ausentes.' });
   }
 
-  const supabase = createClient(supabaseUrl, supabaseKey);
+  // const supabase = createClient(supabaseUrl, supabaseKey);
 
   try {
-    const fallbackExecute = async () => {
-      console.warn("[ia-audio] No se encontró Gemini API Key en Supabase, usando variable de entorno si existe o fallando.");
-      const envKey = process.env.GEMINI_API_KEY;
-      if (!envKey) {
-        throw new Error('No se encontró la llave de API para el servicio de Audio IA.');
-      }
-      return envKey;
-    };
-
-    const effectiveKey = await executeWithApiKey(supabase, "gemini",
-      async (apiKey) => {
-        // En una implementación real, aquí se llamaría al servicio de TTS.
-        // Si el servicio devuelve 429, deberíamos lanzar un RateLimitError.
-        // Por ahora, simplemente retornamos la key para usarla en el log.
-        return apiKey;
-      },
-      fallbackExecute
-    );
-
-    // TODO: Implementar llamada real a servicio de TTS (Texto a voz) usando la API Key.
-    // Por ahora retornamos un placeholder simulando un audio.
-    console.log(`[ia-audio] Procesando texto para audio usando API Key terminando en ${effectiveKey?.substring(effectiveKey.length - 4)}`);
+    // TODO: Implementar llamada real a servicio de Qwen3-TTS (Texto a voz) en Fase 2.
+    // Por ahora retornamos un placeholder simulando un audio y limpiamos las dependencias viejas (Gemini).
+    console.log(`[ia-audio] Procesando texto para audio de manera simulada`);
 
     // Placeholder URL para el audio generado
     const mockAudioUrl = 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3';
@@ -57,9 +36,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   } catch (error: any) {
     console.error("Error en ia-audio:", error);
-    if (error.message.includes('Límite de Gemini alcanzado')) {
-       return res.status(429).json({ error: error.message });
-    }
     res.status(500).json({ error: error.message || 'Error interno del servidor.' });
   }
 }

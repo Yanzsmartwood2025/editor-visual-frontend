@@ -143,23 +143,23 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   const supabase = createClient(supabaseUrl, supabaseKey);
 
   try {
-    return await executeWithApiKey(supabase, "gemini",
+    return await executeWithApiKey(supabase, "groq",
       async (apiKey: string) => {
-        console.log(`[extract-video] Delegando extracción a Oracle con IA: ${ORACLE_SERVER_URL}/api/extract-meta`);
+        console.log(`[extract-video] Delegando extracción a Oracle con IA (Groq): ${ORACLE_SERVER_URL}/api/extract-meta`);
         const oracleRes = await fetch(`${ORACLE_SERVER_URL}/api/extract-meta`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
             'Authorization': `Bearer ${ORACLE_SECRET}`,
-            'x-gemini-api-key': apiKey
+            'x-api-key': apiKey // Generico para que Oracle lo use
           },
-          body: JSON.stringify({ url }),
+          body: JSON.stringify({ url, provider: 'groq' }),
           signal: AbortSignal.timeout(60000)
         });
 
         if (oracleRes.status === 429) {
            const errData = await oracleRes.json().catch(() => ({ message: '429 Rate Limit' }));
-           throw new RateLimitError(errData.message || '429 Rate Limit from Oracle/Gemini');
+           throw new RateLimitError(errData.message || '429 Rate Limit from Oracle/Groq');
         }
 
         if (oracleRes.ok) {
@@ -174,10 +174,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         console.warn(`[extract-video] Oracle falló con status ${oracleRes.status}.`, errorData);
         return res.status(oracleRes.status).json(errorData);
       },
-      fallbackExecute
+      fallbackExecute // En el futuro Oracle puede fallar y lo pasamos al fallback directo sin IA
     );
   } catch (error: any) {
-    if (error.message.includes('Límite de Gemini alcanzado')) {
+    if (error.message.includes('alcanzado en todas las cuentas disponibles')) {
        return res.status(429).json({ error: error.message });
     }
     console.error('[extract-video] Error conectando al Oráculo.', error);

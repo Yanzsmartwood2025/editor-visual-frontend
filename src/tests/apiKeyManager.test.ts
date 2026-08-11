@@ -10,19 +10,15 @@ const mockNot = vi.fn();
 
 mockUpdate.mockReturnValue({ eq: mockEq });
 
-
 const mockOrder = vi.fn().mockReturnValue({ not: mockNot });
-const mockEq3 = vi.fn().mockReturnValue({ order: mockOrder });
-const mockEq2 = vi.fn().mockReturnValue({ eq: mockEq3 });
+const mockEq2 = vi.fn().mockReturnValue({ order: mockOrder });
 const mockEq1 = vi.fn().mockReturnValue({ eq: mockEq2 });
-const mockIlikeReturn = vi.fn().mockReturnValue({ eq: mockEq2 });
 
 const mockSupabase = {
   from: vi.fn().mockReturnValue({
     update: mockUpdate,
     select: mockSelect.mockReturnValue({
       eq: mockEq1,
-      ilike: mockIlikeReturn
     })
   })
 } as unknown as SupabaseClient;
@@ -110,9 +106,9 @@ describe('apiKeyManager', () => {
 
   describe('executeWithApiKey', () => {
     const keys: ApiKeyRecord[] = [
-      { id: '1', api_key: 'key-1', service_provider: 'gemini', resource_type: 'llm', requests_in_current_minute: 9, requests_today: 50, last_used_at: null, minute_window_started_at: '2024-01-02T12:00:00Z', day_window_started_at: '2024-01-02T00:00:00Z', is_exhausted_today: false, rpm_limit: 10, rpd_limit: 250, character_name: 'arIA' },
-      { id: '2', api_key: 'key-2', service_provider: 'gemini', resource_type: 'llm', requests_in_current_minute: 2, requests_today: 50, last_used_at: null, minute_window_started_at: '2024-01-02T12:00:00Z', day_window_started_at: '2024-01-02T00:00:00Z', is_exhausted_today: false, rpm_limit: 10, rpd_limit: 250, character_name: 'Nayla_1' },
-      { id: '3', api_key: 'key-3', service_provider: 'gemini', resource_type: 'llm', requests_in_current_minute: 5, requests_today: 50, last_used_at: null, minute_window_started_at: '2024-01-02T12:00:00Z', day_window_started_at: '2024-01-02T00:00:00Z', is_exhausted_today: false, rpm_limit: 10, rpd_limit: 250, character_name: 'Nayla_2' },
+      { id: '1', api_key: 'key-1', service_provider: 'groq', resource_type: 'llm', requests_in_current_minute: 9, requests_today: 50, last_used_at: null, minute_window_started_at: '2024-01-02T12:00:00Z', day_window_started_at: '2024-01-02T00:00:00Z', is_exhausted_today: false, rpm_limit: 10, rpd_limit: 250, character_name: 'arIA' },
+      { id: '2', api_key: 'key-2', service_provider: 'groq', resource_type: 'llm', requests_in_current_minute: 2, requests_today: 50, last_used_at: null, minute_window_started_at: '2024-01-02T12:00:00Z', day_window_started_at: '2024-01-02T00:00:00Z', is_exhausted_today: false, rpm_limit: 10, rpd_limit: 250, character_name: 'Nayla_1' },
+      { id: '3', api_key: 'key-3', service_provider: 'groq', resource_type: 'llm', requests_in_current_minute: 5, requests_today: 50, last_used_at: null, minute_window_started_at: '2024-01-02T12:00:00Z', day_window_started_at: '2024-01-02T00:00:00Z', is_exhausted_today: false, rpm_limit: 10, rpd_limit: 250, character_name: 'Nayla_2' },
     ];
 
     it('should select the key with the lowest requests_in_current_minute', async () => {
@@ -120,7 +116,7 @@ describe('apiKeyManager', () => {
 
       const action = vi.fn().mockResolvedValue('success');
 
-      await executeWithApiKey(mockSupabase, "gemini", action);
+      await executeWithApiKey(mockSupabase, "groq", action);
 
       // key-2 has the lowest usage (2)
       expect(action).toHaveBeenCalledWith('key-2');
@@ -136,7 +132,7 @@ describe('apiKeyManager', () => {
     it('should filter out exhausted keys (RPM limit hit)', async () => {
       const mixedKeys = [
         ...keys,
-        { id: '4', api_key: 'key-4', service_provider: 'gemini', resource_type: 'llm', requests_in_current_minute: 10, requests_today: 50, last_used_at: null, minute_window_started_at: '2024-01-02T12:00:00Z', day_window_started_at: '2024-01-02T00:00:00Z', is_exhausted_today: false, rpm_limit: 10, rpd_limit: 250 }
+        { id: '4', api_key: 'key-4', service_provider: 'groq', resource_type: 'llm', requests_in_current_minute: 10, requests_today: 50, last_used_at: null, minute_window_started_at: '2024-01-02T12:00:00Z', day_window_started_at: '2024-01-02T00:00:00Z', is_exhausted_today: false, rpm_limit: 10, rpd_limit: 250 }
       ];
       mockNot.mockResolvedValueOnce({ data: mixedKeys, error: null });
 
@@ -146,7 +142,7 @@ describe('apiKeyManager', () => {
         .mockRejectedValueOnce(new RateLimitError('RPM Hit', false)) // fails key-3
         .mockResolvedValueOnce('success'); // succeeds on key-1
 
-      await executeWithApiKey(mockSupabase, "gemini", action);
+      await executeWithApiKey(mockSupabase, "groq", action);
 
       // Should have skipped key-4 entirely before calling action because it had 10 >= rpm_limit
       expect(action).not.toHaveBeenCalledWith('key-4');
@@ -164,7 +160,7 @@ describe('apiKeyManager', () => {
         .mockRejectedValueOnce(new RateLimitError('Quota Exceeded', true)) // fails key-2 (Daily)
         .mockResolvedValueOnce('success'); // succeeds on key-3
 
-      await executeWithApiKey(mockSupabase, "gemini", action);
+      await executeWithApiKey(mockSupabase, "groq", action);
 
       // Verify key-2 was marked exhausted in DB
       expect(mockUpdate).toHaveBeenCalledWith(expect.objectContaining({
@@ -185,7 +181,7 @@ describe('apiKeyManager', () => {
 
       const action = vi.fn().mockRejectedValue(new RateLimitError('RPM Hit', false));
 
-      await expect(executeWithApiKey(mockSupabase, "gemini", action)).rejects.toThrow('Límite de gemini alcanzado en todas las cuentas disponibles, intenta en unos minutos.');
+      await expect(executeWithApiKey(mockSupabase, "groq", action)).rejects.toThrow('Límite de groq alcanzado en todas las cuentas disponibles, intenta en unos minutos.');
     });
 
     it('should execute fallback if all keys fail and fallback is provided', async () => {
@@ -193,7 +189,7 @@ describe('apiKeyManager', () => {
        const action = vi.fn().mockRejectedValue(new RateLimitError('RPM Hit', false));
        const fallback = vi.fn().mockResolvedValue('fallback_success');
 
-       const result = await executeWithApiKey(mockSupabase, "gemini", action, fallback);
+       const result = await executeWithApiKey(mockSupabase, "groq", action, fallback);
        expect(result).toBe('fallback_success');
        expect(fallback).toHaveBeenCalled();
     });

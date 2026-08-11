@@ -311,7 +311,6 @@ export default function NaylaCore() {
   const [chatInput, setChatInput] = useState('');
   const [chatMessages, setChatMessages] = useState<{role: 'user' | 'ai', text: string}[]>([]);
   const [chatProcessing, setChatProcessing] = useState(false);
-  const [chatModel, setChatModel] = useState<'flash' | 'pro'>('flash');
 
   const sendNaylaMessage = async () => {
     if (!chatInput.trim()) return;
@@ -321,10 +320,14 @@ export default function NaylaCore() {
     setChatProcessing(true);
 
     try {
-      const res = await fetch('/api/chat-nayla', {
+      // Usamos el nuevo endpoint universal de chat
+      const res = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt: chatInput, model: chatModel === 'flash' ? 'manus-flash' : 'manus-pro' })
+        body: JSON.stringify({
+           message: currentInput,
+           history: chatMessages.map(m => ({ role: m.role === 'user' ? 'user' : 'assistant', content: m.text }))
+        })
       });
       const data = await res.json();
 
@@ -2692,23 +2695,6 @@ export default function NaylaCore() {
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <div style={{ width: '8px', height: '8px', backgroundColor: '#00cc66', borderRadius: '50%', boxShadow: '0 0 10px #00cc66' }}></div>
                 <h3 style={{ margin: 0, color: darkMode ? '#fff' : '#000', fontSize: '1rem', fontWeight: 'bold' }}>Nayla</h3>
-                <select
-                  value={chatModel}
-                  onChange={(e) => setChatModel(e.target.value as 'flash' | 'pro')}
-                  style={{
-                    marginLeft: '10px',
-                    backgroundColor: darkMode ? '#333' : '#f3f4f6',
-                    color: darkMode ? '#fff' : '#000',
-                    border: 'none',
-                    borderRadius: '4px',
-                    padding: '2px 6px',
-                    fontSize: '0.8rem',
-                    outline: 'none'
-                  }}
-                >
-                  <option value="flash">Nayla Flash</option>
-                  <option value="pro">Nayla Pro</option>
-                </select>
               </div>
               <button onClick={() => setIsChatOpen(false)} style={{ background: 'none', border: 'none', color: darkMode ? '#fff' : '#000', cursor: 'pointer' }}>
                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
