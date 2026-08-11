@@ -85,7 +85,8 @@ export class RateLimitError extends Error {
 }
 
 /**
- * Executes a function with the best available Gemini API key, handling limits, resets, and retries.
+ * Executes a function with the best available API key, handling limits, resets, and retries.
+ * Only supports 'groq' and 'mistral'.
  */
 export async function executeWithApiKey<T>(
   supabase: SupabaseClient,
@@ -93,12 +94,15 @@ export async function executeWithApiKey<T>(
   action: (apiKey: string) => Promise<T>,
   fallbackAction?: () => Promise<T>
 ): Promise<T> {
+  if (provider !== 'groq' && provider !== 'mistral') {
+    throw new Error(`Provider '${provider}' no soportado. Usa 'groq' o 'mistral'.`);
+  }
+
   const { data: keysData, error: keysError } = await supabase
     .from('api_keys_pool')
     .select('*')
-    .ilike('service_provider', `%${provider}%`)
+    .eq('service_provider', provider)
     .eq('is_active', true)
-    .eq('resource_type', 'llm')
     .order('created_at', { ascending: false })
     .not('api_key', 'is', null);
 
@@ -167,7 +171,11 @@ export async function executeWithApiKey<T>(
                                   error?.message?.toLowerCase().includes('resource_exhausted') ||
                                   error?.message?.toLowerCase().includes('resource exhausted');
 
-      if (error instanceof RateLimitError || error?.status === 429 || error?.response?.status === 429 || error?.message?.includes('429') || isResourceExhausted) {
+      // Include 500 and timeout errors for key rotation as requested
+      const isServerError = error?.status >= 500 || error?.response?.status >= 500 || error?.message?.includes('500');
+      const isTimeout = error?.name === 'TimeoutError' || error?.message?.toLowerCase().includes('timeout');
+
+      if (error instanceof RateLimitError || error?.status === 429 || error?.response?.status === 429 || error?.message?.includes('429') || isResourceExhausted || isServerError || isTimeout) {
         console.warn(`[executeWithApiKey] Key ${key.character_name || key.id} hit rate limit or exhausted. Retrying...`);
 
         // Determine if daily or minute based on error message or explicit flag

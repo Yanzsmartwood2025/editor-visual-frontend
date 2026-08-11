@@ -1,7 +1,7 @@
 import { NextApiRequest, NextApiResponse } from 'next';
 import { createClient } from '@supabase/supabase-js';
-import { GoogleGenerativeAI } from '@google/generative-ai';
-import { executeWithApiKey, RateLimitError } from '../../utils/apiKeyManager';
+import { executeWithApiKey } from '../../utils/apiKeyManager';
+import { GroqProvider, MistralProvider } from '../../utils/llmProvider';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
 const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
@@ -73,38 +73,39 @@ Contexto adicional:
 La galería actual del usuario contiene los siguientes elementos: ${JSON.stringify(galeria)}
 `;
 
-        const executeGemini = async (keyToUse: string) => {
-            const genAI = new GoogleGenerativeAI(keyToUse);
-            const model = genAI.getGenerativeModel({ model: "gemini-1.5-pro" });
-            try {
-                const result = await model.generateContent([
-                    systemPrompt,
-                    "Prompt del usuario: " + prompt
-                ]);
-                let codeResponse = result.response.text();
-                codeResponse = codeResponse.replace(/```javascript/g, '').replace(/```js/g, '').replace(/```/g, '').trim();
+        const promptDelUsuario = "Prompt del usuario: " + prompt;
+
+        const executeGroq = async (keyToUse: string) => {
+            const provider = new GroqProvider(keyToUse);
+            const result = await provider.generateText(promptDelUsuario, [], systemPrompt);
+            let codeResponse = result.replace(/```javascript/g, '').replace(/```js/g, '').replace(/```/g, '').trim();
+            if (codeResponse.includes('await') && !codeResponse.includes('async () =>')) {
+                codeResponse = `(async () => {\n${codeResponse}\n})();`;
+            }
+            return codeResponse;
+        };
+
+        const executeMistralFallback = async () => {
+            return await executeWithApiKey(supabase, "mistral", async (keyToUse: string) => {
+                const provider = new MistralProvider(keyToUse);
+                const result = await provider.generateText(promptDelUsuario, [], systemPrompt);
+                let codeResponse = result.replace(/```javascript/g, '').replace(/```js/g, '').replace(/```/g, '').trim();
                 if (codeResponse.includes('await') && !codeResponse.includes('async () =>')) {
                     codeResponse = `(async () => {\n${codeResponse}\n})();`;
                 }
                 return codeResponse;
-            } catch (err: any) {
-                if (err.status === 429 || err.message?.includes('429')) {
-                    throw new RateLimitError(err.message, err.message?.toLowerCase().includes('quota'));
-                }
-                throw err;
-            }
+            });
         };
 
         let finalCode = '';
         if (apiKey) {
-            // User provided API key directly
-            finalCode = await executeGemini(apiKey);
+            // User provided API key directly, assuming Groq format for this manual case
+            finalCode = await executeGroq(apiKey);
         } else {
             // Admin flow using pool
-            const fallbackKey = process.env.GEMINI_API_KEY;
-            finalCode = await executeWithApiKey(supabase, "gemini",
-                executeGemini,
-                fallbackKey ? () => executeGemini(fallbackKey) : undefined
+            finalCode = await executeWithApiKey(supabase, "groq",
+                executeGroq,
+                executeMistralFallback
             );
         }
 
@@ -112,7 +113,7 @@ La galería actual del usuario contiene los siguientes elementos: ${JSON.stringi
 
     } catch (error: any) {
         console.error("Supervisor IA Error:", error);
-        if (error.message?.includes('Límite de Gemini alcanzado')) {
+        if (error.message?.includes('alcanzado en todas las cuentas disponibles')) {
            return res.status(429).json({ error: error.message });
         }
         res.status(500).json({ error: error instanceof Error ? error.message : String(error) });
