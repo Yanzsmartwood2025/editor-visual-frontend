@@ -439,6 +439,16 @@ app.post('/api/process-clip', async (req, res) => {
             // Call the centralized Next.js API for universal memory
             const memoryApiUrl = process.env.NEXT_PUBLIC_URL ? `${process.env.NEXT_PUBLIC_URL}/api/registrar-memoria` : 'http://localhost:3000/api/registrar-memoria';
 
+            const memoryPayload = {
+                url: finalUrl,
+                tipo: 'video_clip',
+                nombre: clipName || 'Clip Generado',
+                metadata: metadata,
+                personaje_id: req.body.personaje_id || 'Nayla',
+                contexto_programa: req.body.contexto_programa || `Recorte de video: ${videoUrl}`,
+                estado: 'completado'
+            };
+
             try {
                 const response = await fetch(memoryApiUrl, {
                     method: 'POST',
@@ -446,41 +456,42 @@ app.post('/api/process-clip', async (req, res) => {
                         'Content-Type': 'application/json',
                         'Authorization': `Bearer ${process.env.ORACLE_SECRET}`
                     },
-                    body: JSON.stringify({
-                        url: finalUrl,
-                        tipo: 'video_clip',
-                        nombre: clipName || 'Clip Generado',
-                        metadata: metadata,
-                        personaje_id: req.body.personaje_id || 'Nayla',
-                        contexto_programa: req.body.contexto_programa || `Recorte de video: ${videoUrl}`,
-                        estado: 'completado'
-                    })
+                    body: JSON.stringify(memoryPayload)
                 });
 
                 if (!response.ok) {
                     const errorText = await response.text();
-                    console.error(`[Job ${jobId}] Error al registrar en la memoria universal:`, errorText);
+                    console.error(`[Job ${jobId}] ❌ Error crítico al registrar en la memoria universal:`, errorText);
+                    const { error: logError } = await supabase
+                        .from('error_logs')
+                        .insert([
+                            {
+                                endpoint: '/api/process-clip-background',
+                                error_message: `HTTP Error: ${response.status} - ${errorText}`,
+                                payload: memoryPayload
+                            }
+                        ]);
+                    if (logError) {
+                        console.error(`[Job ${jobId}] ❌ Además falló el guardado en error_logs:`, logError);
+                    }
                 } else {
                     console.log(`[Job ${jobId}] Clip registrado exitosamente en memoria_nayla vía API centralizada`);
                 }
             } catch (fetchErr) {
-                console.error(`[Job ${jobId}] Failed to reach Next.js API:`, fetchErr.message);
+                console.error(`[Job ${jobId}] ❌ Failed to reach Next.js API:`, fetchErr.message);
 
-                // Fallback to direct supabase insertion just in case
-                const { error: dbError } = await supabase
-                    .from('memoria_nayla')
+                const { error: logError } = await supabase
+                    .from('error_logs')
                     .insert([
                         {
-                            tipo: 'video_clip',
-                            url: finalUrl,
-                            metadata: metadata
+                            endpoint: '/api/process-clip-background',
+                            error_message: fetchErr.message,
+                            payload: memoryPayload
                         }
                     ]);
 
-                if (dbError) {
-                    console.error(`[Job ${jobId}] Error al registrar directamente en la base de datos (fallback):`, dbError);
-                } else {
-                    console.log(`[Job ${jobId}] Clip registrado exitosamente mediante fallback directo`);
+                if (logError) {
+                    console.error(`[Job ${jobId}] ❌ Además falló el guardado en error_logs tras excepción:`, logError);
                 }
             }
 

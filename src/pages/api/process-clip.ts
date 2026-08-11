@@ -11,15 +11,18 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(400).json({ error: 'URL no proporcionada o formato inválido.' });
   }
 
-  const ORACLE_SERVER_URL = process.env.ORACLE_SERVER_URL || 'https://oracle-api.132.145.184.192.sslip.io';
-  const ORACLE_SECRET = process.env.ORACLE_SECRET;
-
-  if (!ORACLE_SERVER_URL || !ORACLE_SECRET) {
-    console.error('[process-clip] ORACLE_SERVER_URL o ORACLE_SECRET no configurados.');
-    return res.status(500).json({ error: 'El servicio de extracción (Oráculo) no está configurado.' });
-  }
-
   try {
+    const ORACLE_SERVER_URL = process.env.ORACLE_SERVER_URL;
+    if (!ORACLE_SERVER_URL) {
+        throw new Error('ORACLE_SERVER_URL no configurado en .env');
+    }
+    const ORACLE_SECRET = process.env.ORACLE_SECRET;
+
+    if (!ORACLE_SECRET) {
+      console.error('[process-clip] ORACLE_SECRET no configurado.');
+      return res.status(500).json({ error: 'El servicio de extracción (Oráculo) no está configurado adecuadamente.' });
+    }
+
     console.log(`[process-clip] Delegando extracción a Oracle: ${ORACLE_SERVER_URL}/api/process-clip`);
     const oracleRes = await fetch(`${ORACLE_SERVER_URL}/api/process-clip`, {
       method: 'POST',

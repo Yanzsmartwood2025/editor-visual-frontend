@@ -2,6 +2,7 @@ import { NextApiRequest, NextApiResponse } from 'next';
 import { createClient } from '@supabase/supabase-js';
 import { executeWithApiKey } from '../../utils/apiKeyManager';
 import { GroqProvider, MistralProvider } from '../../utils/llmProvider';
+import { z } from 'zod';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
 const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
@@ -9,19 +10,26 @@ const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY || supabase
 
 const supabase = createClient(supabaseUrl, supabaseServiceRoleKey);
 
+const requestSchema = z.object({
+    prompt: z.string().min(1, 'Falta el parámetro requerido o está vacío: prompt'),
+    apiKey: z.string().optional(),
+    galeria: z.any().optional()
+});
+
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
     if (req.method !== 'POST') {
         return res.status(405).json({ error: 'Method not allowed' });
     }
 
-    // El frontend envía: prompt, apiKey (opcional), galeria
-    const { prompt, apiKey, galeria } = req.body;
-
-    if (!prompt) {
-        return res.status(400).json({ error: 'Falta el parámetro requerido: prompt' });
-    }
-
     try {
+        const parsedBody = requestSchema.safeParse(req.body);
+
+        if (!parsedBody.success) {
+            return res.status(400).json({ error: parsedBody.error.issues?.[0]?.message || 'Invalid parameters' });
+        }
+
+        const { prompt, apiKey, galeria } = parsedBody.data;
+
         const authHeader = req.headers.authorization;
         let isAuthorized = false;
 
