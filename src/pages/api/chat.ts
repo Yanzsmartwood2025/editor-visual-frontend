@@ -2,6 +2,7 @@ import { NextApiRequest, NextApiResponse } from 'next';
 import { createClient } from '@supabase/supabase-js';
 import { executeWithApiKey } from '../../utils/apiKeyManager';
 import { GroqProvider, MistralProvider } from '../../utils/llmProvider';
+import { z } from 'zod';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
 const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
@@ -16,18 +17,27 @@ export const config = {
   },
 };
 
+const requestSchema = z.object({
+  message: z.string().min(1, 'Falta el parámetro requerido o está vacío: message'),
+  images: z.array(z.string()).optional(),
+  history: z.array(z.any()).optional()
+});
+
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  const { message, images, history } = req.body;
+  try {
+    const parsedBody = requestSchema.safeParse(req.body);
 
-  if (!message) {
-    return res.status(400).json({ error: 'Falta el parámetro requerido: message' });
-  }
+    if (!parsedBody.success) {
+      return res.status(400).json({ error: parsedBody.error.issues?.[0]?.message || 'Invalid parameters' });
+    }
 
-  const systemPrompt = `
+    const { message, images, history } = parsedBody.data;
+
+    const systemPrompt = `
 Eres un asistente de IA para un editor de video basado en código (NaylaEngine).
 Debes ser conciso, amable y experto.
 IMPORTANTE: Si el usuario te pide crear o generar una imagen, video, o audio, o buscar recursos multimedia, NO respondas con texto conversacional normal.
@@ -50,7 +60,6 @@ Para todo lo demás (charlas, dudas sobre el editor, etc.), responde normalmente
     fullPrompt = `Historial de la conversación:\n${historyText}\n\nUsuario: ${message}`;
   }
 
-  try {
     // Definimos cómo ejecutar con Groq
     const executeGroq = async (apiKey: string) => {
       const provider = new GroqProvider(apiKey);
@@ -102,6 +111,6 @@ Para todo lo demás (charlas, dudas sobre el editor, etc.), responde normalmente
 
   } catch (error: any) {
     console.error('[chat.ts] Error general:', error);
-    res.status(500).json({ error: error.message || 'Internal server error' });
+    return res.status(500).json({ error: error.message || 'Internal server error' });
   }
 }

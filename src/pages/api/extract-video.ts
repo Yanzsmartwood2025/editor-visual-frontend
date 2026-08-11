@@ -1,32 +1,35 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { createClient } from '@supabase/supabase-js';
 import { executeWithApiKey, RateLimitError } from '../../utils/apiKeyManager';
+import { z } from 'zod';
+
+const requestSchema = z.object({
+  url: z.string().url('URL no proporcionada o formato inválido.')
+});
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  const { url } = req.body;
-
-  if (!url || typeof url !== 'string') {
-    return res.status(400).json({ error: 'URL no proporcionada o formato inválido.' });
-  }
-
   try {
+    const parsedBody = requestSchema.safeParse(req.body);
+
+    if (!parsedBody.success) {
+      return res.status(400).json({ error: parsedBody.error.issues?.[0]?.message || 'Invalid parameters' });
+    }
+
+    const { url } = parsedBody.data;
+
     const parsedUrl = new URL(url);
     if (parsedUrl.protocol !== 'https:' && parsedUrl.protocol !== 'http:') {
         return res.status(400).json({ error: 'La URL debe usar el protocolo HTTP o HTTPS.' });
     }
-  } catch {
-    return res.status(400).json({ error: 'Formato de URL inválido.' });
-  }
 
-
-  const checkDirectUrl = async (testUrl: string): Promise<{ isDirect: boolean; error?: string }> => {
-    try {
-      const parsed = new URL(testUrl);
-      const pathname = parsed.pathname.toLowerCase();
+    const checkDirectUrl = async (testUrl: string): Promise<{ isDirect: boolean; error?: string }> => {
+      try {
+        const parsed = new URL(testUrl);
+        const pathname = parsed.pathname.toLowerCase();
       const hasExtension = pathname.endsWith('.mp4') || pathname.endsWith('.webm') || pathname.endsWith('.mov') ||
              pathname.endsWith('.mp3') || pathname.endsWith('.wav') ||
              pathname.endsWith('.jpg') || pathname.endsWith('.jpeg') ||
@@ -62,17 +65,20 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         clearTimeout(timeoutId);
       }
 
-    } catch {
-      return { isDirect: false, error: 'Formato de URL inválido.' };
-    }
-  };
+      } catch {
+        return { isDirect: false, error: 'Formato de URL inválido.' };
+      }
+    };
 
-  const ORACLE_SERVER_URL = process.env.ORACLE_SERVER_URL || 'https://oracle-api.132.145.184.192.sslip.io';
+  const ORACLE_SERVER_URL = process.env.ORACLE_SERVER_URL;
+  if (!ORACLE_SERVER_URL) {
+      throw new Error('ORACLE_SERVER_URL no configurado en .env');
+  }
   const ORACLE_SECRET = process.env.ORACLE_SECRET;
 
-  if (!ORACLE_SERVER_URL || !ORACLE_SECRET) {
-    console.error('[extract-video] ORACLE_SERVER_URL o ORACLE_SECRET no configurados.');
-    return res.status(500).json({ error: 'El servicio de extracción (Oráculo) no está configurado.' });
+  if (!ORACLE_SECRET) {
+    console.error('[extract-video] ORACLE_SECRET no configurado.');
+    return res.status(500).json({ error: 'El servicio de extracción (Oráculo) no está configurado adecuadamente.' });
   }
 
   const directCheck = await checkDirectUrl(url);
@@ -177,10 +183,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       fallbackExecute // En el futuro Oracle puede fallar y lo pasamos al fallback directo sin IA
     );
   } catch (error: any) {
-    if (error.message.includes('alcanzado en todas las cuentas disponibles')) {
+    if (error.message && error.message.includes('alcanzado en todas las cuentas disponibles')) {
        return res.status(429).json({ error: error.message });
     }
     console.error('[extract-video] Error conectando al Oráculo.', error);
-    return res.status(500).json({ error: 'Error conectando al servicio de extracción (Oráculo).', details: error.message });
+    return res.status(500).json({ error: 'Error general en el servicio de extracción.', details: error.message || 'Error desconocido' });
+  }
+  } catch (error: any) {
+    return res.status(500).json({ error: 'Error general en extract-video', details: error.message });
   }
 }
