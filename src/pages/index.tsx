@@ -335,9 +335,18 @@ export default function NaylaCore() {
            provider: selectedAiProvider
         })
       });
-      const data = await res.json();
+      let data;
+      try {
+        data = await res.json();
+      } catch (err) {
+        throw new Error('Error de conexión o respuesta inválida del servidor (Probablemente faltan variables de entorno para DB).');
+      }
 
-      setChatMessages(prev => [...prev, { role: 'ai', text: data.text }]);
+      if (!res.ok || data.error) {
+        throw new Error(data.error || 'Error en la respuesta del servidor');
+      }
+
+      setChatMessages(prev => [...prev, { role: 'ai', text: data.text || 'Sin respuesta de texto.' }]);
 
       if (data.action === 'CLIP_VIDEO' && data.payload) {
         // Enviar a procesar el clip con el Oráculo
@@ -371,9 +380,9 @@ export default function NaylaCore() {
           setExtrayendoVideo(false);
         }
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error(error);
-      setChatMessages(prev => [...prev, { role: 'ai', text: 'Lo siento, ocurrió un error procesando tu solicitud.' }]);
+      setChatMessages(prev => [...prev, { role: 'ai', text: error.message || 'Lo siento, ocurrió un error procesando tu solicitud.' }]);
     } finally {
       setChatProcessing(false);
     }
@@ -2672,6 +2681,8 @@ export default function NaylaCore() {
               setMainNav(tool.id);
               if (tool.id !== 'ia') {
                 setIsChatOpen(false);
+              } else {
+                setIsChatOpen(true);
               }
               setSubTool(null);
             }}>
@@ -2700,14 +2711,55 @@ export default function NaylaCore() {
             transition: 'transform 0.3s ease-in-out'
           }}>
             {/* Header Sidebar */}
-            <div style={{ padding: '16px', borderBottom: `1px solid ${darkMode ? '#1a1a1a' : '#e5e7eb'}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <div style={{ width: '8px', height: '8px', backgroundColor: '#00cc66', borderRadius: '50%', boxShadow: '0 0 10px #00cc66' }}></div>
-                <h3 style={{ margin: 0, color: darkMode ? '#fff' : '#000', fontSize: '1rem', fontWeight: 'bold' }}>Nayla</h3>
+            <div style={{ padding: '16px', borderBottom: `1px solid ${darkMode ? '#1a1a1a' : '#e5e7eb'}`, display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <div style={{ width: '8px', height: '8px', backgroundColor: '#00cc66', borderRadius: '50%', boxShadow: '0 0 10px #00cc66' }}></div>
+                  <h3 style={{ margin: 0, color: darkMode ? '#fff' : '#000', fontSize: '1rem', fontWeight: 'bold' }}>Nayla</h3>
+                </div>
+                <button onClick={() => setIsChatOpen(false)} style={{ background: 'none', border: 'none', color: darkMode ? '#fff' : '#000', cursor: 'pointer' }}>
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                </button>
               </div>
-              <button onClick={() => setIsChatOpen(false)} style={{ background: 'none', border: 'none', color: darkMode ? '#fff' : '#000', cursor: 'pointer' }}>
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-              </button>
+              {/* Toggle Nayla Fast / Pro */}
+              <div style={{ display: 'flex', gap: '4px', backgroundColor: darkMode ? '#1a1a1a' : '#f3f4f6', padding: '4px', borderRadius: '8px' }}>
+                <button
+                  onClick={() => setSelectedAiProvider('groq')}
+                  style={{
+                    flex: 1,
+                    padding: '6px',
+                    borderRadius: '6px',
+                    border: 'none',
+                    backgroundColor: selectedAiProvider === 'groq' ? (darkMode ? '#333' : '#fff') : 'transparent',
+                    color: selectedAiProvider === 'groq' ? (darkMode ? '#fff' : '#000') : '#666',
+                    fontWeight: selectedAiProvider === 'groq' ? 'bold' : 'normal',
+                    fontSize: '0.85rem',
+                    cursor: 'pointer',
+                    boxShadow: selectedAiProvider === 'groq' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
+                    transition: 'all 0.2s'
+                  }}
+                >
+                  Nayla Fast
+                </button>
+                <button
+                  onClick={() => setSelectedAiProvider('mistral')}
+                  style={{
+                    flex: 1,
+                    padding: '6px',
+                    borderRadius: '6px',
+                    border: 'none',
+                    backgroundColor: selectedAiProvider === 'mistral' ? (darkMode ? '#333' : '#fff') : 'transparent',
+                    color: selectedAiProvider === 'mistral' ? (darkMode ? '#fff' : '#000') : '#666',
+                    fontWeight: selectedAiProvider === 'mistral' ? 'bold' : 'normal',
+                    fontSize: '0.85rem',
+                    cursor: 'pointer',
+                    boxShadow: selectedAiProvider === 'mistral' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
+                    transition: 'all 0.2s'
+                  }}
+                >
+                  Nayla Pro
+                </button>
+              </div>
             </div>
 
             {/* Mensajes */}

@@ -7,7 +7,11 @@ import { z } from 'zod';
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
 const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
 const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY || supabaseKey;
-const supabaseAdmin = createClient(supabaseUrl, supabaseServiceRoleKey);
+
+// Avoid throwing error on module load if env vars are missing
+const supabaseAdmin = supabaseUrl && supabaseServiceRoleKey
+  ? createClient(supabaseUrl, supabaseServiceRoleKey)
+  : null;
 
 export const config = {
   api: {
@@ -60,6 +64,11 @@ Para todo lo demás (charlas, dudas sobre el editor, etc.), responde normalmente
     const historyText = history.map((msg: any) => `${msg.role}: ${msg.content}`).join('\n');
     fullPrompt = `Historial de la conversación:\n${historyText}\n\nUsuario: ${message}`;
   }
+
+    if (!supabaseAdmin) {
+      console.error('[chat.ts] Faltan variables de entorno para conectar a Supabase.');
+      return res.status(500).json({ error: 'Faltan variables de entorno para conectar a Supabase.' });
+    }
 
     // Definimos cómo ejecutar con Groq
     const executeGroq = async (apiKey: string) => {
