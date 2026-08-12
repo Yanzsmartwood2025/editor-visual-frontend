@@ -24,7 +24,7 @@ type LogoItem = { id: string; url: string; x: number; y: number; scale: number; 
 
 type RenderJob = {
   jobId: string;
-  status: 'queued' | 'processing' | 'completed' | 'error' | 'cancelled';
+  status: 'queued' | 'processing' | 'completed' | 'error' | 'cancelled' | 'failed';
   url: string | null;
   error: string | null;
   logs: string[];
@@ -237,7 +237,7 @@ export default function NaylaCore() {
                     return [...prev, renderItem];
                   });
                   showAlert('Renderizado completado exitosamente.');
-               } else if (statusData.status === 'error') {
+               } else if (statusData.status === 'error' || statusData.status === 'failed') {
                   showAlert('Fallo en la nube: ' + (statusData.error || 'Desconocido'));
                }
             }
@@ -259,18 +259,20 @@ export default function NaylaCore() {
 
   const cancelRenderJob = async (jobId: string) => {
     try {
+      // Force clear polling locally immediately
+      let updatedJobs = { ...activeRenderJobs, [jobId]: { ...activeRenderJobs[jobId], status: 'cancelled' as any } };
+      setActiveRenderJobs(updatedJobs as any);
+      localStorage.setItem('activeRenderJobs', JSON.stringify(updatedJobs));
+
       const res = await fetch(`/api/render-cancel?jobId=${jobId}`, { method: 'DELETE' });
       if (res.ok) {
          showAlert('Render cancelado correctamente.');
-         const updatedJobs = { ...activeRenderJobs, [jobId]: { ...activeRenderJobs[jobId], status: 'cancelled' as any } };
-         setActiveRenderJobs(updatedJobs as any);
-         localStorage.setItem('activeRenderJobs', JSON.stringify(updatedJobs));
       } else {
          const data = await res.json();
-         showAlert('Error cancelando render: ' + (data.error || 'Desconocido'));
+         showAlert('Render cancelado localmente. Error en la nube: ' + (data.error || 'Desconocido'));
       }
     } catch (e: any) {
-      showAlert('Error de red al cancelar: ' + e.message);
+      showAlert('Render cancelado localmente. Error de red: ' + e.message);
     }
   };
 
@@ -1554,11 +1556,11 @@ export default function NaylaCore() {
                       borderRadius: '4px',
                       backgroundColor: job.status === 'processing' ? 'rgba(0,255,0,0.1)' :
                                        job.status === 'queued' ? 'rgba(234, 179, 8, 0.1)' :
-                                       job.status === 'error' ? 'rgba(255,0,0,0.1)' :
+                                       (job.status === 'error' || job.status === 'failed') ? 'rgba(255,0,0,0.1)' :
                                        job.status === 'cancelled' ? 'rgba(136,136,136,0.1)' : 'rgba(0,150,255,0.1)',
                       color: job.status === 'processing' ? '#00ff00' :
                              job.status === 'queued' ? '#eab308' :
-                             job.status === 'error' ? '#ff4444' :
+                             (job.status === 'error' || job.status === 'failed') ? '#ff4444' :
                              job.status === 'cancelled' ? '#888' : '#3b82f6',
                       fontWeight: 'bold'
                     }}>
@@ -1567,7 +1569,7 @@ export default function NaylaCore() {
                   </div>
 
                   {/* Logs solo para procesando o error */}
-                  {(job.status === 'processing' || job.status === 'error') && (
+                  {(job.status === 'processing' || job.status === 'error' || job.status === 'failed') && (
                     <div style={{
                       backgroundColor: '#000',
                       border: '1px solid #222',
@@ -1593,7 +1595,7 @@ export default function NaylaCore() {
                           CANCELAR
                         </button>
                      )}
-                     {(job.status === 'completed' || job.status === 'error' || job.status === 'cancelled') && (
+                     {(job.status === 'completed' || job.status === 'error' || job.status === 'failed' || job.status === 'cancelled') && (
                         <button
                           onClick={() => removeRenderJob(job.jobId)}
                           style={{ backgroundColor: '#222', color: '#fff', border: '1px solid #444', padding: '6px 12px', borderRadius: '4px', fontSize: '12px', cursor: 'pointer' }}
