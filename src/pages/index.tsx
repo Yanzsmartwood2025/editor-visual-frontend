@@ -76,6 +76,8 @@ const SUB_TOOLS: Record<string, any[]> = {
     { id: 'stockvideo', nombre: 'Stock Video', icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"/><line x1="7" y1="2" x2="7" y2="22"/><line x1="17" y1="2" x2="17" y2="22"/><line x1="2" y1="12" x2="22" y2="12"/><line x1="2" y1="7" x2="7" y2="7"/><line x1="2" y1="17" x2="7" y2="17"/><line x1="17" y1="17" x2="22" y2="17"/><line x1="17" y1="7" x2="22" y2="7"/></svg> },
   ],
   ia: [
+    { id: 'groq', nombre: 'Groq', icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2a10 10 0 1 0 10 10H12V2z"/></svg> },
+    { id: 'mistral', nombre: 'Mistral', icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg> },
     { id: 'supervisor', nombre: 'Supervisor', icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="11" width="18" height="10" rx="2"/><circle cx="12" cy="5" r="2"/><path d="M12 7v4"/><line x1="8" y1="16" x2="8" y2="16"/><line x1="16" y1="16" x2="16" y2="16"/></svg> },
     { id: 'delogo', nombre: 'Delogo', icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg> },
     { id: 'sonidos', nombre: 'Sonidos (TTS)', icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="22"/></svg> },
@@ -96,6 +98,7 @@ export default function NaylaCore() {
   const [iaApiKey, setIaApiKey] = useState('');
   const [iaPrompt, setIaPrompt] = useState('Haz un video con 3 clips y ponles subtítulos');
   const [iaLoading, setIaLoading] = useState(false);
+  const [selectedAiProvider, setSelectedAiProvider] = useState<'groq' | 'mistral'>('groq');
   const [iaBandejasAbiertas, setIaBandejasAbiertas] = useState(false);
   const [iaBandejaActiva, setIaBandejaActiva] = useState('audio'); // 'audio', 'fotos', 'videos'
   const [iaAudioTexto, setIaAudioTexto] = useState('');
@@ -327,8 +330,9 @@ export default function NaylaCore() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-           message: currentInput,
-           history: chatMessages.map(m => ({ role: m.role === 'user' ? 'user' : 'assistant', content: m.text }))
+           message: chatInput,
+           history: chatMessages.map(m => ({ role: m.role === 'user' ? 'user' : 'assistant', content: m.text })),
+           provider: selectedAiProvider
         })
       });
       const data = await res.json();
@@ -2644,7 +2648,10 @@ export default function NaylaCore() {
                   setToolMessage(null);
                 } else {
                   setSubTool(tool.id);
-                  if (['marco', 'delogo', 'script', 'supervisor', 'youtube', 'pixabay', 'musicastock', 'noticias', 'artistas', 'stockvideo', 'sonidos', 'iafoto', 'enlace', 'render'].includes(tool.id)) {
+                  if (['groq', 'mistral'].includes(tool.id)) {
+                    setSelectedAiProvider(tool.id);
+                    setIsChatOpen(true);
+                  } else if (['marco', 'delogo', 'script', 'supervisor', 'youtube', 'pixabay', 'musicastock', 'noticias', 'artistas', 'stockvideo', 'sonidos', 'iafoto', 'enlace', 'render'].includes(tool.id)) {
                     setToolMessage(null);
                   } else {
                     setToolMessage('PRÓXIMAMENTE');
@@ -2662,10 +2669,10 @@ export default function NaylaCore() {
         <div className={`grid grid-cols-5 gap-2 w-full p-3 ${darkMode ? 'bg-black' : 'bg-white'}`}>
           {MAIN_TOOLS.map((tool) => (
             <button key={tool.id} className={`main-btn w-full ${mainNav === tool.id ? 'active' : ''} ${!darkMode ? 'bg-gray-100 border-gray-300 text-black' : ''}`} style={{ backgroundColor: !darkMode ? (mainNav === tool.id ? '#000' : '#f3f4f6') : undefined, color: !darkMode ? (mainNav === tool.id ? '#fff' : '#000') : undefined }} onClick={() => {
-              if (tool.id === 'ia') {
-                setIsChatOpen(!isChatOpen);
-              }
               setMainNav(tool.id);
+              if (tool.id !== 'ia') {
+                setIsChatOpen(false);
+              }
               setSubTool(null);
             }}>
               <div>{tool.icon}</div>

@@ -20,7 +20,8 @@ export const config = {
 const requestSchema = z.object({
   message: z.string().min(1, 'Falta el parámetro requerido o está vacío: message'),
   images: z.array(z.string()).optional(),
-  history: z.array(z.any()).optional()
+  history: z.array(z.any()).optional(),
+  provider: z.enum(['groq', 'mistral']).optional().default('groq')
 });
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
@@ -35,7 +36,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       return res.status(400).json({ error: parsedBody.error.issues?.[0]?.message || 'Invalid parameters' });
     }
 
-    const { message, images, history } = parsedBody.data;
+    const { message, images, history, provider } = parsedBody.data;
 
     const systemPrompt = `
 Eres un asistente de IA para un editor de video basado en código (NaylaEngine).
@@ -66,31 +67,47 @@ Para todo lo demás (charlas, dudas sobre el editor, etc.), responde normalmente
       return await provider.generateText(fullPrompt, images, systemPrompt);
     };
 
-    // Definimos cómo ejecutar con Mistral (como fallback)
+    // Definimos cómo ejecutar con Mistral (como fallback o primario si se elige)
+    const executeMistral = async (apiKey: string) => {
+      const provider = new MistralProvider(apiKey);
+      return await provider.generateText(fullPrompt, images, systemPrompt);
+    };
     const executeMistralFallback = async () => {
       return await executeWithApiKey(
         supabaseAdmin,
         'mistral',
-        async (apiKey: string) => {
-          const provider = new MistralProvider(apiKey);
-          return await provider.generateText(fullPrompt, images, systemPrompt);
-        }
+        executeMistral
+      );
+    };
+    const executeGroqFallback = async () => {
+      return await executeWithApiKey(
+        supabaseAdmin,
+        'groq',
+        executeGroq
       );
     };
 
     let responseText = '';
 
     try {
-      // Intentamos Groq como principal
-      responseText = await executeWithApiKey(
-        supabaseAdmin,
-        'groq',
-        executeGroq,
-        executeMistralFallback
-      );
+      if (provider === 'mistral') {
+        responseText = await executeWithApiKey(
+          supabaseAdmin,
+          'mistral',
+          executeMistral,
+          executeGroqFallback
+        );
+      } else {
+        responseText = await executeWithApiKey(
+          supabaseAdmin,
+          'groq',
+          executeGroq,
+          executeMistralFallback
+        );
+      }
     } catch (error: any) {
       console.error('[chat.ts] Todos los proveedores fallaron:', error);
-      return res.status(500).json({ error: 'Error al generar la respuesta. Ambos proveedores (Groq y Mistral) fallaron o están al límite.' });
+      return res.status(500).json({ error: 'Error al generar la respuesta. Ambos proveedores fallaron o están al límite.' });
     }
 
     // Intentamos parsear por si devolvió el JSON para acciones multimedia
