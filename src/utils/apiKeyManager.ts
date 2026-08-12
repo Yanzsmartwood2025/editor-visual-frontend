@@ -110,6 +110,8 @@ export async function executeWithApiKey<T>(
 
   if (keysError) {
     console.error(`[executeWithApiKey] Error de base de datos al buscar llaves para el provider '${provider}':`, keysError);
+    // Explicitly throw an error here to catch RLS or connection issues
+    throw new Error(`Error DB al buscar llaves para ${provider}: ${keysError.message}`);
   }
 
   if (!keysError && keysData && keysData.length > 0) {
@@ -136,7 +138,10 @@ export async function executeWithApiKey<T>(
       candidateKeys.push(key);
     }
   } else {
-    console.log(`[executeWithApiKey] No se encontraron llaves en la BD para el provider '${provider}'.`);
+    console.error(`[executeWithApiKey] CRITICAL: No se encontraron llaves en la BD para el provider '${provider}'. Verifica la tabla api_keys_pool y las políticas RLS.`);
+    if (!fallbackAction) {
+        throw new Error(`No hay llaves configuradas en la base de datos para ${provider}.`);
+    }
   }
 
   // Sort by lowest recent usage (requests_in_current_minute ASC)
