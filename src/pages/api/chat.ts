@@ -65,58 +65,48 @@ Para todo lo demás (charlas, dudas sobre el editor, etc.), responde normalmente
     fullPrompt = `Historial de la conversación:\n${historyText}\n\nUsuario: ${message}`;
   }
 
-    if (!supabaseAdmin) {
-      console.error('[chat.ts] Faltan variables de entorno para conectar a Supabase.');
-      return res.status(500).json({ error: 'Faltan variables de entorno para conectar a Supabase.' });
-    }
-
     // Definimos cómo ejecutar con Groq
     const executeGroq = async (apiKey: string) => {
-      const provider = new GroqProvider(apiKey);
-      return await provider.generateText(fullPrompt, images, systemPrompt);
+      const groqProvider = new GroqProvider(apiKey);
+      return await groqProvider.generateText(fullPrompt, images, systemPrompt);
     };
 
     // Definimos cómo ejecutar con Mistral (como fallback o primario si se elige)
     const executeMistral = async (apiKey: string) => {
-      const provider = new MistralProvider(apiKey);
-      return await provider.generateText(fullPrompt, images, systemPrompt);
+      const mistralProvider = new MistralProvider(apiKey);
+      return await mistralProvider.generateText(fullPrompt, images, systemPrompt);
     };
-    const executeMistralFallback = async () => {
-      return await executeWithApiKey(
-        supabaseAdmin,
-        'mistral',
-        executeMistral
-      );
+
+    const executeDirectOrPool = async (
+      providerName: 'groq' | 'mistral',
+      directApiKey: string | undefined,
+      executor: (apiKey: string) => Promise<string>
+    ) => {
+      if (directApiKey?.trim()) {
+        return await executor(directApiKey.trim());
+      }
+
+      if (!supabaseAdmin) {
+        throw new Error(`No hay ${providerName.toUpperCase()}_API_KEY configurada en Vercel y tampoco hay conexión al pool temporal de llaves.`);
+      }
+
+      return await executeWithApiKey(supabaseAdmin, providerName, executor);
     };
-    const executeGroqFallback = async () => {
-      return await executeWithApiKey(
-        supabaseAdmin,
-        'groq',
-        executeGroq
-      );
-    };
+
+    const executeGroqDirectOrPool = () => executeDirectOrPool('groq', process.env.GROQ_API_KEY, executeGroq);
+    const executeMistralDirectOrPool = () => executeDirectOrPool('mistral', process.env.MISTRAL_API_KEY, executeMistral);
 
     let responseText = '';
 
     try {
       if (provider === 'mistral') {
-        responseText = await executeWithApiKey(
-          supabaseAdmin,
-          'mistral',
-          executeMistral,
-          executeGroqFallback
-        );
+        responseText = await executeMistralDirectOrPool().catch(async () => executeGroqDirectOrPool());
       } else {
-        responseText = await executeWithApiKey(
-          supabaseAdmin,
-          'groq',
-          executeGroq,
-          executeMistralFallback
-        );
+        responseText = await executeGroqDirectOrPool().catch(async () => executeMistralDirectOrPool());
       }
     } catch (error: any) {
       console.error('[chat.ts] Todos los proveedores fallaron:', error);
-      return res.status(500).json({ error: 'Error al generar la respuesta. Ambos proveedores fallaron o están al límite.' });
+      return res.status(500).json({ error: error.message || 'Error al generar la respuesta. Ambos proveedores fallaron o están al límite.' });
     }
 
     // Intentamos parsear por si devolvió el JSON para acciones multimedia

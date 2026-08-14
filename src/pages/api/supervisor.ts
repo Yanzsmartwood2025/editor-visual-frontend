@@ -8,7 +8,9 @@ const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
 const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
 const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY || supabaseKey;
 
-const supabase = createClient(supabaseUrl, supabaseServiceRoleKey);
+const supabase = supabaseUrl && supabaseServiceRoleKey
+    ? createClient(supabaseUrl, supabaseServiceRoleKey)
+    : null;
 
 const requestSchema = z.object({
     prompt: z.string().min(1, 'Falta el parámetro requerido o está vacío: prompt'),
@@ -33,7 +35,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         const authHeader = req.headers.authorization;
         let isAuthorized = false;
 
-        if (authHeader) {
+        if (authHeader && supabase) {
             const token = authHeader.split(' ')[1] || '';
             const { data: { user } } = await supabase.auth.getUser(token);
             if (user?.email === 'ajn.liq.128@proton.me') {
@@ -41,8 +43,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
             }
         }
 
-        if (!isAuthorized && !apiKey) {
-            return res.status(401).json({ error: 'No authorization header provided or invalid token, and no Premium API Key provided' });
+        const hasServerProviderKey = Boolean(process.env.GROQ_API_KEY?.trim() || process.env.MISTRAL_API_KEY?.trim());
+
+        if (!isAuthorized && !apiKey && !hasServerProviderKey) {
+            return res.status(401).json({ error: 'Configura GROQ_API_KEY o MISTRAL_API_KEY en Vercel/Coolify, o envía una API key propia.' });
         }
 
         const systemPrompt = `
@@ -93,16 +97,38 @@ La galería actual del usuario contiene los siguientes elementos: ${JSON.stringi
             return codeResponse;
         };
 
+        const executeMistralCode = async (keyToUse: string) => {
+            const provider = new MistralProvider(keyToUse);
+            const result = await provider.generateText(promptDelUsuario, [], systemPrompt);
+            let codeResponse = result.replace(/```javascript/g, '').replace(/```js/g, '').replace(/```/g, '').trim();
+            if (codeResponse.includes('await') && !codeResponse.includes('async () =>')) {
+                codeResponse = `(async () => {
+${codeResponse}
+})();`;
+            }
+            return codeResponse;
+        };
+
         const executeMistralFallback = async () => {
-            return await executeWithApiKey(supabase, "mistral", async (keyToUse: string) => {
-                const provider = new MistralProvider(keyToUse);
-                const result = await provider.generateText(promptDelUsuario, [], systemPrompt);
-                let codeResponse = result.replace(/```javascript/g, '').replace(/```js/g, '').replace(/```/g, '').trim();
-                if (codeResponse.includes('await') && !codeResponse.includes('async () =>')) {
-                    codeResponse = `(async () => {\n${codeResponse}\n})();`;
-                }
-                return codeResponse;
-            });
+            const envMistralKey = process.env.MISTRAL_API_KEY?.trim();
+            if (envMistralKey) {
+                return await executeMistralCode(envMistralKey);
+            }
+            if (!supabase) {
+                throw new Error('No hay MISTRAL_API_KEY configurada y tampoco está disponible el pool temporal de llaves.');
+            }
+            return await executeWithApiKey(supabase, "mistral", executeMistralCode);
+        };
+
+        const executeGroqFromEnvOrPool = async () => {
+            const envGroqKey = process.env.GROQ_API_KEY?.trim();
+            if (envGroqKey) {
+                return await executeGroq(envGroqKey);
+            }
+            if (!supabase) {
+                return await executeMistralFallback();
+            }
+            return await executeWithApiKey(supabase, "groq", executeGroq, executeMistralFallback);
         };
 
         let finalCode = '';
@@ -110,11 +136,8 @@ La galería actual del usuario contiene los siguientes elementos: ${JSON.stringi
             // User provided API key directly, assuming Groq format for this manual case
             finalCode = await executeGroq(apiKey);
         } else {
-            // Admin flow using pool
-            finalCode = await executeWithApiKey(supabase, "groq",
-                executeGroq,
-                executeMistralFallback
-            );
+            // Prefer Vercel/Coolify env keys. Keep the DB key pool only as a temporary fallback.
+            finalCode = await executeGroqFromEnvOrPool();
         }
 
         res.status(200).json({ code: finalCode });

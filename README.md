@@ -8,6 +8,13 @@ This template uses the Next.js Pages directory. There is a [App directory versio
 
 <img src="https://github.com/remotion-dev/template-next/assets/1629785/c9c2e5ca-2637-4ec8-8e40-a8feb5740d88" />
 
+
+## Nayla / Oracle Cloud PC notes
+
+This application sends render and media-processing work to an Oracle Cloud PC worker. Configure `ORACLE_SERVER_URL` and `ORACLE_SECRET` from `.env.example` for that flow.
+
+AI providers should be configured directly in Vercel/Coolify with `GROQ_API_KEY` and `MISTRAL_API_KEY`. The old database key pool remains only as a temporary fallback while the rest of the tools are stabilized. See `docs/ORACLE_CLOUD_PC.md` before removing compatibility variables.
+
 ## Getting Started
 
 [Use this template](https://github.com/new?template_name=template-next-pages-dir&template_owner=remotion-dev) to clone it into your GitHub account. Run
