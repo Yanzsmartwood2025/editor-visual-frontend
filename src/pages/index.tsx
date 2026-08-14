@@ -12,7 +12,7 @@ const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://dummy.supab
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'dummy_key';
 
 if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
-  console.error('ERROR CRÍTICO: Variables de entorno de Supabase no configuradas.');
+  console.warn('Supabase no está configurado. Auth/storage siguen en compatibilidad temporal; la IA usa llaves de Vercel/Coolify y el render va por Oracle Cloud PC.');
 }
 const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
@@ -2222,10 +2222,10 @@ export default function NaylaCore() {
                    <div style={{ fontSize: '0.7rem', color: '#737373', marginBottom: '5px' }}>Si no tienes API Key, usa el servicio premium (5$ PayPal/Bitcoin)</div>
                    <button className="neon-btn nav-btn" style={{ padding: '6px 15px', fontSize: '0.7rem', width: '100%', marginBottom: '10px', backgroundColor: '#d4af37', color: '#000', fontWeight: 'bold' }}>CONTRATAR PLAN IA ($5)</button>
 
-                   <div style={{ fontSize: '0.7rem', color: '#737373', marginBottom: '5px' }}>O ingresa tu propia API Key de OpenAI:</div>
+                   <div style={{ fontSize: '0.7rem', color: '#737373', marginBottom: '5px' }}>O ingresa tu propia API Key de Groq:</div>
                    <input
                      type="password"
-                     placeholder="sk-proj-..."
+                     placeholder="gsk_..."
                      value={iaApiKey}
                      onChange={(e) => setIaApiKey(e.target.value)}
                      style={{ width: '100%', backgroundColor: '#050505', border: '1px solid #262626', color: darkMode ? '#fff' : '#000', padding: '8px', borderRadius: '5px', fontSize: '0.7rem' }}

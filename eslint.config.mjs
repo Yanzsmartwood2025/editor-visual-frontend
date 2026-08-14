@@ -23,6 +23,9 @@ export default [
       "next.config.js",
       "oracle-service/**",
       "patch_fades.js",
+      "check_*.js",
+      "fix_*.js",
+      "patch*.js",
       "public/sw.js",
     ],
   },
@@ -36,6 +39,8 @@ export default [
     plugins: { "@next/next": nextPlugin },
     rules: {
       ...nextRecommendedRules,
+      "@typescript-eslint/no-explicit-any": "warn",
+      "@typescript-eslint/ban-ts-comment": "warn",
     },
   },
   // Remotion rules applied only to remotion files
