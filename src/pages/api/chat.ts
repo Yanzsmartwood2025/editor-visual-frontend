@@ -25,7 +25,16 @@ const requestSchema = z.object({
   message: z.string().min(1, 'Falta el parámetro requerido o está vacío: message'),
   images: z.array(z.string()).optional(),
   history: z.array(z.any()).optional(),
-  provider: z.enum(['groq', 'mistral']).optional().default('groq')
+  provider: z.enum(['groq', 'mistral']).optional().default('groq'),
+  mediaLibrary: z.array(z.object({
+    id: z.string().optional(),
+    tipo: z.enum(['foto', 'video', 'audio']),
+    url: z.string().url(),
+    nombre: z.string().optional(),
+    etiqueta: z.string().optional(),
+    fuente: z.string().optional()
+  })).optional(),
+  currentTimeline: z.array(z.any()).optional()
 });
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
@@ -40,29 +49,49 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       return res.status(400).json({ error: parsedBody.error.issues?.[0]?.message || 'Invalid parameters' });
     }
 
-    const { message, images, history, provider } = parsedBody.data;
+    const { message, images, history, provider, mediaLibrary, currentTimeline } = parsedBody.data;
 
     const systemPrompt = `
-Eres un asistente de IA para un editor de video basado en código (NaylaEngine).
+Eres Nayla, asistente de IA para un editor de video basado en Remotion.
 Debes ser conciso, amable y experto.
-IMPORTANTE: Si el usuario te pide crear o generar una imagen, video, o audio, o buscar recursos multimedia, NO respondas con texto conversacional normal.
-EN SU LUGAR, debes responder ÚNICAMENTE con un JSON válido con este formato, sin markdown, sin \`\`\`json, solo el objeto JSON crudo:
-{"action": "generate_image", "prompt": "el prompt detallado para generar la imagen"}
-{"action": "generate_video", "prompt": "el prompt detallado para el video"}
-{"action": "generate_audio", "prompt": "el prompt para el audio"}
-{"action": "search_media", "prompt": "términos de búsqueda"}
 
-Solo responde en JSON si es estrictamente un pedido de generación o búsqueda multimedia.
-Para todo lo demás (charlas, dudas sobre el editor, etc.), responde normalmente en texto.
+PRIORIDAD ACTUAL:
+- NO generes imagen, video, audio ni búsquedas multimedia nuevas.
+- Solo puedes usar medios existentes que el frontend te entrega en mediaLibrary/currentTimeline.
+- Si el usuario pide "arma el video", "crea el video con esto", "usa estos medios" o algo equivalente, responde ÚNICAMENTE con JSON válido, sin markdown ni bloques de código.
+- Respeta el orden exacto en que aparecen los medios disponibles, salvo que el usuario pida otro orden explícito.
+- Copia las URLs exactamente como llegan. No inventes URLs.
+
+Contrato único ejecutable:
+{
+  "action": "BUILD_TIMELINE",
+  "assets": [
+    { "type": "foto", "source": "url", "url": "https://..." },
+    { "type": "video", "source": "url", "url": "https://..." },
+    { "type": "audio", "source": "url", "url": "https://..." }
+  ],
+  "render": true
+}
+
+Usa type únicamente como "foto", "video" o "audio". Usa source únicamente como "url".
+Si no hay medios suficientes para armar el timeline, responde texto normal explicando qué falta.
+Para todo lo que no sea construir el timeline con medios existentes, responde normalmente en texto.
 `;
 
   // Construir historial para mandar al prompt si es necesario,
   // aunque nuestro provider actual toma un string, podemos concatenar el historial de forma básica
   // o pasarlo como parte del system prompt/context.
   let fullPrompt = message;
+  const executionContext = [
+    mediaLibrary?.length ? `Medios disponibles en orden de entrega:\n${mediaLibrary.map((item, index) => `${index + 1}. tipo=${item.tipo}; url=${item.url}; nombre=${item.nombre || ''}; etiqueta=${item.etiqueta || ''}; fuente=${item.fuente || ''}`).join('\n')}` : 'Medios disponibles en orden de entrega: ninguno.',
+    currentTimeline?.length ? `Timeline actual en orden:\n${currentTimeline.map((item: any, index: number) => `${index + 1}. tipo=${item.tipo}; url=${item.url}; nombre=${item.nombre || ''}; etiqueta=${item.etiqueta || ''}`).join('\n')}` : 'Timeline actual: vacío.'
+  ].join('\n\n');
+
   if (history && Array.isArray(history) && history.length > 0) {
     const historyText = history.map((msg: any) => `${msg.role}: ${msg.content}`).join('\n');
-    fullPrompt = `Historial de la conversación:\n${historyText}\n\nUsuario: ${message}`;
+    fullPrompt = `${executionContext}\n\nHistorial de la conversación:\n${historyText}\n\nUsuario: ${message}`;
+  } else {
+    fullPrompt = `${executionContext}\n\nUsuario: ${message}`;
   }
 
     // Definimos cómo ejecutar con Groq
@@ -114,7 +143,7 @@ Para todo lo demás (charlas, dudas sobre el editor, etc.), responde normalmente
        const cleanedText = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
        if (cleanedText.startsWith('{') && cleanedText.endsWith('}')) {
           const parsed = JSON.parse(cleanedText);
-          if (parsed.action && parsed.prompt) {
+          if (parsed.action === 'BUILD_TIMELINE' && Array.isArray(parsed.assets)) {
               return res.status(200).json(parsed);
           }
        }

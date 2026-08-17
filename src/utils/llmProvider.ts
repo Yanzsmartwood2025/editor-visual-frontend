@@ -12,7 +12,7 @@ export class GroqProvider implements LLMProvider {
   constructor(apiKey: string) {
     this.client = new Groq({ apiKey });
     // Use the requested model
-    this.model = 'llama-3.3-70b-versatile';
+    this.model = process.env.GROQ_MODEL || 'openai/gpt-oss-120b';
   }
 
   async generateText(prompt: string, images?: string[], systemPrompt?: string): Promise<string> {
@@ -57,7 +57,7 @@ export class MistralProvider implements LLMProvider {
   constructor(apiKey: string) {
     this.client = new Mistral({ apiKey });
     // Use the requested model
-    this.model = 'mistral-small-latest';
+    this.model = process.env.MISTRAL_MODEL || 'mistral-large-latest';
   }
 
   async generateText(prompt: string, images?: string[], systemPrompt?: string): Promise<string> {
