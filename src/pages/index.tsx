@@ -317,6 +317,97 @@ export default function NaylaCore() {
   const [chatMessages, setChatMessages] = useState<{role: 'user' | 'ai', text: string}[]>([]);
   const [chatProcessing, setChatProcessing] = useState(false);
 
+  const validarTimelineParaRender = async (timeline: TimelineItem[]) => {
+    const lineaValidada = [...timeline];
+    for (let i = 0; i < lineaValidada.length; i++) {
+      const item = lineaValidada[i];
+      if (item.tipo === 'audio' && item.durationInSeconds === undefined) {
+        const duration = await getAudioDurationInSeconds(item.url);
+        lineaValidada[i] = { ...item, durationInSeconds: duration, originalDurationInSeconds: item.originalDurationInSeconds || duration };
+      } else if (item.tipo === 'video' && item.durationInSeconds === undefined) {
+        const metadata = await getVideoMetadata(item.url);
+        lineaValidada[i] = { ...item, durationInSeconds: metadata.durationInSeconds, originalDurationInSeconds: item.originalDurationInSeconds || metadata.durationInSeconds };
+      } else if (item.tipo === 'foto' && item.durationInSeconds === undefined) {
+        lineaValidada[i] = { ...item, durationInSeconds: 5, originalDurationInSeconds: item.originalDurationInSeconds || 5 };
+      }
+    }
+    return lineaValidada;
+  };
+
+  const solicitarRenderTimeline = async (timeline: TimelineItem[]) => {
+    const lineaValidada = await validarTimelineParaRender(timeline);
+    const inputProps = {
+      timeline: lineaValidada,
+      subtitles: subtitulos,
+      logos: logos,
+      canvasRatio,
+      settings: globalSettings
+    };
+
+    const res = await fetch('/api/render', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ inputProps })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Error al solicitar renderizado');
+
+    if (data.jobId) {
+      const newJob = { jobId: data.jobId, status: 'queued', url: null, error: null, logs: ['Job añadido a la cola desde Nayla...'] };
+      const updatedJobs = { ...activeRenderJobs, [data.jobId]: newJob };
+      setActiveRenderJobs(updatedJobs as any);
+      localStorage.setItem('activeRenderJobs', JSON.stringify(updatedJobs));
+      setIsRenderQueueVisible(true);
+    }
+
+    return data;
+  };
+
+  const ejecutarBuildTimeline = async (actionData: any) => {
+    const assets = Array.isArray(actionData.assets) ? actionData.assets : [];
+    if (assets.length === 0) throw new Error('BUILD_TIMELINE llegó sin assets.');
+
+    const nextTimeline: TimelineItem[] = [];
+    assets.forEach((asset: any, index: number) => {
+      const url = typeof asset.url === 'string' ? asset.url.trim() : '';
+      const tipo = asset.type === 'image' ? 'foto' : asset.type;
+      if (!url || !['foto', 'video', 'audio'].includes(tipo) || asset.source !== 'url') return;
+
+      const mediaExistente = galeriaMultimedia.find(item => item.url === url && item.tipo === tipo);
+      const mediaId = mediaExistente?.id || `nayla-url-${Date.now()}-${index}`;
+      const etiqueta = mediaExistente?.etiqueta || `${tipo === 'foto' ? 'F' : tipo === 'audio' ? 'A' : 'V'}_IA_${index + 1}`;
+      const nombre = mediaExistente?.nombre || `Nayla ${tipo} ${index + 1}`;
+
+      nextTimeline.push({
+        id: `nayla-timeline-${Date.now()}-${index}`,
+        mediaId,
+        tipo,
+        nombre,
+        etiqueta,
+        url,
+        durationInSeconds: tipo === 'foto' ? 5 : mediaExistente?.durationInSeconds,
+        originalDurationInSeconds: tipo === 'foto' ? 5 : mediaExistente?.originalDurationInSeconds
+      });
+    });
+
+    if (nextTimeline.length === 0) throw new Error('Nayla no devolvió URLs válidas para armar el timeline.');
+
+    const timelineValidado = await validarTimelineParaRender(nextTimeline);
+    setLineaDeTiempo(timelineValidado);
+    sincronizarLineaDeTiempo(timelineValidado);
+    setClipSeleccionado(timelineValidado[0].id);
+    setMediaActivaUrl(timelineValidado[0].url);
+    setVideoResultadoUrl(null);
+    setRects([]);
+
+    if (actionData.render === true) {
+      await solicitarRenderTimeline(timelineValidado);
+      showAlert('Nayla armó el timeline y envió el render a la cola.');
+    } else {
+      showAlert('Nayla armó el timeline con los medios existentes.');
+    }
+  };
+
   const sendNaylaMessage = async () => {
     if (!chatInput.trim()) return;
     const newMessages = [...chatMessages, { role: 'user', text: chatInput }];
@@ -332,7 +423,22 @@ export default function NaylaCore() {
         body: JSON.stringify({
            message: chatInput,
            history: chatMessages.map(m => ({ role: m.role === 'user' ? 'user' : 'assistant', content: m.text })),
-           provider: selectedAiProvider
+           provider: selectedAiProvider,
+           mediaLibrary: galeriaMultimedia.map(item => ({
+             id: item.id,
+             tipo: item.tipo,
+             url: item.url,
+             nombre: item.nombre,
+             etiqueta: item.etiqueta,
+             fuente: item.fuente
+           })),
+           currentTimeline: lineaDeTiempo.map(item => ({
+             id: item.id,
+             tipo: item.tipo,
+             url: item.url,
+             nombre: item.nombre,
+             etiqueta: item.etiqueta
+           }))
         })
       });
       let data;
@@ -346,9 +452,12 @@ export default function NaylaCore() {
         throw new Error(data.error || 'Error en la respuesta del servidor');
       }
 
-      setChatMessages(prev => [...prev, { role: 'ai', text: data.text || 'Sin respuesta de texto.' }]);
+      const aiText = data.text || (data.action === 'BUILD_TIMELINE' ? 'Voy a armar el timeline con los medios existentes.' : 'Sin respuesta de texto.');
+      setChatMessages(prev => [...prev, { role: 'ai', text: aiText }]);
 
-      if (data.action === 'CLIP_VIDEO' && data.payload) {
+      if (data.action === 'BUILD_TIMELINE') {
+        await ejecutarBuildTimeline(data);
+      } else if (data.action === 'CLIP_VIDEO' && data.payload) {
         // Enviar a procesar el clip con el Oráculo
         setExtrayendoVideo(true);
 
