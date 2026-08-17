@@ -21,6 +21,7 @@ type MediaItem = { id: string; url: string; tipo: 'foto' | 'video' | 'audio'; no
 type TimelineItem = { id: string; mediaId: string; tipo: 'foto' | 'video' | 'audio'; nombre: string; etiqueta: string; url: string; durationInSeconds?: number; originalDurationInSeconds?: number; volume?: number; fadeIn?: number; fadeOut?: number; scale?: number; delay?: number; startFrom?: number; trimBefore?: number; trimAfter?: number; loop?: boolean; overlay?: string; overlayIntensity?: number; };
 type SubtitleItem = { id: string; texto: string; inicioSec: number; finSec: number; };
 type LogoItem = { id: string; url: string; x: number; y: number; scale: number; opacity: number; inicioSec?: number; finSec?: number; fadeIn?: number; fadeOut?: number; };
+type ExpandedPanel = 'left' | 'right' | null;
 
 type RenderJob = {
   jobId: string;
@@ -115,6 +116,7 @@ export default function NaylaCore() {
   const [mainNav, setMainNav] = useState<string>('boveda');
   const [subTool, setSubTool] = useState<string | null>(null);
   const [isVideoExpanded, setIsVideoExpanded] = useState<boolean>(false);
+  const [expandedPanel, setExpandedPanel] = useState<ExpandedPanel>(null);
   const [filtroGaleria, setFiltroGaleria] = useState<string>('todo'); // todo, videos, fotos, audios
   const [searchQuery, setSearchQuery] = useState('');
 
@@ -1477,14 +1479,16 @@ export default function NaylaCore() {
   const ICONOS_POS: Record<string, string> = { derecha: '→', izquierda: '←', abajo: '↓', arriba: '↑', 'derecha+abajo': '↘', 'derecha+arriba': '↗', 'izquierda+abajo': '↙', 'izquierda+arriba': '↖' };
 
   const globalStyles = `
-    .main-btn { flex: 1; border: 1px solid transparent; color: #a3a3a3; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; font-size: 10px; font-weight: bold; cursor: pointer; transition: all 0.2s ease; border-radius: 12px; height: 70px; }
+    .main-btn { flex: 1 0 clamp(86px, 18vw, 132px); border: 1px solid transparent; color: #a3a3a3; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; font-size: clamp(10px, 1.7vw, 13px); font-weight: bold; cursor: pointer; transition: all 0.2s ease; border-radius: 16px; min-height: clamp(84px, 13vh, 118px); }
     .main-btn.active { box-shadow: 0 0 15px rgba(0,0,0,0.2); }
     ${darkMode ? '.main-btn { background: #0a0a0a; border-color: #262626; } .main-btn:hover { color: #ffffff; border-color: #404040; } .main-btn.active { background: #ffffff; color: #000000; border-color: #ffffff; box-shadow: 0 0 15px rgba(255,255,255,0.5); }' : '.main-btn { background: #f3f4f6; border-color: #e5e7eb; color: #4b5563; } .main-btn:hover { color: #000000; border-color: #d1d5db; } .main-btn.active { background: #000000; color: #ffffff; border-color: #000000; }'}
 
-    .sub-btn { background: transparent; border: none; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; font-size: 7px; cursor: pointer; transition: 0.2s; min-width: 48px; min-height: 48px; padding: 4px; }
+    .sub-btn { background: transparent; border: none; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; font-size: clamp(9px, 1.6vw, 12px); cursor: pointer; transition: 0.2s; flex: 1 0 clamp(76px, 15vw, 118px); min-height: clamp(78px, 12vh, 112px); padding: 8px; }
     ${darkMode ? '.sub-btn { color: #a3a3a3; } .sub-btn:hover { color: #ffffff; } .sub-btn.active { color: #ffffff; font-weight: bold; }' : '.sub-btn { color: #4b5563; } .sub-btn:hover { color: #000000; } .sub-btn.active { color: #000000; font-weight: bold; }'}
 
-    .sub-btn .icon-container { width: 36px; height: 36px; display: flex; justify-content: center; align-items: center; border-radius: 10px; transition: all 0.2s ease; border: 1px solid transparent; }
+    .sub-btn .icon-container { width: clamp(52px, 9vw, 72px); height: clamp(52px, 9vw, 72px); display: flex; justify-content: center; align-items: center; border-radius: 16px; transition: all 0.2s ease; border: 1px solid transparent; }
+    .sub-btn svg { width: clamp(28px, 5vw, 40px); height: clamp(28px, 5vw, 40px); }
+    .main-btn svg { width: clamp(30px, 6vw, 44px); height: clamp(30px, 6vw, 44px); }
     ${darkMode ? '.sub-btn .icon-container { background: #111; } .sub-btn:hover .icon-container { background: #222; } .sub-btn.active .icon-container { background: #ffffff; color: #000000; border-color: #ffffff; box-shadow: 0 0 10px rgba(255,255,255,0.4); }' : '.sub-btn .icon-container { background: #e5e7eb; border-color: #d1d5db; } .sub-btn:hover .icon-container { background: #d1d5db; } .sub-btn.active .icon-container { background: #000000; color: #ffffff; border-color: #000000; box-shadow: 0 0 10px rgba(0,0,0,0.2); }'}
 
     .sub-row { display: flex; gap: 4px; overflow-x: auto; padding: 12px 16px; align-items: center; min-height: 70px; }
@@ -1533,8 +1537,9 @@ export default function NaylaCore() {
         flex: 1;
         min-height: 0;
         display: grid;
-        grid-template-columns: minmax(220px, 280px) minmax(430px, 1fr) minmax(280px, 340px);
-        grid-template-rows: minmax(0, 1fr) 160px auto auto;
+        grid-template-columns: minmax(220px, 0.9fr) minmax(360px, 1.6fr) minmax(280px, 1fr);
+        grid-template-rows: minmax(0, 1fr) 150px clamp(112px, 14vh, 156px) clamp(118px, 15vh, 170px);
+        transition: grid-template-columns 320ms ease;
         grid-template-areas:
           "media preview inspector"
           "timeline timeline inspector"
@@ -1545,6 +1550,12 @@ export default function NaylaCore() {
         overflow: hidden;
         background: ${darkMode ? '#000' : '#f3f4f6'};
       }
+      .editor-grid.left-expanded {
+        grid-template-columns: minmax(300px, 1.35fr) minmax(280px, 1fr) minmax(220px, 0.72fr);
+      }
+      .editor-grid.right-expanded {
+        grid-template-columns: minmax(180px, 0.72fr) minmax(280px, 1fr) minmax(340px, 1.45fr);
+      }
       .editor-grid.video-expanded {
         grid-template-columns: 0px 1fr 0px;
         grid-template-areas:
@@ -1552,6 +1563,30 @@ export default function NaylaCore() {
           "timeline timeline timeline"
           "subtools subtools subtools"
           "maintools maintools maintools";
+      }
+      .editor-grid.video-expanded .editor-preview-panel {
+        position: fixed;
+        inset: 0;
+        z-index: 9000;
+        border-radius: 0;
+        border: 0;
+        background: #000 !important;
+      }
+      .editor-grid.video-expanded .editor-preview-canvas {
+        width: 100vw !important;
+        height: 100vh !important;
+        max-width: none !important;
+        max-height: none !important;
+        border: 0 !important;
+        border-radius: 0 !important;
+      }
+      .editor-grid.video-expanded .editor-playback-bar {
+        position: fixed;
+        left: 50%;
+        bottom: 24px;
+        transform: translateX(-50%);
+        width: min(680px, calc(100vw - 32px));
+        z-index: 9001;
       }
       .editor-grid.video-expanded .editor-media-gallery {
         display: none !important;
@@ -1629,7 +1664,7 @@ export default function NaylaCore() {
         background: ${darkMode ? '#050505' : '#fff'} !important;
         box-shadow: 0 12px 30px rgba(0,0,0,0.25);
         overflow: auto;
-        padding: 16px !important;
+        padding: clamp(12px, 1.4vh, 18px) clamp(14px, 1.6vw, 22px) !important;
       }
       .editor-maintools-bar {
         grid-area: maintools;
@@ -1639,16 +1674,16 @@ export default function NaylaCore() {
         background: ${darkMode ? '#050505' : '#fff'} !important;
         box-shadow: 0 12px 30px rgba(0,0,0,0.25);
         overflow: auto;
-        padding: 16px !important;
+        padding: clamp(12px, 1.4vh, 18px) clamp(14px, 1.6vw, 22px) !important;
       }
       /* Agrandar botones en desktop para aprovechar el espacio inferior */
-      .editor-subtools-bar .sub-btn { min-height: 80px; min-width: 80px; }
-      .editor-subtools-bar .sub-btn .icon-container { width: 50px; height: 50px; }
-      .editor-subtools-bar .sub-btn span { font-size: 10px; margin-top: 6px; }
+      .editor-subtools-bar .sub-btn { min-height: 100%; min-width: clamp(88px, 9vw, 128px); }
+      .editor-subtools-bar .sub-btn .icon-container { width: clamp(58px, 6vw, 76px); height: clamp(58px, 6vw, 76px); }
+      .editor-subtools-bar .sub-btn span { font-size: clamp(10px, 0.85vw, 13px); margin-top: 6px; }
 
-      .editor-maintools-bar .main-btn { height: 90px; }
-      .editor-maintools-bar .main-btn svg { width: 32px; height: 32px; }
-      .editor-maintools-bar .main-btn span { font-size: 12px; margin-top: 8px; }
+      .editor-maintools-bar .main-btn { min-height: 100%; min-width: clamp(100px, 12vw, 150px); }
+      .editor-maintools-bar .main-btn svg { width: clamp(34px, 3.5vw, 48px); height: clamp(34px, 3.5vw, 48px); }
+      .editor-maintools-bar .main-btn span { font-size: clamp(11px, 0.9vw, 14px); margin-top: 8px; }
 
       .editor-media-gallery { grid-area: media; overflow: hidden; display: flex; flex-direction: column; }
       .nayla-chat-panel {
@@ -1667,8 +1702,8 @@ export default function NaylaCore() {
 
     @media (min-width: 1366px) {
       .editor-grid {
-        grid-template-columns: minmax(240px, 300px) minmax(500px, 1fr) minmax(300px, 360px);
-        grid-template-rows: minmax(0, 1fr) 160px auto auto;
+        grid-template-columns: minmax(240px, 0.9fr) minmax(500px, 1.6fr) minmax(300px, 1fr);
+        grid-template-rows: minmax(0, 1fr) 150px clamp(112px, 14vh, 156px) clamp(118px, 15vh, 170px);
       }
       .editor-preview-canvas {
         max-width: min(820px, calc(100vw - 700px)) !important;
@@ -1677,8 +1712,8 @@ export default function NaylaCore() {
 
     @media (min-width: 1600px) {
       .editor-grid {
-        grid-template-columns: minmax(300px, 360px) minmax(680px, 1fr) minmax(340px, 420px);
-        grid-template-rows: minmax(0, 1fr) 160px auto auto;
+        grid-template-columns: minmax(300px, 0.95fr) minmax(680px, 1.65fr) minmax(340px, 1.05fr);
+        grid-template-rows: minmax(0, 1fr) 160px clamp(120px, 14vh, 164px) clamp(124px, 15vh, 178px);
       }
       .editor-preview-canvas {
         max-width: 920px !important;
@@ -2037,12 +2072,12 @@ export default function NaylaCore() {
         </div>
       </header>
 
-      <div className={`editor-grid flex flex-col md:flex-row w-full gap-4 flex-1 overflow-hidden ${isVideoExpanded ? 'video-expanded' : ''}`}>
+      <div className={`editor-grid flex flex-col md:flex-row w-full gap-4 flex-1 overflow-hidden ${isVideoExpanded ? 'video-expanded' : ''} ${expandedPanel === 'left' ? 'left-expanded' : ''} ${expandedPanel === 'right' ? 'right-expanded' : ''}`}>
 
         {/* COLUMNA IZQUIERDA: Monitor de Video y Línea de Tiempo */}
-        <div className="editor-left-stack flex flex-col w-full md:w-1/2">
+        <div className="editor-left-stack flex flex-col w-full md:w-1/2" onClick={() => { if (!isVideoExpanded) setExpandedPanel('left'); }} style={{ flexGrow: expandedPanel === 'left' ? 1.45 : expandedPanel === 'right' ? 0.75 : 1, transition: 'flex-grow 320ms ease, width 320ms ease' }}>
 
-        <section className="editor-preview-panel" onClick={() => setIsVideoExpanded(prev => !prev)} style={{ width: '100%', padding: '0', backgroundColor: '#050505' }}>
+        <section className="editor-preview-panel" onClick={(e) => { e.stopPropagation(); setIsVideoExpanded(prev => !prev); }} style={{ width: '100%', padding: '0', backgroundColor: '#050505' }}>
           <div ref={containerRef} onPointerDown={handlePointerDown} onPointerMove={handlePointerMove} onPointerUp={handlePointerUp} onPointerLeave={handlePointerUp}
             className="editor-preview-canvas w-full max-w-[430px] mx-auto aspect-[9/16] relative flex items-center justify-center overflow-hidden touch-none" style={{ aspectRatio: canvasRatio, backgroundColor: darkMode ? '#0a0a0a' : '#f0f0f0', border: darkMode ? '1px solid #1a1a1a' : '1px solid #ddd' }}>
             {(lineaDeTiempo.filter(t => t.tipo === 'video' || t.tipo === 'foto').length > 0 || videoResultadoUrl || mediaActivaUrl) ? (
@@ -2146,7 +2181,7 @@ export default function NaylaCore() {
         </div>
 
         {/* COLUMNA DERECHA: Herramientas, Galería y Controles */}
-        <div className="editor-tools-panel flex flex-col w-full md:w-1/2 flex-1 overflow-hidden">
+        <div className="editor-tools-panel flex flex-col w-full md:w-1/2 flex-1 overflow-hidden" onClick={() => { if (!isVideoExpanded) setExpandedPanel('right'); }} style={{ flexGrow: expandedPanel === 'right' ? 1.45 : expandedPanel === 'left' ? 0.75 : 1, transition: 'flex-grow 320ms ease, width 320ms ease' }}>
 
 
         {/* NUEVA ESTRUCTURA DE HERRAMIENTAS */}
@@ -2890,7 +2925,7 @@ export default function NaylaCore() {
         )}
 
         {/* FILA DE SUB-HERRAMIENTAS */}
-        <div className={`editor-subtools-bar flex gap-2 w-full p-3 border-t ${darkMode ? 'bg-neutral-950 border-neutral-900' : 'bg-gray-50 border-gray-200'}`} style={{ overflowX: 'auto', flexWrap: 'nowrap' }}>
+        <div className={`editor-subtools-bar flex gap-2 w-full p-3 border-t ${darkMode ? 'bg-neutral-950 border-neutral-900' : 'bg-gray-50 border-gray-200'}`} onClick={(e) => e.stopPropagation()} style={{ overflowX: 'auto', flexWrap: 'nowrap' }}>
           {SUB_TOOLS[mainNav]?.map((tool) => {
             if (tool.id === 'subir-vf') {
               return (
@@ -2946,7 +2981,7 @@ export default function NaylaCore() {
         </div>
 
         {/* FILA DE BOTONES PRINCIPALES */}
-        <div className={`editor-maintools-bar flex gap-2 w-full p-3 ${darkMode ? 'bg-black' : 'bg-white'}`} style={{ overflowX: 'auto', flexWrap: 'nowrap' }}>
+        <div className={`editor-maintools-bar flex gap-2 w-full p-3 ${darkMode ? 'bg-black' : 'bg-white'}`} onClick={(e) => e.stopPropagation()} style={{ overflowX: 'auto', flexWrap: 'nowrap' }}>
           {MAIN_TOOLS.map((tool) => (
             <button key={tool.id} className={`main-btn w-full ${mainNav === tool.id ? 'active' : ''} ${!darkMode ? 'bg-gray-100 border-gray-300 text-black' : ''}`} style={{ backgroundColor: !darkMode ? (mainNav === tool.id ? '#000' : '#f3f4f6') : undefined, color: !darkMode ? (mainNav === tool.id ? '#fff' : '#000') : undefined }} onClick={() => {
               setMainNav(tool.id);
@@ -2966,7 +3001,7 @@ export default function NaylaCore() {
 
         {/* NAYLA CHAT SIDEBAR */}
         {isChatOpen && (
-          <div className="nayla-chat-panel" style={{
+          <div className="nayla-chat-panel" onClick={(e) => { e.stopPropagation(); if (!isVideoExpanded) setExpandedPanel('right'); }} style={{
             position: 'absolute',
             top: 0,
             right: 0,
