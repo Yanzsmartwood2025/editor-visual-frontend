@@ -114,6 +114,7 @@ export default function NaylaCore() {
   const [message, setMessage] = useState('');
   const [mainNav, setMainNav] = useState<string>('boveda');
   const [subTool, setSubTool] = useState<string | null>(null);
+  const [isVideoExpanded, setIsVideoExpanded] = useState<boolean>(false);
   const [filtroGaleria, setFiltroGaleria] = useState<string>('todo'); // todo, videos, fotos, audios
   const [searchQuery, setSearchQuery] = useState('');
 
@@ -1533,14 +1534,33 @@ export default function NaylaCore() {
         min-height: 0;
         display: grid;
         grid-template-columns: minmax(220px, 280px) minmax(430px, 1fr) minmax(280px, 340px);
-        grid-template-rows: minmax(0, 1fr) 180px;
+        grid-template-rows: minmax(0, 1fr) 160px auto auto;
         grid-template-areas:
           "media preview inspector"
-          "timeline timeline inspector";
+          "timeline timeline inspector"
+          "subtools subtools subtools"
+          "maintools maintools maintools";
         gap: 12px;
         padding: 12px;
         overflow: hidden;
         background: ${darkMode ? '#000' : '#f3f4f6'};
+      }
+      .editor-grid.video-expanded {
+        grid-template-columns: 0px 1fr 0px;
+        grid-template-areas:
+          "media preview inspector"
+          "timeline timeline timeline"
+          "subtools subtools subtools"
+          "maintools maintools maintools";
+      }
+      .editor-grid.video-expanded .editor-media-gallery {
+        display: none !important;
+      }
+      .editor-grid.video-expanded .panel-container {
+        display: none !important;
+      }
+      .editor-grid.video-expanded .nayla-chat-panel {
+        display: none !important;
       }
       .editor-left-stack { display: contents; }
       .editor-preview-panel {
@@ -1555,6 +1575,7 @@ export default function NaylaCore() {
         flex-direction: column;
         justify-content: center;
         background: ${darkMode ? '#050505' : '#fff'} !important;
+        cursor: pointer;
       }
       .editor-preview-canvas {
         width: min(100%, 760px) !important;
@@ -1600,22 +1621,36 @@ export default function NaylaCore() {
         flex: 1;
         border-top: 0;
       }
-      .editor-subtools-bar,
-      .editor-maintools-bar {
-        grid-area: media;
-        align-self: end;
+      .editor-subtools-bar {
+        grid-area: subtools;
         min-width: 0;
         border: 1px solid ${darkMode ? '#1a1a1a' : '#e5e7eb'};
         border-radius: 16px;
         background: ${darkMode ? '#050505' : '#fff'} !important;
         box-shadow: 0 12px 30px rgba(0,0,0,0.25);
-      }
-      .editor-subtools-bar {
-        align-self: start;
-        max-height: calc(100vh - 300px);
         overflow: auto;
+        padding: 16px !important;
       }
-      .editor-maintools-bar { align-self: end; }
+      .editor-maintools-bar {
+        grid-area: maintools;
+        min-width: 0;
+        border: 1px solid ${darkMode ? '#1a1a1a' : '#e5e7eb'};
+        border-radius: 16px;
+        background: ${darkMode ? '#050505' : '#fff'} !important;
+        box-shadow: 0 12px 30px rgba(0,0,0,0.25);
+        overflow: auto;
+        padding: 16px !important;
+      }
+      /* Agrandar botones en desktop para aprovechar el espacio inferior */
+      .editor-subtools-bar .sub-btn { min-height: 80px; min-width: 80px; }
+      .editor-subtools-bar .sub-btn .icon-container { width: 50px; height: 50px; }
+      .editor-subtools-bar .sub-btn span { font-size: 10px; margin-top: 6px; }
+
+      .editor-maintools-bar .main-btn { height: 90px; }
+      .editor-maintools-bar .main-btn svg { width: 32px; height: 32px; }
+      .editor-maintools-bar .main-btn span { font-size: 12px; margin-top: 8px; }
+
+      .editor-media-gallery { grid-area: media; overflow: hidden; display: flex; flex-direction: column; }
       .nayla-chat-panel {
         grid-area: inspector;
         position: relative !important;
@@ -1633,7 +1668,7 @@ export default function NaylaCore() {
     @media (min-width: 1366px) {
       .editor-grid {
         grid-template-columns: minmax(240px, 300px) minmax(500px, 1fr) minmax(300px, 360px);
-        grid-template-rows: minmax(0, 1fr) 190px;
+        grid-template-rows: minmax(0, 1fr) 160px auto auto;
       }
       .editor-preview-canvas {
         max-width: min(820px, calc(100vw - 700px)) !important;
@@ -1643,7 +1678,7 @@ export default function NaylaCore() {
     @media (min-width: 1600px) {
       .editor-grid {
         grid-template-columns: minmax(300px, 360px) minmax(680px, 1fr) minmax(340px, 420px);
-        grid-template-rows: minmax(0, 1fr) 210px;
+        grid-template-rows: minmax(0, 1fr) 160px auto auto;
       }
       .editor-preview-canvas {
         max-width: 920px !important;
@@ -2002,12 +2037,12 @@ export default function NaylaCore() {
         </div>
       </header>
 
-      <div className="editor-grid flex flex-col md:flex-row w-full gap-4 flex-1 overflow-hidden">
+      <div className={`editor-grid flex flex-col md:flex-row w-full gap-4 flex-1 overflow-hidden ${isVideoExpanded ? 'video-expanded' : ''}`}>
 
         {/* COLUMNA IZQUIERDA: Monitor de Video y Línea de Tiempo */}
         <div className="editor-left-stack flex flex-col w-full md:w-1/2">
 
-        <section className="editor-preview-panel" style={{ width: '100%', padding: '0', backgroundColor: '#050505' }}>
+        <section className="editor-preview-panel" onClick={() => setIsVideoExpanded(prev => !prev)} style={{ width: '100%', padding: '0', backgroundColor: '#050505' }}>
           <div ref={containerRef} onPointerDown={handlePointerDown} onPointerMove={handlePointerMove} onPointerUp={handlePointerUp} onPointerLeave={handlePointerUp}
             className="editor-preview-canvas w-full max-w-[430px] mx-auto aspect-[9/16] relative flex items-center justify-center overflow-hidden touch-none" style={{ aspectRatio: canvasRatio, backgroundColor: darkMode ? '#0a0a0a' : '#f0f0f0', border: darkMode ? '1px solid #1a1a1a' : '1px solid #ddd' }}>
             {(lineaDeTiempo.filter(t => t.tipo === 'video' || t.tipo === 'foto').length > 0 || videoResultadoUrl || mediaActivaUrl) ? (
@@ -2041,9 +2076,9 @@ export default function NaylaCore() {
           </div>
         </section>
 
-        <div className="editor-playback-bar" style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 20px', alignItems: 'center', backgroundColor: '#000', borderBottom: '1px solid #1a1a1a' }}>
+        <div className="editor-playback-bar" onClick={(e) => e.stopPropagation()} style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 20px', alignItems: 'center', backgroundColor: '#000', borderBottom: '1px solid #1a1a1a' }}>
           <span style={{ color: '#737373', fontSize: '0.75rem', fontFamily: 'monospace' }}>00:00:00</span>
-          <button onClick={togglePlay} style={{ background: 'none', border: 'none', color: '#ffffff', fontSize: '1.5rem', cursor: 'pointer', outline: 'none' }}>{isPlaying ? '⏸' : '▶'}</button>
+          <button onClick={(e) => { e.stopPropagation(); togglePlay(); }} style={{ background: 'none', border: 'none', color: '#ffffff', fontSize: '1.5rem', cursor: 'pointer', outline: 'none' }}>{isPlaying ? '⏸' : '▶'}</button>
           <span style={{ color: '#737373', fontSize: '0.75rem', fontFamily: 'monospace' }}>00:00:00</span>
         </div>
 
@@ -2674,7 +2709,7 @@ export default function NaylaCore() {
             )}
 
             {/* GALERÍA SIEMPRE VISIBLE */}
-            <div style={{ flex: 1, padding: '16px', overflowY: 'auto' }}>
+            <div className="editor-media-gallery" style={{ flex: 1, padding: '16px', overflowY: 'auto' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
                 <button
                   onClick={() => {
@@ -2855,7 +2890,7 @@ export default function NaylaCore() {
         )}
 
         {/* FILA DE SUB-HERRAMIENTAS */}
-        <div className={`editor-subtools-bar grid grid-cols-5 gap-2 w-full p-3 border-t ${darkMode ? 'bg-neutral-950 border-neutral-900' : 'bg-gray-50 border-gray-200'}`}>
+        <div className={`editor-subtools-bar flex gap-2 w-full p-3 border-t ${darkMode ? 'bg-neutral-950 border-neutral-900' : 'bg-gray-50 border-gray-200'}`} style={{ overflowX: 'auto', flexWrap: 'nowrap' }}>
           {SUB_TOOLS[mainNav]?.map((tool) => {
             if (tool.id === 'subir-vf') {
               return (
@@ -2911,7 +2946,7 @@ export default function NaylaCore() {
         </div>
 
         {/* FILA DE BOTONES PRINCIPALES */}
-        <div className={`editor-maintools-bar grid grid-cols-5 gap-2 w-full p-3 ${darkMode ? 'bg-black' : 'bg-white'}`}>
+        <div className={`editor-maintools-bar flex gap-2 w-full p-3 ${darkMode ? 'bg-black' : 'bg-white'}`} style={{ overflowX: 'auto', flexWrap: 'nowrap' }}>
           {MAIN_TOOLS.map((tool) => (
             <button key={tool.id} className={`main-btn w-full ${mainNav === tool.id ? 'active' : ''} ${!darkMode ? 'bg-gray-100 border-gray-300 text-black' : ''}`} style={{ backgroundColor: !darkMode ? (mainNav === tool.id ? '#000' : '#f3f4f6') : undefined, color: !darkMode ? (mainNav === tool.id ? '#fff' : '#000') : undefined }} onClick={() => {
               setMainNav(tool.id);
