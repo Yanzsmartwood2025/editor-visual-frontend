@@ -1,0 +1,540 @@
+DIAGNOSTICO ACTUALIZADO — BUILD_TIMELINE, EFECTOS REMOTION Y LAYOUT DESKTOP
+Fecha de verificacion: 2026-08-17
+Repositorio: /workspace/editor-visual-frontend
+
+NOTA IMPORTANTE
+===============
+Esta verificacion es de codigo, sin pruebas en vivo con API keys, Oracle ni Supabase.
+No se modifico logica funcional de BUILD_TIMELINE, subida de medios ni render. Este archivo solo documenta el estado actual y una propuesta visual/CSS.
+
+
+TAREA 1 — VERIFICACION DE CODIGO
+=================================
+
+1. Flujo BUILD_TIMELINE -> ejecutarBuildTimeline -> solicitarRenderTimeline -> /api/render
+-----------------------------------------------------------------------------------------
+
+ESTADO: INTACTO.
+
+El flujo sigue conectado de esta manera:
+
+/api/chat.ts
+  -> BUILD_TIMELINE
+    -> sendNaylaMessage
+      -> ejecutarBuildTimeline
+        -> solicitarRenderTimeline
+          -> fetch('/api/render')
+            -> /api/render
+              -> ORACLE_SERVER_URL/api/render-remotion
+
+Evidencia de codigo:
+
+- src/pages/api/chat.ts contiene el prompt del sistema que ordena responder JSON valido cuando el usuario pide armar/crear el video con medios existentes.
+  Lineas relevantes: src/pages/api/chat.ts:54-79.
+
+- El contrato esperado en el prompt sigue siendo:
+
+  {
+    "action": "BUILD_TIMELINE",
+    "assets": [
+      { "type": "foto", "source": "url", "url": "https://..." },
+      { "type": "video", "source": "url", "url": "https://..." },
+      { "type": "audio", "source": "url", "url": "https://..." }
+    ],
+    "render": true
+  }
+
+  Lineas relevantes: src/pages/api/chat.ts:65-74.
+
+- src/pages/api/chat.ts limpia la respuesta, intenta parsearla como JSON y, si encuentra action === 'BUILD_TIMELINE' con assets como array, responde ese JSON al frontend.
+  Lineas relevantes: src/pages/api/chat.ts:141-148.
+
+- Si la respuesta no es JSON valido, /api/chat.ts cae a respuesta de texto normal: { text: responseText }.
+  Lineas relevantes: src/pages/api/chat.ts:154-155.
+
+- En src/pages/index.tsx, sendNaylaMessage hace fetch('/api/chat') y manda message, history, provider, mediaLibrary y currentTimeline.
+  Lineas relevantes: src/pages/index.tsx:411-443.
+
+- En src/pages/index.tsx, si data.action === 'BUILD_TIMELINE', se llama await ejecutarBuildTimeline(data).
+  Lineas relevantes: src/pages/index.tsx:455-459.
+
+- ejecutarBuildTimeline lee actionData.assets y convierte los assets validos en TimelineItem.
+  Lineas relevantes: src/pages/index.tsx:366-390.
+
+- ejecutarBuildTimeline valida y sincroniza la linea de tiempo.
+  Lineas relevantes: src/pages/index.tsx:393-402.
+
+- Si actionData.render === true, ejecutarBuildTimeline llama await solicitarRenderTimeline(timelineValidado).
+  Lineas relevantes: src/pages/index.tsx:403-405.
+
+- solicitarRenderTimeline arma inputProps con timeline, subtitles, logos, canvasRatio y settings.
+  Lineas relevantes: src/pages/index.tsx:337-345.
+
+- solicitarRenderTimeline llama fetch('/api/render') con body JSON.stringify({ inputProps }).
+  Lineas relevantes: src/pages/index.tsx:347-351.
+
+- src/pages/api/render.ts recibe inputProps, exige ORACLE_SERVER_URL y hace proxy a `${oracleUrl}/api/render-remotion` enviando { inputProps }.
+  Lineas relevantes: src/pages/api/render.ts:16-35.
+
+Veredicto del flujo:
+SI, el flujo BUILD_TIMELINE -> ejecutarBuildTimeline -> solicitarRenderTimeline -> /api/render sigue intacto.
+
+
+2. Efectos kenBurns, zoomIn, zoomOut, pan, rotate en MainComposition.tsx
+-------------------------------------------------------------------------
+
+ESTADO: NO PORTADOS TODAVIA.
+
+Archivo relevante de produccion:
+- src/components/MainComposition.tsx
+
+Evidencia:
+
+- src/remotion/Root.tsx importa MainComposition desde '../components/MainComposition'.
+  Por lo tanto, el componente de produccion revisado es src/components/MainComposition.tsx.
+  Linea relevante: src/remotion/Root.tsx:3.
+
+- MainComposition.tsx importa useCurrentFrame, interpolate, TransitionSeries, fade, wipe, slide y zoomInOut.
+  Lineas relevantes: src/components/MainComposition.tsx:1-7.
+
+- El tipo TimelineItem permite transitionType?: 'fade' | 'none' | 'wipe' | 'slide' | 'zoom', scale, filtros, overlays y otros parametros, pero no incluye propiedades especificas como kenBurns, zoomIn, zoomOut, pan o rotate para fotos.
+  Linea relevante: src/components/MainComposition.tsx:10.
+
+- Existen interpolaciones para fades de opacidad de clips, fades de logos, fade global y volumen animado.
+  Ejemplo ClipWithFades: src/components/MainComposition.tsx:37-60.
+
+- Existen transiciones entre clips: fade, wipe, slide y zoomInOut.
+  Lineas relevantes: src/components/MainComposition.tsx:311-328.
+
+- La rama de render para fotos sigue usando PreloadedImage con transform estatico:
+
+  <PreloadedImage
+    src={clip.url}
+    style={{
+      width: '100%',
+      height: '100%',
+      objectFit: 'contain',
+      transform: clip.scale !== undefined ? `scale(${clip.scale})` : undefined,
+      filter: getFilterStyle(clip)
+    }}
+  />
+
+  Lineas relevantes: src/components/MainComposition.tsx:273-277.
+
+Conclusion:
+- kenBurns: NO.
+- zoomIn fotografico por frame: NO.
+- zoomOut fotografico por frame: NO.
+- pan fotografico por frame: NO.
+- rotate fotografico por frame: NO.
+- fade entre clips: SI.
+- wipe entre clips: SI.
+- slide entre clips: SI.
+- zoomInOut como transicion entre clips: SI.
+- filtros/overlays estaticos: SI.
+
+Las fotos siguen siendo esencialmente slideshow estatico con escala opcional y filtros, sin interpolate() por frame aplicado al movimiento de imagen.
+
+
+3. Tabla de veredicto — TAREA 1
+-------------------------------
+
+| Punto | Estado actualizado | Evidencia |
+|---|---|---|
+| /api/chat.ts conserva contrato BUILD_TIMELINE | SI | src/pages/api/chat.ts:65-74 |
+| /api/chat.ts parsea y devuelve BUILD_TIMELINE | SI | src/pages/api/chat.ts:141-148 |
+| Frontend recibe BUILD_TIMELINE | SI | src/pages/index.tsx:455-459 |
+| Frontend ejecuta ejecutarBuildTimeline | SI | src/pages/index.tsx:458-459 |
+| ejecutarBuildTimeline llama render automatico si render: true | SI | src/pages/index.tsx:403-405 |
+| solicitarRenderTimeline llama /api/render | SI | src/pages/index.tsx:347-351 |
+| /api/render proxy a Oracle | SI | src/pages/api/render.ts:27-35 |
+| Produccion tiene Ken Burns / pan / rotate / zoomIn / zoomOut por frame | NO | src/components/MainComposition.tsx:273-277 |
+
+
+TAREA 2 — DIAGNOSTICO LAYOUT / RESPONSIVE DESKTOP
+=================================================
+
+Resumen ejecutivo
+-----------------
+
+El problema visual de escritorio viene principalmente de que la app sigue estructurada como una interfaz mobile-first, con adaptacion minima a escritorio usando solo:
+
+  flex flex-col md:flex-row md:max-w-6xl md:mx-auto
+
+Esto crea dos columnas 50/50 dentro de un contenedor maximo, pero no un editor profesional de 4 paneles usando todo el ancho.
+
+Ademas, la preview del video esta limitada a:
+
+  max-w-[430px] mx-auto
+
+Eso conserva el comportamiento de pantalla vertical/movil incluso en desktop.
+
+Las herramientas principales y subherramientas siguen siendo grillas inferiores de 5 columnas, como en mobile, no paneles laterales fijos de escritorio.
+
+
+1. Archivos/componentes donde esta definido el layout principal
+---------------------------------------------------------------
+
+Archivo principal:
+- src/pages/index.tsx
+
+El layout principal esta definido casi completamente en src/pages/index.tsx con mezcla de:
+- clases tipo Tailwind en JSX,
+- estilos inline,
+- string globalStyles embebido dentro del componente.
+
+Evidencia:
+
+- globalStyles define botones, toolbars, timeline y paneles.
+  Lineas relevantes: src/pages/index.tsx:1478-1525.
+
+- Wrapper global autenticado:
+
+  <div className={`min-h-screen w-full flex flex-col overflow-x-hidden select-none ...`}>
+
+  Linea relevante: src/pages/index.tsx:1588-1589.
+
+- Layout principal actual:
+
+  <div className="flex flex-col md:flex-row md:max-w-6xl md:mx-auto w-full gap-4 flex-1 overflow-hidden">
+
+  Linea relevante: src/pages/index.tsx:1878.
+
+- Columna izquierda: monitor de video + timeline:
+
+  <div className="flex flex-col w-full md:w-1/2">
+
+  Lineas relevantes: src/pages/index.tsx:1880-1881.
+
+- Columna derecha: herramientas, galeria y controles:
+
+  <div className="flex flex-col w-full md:w-1/2 flex-1 overflow-hidden">
+
+  Lineas relevantes: src/pages/index.tsx:1986-1987.
+
+- Contenedor del video limitado a max-w-[430px]:
+
+  className="w-full max-w-[430px] mx-auto aspect-[9/16] ..."
+
+  Lineas relevantes: src/pages/index.tsx:1883-1885.
+
+- Timeline debajo del monitor con altura fija 140px.
+  Lineas relevantes: src/pages/index.tsx:1923-1924.
+
+- Track de timeline con display flex, scroll horizontal y padding 50% a ambos lados.
+  Lineas relevantes: src/pages/index.tsx:1513-1515 y src/pages/index.tsx:1926-1939.
+
+- .panel-container esta definido como bottom sheet absoluto:
+
+  .panel-container {
+    position: absolute;
+    bottom: 95px;
+    left: 0;
+    right: 0;
+  }
+
+  Lineas relevantes: src/pages/index.tsx:1520-1522.
+
+- La galeria usa grid interno responsive, pero dentro del panel derecho mobile-like:
+
+  gridTemplateColumns: 'repeat(auto-fill, minmax(110px, 1fr))'
+
+  Lineas relevantes: src/pages/index.tsx:2603-2604.
+
+- El chat de Nayla esta como overlay absoluto a la derecha:
+
+  position: 'absolute', top: 0, right: 0, width: '350px', height: '100%'
+
+  Lineas relevantes: src/pages/index.tsx:2805-2821.
+
+
+2. Media query / breakpoint desktop
+-----------------------------------
+
+ESTADO: NO hay un breakpoint desktop profesional real.
+
+Si hay clases md:*:
+- flex flex-col md:flex-row md:max-w-6xl md:mx-auto
+- w-full md:w-1/2
+
+Lineas relevantes:
+- src/pages/index.tsx:1878
+- src/pages/index.tsx:1881
+- src/pages/index.tsx:1987
+
+Pero eso solo pasa de columna vertical a fila horizontal con dos columnas 50/50.
+No convierte la app en un editor desktop de 4 paneles.
+
+En styles/global.css, la unica media query encontrada es para prefers-color-scheme: dark.
+Lineas relevantes: styles/global.css:29-42.
+
+En globalStyles de index.tsx no hay @media para layout desktop.
+Lineas relevantes: src/pages/index.tsx:1478-1525.
+
+Causa raiz:
+1. El contenedor principal usa md:max-w-6xl, limitando el ancho en desktop.
+2. Solo cambia a md:flex-row; no hay grid profesional.
+3. El video mantiene max-w-[430px].
+4. Las herramientas siguen como barras inferiores mobile.
+5. .panel-container esta disenado como bottom-sheet.
+
+
+3. Propuesta de estructura correcta para desktop
+------------------------------------------------
+
+Objetivo visual:
+
+┌──────────────────────────────────────────────────────────────┐
+│ Header / top bar                                             │
+├───────────────┬───────────────────────────────┬──────────────┤
+│ Biblioteca    │ Preview / reproductor central │ Inspector /  │
+│ de medios     │                               │ efectos      │
+│               │                               │ controles    │
+├───────────────┴───────────────────────────────┴──────────────┤
+│ Timeline horizontal                                           │
+└──────────────────────────────────────────────────────────────┘
+
+En desktop:
+- Video centrado en area central.
+- Biblioteca de medios en panel lateral izquierdo.
+- Efectos/controles/Nayla/render en panel lateral derecho.
+- Timeline ocupa todo el ancho inferior.
+- Herramientas principales y subherramientas dejan de ser barras inferiores mobile.
+
+Estructura JSX conceptual propuesta:
+
+<div className="editor-shell">
+  <header className="editor-header">...</header>
+
+  <main className="editor-desktop-grid">
+    <aside className="editor-media-panel">
+      Biblioteca / galeria / nube / uploads
+    </aside>
+
+    <section className="editor-preview-panel">
+      Reproductor centrado
+    </section>
+
+    <aside className="editor-inspector-panel">
+      Efectos / ajustes / render / Nayla
+    </aside>
+
+    <section className="editor-timeline-panel">
+      Timeline
+    </section>
+  </main>
+</div>
+
+CSS conceptual:
+
+.editor-shell {
+  min-height: 100vh;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.editor-desktop-grid {
+  flex: 1;
+  width: 100%;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(260px, 320px) minmax(520px, 1fr) minmax(300px, 380px);
+  grid-template-rows: minmax(0, 1fr) 180px;
+  grid-template-areas:
+    "media preview inspector"
+    "timeline timeline timeline";
+  gap: 12px;
+  padding: 12px;
+}
+
+.editor-media-panel {
+  grid-area: media;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.editor-preview-panel {
+  grid-area: preview;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.editor-inspector-panel {
+  grid-area: inspector;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.editor-timeline-panel {
+  grid-area: timeline;
+  min-width: 0;
+  overflow: hidden;
+}
+
+@media (min-width: 1280px) {
+  .editor-desktop-grid {
+    grid-template-columns: 320px minmax(640px, 1fr) 380px;
+    grid-template-rows: minmax(0, 1fr) 200px;
+  }
+}
+
+@media (max-width: 767px) {
+  .editor-desktop-grid {
+    display: flex;
+    flex-direction: column;
+    padding: 0;
+    gap: 0;
+  }
+
+  .editor-media-panel,
+  .editor-inspector-panel {
+    display: contents;
+  }
+
+  .editor-timeline-panel {
+    height: 140px;
+    flex: none;
+  }
+}
+
+
+4. Ajuste especifico del video preview
+--------------------------------------
+
+Actualmente:
+- src/pages/index.tsx:1883-1885 usa max-w-[430px].
+
+Propuesta:
+
+.editor-preview-canvas {
+  width: min(100%, 900px);
+  max-height: calc(100vh - 300px);
+  aspect-ratio: var(--canvas-ratio);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+@media (max-width: 767px) {
+  .editor-preview-canvas {
+    width: 100%;
+    max-width: 430px;
+    max-height: none;
+  }
+}
+
+Esto mantiene el limite movil solo en mobile, pero permite que desktop crezca y se centre profesionalmente.
+
+
+5. Ajuste especifico de toolbar y botones
+-----------------------------------------
+
+Actualmente:
+- Herramientas principales: grid inferior de 5 columnas.
+  Lineas relevantes: src/pages/index.tsx:2786-2803.
+
+- Subherramientas: otra grid inferior de 5 columnas.
+  Lineas relevantes: src/pages/index.tsx:2730-2784.
+
+Propuesta:
+- En desktop, MAIN_TOOLS como sidebar vertical o tabs en panel izquierdo.
+- SUB_TOOLS[mainNav] dentro del panel derecho/inspector.
+- Galeria siempre visible en panel izquierdo cuando aplique.
+- Render/Nayla/efectos en panel derecho.
+- En mobile, conservar las barras inferiores actuales.
+
+
+6. Ajuste especifico de .panel-container
+----------------------------------------
+
+Actualmente .panel-container esta pensado como panel inferior absoluto.
+Lineas relevantes: src/pages/index.tsx:1520-1522.
+
+Propuesta:
+
+.panel-container {
+  background-color: #050505;
+  padding: 15px;
+}
+
+@media (max-width: 767px) {
+  .panel-container {
+    position: absolute;
+    bottom: 95px;
+    left: 0;
+    right: 0;
+    z-index: 90;
+    border-top: 1px solid #1a1a1a;
+  }
+}
+
+@media (min-width: 768px) {
+  .panel-container {
+    position: relative;
+    bottom: auto;
+    height: 100%;
+    min-height: 0;
+    overflow: auto;
+    border-top: 0;
+  }
+}
+
+
+7. Diagnostico final del problema visual
+----------------------------------------
+
+Problema exacto:
+La app no tiene un layout desktop real. Tiene una UI mobile-first con:
+- wrapper global flex-col,
+- un unico cambio md:flex-row,
+- dos columnas md:w-1/2,
+- contenedor maximo md:max-w-6xl,
+- preview bloqueado a max-w-[430px],
+- herramientas inferiores mobile,
+- paneles tipo bottom-sheet.
+
+Zonas a corregir cuando se autorice implementar:
+1. src/pages/index.tsx:1478-1525 — globalStyles para media queries y clases desktop/mobile.
+2. src/pages/index.tsx:1588-1589 — wrapper principal autenticado.
+3. src/pages/index.tsx:1878 — contenedor principal actual flex/md:max-w.
+4. src/pages/index.tsx:1880-1984 — columna izquierda preview/timeline.
+5. src/pages/index.tsx:1986-1987 — columna derecha herramientas/galeria/controles.
+6. src/pages/index.tsx:1883-1885 — preview con max-w-[430px].
+7. src/pages/index.tsx:1520-1522 — .panel-container.
+8. src/pages/index.tsx:2730-2803 — barras inferiores de herramientas.
+9. src/pages/index.tsx:2805-2821 — chat sidebar absoluto.
+
+
+TABLA FINAL ACTUALIZADA
+=======================
+
+| Area | Estado | Diagnostico |
+|---|---|---|
+| Flujo BUILD_TIMELINE -> render | SI intacto | sendNaylaMessage -> ejecutarBuildTimeline -> solicitarRenderTimeline -> /api/render |
+| /api/render hacia Oracle | SI intacto | /api/render envia inputProps a ORACLE_SERVER_URL/api/render-remotion |
+| Efectos Ken Burns / pan / rotate / zoomIn / zoomOut en produccion | NO | Fotos con PreloadedImage y transform estatico, sin animacion por frame |
+| Transiciones Remotion existentes | SI parcial | fade, wipe, slide y zoomInOut entre clips |
+| Breakpoint desktop profesional | NO | Solo md:flex-row, md:w-1/2, md:max-w-6xl |
+| Causa raiz layout pegado/estrecho | Identificada | UI mobile-first con preview max-w-[430px], dos columnas y toolbars inferiores |
+| Cambio recomendado | CSS/layout only | Reestructurar index.tsx con CSS Grid desktop y conservar mobile actual como fallback |
+
+
+COMANDOS USADOS PARA VERIFICAR
+==============================
+
+- git status --short
+- rg -n "BUILD_TIMELINE|ejecutarBuildTimeline|solicitarRenderTimeline|fetch\('/api/render'|fetch\(\"/api/render\"|kenBurns|zoomIn|zoomOut|pan|rotate|useCurrentFrame|interpolate|@media|max-width|grid|app-container|main|viewport|mobile|desktop|canvas|lineaDeTiempo" src/pages/index.tsx src/pages/api/chat.ts src/pages/api/render.ts src/components/MainComposition.tsx src/remotion/Root.tsx --glob '!node_modules'
+- nl -ba src/pages/index.tsx | sed -n '1450,1535p'
+- nl -ba src/pages/index.tsx | sed -n '1568,1605p'
+- nl -ba src/pages/index.tsx | sed -n '1810,2025p'
+- nl -ba src/pages/index.tsx | sed -n '1960,2165p'
+- nl -ba src/pages/index.tsx | sed -n '2420,2810p'
+- nl -ba src/pages/index.tsx | sed -n '2805,2935p'
+- nl -ba src/components/MainComposition.tsx | sed -n '1,20p;240,330p'
+- find src pages styles -maxdepth 3 -type f \( -name '*.css' -o -name '_app.*' \) -print
+- rg -n "@media|md:|lg:|xl:|max-w|mx-auto|w-full|flex-col|flex-row" src/pages/index.tsx styles/global.css
