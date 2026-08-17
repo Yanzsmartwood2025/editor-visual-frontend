@@ -1528,8 +1528,48 @@ export default function NaylaCore() {
     .marco-pos-btn { background: #0a0a0a; border: 1px solid #262626; color: #a3a3a3; border-radius: 10px; padding: 8px 6px; font-size: 0.7rem; cursor: pointer; transition: 0.2s; text-align: center; font-weight: bold; }
     .marco-pos-btn.selected { background: #ffffff; color: #000000; border-color: #ffffff; box-shadow: 0 0 10px rgba(255,255,255,0.5); }
 
+    .editor-shell { height: 100dvh; overflow: hidden; }
+
+    .editor-grid.video-expanded .editor-preview-panel {
+      position: fixed;
+      inset: 0;
+      z-index: 9000;
+      border-radius: 0;
+      border: 0;
+      background: #000 !important;
+    }
+    .editor-grid.video-expanded .editor-preview-canvas {
+      width: 100vw !important;
+      height: 100vh !important;
+      max-width: none !important;
+      max-height: none !important;
+      border: 0 !important;
+      border-radius: 0 !important;
+    }
+    .editor-grid.video-expanded .editor-playback-bar {
+      position: fixed;
+      left: 50%;
+      bottom: 24px;
+      transform: translateX(-50%);
+      width: min(680px, calc(100vw - 32px));
+      z-index: 9001;
+    }
+    .editor-grid.video-expanded .editor-media-gallery,
+    .editor-grid.video-expanded .panel-container,
+    .editor-grid.video-expanded .nayla-chat-panel {
+      display: none !important;
+    }
+    .responsive-panel-height {
+      min-height: auto;
+    }
     @media (min-width: 768px) {
-      .editor-shell { height: 100vh; overflow: hidden; }
+      .responsive-panel-height {
+        min-height: 35vh;
+      }
+    }
+
+    @media (min-width: 768px) {
+
       .editor-grid {
         width: 100%;
         max-width: none;
@@ -1563,39 +1603,6 @@ export default function NaylaCore() {
           "timeline timeline timeline"
           "subtools subtools subtools"
           "maintools maintools maintools";
-      }
-      .editor-grid.video-expanded .editor-preview-panel {
-        position: fixed;
-        inset: 0;
-        z-index: 9000;
-        border-radius: 0;
-        border: 0;
-        background: #000 !important;
-      }
-      .editor-grid.video-expanded .editor-preview-canvas {
-        width: 100vw !important;
-        height: 100vh !important;
-        max-width: none !important;
-        max-height: none !important;
-        border: 0 !important;
-        border-radius: 0 !important;
-      }
-      .editor-grid.video-expanded .editor-playback-bar {
-        position: fixed;
-        left: 50%;
-        bottom: 24px;
-        transform: translateX(-50%);
-        width: min(680px, calc(100vw - 32px));
-        z-index: 9001;
-      }
-      .editor-grid.video-expanded .editor-media-gallery {
-        display: none !important;
-      }
-      .editor-grid.video-expanded .panel-container {
-        display: none !important;
-      }
-      .editor-grid.video-expanded .nayla-chat-panel {
-        display: none !important;
       }
       .editor-left-stack { display: contents; }
       .editor-preview-panel {
@@ -1783,7 +1790,7 @@ export default function NaylaCore() {
   }
 
   return (
-    <div className={`editor-shell min-h-screen w-full flex flex-col overflow-x-hidden select-none ${darkMode ? 'bg-black text-gray-200' : 'bg-white text-gray-800'}`} style={{ fontFamily: 'system-ui, sans-serif' }}>
+    <div className={`editor-shell h-[100dvh] w-full flex flex-col overflow-x-hidden select-none ${darkMode ? 'bg-black text-gray-200' : 'bg-white text-gray-800'}`} style={{ fontFamily: 'system-ui, sans-serif' }}>
 
   {/* Modal y Barra del Administrador de Cola de Renders */}
   {Object.keys(activeRenderJobs).length > 0 && (
@@ -2188,11 +2195,11 @@ export default function NaylaCore() {
 
         {/* AREA DE PANELES COMPLEJOS (Reemplaza a la galería si están activos) */}
         {toolMessage ? (
-          <div className="panel-container" style={{ position: 'relative', bottom: 'auto', flex: 1, minHeight: '35vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div className="panel-container responsive-panel-height" style={{ position: 'relative', bottom: 'auto', flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             <div style={{ textAlign: 'center', padding: '2rem', color: '#a3a3a3', fontSize: '1rem', letterSpacing: '2px' }}>{toolMessage}</div>
           </div>
         ) : mainNav === 'nube' ? (
-          <div className="panel-container" style={{ position: 'relative', bottom: 'auto', flex: 1, minHeight: '35vh', overflowY: 'auto', padding: '16px' }}>
+          <div className="panel-container responsive-panel-height" style={{ position: 'relative', bottom: 'auto', flex: 1, overflowY: 'auto', padding: '16px' }}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '1rem' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <p style={{ fontSize: '0.75rem', color: darkMode ? '#fff' : '#000', fontWeight: 'bold', letterSpacing: '1px', margin: 0 }}>EXPLORADOR DE STORAGE (media_bodega)</p>
@@ -2335,7 +2342,7 @@ export default function NaylaCore() {
             )}
           </div>
         ) : subTool && ['marco', 'delogo', 'script', 'supervisor', 'render'].includes(subTool) ? (
-          <div className="panel-container" style={{ position: 'relative', bottom: 'auto', flex: 1, minHeight: '35vh', overflowY: 'auto' }}>
+          <div className="panel-container responsive-panel-height" style={{ position: 'relative', bottom: 'auto', flex: 1, overflowY: 'auto' }}>
             {/* COMPONENTES DE PANELES COMPLEJOS */}
             {subTool === 'marco' && (
               <div>
