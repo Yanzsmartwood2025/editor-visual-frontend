@@ -9,10 +9,14 @@ export class GroqProvider implements LLMProvider {
   private client: Groq;
   private model: string;
 
-  constructor(apiKey: string) {
+  constructor(apiKey: string, role: 'dialog' | 'code' = 'dialog') {
     this.client = new Groq({ apiKey });
-    // Use the requested model
-    this.model = process.env.GROQ_MODEL || 'openai/gpt-oss-120b';
+
+    if (role === 'dialog') {
+      this.model = process.env.GROQ_DIALOG_MODEL || process.env.GROQ_MODEL || 'openai/gpt-oss-120b';
+    } else {
+      this.model = process.env.GROQ_CODE_MODEL || process.env.GROQ_MODEL || 'llama-3.3-70b-versatile';
+    }
   }
 
   async generateText(prompt: string, images?: string[], systemPrompt?: string): Promise<string> {
@@ -54,10 +58,14 @@ export class MistralProvider implements LLMProvider {
   private client: Mistral;
   private model: string;
 
-  constructor(apiKey: string) {
+  constructor(apiKey: string, role: 'dialog' | 'code' = 'dialog') {
     this.client = new Mistral({ apiKey });
-    // Use the requested model
-    this.model = process.env.MISTRAL_MODEL || 'mistral-large-latest';
+
+    if (role === 'dialog') {
+      this.model = process.env.MISTRAL_DIALOG_MODEL || process.env.MISTRAL_MODEL || 'mistral-large-latest';
+    } else {
+      this.model = process.env.MISTRAL_CODE_MODEL || process.env.MISTRAL_MODEL || 'codestral-latest';
+    }
   }
 
   async generateText(prompt: string, images?: string[], systemPrompt?: string): Promise<string> {

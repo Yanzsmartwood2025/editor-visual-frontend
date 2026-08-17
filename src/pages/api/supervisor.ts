@@ -88,7 +88,7 @@ La galería actual del usuario contiene los siguientes elementos: ${JSON.stringi
         const promptDelUsuario = "Prompt del usuario: " + prompt;
 
         const executeGroq = async (keyToUse: string) => {
-            const provider = new GroqProvider(keyToUse);
+            const provider = new GroqProvider(keyToUse, 'code');
             const result = await provider.generateText(promptDelUsuario, [], systemPrompt);
             let codeResponse = result.replace(/```javascript/g, '').replace(/```js/g, '').replace(/```/g, '').trim();
             if (codeResponse.includes('await') && !codeResponse.includes('async () =>')) {
@@ -98,7 +98,7 @@ La galería actual del usuario contiene los siguientes elementos: ${JSON.stringi
         };
 
         const executeMistralCode = async (keyToUse: string) => {
-            const provider = new MistralProvider(keyToUse);
+            const provider = new MistralProvider(keyToUse, 'code');
             const result = await provider.generateText(promptDelUsuario, [], systemPrompt);
             let codeResponse = result.replace(/```javascript/g, '').replace(/```js/g, '').replace(/```/g, '').trim();
             if (codeResponse.includes('await') && !codeResponse.includes('async () =>')) {
