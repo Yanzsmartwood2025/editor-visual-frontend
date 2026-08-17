@@ -96,13 +96,13 @@ Para todo lo que no sea construir el timeline con medios existentes, responde no
 
     // Definimos cómo ejecutar con Groq
     const executeGroq = async (apiKey: string) => {
-      const groqProvider = new GroqProvider(apiKey);
+      const groqProvider = new GroqProvider(apiKey, 'dialog');
       return await groqProvider.generateText(fullPrompt, images, systemPrompt);
     };
 
     // Definimos cómo ejecutar con Mistral (como fallback o primario si se elige)
     const executeMistral = async (apiKey: string) => {
-      const mistralProvider = new MistralProvider(apiKey);
+      const mistralProvider = new MistralProvider(apiKey, 'dialog');
       return await mistralProvider.generateText(fullPrompt, images, systemPrompt);
     };
 
