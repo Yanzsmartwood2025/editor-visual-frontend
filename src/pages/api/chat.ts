@@ -20,7 +20,7 @@ const availableEffectsCatalog = {
   },
   filtros: {
     campo: 'efecto',
-    valores: ['grayscale', 'sepia', 'vintage', 'blur']
+    valores: ['grayscale', 'sepia', 'vintage', 'blur', 'ken-burns', 'pan', 'rotate']
   },
   overlays: {
     campo: 'overlay',
@@ -91,11 +91,11 @@ Contrato único ejecutable:
 Usa type únicamente como "foto", "video" o "audio". Usa source únicamente como "url".
 Campos opcionales por asset si el usuario pide efectos: "efecto", "transitionType", "transitionDuration", "fadeIn", "fadeOut", "overlay", "overlayIntensity". Usa "efecto" exactamente en español.
 
-Catálogo real disponible hoy (usa solo estos nombres; no inventes Ken Burns, pan, rotate ni otros no implementados):
+Catálogo real disponible hoy (usa solo estos nombres; el campo efecto incluye filtros de color y movimientos para fotos):
 ${JSON.stringify(availableEffectsCatalog, null, 2)}
 
 Reglas para usar el catálogo:
-- Para filtros visuales por foto/video, escribe el valor directamente en el campo "efecto".
+- Para filtros visuales por foto/video y movimientos para fotos, escribe el valor directamente en el campo "efecto". En esta fase, "efecto" acepta un solo valor: no combines un filtro de color con un movimiento en el mismo asset.
 - Para transiciones entre clips, escribe el valor en "transitionType" y acompáñalo con "transitionDuration" en segundos.
 - Para overlays visuales, escribe el valor en el campo "overlay".
 - Si el usuario pide efectos pero no especifica cuál, elige únicamente de este catálogo real.

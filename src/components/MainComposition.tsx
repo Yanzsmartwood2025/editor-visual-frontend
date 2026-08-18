@@ -98,6 +98,66 @@ const getFilterStyle = (clip: TimelineItem): string | undefined => {
 };
 
 
+
+const getPhotoMotionTransform = (clip: TimelineItem, frame: number, durationInFrames: number): string | undefined => {
+  const baseScale = clip.scale !== undefined ? Number(clip.scale) : 1;
+  const animationEndFrame = Math.max(1, durationInFrames - 1);
+
+  if (clip.efecto === 'ken-burns') {
+    const scale = interpolate(
+      frame,
+      [0, animationEndFrame],
+      [baseScale, baseScale * 1.12],
+      { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' }
+    );
+
+    return `scale(${scale})`;
+  }
+
+  if (clip.efecto === 'pan') {
+    const translateX = interpolate(
+      frame,
+      [0, animationEndFrame],
+      [-4, 4],
+      { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' }
+    );
+    const motionScale = baseScale * 1.08;
+
+    return `translateX(${translateX}%) scale(${motionScale})`;
+  }
+
+  if (clip.efecto === 'rotate') {
+    const rotation = interpolate(
+      frame,
+      [0, animationEndFrame],
+      [-1.5, 1.5],
+      { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' }
+    );
+    const motionScale = baseScale * 1.04;
+
+    return `rotate(${rotation}deg) scale(${motionScale})`;
+  }
+
+  return clip.scale !== undefined ? `scale(${baseScale})` : undefined;
+};
+
+const AnimatedPhoto: React.FC<{ clip: TimelineItem, durationInFrames: number }> = ({ clip, durationInFrames }) => {
+  const frame = useCurrentFrame();
+
+  return (
+    <PreloadedImage
+      src={clip.url}
+      style={{
+        width: '100%',
+        height: '100%',
+        objectFit: 'contain',
+        transform: getPhotoMotionTransform(clip, frame, durationInFrames),
+        filter: getFilterStyle(clip),
+      }}
+    />
+  );
+};
+
 const LogoWithFades: React.FC<{ logo: LogoItem, durationInFrames: number, fps: number }> = ({ logo, durationInFrames, fps }) => {
   const frame = useCurrentFrame();
 
@@ -271,10 +331,7 @@ export const MainComposition: React.FC<MainCompositionProps> = ({ timeline, subt
                     />
                   )} />
                 ) : (
-                  <PreloadedImage
-                    src={clip.url}
-                    style={{ width: '100%', height: '100%', objectFit: 'contain', transform: clip.scale !== undefined ? `scale(${clip.scale})` : undefined, filter: getFilterStyle(clip) }}
-                  />
+                  <AnimatedPhoto clip={clip} durationInFrames={clip.durationInFrames} />
                 )}
                 {clip.overlay === 'vignette' && (
                     <AbsoluteFill style={{
