@@ -18,7 +18,7 @@ const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 type Rect = { id: string; x: number; y: number; width: number; height: number };
 type MediaItem = { id: string; url: string; tipo: 'foto' | 'video' | 'audio'; nombre: string; creado_en: string; esOverlay: boolean; etiqueta: string; fuente?: string };
-type TimelineItem = { id: string; mediaId: string; tipo: 'foto' | 'video' | 'audio'; nombre: string; etiqueta: string; url: string; durationInSeconds?: number; originalDurationInSeconds?: number; volume?: number; fadeIn?: number; fadeOut?: number; scale?: number; delay?: number; startFrom?: number; trimBefore?: number; trimAfter?: number; loop?: boolean; overlay?: string; overlayIntensity?: number; };
+type TimelineItem = { id: string; mediaId: string; tipo: 'foto' | 'video' | 'audio'; nombre: string; etiqueta: string; url: string; durationInSeconds?: number; originalDurationInSeconds?: number; volume?: number; fadeIn?: number; fadeOut?: number; scale?: number; delay?: number; startFrom?: number; trimBefore?: number; trimAfter?: number; loop?: boolean; playbackRate?: number; transitionDuration?: number; transitionType?: 'fade' | 'none' | 'wipe' | 'slide' | 'zoom'; efecto?: string; overlay?: string; overlayIntensity?: number; };
 type SubtitleItem = { id: string; texto: string; inicioSec: number; finSec: number; };
 type LogoItem = { id: string; url: string; x: number; y: number; scale: number; opacity: number; inicioSec?: number; finSec?: number; fadeIn?: number; fadeOut?: number; };
 type ExpandedPanel = 'left' | 'right' | null;
@@ -515,7 +515,14 @@ export default function NaylaCore() {
         etiqueta,
         url,
         durationInSeconds: tipo === 'foto' ? 5 : mediaExistente?.durationInSeconds,
-        originalDurationInSeconds: tipo === 'foto' ? 5 : mediaExistente?.originalDurationInSeconds
+        originalDurationInSeconds: tipo === 'foto' ? 5 : mediaExistente?.originalDurationInSeconds,
+        ...(typeof asset.efecto === 'string' ? { efecto: asset.efecto } : {}),
+        ...(typeof asset.transitionType === 'string' ? { transitionType: asset.transitionType } : {}),
+        ...(Number.isFinite(Number(asset.transitionDuration)) ? { transitionDuration: Number(asset.transitionDuration) } : {}),
+        ...(Number.isFinite(Number(asset.fadeIn)) ? { fadeIn: Number(asset.fadeIn) } : {}),
+        ...(Number.isFinite(Number(asset.fadeOut)) ? { fadeOut: Number(asset.fadeOut) } : {}),
+        ...(typeof asset.overlay === 'string' ? { overlay: asset.overlay } : {}),
+        ...(Number.isFinite(Number(asset.overlayIntensity)) ? { overlayIntensity: Number(asset.overlayIntensity) } : {})
       });
     });
 
