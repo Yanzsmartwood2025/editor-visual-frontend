@@ -116,6 +116,12 @@ export default function NaylaCore() {
   const [mainNav, setMainNav] = useState<string>('boveda');
   const [subTool, setSubTool] = useState<string | null>(null);
   const [isVideoExpanded, setIsVideoExpanded] = useState<boolean>(false);
+  const [mobileOverlaysVisible, setMobileOverlaysVisible] = useState<boolean>(false);
+  const [isPhoneViewport, setIsPhoneViewport] = useState<boolean>(false);
+  const [deviceOrientation, setDeviceOrientation] = useState<'portrait' | 'landscape'>('portrait');
+  const [sourceVideoRatio, setSourceVideoRatio] = useState<number | null>(null);
+  const [centeredMainToolId, setCenteredMainToolId] = useState<string>('boveda');
+  const [centeredSubToolId, setCenteredSubToolId] = useState<string | null>(null);
   const [expandedPanel, setExpandedPanel] = useState<ExpandedPanel>(null);
   const [filtroGaleria, setFiltroGaleria] = useState<string>('todo'); // todo, videos, fotos, audios
   const [searchQuery, setSearchQuery] = useState('');
@@ -300,6 +306,9 @@ export default function NaylaCore() {
   const containerRef = useRef<HTMLDivElement>(null);
   const playerRef = useRef<HTMLVideoElement>(null);
   const timelineRef = useRef<HTMLDivElement>(null);
+  const mainToolsCarouselRef = useRef<HTMLDivElement>(null);
+  const subToolsCarouselRef = useRef<HTMLDivElement>(null);
+  const lastVideoSurfaceTapRef = useRef<number>(0);
   const [rects, setRects] = useState<Rect[]>([]);
   const [isDrawing, setIsDrawing] = useState(false);
   const [startPos, setStartPos] = useState({ x: 0, y: 0 });
@@ -319,6 +328,123 @@ export default function NaylaCore() {
   const [chatInput, setChatInput] = useState('');
   const [chatMessages, setChatMessages] = useState<{role: 'user' | 'ai', text: string}[]>([]);
   const [chatProcessing, setChatProcessing] = useState(false);
+
+
+  useEffect(() => {
+    const updateViewportMode = () => {
+      const width = window.visualViewport?.width || window.innerWidth;
+      const height = window.visualViewport?.height || window.innerHeight;
+      setIsPhoneViewport(width < 768);
+      setDeviceOrientation(width > height ? 'landscape' : 'portrait');
+    };
+
+    updateViewportMode();
+    window.addEventListener('resize', updateViewportMode);
+    window.visualViewport?.addEventListener('resize', updateViewportMode);
+    return () => {
+      window.removeEventListener('resize', updateViewportMode);
+      window.visualViewport?.removeEventListener('resize', updateViewportMode);
+    };
+  }, []);
+
+  useEffect(() => {
+    setCenteredMainToolId(mainNav);
+    setCenteredSubToolId(SUB_TOOLS[mainNav]?.[0]?.id || null);
+  }, [mainNav]);
+
+  const updateCenteredToolFromScroll = (container: HTMLDivElement | null, setter: (id: string) => void) => {
+    if (!container) return;
+    const containerRect = container.getBoundingClientRect();
+    const centerX = containerRect.left + containerRect.width / 2;
+    let closestId = '';
+    let closestDistance = Number.POSITIVE_INFINITY;
+
+    Array.from(container.querySelectorAll<HTMLElement>('[data-tool-id]')).forEach((item) => {
+      const rect = item.getBoundingClientRect();
+      const itemCenter = rect.left + rect.width / 2;
+      const distance = Math.abs(centerX - itemCenter);
+      if (distance < closestDistance) {
+        closestDistance = distance;
+        closestId = item.dataset.toolId || '';
+      }
+    });
+
+    if (closestId) setter(closestId);
+  };
+
+  const centerCarouselItem = (container: HTMLDivElement | null, toolId: string) => {
+    const target = container?.querySelector<HTMLElement>(`[data-tool-id="${toolId}"]`);
+    target?.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+  };
+
+  const handleVideoSurfaceTap = (e: React.PointerEvent<HTMLElement>) => {
+    e.stopPropagation();
+    if (!isPhoneViewport || subTool === 'delogo') return;
+
+    const now = Date.now();
+    if (now - lastVideoSurfaceTapRef.current <= 320) {
+      setMobileOverlaysVisible(prev => !prev);
+      lastVideoSurfaceTapRef.current = 0;
+      return;
+    }
+    lastVideoSurfaceTapRef.current = now;
+  };
+
+  const handleMainCarouselToolPress = (tool: any) => {
+    if (isPhoneViewport && centeredMainToolId !== tool.id) {
+      setCenteredMainToolId(tool.id);
+      centerCarouselItem(mainToolsCarouselRef.current, tool.id);
+      return;
+    }
+
+    setMainNav(tool.id);
+    if (tool.id !== 'ia') {
+      setIsChatOpen(false);
+    } else {
+      setIsChatOpen(true);
+      setMobileOverlaysVisible(true);
+    }
+    setSubTool(null);
+  };
+
+  const handleSubCarouselToolPress = (tool: any) => {
+    if (isPhoneViewport && centeredSubToolId !== tool.id) {
+      setCenteredSubToolId(tool.id);
+      centerCarouselItem(subToolsCarouselRef.current, tool.id);
+      return;
+    }
+
+    if (tool.isFilter) {
+      setFiltroGaleria(tool.filterValue);
+      return;
+    }
+
+    if (subTool === tool.id) {
+      setSubTool(null);
+      setToolMessage(null);
+      return;
+    }
+
+    setSubTool(tool.id);
+    if (['groq', 'mistral'].includes(tool.id)) {
+      setSelectedAiProvider(tool.id);
+      setIsChatOpen(true);
+      setMobileOverlaysVisible(true);
+    } else if (['marco', 'delogo', 'script', 'supervisor', 'youtube', 'pixabay', 'musicastock', 'noticias', 'artistas', 'stockvideo', 'sonidos', 'iafoto', 'enlace', 'render'].includes(tool.id)) {
+      setToolMessage(null);
+    } else {
+      setToolMessage('PRÓXIMAMENTE');
+    }
+  };
+
+  const seekBy = (seconds: number) => {
+    if (!playerRef.current) return;
+    const duration = Number.isFinite(playerRef.current.duration) ? playerRef.current.duration : Number.POSITIVE_INFINITY;
+    playerRef.current.currentTime = Math.min(duration, Math.max(0, playerRef.current.currentTime + seconds));
+  };
+
+  const isPortraitSourceVideo = sourceVideoRatio !== null && sourceVideoRatio < 1;
+  const phoneVideoObjectFit = isPortraitSourceVideo && deviceOrientation === 'portrait' ? 'cover' : 'contain';
 
   const validarTimelineParaRender = async (timeline: TimelineItem[]) => {
     const lineaValidada = [...timeline];
@@ -1459,7 +1585,7 @@ export default function NaylaCore() {
   };
 
   const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (!mediaActivaUrl || !containerRef.current || resizingInfo || draggingInfo) return;
+    if (subTool !== 'delogo' || !mediaActivaUrl || !containerRef.current || resizingInfo || draggingInfo) return;
     const c = containerRef.current.getBoundingClientRect();
     setStartPos({ x: e.clientX - c.left, y: e.clientY - c.top });
     setIsDrawing(true);
@@ -1553,6 +1679,137 @@ export default function NaylaCore() {
     .marco-pos-btn.selected { background: #ffffff; color: #000000; border-color: #ffffff; box-shadow: 0 0 10px rgba(255,255,255,0.5); }
 
     .editor-shell { height: 100dvh; overflow: hidden; }
+
+
+    @media (max-width: 767px) {
+      .editor-grid.phone-video-mode {
+        position: fixed;
+        inset: 0;
+        z-index: 8000;
+        width: 100vw;
+        height: 100dvh;
+        padding: 0 !important;
+        gap: 0 !important;
+        overflow: hidden !important;
+        background: #000 !important;
+      }
+      .editor-grid.phone-video-mode .editor-left-stack,
+      .editor-grid.phone-video-mode .editor-preview-panel,
+      .editor-grid.phone-video-mode .editor-preview-canvas {
+        width: 100vw !important;
+        height: 100dvh !important;
+        max-width: none !important;
+        max-height: none !important;
+        aspect-ratio: auto !important;
+        border: 0 !important;
+        border-radius: 0 !important;
+        background: #000 !important;
+      }
+      .editor-grid.phone-video-mode .editor-preview-panel { position: fixed; inset: 0; z-index: 1; }
+      .editor-grid.phone-video-mode .editor-tools-panel,
+      .editor-grid.phone-video-mode .editor-timeline-panel,
+      .editor-grid.phone-video-mode .panel-container,
+      .editor-grid.phone-video-mode .editor-media-gallery { display: none !important; }
+      .editor-grid.phone-video-mode .editor-playback-bar,
+      .editor-grid.phone-video-mode .editor-subtools-bar,
+      .editor-grid.phone-video-mode .editor-maintools-bar {
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 180ms ease, transform 180ms ease;
+      }
+      .editor-grid.phone-video-mode.mobile-overlays-visible .editor-tools-panel {
+        display: flex !important;
+        position: fixed;
+        inset: 0;
+        z-index: 20;
+        pointer-events: none;
+      }
+      .editor-grid.phone-video-mode.mobile-overlays-visible .editor-playback-bar {
+        display: flex !important;
+        position: fixed;
+        left: 50%;
+        bottom: 190px;
+        transform: translateX(-50%);
+        width: min(560px, calc(100vw - 28px));
+        z-index: 30;
+        opacity: 1;
+        pointer-events: auto;
+        border: 1px solid rgba(255,255,255,0.18);
+        border-radius: 999px;
+        background: linear-gradient(135deg, rgba(0,0,0,0.82), rgba(0,0,0,0.58)) !important;
+      }
+      .editor-grid.phone-video-mode.mobile-overlays-visible .editor-subtools-bar,
+      .editor-grid.phone-video-mode.mobile-overlays-visible .editor-maintools-bar {
+        display: flex !important;
+        position: fixed;
+        left: 0;
+        right: 0;
+        z-index: 31;
+        opacity: 1;
+        pointer-events: auto;
+        overflow-x: auto !important;
+        flex-wrap: nowrap !important;
+        scroll-snap-type: x mandatory;
+        scroll-padding: 50vw;
+        -webkit-overflow-scrolling: touch;
+        background: linear-gradient(180deg, rgba(0,0,0,0), rgba(0,0,0,0.84) 32%, rgba(0,0,0,0.96)) !important;
+        border: 0 !important;
+        padding-left: calc(50vw - 48px) !important;
+        padding-right: calc(50vw - 48px) !important;
+      }
+      .editor-grid.phone-video-mode.mobile-overlays-visible .editor-subtools-bar { bottom: 104px; }
+      .editor-grid.phone-video-mode.mobile-overlays-visible .editor-maintools-bar { bottom: 0; }
+      .editor-grid.phone-video-mode .main-btn,
+      .editor-grid.phone-video-mode .sub-btn {
+        flex: 0 0 96px !important;
+        width: 96px !important;
+        min-width: 96px !important;
+        min-height: 96px !important;
+        scroll-snap-align: center;
+        color: #fff !important;
+        background: transparent !important;
+        text-shadow: 0 2px 10px rgba(0,0,0,0.9);
+        transform: scale(0.88);
+        opacity: 0.72;
+      }
+      .editor-grid.phone-video-mode .main-btn.centered,
+      .editor-grid.phone-video-mode .sub-btn.centered {
+        transform: scale(1.22) translateY(-8px);
+        opacity: 1;
+      }
+      .editor-grid.phone-video-mode .main-btn > div:first-child,
+      .editor-grid.phone-video-mode .sub-btn .icon-container {
+        width: 72px !important;
+        height: 72px !important;
+        border-radius: 22px !important;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: rgba(255,255,255,0.14) !important;
+        border: 1px solid rgba(255,255,255,0.26) !important;
+        box-shadow: 0 16px 34px rgba(0,0,0,0.5);
+      }
+      .editor-grid.phone-video-mode .main-btn.centered > div:first-child,
+      .editor-grid.phone-video-mode .sub-btn.centered .icon-container {
+        background: rgba(255,255,255,0.95) !important;
+        color: #000 !important;
+      }
+      .editor-grid.phone-video-mode .nayla-chat-panel {
+        position: fixed !important;
+        inset: 0 !important;
+        width: 100vw !important;
+        height: 100dvh !important;
+        z-index: 60 !important;
+        color: #fff !important;
+        background: linear-gradient(160deg, rgba(0,0,0,0.86), rgba(5,5,10,0.68) 48%, rgba(0,0,0,0.9)) !important;
+        border-left: 0 !important;
+        box-shadow: none !important;
+        backdrop-filter: blur(2px);
+        -webkit-backdrop-filter: blur(2px);
+        pointer-events: auto;
+      }
+      .editor-grid.phone-video-mode .nayla-chat-panel * { color: inherit; }
+    }
 
     .editor-grid.video-expanded .editor-preview-panel {
       position: fixed;
@@ -2103,12 +2360,12 @@ export default function NaylaCore() {
         </div>
       </header>
 
-      <div className={`editor-grid flex flex-col md:flex-row w-full gap-4 flex-1 overflow-hidden ${isVideoExpanded ? 'video-expanded' : ''} ${expandedPanel === 'left' ? 'left-expanded' : ''} ${expandedPanel === 'right' ? 'right-expanded' : ''}`}>
+      <div className={`editor-grid flex flex-col md:flex-row w-full gap-4 flex-1 overflow-hidden ${isPhoneViewport ? 'phone-video-mode' : ''} ${mobileOverlaysVisible ? 'mobile-overlays-visible' : 'mobile-overlays-hidden'} ${!isPhoneViewport && isVideoExpanded ? 'video-expanded' : ''} ${expandedPanel === 'left' ? 'left-expanded' : ''} ${expandedPanel === 'right' ? 'right-expanded' : ''}`}>
 
         {/* COLUMNA IZQUIERDA: Monitor de Video y Línea de Tiempo */}
         <div className="editor-left-stack flex flex-col w-full md:w-1/2" onClick={() => { if (!isVideoExpanded) setExpandedPanel('left'); }} style={{ flexGrow: expandedPanel === 'left' ? 1.45 : expandedPanel === 'right' ? 0.75 : 1, transition: 'flex-grow 320ms ease, width 320ms ease' }}>
 
-        <section className="editor-preview-panel" onClick={(e) => { e.stopPropagation(); setIsVideoExpanded(prev => !prev); }} style={{ width: '100%', padding: '0', backgroundColor: '#050505' }}>
+        <section className="editor-preview-panel" onClick={(e) => { e.stopPropagation(); if (!isPhoneViewport) setIsVideoExpanded(prev => !prev); }} onPointerUp={handleVideoSurfaceTap} style={{ width: '100%', padding: '0', backgroundColor: '#050505' }}>
           <div ref={containerRef} onPointerDown={handlePointerDown} onPointerMove={handlePointerMove} onPointerUp={handlePointerUp} onPointerLeave={handlePointerUp}
             className="editor-preview-canvas w-full mx-auto relative flex items-center justify-center overflow-hidden touch-none" style={{ aspectRatio: canvasRatio, maxWidth: canvasRatio === '16/9' ? '100%' : (isVideoExpanded ? 'none' : '430px'), backgroundColor: darkMode ? '#0a0a0a' : '#f0f0f0', border: darkMode ? '1px solid #1a1a1a' : '1px solid #ddd' }}>
             {(lineaDeTiempo.filter(t => t.tipo === 'video' || t.tipo === 'foto').length > 0 || videoResultadoUrl || mediaActivaUrl) ? (
@@ -2117,12 +2374,13 @@ export default function NaylaCore() {
                 <video
                   key={lineaDeTiempo[0]?.url || mediaActivaUrl}
                   src={lineaDeTiempo.filter(t => t.tipo === 'video').at(clipSeleccionado ? lineaDeTiempo.findIndex(t => t.id === clipSeleccionado) : 0)?.url || mediaActivaUrl || ''}
-                  style={{ width: '100%', height: '100%', objectFit: 'contain', borderRadius: '0' }}
+                  style={{ width: '100%', height: '100%', objectFit: isPhoneViewport ? phoneVideoObjectFit : 'contain', borderRadius: '0' }}
                   controls={false}
                   playsInline
                   muted={false}
                   ref={playerRef as any}
                   onEnded={handleVideoEnded}
+                  onLoadedMetadata={(e) => { const video = e.currentTarget; if (video.videoWidth && video.videoHeight) setSourceVideoRatio(video.videoWidth / video.videoHeight); }}
                 />
 
                 {!videoResultadoUrl && rects.map((r) => (
@@ -2144,7 +2402,11 @@ export default function NaylaCore() {
 
         <div className="editor-playback-bar" onClick={(e) => e.stopPropagation()} style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 20px', alignItems: 'center', backgroundColor: '#000', borderBottom: '1px solid #1a1a1a' }}>
           <span style={{ color: '#737373', fontSize: '0.75rem', fontFamily: 'monospace' }}>00:00:00</span>
-          <button onClick={(e) => { e.stopPropagation(); togglePlay(); }} style={{ background: 'none', border: 'none', color: '#ffffff', fontSize: '1.5rem', cursor: 'pointer', outline: 'none' }}>{isPlaying ? '⏸' : '▶'}</button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '18px' }}>
+            <button onClick={(e) => { e.stopPropagation(); seekBy(-10); }} style={{ background: 'none', border: 'none', color: '#ffffff', fontSize: '1.15rem', cursor: 'pointer', outline: 'none' }}>↺10</button>
+            <button onClick={(e) => { e.stopPropagation(); togglePlay(); }} style={{ background: 'none', border: 'none', color: '#ffffff', fontSize: '1.5rem', cursor: 'pointer', outline: 'none' }}>{isPlaying ? '⏸' : '▶'}</button>
+            <button onClick={(e) => { e.stopPropagation(); seekBy(10); }} style={{ background: 'none', border: 'none', color: '#ffffff', fontSize: '1.15rem', cursor: 'pointer', outline: 'none' }}>10↻</button>
+          </div>
           <span style={{ color: '#737373', fontSize: '0.75rem', fontFamily: 'monospace' }}>00:00:00</span>
         </div>
 
@@ -2960,7 +3222,7 @@ export default function NaylaCore() {
           {SUB_TOOLS[mainNav]?.map((tool) => {
             if (tool.id === 'subir-vf') {
               return (
-                <label key={tool.id} className={`sub-btn w-full ${!darkMode ? 'text-black' : ''}`}>
+                <label key={tool.id} data-tool-id={tool.id} onClick={(e) => { if (isPhoneViewport && centeredSubToolId !== tool.id) { e.preventDefault(); handleSubCarouselToolPress(tool); } }} className={`sub-btn w-full ${centeredSubToolId === tool.id ? 'centered' : ''} ${!darkMode ? 'text-black' : ''}`}>
                   <div className={`icon-container ${!darkMode ? 'bg-gray-200 border-gray-300' : ''}`}>{tool.icon}</div>
                   <span className={!darkMode ? 'text-black font-medium' : ''}>{tool.nombre}</span>
                   <input type="file" multiple accept="video/*,image/*" onChange={(e) => handleSubirMultimedia(e, 'video')} style={{ display: 'none' }} />
@@ -2969,7 +3231,7 @@ export default function NaylaCore() {
             }
             if (tool.id === 'subir-a') {
               return (
-                <label key={tool.id} className={`sub-btn w-full ${!darkMode ? 'text-black' : ''}`}>
+                <label key={tool.id} data-tool-id={tool.id} onClick={(e) => { if (isPhoneViewport && centeredSubToolId !== tool.id) { e.preventDefault(); handleSubCarouselToolPress(tool); } }} className={`sub-btn w-full ${centeredSubToolId === tool.id ? 'centered' : ''} ${!darkMode ? 'text-black' : ''}`}>
                   <div className={`icon-container ${!darkMode ? 'bg-gray-200 border-gray-300' : ''}`}>{tool.icon}</div>
                   <span className={!darkMode ? 'text-black font-medium' : ''}>{tool.nombre}</span>
                   <input type="file" multiple accept="audio/*" onChange={(e) => handleSubirMultimedia(e, 'audio')} style={{ display: 'none' }} />
@@ -2978,7 +3240,7 @@ export default function NaylaCore() {
             }
             if (tool.isFilter) {
               return (
-                <button key={tool.id} className={`sub-btn w-full ${filtroGaleria === tool.filterValue ? 'active' : ''} ${!darkMode ? 'text-black' : ''}`} onClick={() => setFiltroGaleria(tool.filterValue)}>
+                <button key={tool.id} data-tool-id={tool.id} className={`sub-btn w-full ${centeredSubToolId === tool.id ? 'centered' : ''} ${filtroGaleria === tool.filterValue ? 'active' : ''} ${!darkMode ? 'text-black' : ''}`} onClick={() => handleSubCarouselToolPress(tool)}>
                   <div className={`icon-container ${!darkMode ? 'bg-gray-200 border-gray-300' : ''}`} style={{ border: filtroGaleria === tool.filterValue ? (darkMode ? '1px solid #fff' : '1px solid #000') : (darkMode ? '1px solid #333' : '1px solid #d1d5db') }}>
                     <span style={{ fontSize: '10px' }} className={!darkMode ? 'text-black' : ''}>{tool.nombre.substring(0,2).toUpperCase()}</span>
                   </div>
@@ -2987,23 +3249,7 @@ export default function NaylaCore() {
               );
             }
             return (
-              <button key={tool.id} className={`sub-btn w-full ${subTool === tool.id ? 'active' : ''} ${!darkMode ? 'text-black' : ''}`} onClick={() => {
-                // Toggle
-                if (subTool === tool.id) {
-                  setSubTool(null);
-                  setToolMessage(null);
-                } else {
-                  setSubTool(tool.id);
-                  if (['groq', 'mistral'].includes(tool.id)) {
-                    setSelectedAiProvider(tool.id);
-                    setIsChatOpen(true);
-                  } else if (['marco', 'delogo', 'script', 'supervisor', 'youtube', 'pixabay', 'musicastock', 'noticias', 'artistas', 'stockvideo', 'sonidos', 'iafoto', 'enlace', 'render'].includes(tool.id)) {
-                    setToolMessage(null);
-                  } else {
-                    setToolMessage('PRÓXIMAMENTE');
-                  }
-                }
-              }}>
+              <button key={tool.id} data-tool-id={tool.id} className={`sub-btn w-full ${centeredSubToolId === tool.id ? 'centered' : ''} ${subTool === tool.id ? 'active' : ''} ${!darkMode ? 'text-black' : ''}`} onClick={() => handleSubCarouselToolPress(tool)}>
                 <div className={`icon-container ${!darkMode ? 'bg-gray-200 border-gray-300' : ''}`}>{tool.icon}</div>
                 <span className={!darkMode ? 'text-black font-medium' : ''}>{tool.nombre}</span>
               </button>
@@ -3014,15 +3260,7 @@ export default function NaylaCore() {
         {/* FILA DE BOTONES PRINCIPALES */}
         <div className={`editor-maintools-bar flex gap-2 w-full p-3 ${darkMode ? 'bg-black' : 'bg-white'}`} onClick={(e) => e.stopPropagation()} style={{ overflowX: 'auto', flexWrap: 'nowrap', backgroundColor: canvasRatio === '16/9' ? 'rgba(0, 0, 0, 0.8)' : undefined, position: canvasRatio === '16/9' ? 'fixed' : undefined, bottom: canvasRatio === '16/9' ? '0' : undefined, left: canvasRatio === '16/9' ? '0' : undefined, right: canvasRatio === '16/9' ? '0' : undefined, zIndex: canvasRatio === '16/9' ? 9999 : undefined }}>
           {MAIN_TOOLS.map((tool) => (
-            <button key={tool.id} className={`main-btn w-full ${mainNav === tool.id ? 'active' : ''} ${!darkMode ? 'bg-gray-100 border-gray-300 text-black' : ''}`} style={{ backgroundColor: !darkMode ? (mainNav === tool.id ? '#000' : '#f3f4f6') : undefined, color: !darkMode ? (mainNav === tool.id ? '#fff' : '#000') : undefined }} onClick={() => {
-              setMainNav(tool.id);
-              if (tool.id !== 'ia') {
-                setIsChatOpen(false);
-              } else {
-                setIsChatOpen(true);
-              }
-              setSubTool(null);
-            }}>
+            <button key={tool.id} data-tool-id={tool.id} className={`main-btn w-full ${centeredMainToolId === tool.id ? 'centered' : ''} ${mainNav === tool.id ? 'active' : ''} ${!darkMode ? 'bg-gray-100 border-gray-300 text-black' : ''}`} style={{ backgroundColor: !darkMode ? (mainNav === tool.id ? '#000' : '#f3f4f6') : undefined, color: !darkMode ? (mainNav === tool.id ? '#fff' : '#000') : undefined }} onClick={() => handleMainCarouselToolPress(tool)}>
               <div>{tool.icon}</div>
               <span className={!darkMode && mainNav !== tool.id ? 'text-black font-bold' : ''}>{tool.nombre}</span>
             </button>
@@ -3053,8 +3291,9 @@ export default function NaylaCore() {
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                   <div style={{ width: '8px', height: '8px', backgroundColor: '#00cc66', borderRadius: '50%', boxShadow: '0 0 10px #00cc66' }}></div>
                   <h3 style={{ margin: 0, color: darkMode ? '#fff' : '#000', fontSize: '1rem', fontWeight: 'bold' }}>Nayla</h3>
+                  {isPhoneViewport && <span style={{ fontSize: '0.78rem', opacity: 0.78 }}>← Volver al video con la X</span>}
                 </div>
-                <button onClick={() => setIsChatOpen(false)} style={{ background: 'none', border: 'none', color: darkMode ? '#fff' : '#000', cursor: 'pointer' }}>
+                <button onClick={() => { setIsChatOpen(false); if (isPhoneViewport) setMobileOverlaysVisible(true); }} style={{ background: 'none', border: 'none', color: darkMode ? '#fff' : '#000', cursor: 'pointer' }}>
                   <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
                 </button>
               </div>
