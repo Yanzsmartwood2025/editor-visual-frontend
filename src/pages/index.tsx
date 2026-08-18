@@ -145,6 +145,7 @@ export default function NaylaCore() {
   const [globalSettings, setGlobalSettings] = useState<{ fadeOutFinal?: number }>({});
   const [clipSeleccionado, setClipSeleccionado] = useState<string | null>(null);
   const [canvasRatio, setCanvasRatio] = useState<'9/16' | '16/9' | '1/1' | '4/5'>('9/16');
+  const [isLandscape, setIsLandscape] = useState(false);
   const [calidadExportacion, setCalidadExportacion] = useState('1080p');
   const [showIntro, setShowIntro] = useState(true);
   const [videoFile, setVideoFile] = useState<File | null>(null);
@@ -694,6 +695,19 @@ export default function NaylaCore() {
     return () => {
       clearTimeout(timer);
       subscription.unsubscribe();
+    };
+  }, []);
+
+  useEffect(() => {
+    const handleResize = () => {
+      setIsLandscape(window.innerWidth > window.innerHeight);
+    };
+    handleResize(); // initial check
+    window.addEventListener('resize', handleResize);
+    window.addEventListener('orientationchange', handleResize);
+    return () => {
+      window.removeEventListener('resize', handleResize);
+      window.removeEventListener('orientationchange', handleResize);
     };
   }, []);
 
@@ -1811,10 +1825,19 @@ export default function NaylaCore() {
       width: min(680px, calc(100vw - 32px));
       z-index: 9001;
     }
-    .editor-grid.video-expanded .editor-media-gallery,
-    .editor-grid.video-expanded .panel-container,
-    .editor-grid.video-expanded .nayla-chat-panel {
-      display: none !important;
+    .editor-grid.video-expanded .editor-subtools-bar {
+      position: fixed;
+      bottom: 80px;
+      left: 0;
+      right: 0;
+      z-index: 9002;
+    }
+    .editor-grid.video-expanded .editor-maintools-bar {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      z-index: 9002;
     }
     .responsive-panel-height {
       min-height: auto;
@@ -2343,7 +2366,7 @@ export default function NaylaCore() {
 
         <section className="editor-preview-panel" onClick={(e) => { e.stopPropagation(); if (!isPhoneViewport) setIsVideoExpanded(prev => !prev); }} onPointerUp={handleVideoSurfaceTap} style={{ width: '100%', padding: '0', backgroundColor: '#050505' }}>
           <div ref={containerRef} onPointerDown={handlePointerDown} onPointerMove={handlePointerMove} onPointerUp={handlePointerUp} onPointerLeave={handlePointerUp}
-            className="editor-preview-canvas w-full max-w-[430px] mx-auto aspect-[9/16] relative flex items-center justify-center overflow-hidden touch-none" style={{ aspectRatio: canvasRatio, backgroundColor: darkMode ? '#0a0a0a' : '#f0f0f0', border: darkMode ? '1px solid #1a1a1a' : '1px solid #ddd' }}>
+            className={`editor-preview-canvas w-full mx-auto relative flex items-center justify-center overflow-hidden touch-none ${isVideoExpanded && isLandscape ? 'h-full max-w-none max-h-none' : 'max-w-[430px] aspect-[9/16]'}`} style={{ aspectRatio: (isVideoExpanded && isLandscape) ? 'auto' : canvasRatio, backgroundColor: darkMode ? '#0a0a0a' : '#f0f0f0', border: darkMode ? '1px solid #1a1a1a' : '1px solid #ddd' }}>
             {(lineaDeTiempo.filter(t => t.tipo === 'video' || t.tipo === 'foto').length > 0 || videoResultadoUrl || mediaActivaUrl) ? (
               <>
 
@@ -2456,7 +2479,7 @@ export default function NaylaCore() {
         {/* NUEVA ESTRUCTURA DE HERRAMIENTAS */}
 
         {/* AREA DE PANELES COMPLEJOS (Reemplaza a la galería si están activos) */}
-        {toolMessage ? (
+        {!isVideoExpanded && (toolMessage ? (
           <div className="panel-container responsive-panel-height" style={{ position: 'relative', bottom: 'auto', flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             <div style={{ textAlign: 'center', padding: '2rem', color: '#a3a3a3', fontSize: '1rem', letterSpacing: '2px' }}>{toolMessage}</div>
           </div>
@@ -3191,7 +3214,7 @@ export default function NaylaCore() {
               </div>
             </div>
           </div>
-        )}
+        ))}
 
         {/* FILA DE SUB-HERRAMIENTAS */}
         <div ref={subToolsCarouselRef} onScroll={() => requestAnimationFrame(() => updateCenteredToolFromScroll(subToolsCarouselRef.current, setCenteredSubToolId))} className={`editor-subtools-bar flex gap-2 w-full p-3 border-t ${darkMode ? 'bg-neutral-950 border-neutral-900' : 'bg-gray-50 border-gray-200'}`} onClick={(e) => e.stopPropagation()} style={{ overflowX: 'auto', flexWrap: 'nowrap' }}>
@@ -3245,7 +3268,7 @@ export default function NaylaCore() {
         </div>
 
         {/* NAYLA CHAT SIDEBAR */}
-        {isChatOpen && (
+        {(!isVideoExpanded && isChatOpen) && (
           <div className="nayla-chat-panel" onClick={(e) => { e.stopPropagation(); if (!isVideoExpanded) setExpandedPanel('right'); }} style={{
             position: 'absolute',
             top: 0,
