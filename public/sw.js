@@ -3,6 +3,16 @@ const SHARE_DB_VERSION = 1;
 const SHARE_STORE_NAME = 'pending-shares';
 const SHARE_PENDING_TTL_MS = 24 * 60 * 60 * 1000;
 
+const APP_SHELL_CACHE = 'nayla-app-shell-v1';
+const APP_SHELL_ASSETS = [
+  '/',
+  '/manifest.json',
+  '/assets/imagenes/icon-192x192.png',
+  '/assets/imagenes/icon-512x512.png',
+  '/assets/imagenes/Icono-intro.jpeg',
+  '/assets/imagenes/icono-9-16.jpeg'
+];
+
 const openShareDb = () => new Promise((resolve, reject) => {
   const request = indexedDB.open(SHARE_DB_NAME, SHARE_DB_VERSION);
 
@@ -91,12 +101,24 @@ const handleShareTarget = async (request) => {
 
 self.addEventListener('install', (event) => {
   console.log('Service worker installing...');
-  self.skipWaiting();
+  event.waitUntil(
+    caches.open(APP_SHELL_CACHE)
+      .then((cache) => cache.addAll(APP_SHELL_ASSETS))
+      .then(() => self.skipWaiting())
+  );
 });
 
 self.addEventListener('activate', (event) => {
   console.log('Service worker activating...');
-  event.waitUntil(self.clients.claim());
+  event.waitUntil(
+    caches.keys()
+      .then((cacheNames) => Promise.all(
+        cacheNames
+          .filter((cacheName) => cacheName !== APP_SHELL_CACHE)
+          .map((cacheName) => caches.delete(cacheName))
+      ))
+      .then(() => self.clients.claim())
+  );
 });
 
 self.addEventListener('fetch', (event) => {
@@ -107,5 +129,14 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  event.respondWith(fetch(event.request));
+  if (event.request.mode === 'navigate') {
+    event.respondWith(
+      fetch(event.request).catch(() => caches.match('/'))
+    );
+    return;
+  }
+
+  event.respondWith(
+    caches.match(event.request).then((cachedResponse) => cachedResponse || fetch(event.request))
+  );
 });

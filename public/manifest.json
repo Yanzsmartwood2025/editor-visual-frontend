@@ -1,21 +1,43 @@
 {
+  "id": "/?source=pwa",
   "name": "Nayla Core Editor",
   "short_name": "NAYLA",
   "description": "Módulo Operativo Visual",
-  "start_url": "/",
+  "start_url": "/?source=pwa",
+  "scope": "/",
   "display": "standalone",
+  "display_override": ["standalone", "minimal-ui", "browser"],
+  "orientation": "portrait-primary",
   "background_color": "#000000",
   "theme_color": "#000000",
+  "categories": ["productivity", "photo", "video"],
   "icons": [
     {
       "src": "/assets/imagenes/icon-192x192.png",
       "sizes": "192x192",
-      "type": "image/png"
+      "type": "image/png",
+      "purpose": "any maskable"
     },
     {
       "src": "/assets/imagenes/icon-512x512.png",
       "sizes": "512x512",
-      "type": "image/png"
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "screenshots": [
+    {
+      "src": "/assets/imagenes/icono-9-16.jpeg",
+      "sizes": "1536x2752",
+      "type": "image/jpeg",
+      "form_factor": "narrow",
+      "label": "Portada de NAYLA"
+    },
+    {
+      "src": "/assets/imagenes/Icono-intro.jpeg",
+      "sizes": "1024x1024",
+      "type": "image/jpeg",
+      "label": "Icono de portada de NAYLA"
     }
   ],
   "share_target": {
