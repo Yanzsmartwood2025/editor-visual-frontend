@@ -7,6 +7,7 @@ import { arrayMove, SortableContext, horizontalListSortingStrategy } from '@dnd-
 import { SortableTimelineItem } from '../components/SortableTimelineItem';
 import { getVideoMetadata, getAudioDurationInSeconds } from '@remotion/media-utils';
 import { createClient } from '@supabase/supabase-js';
+import { uploadMediaFilesToBodega } from '../lib/mediaUpload';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://dummy.supabase.co';
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'dummy_key';
@@ -931,68 +932,32 @@ export default function NaylaCore() {
   const handleSubirMultimedia = async (e: React.ChangeEvent<HTMLInputElement>, tipo: 'foto' | 'video' | 'audio') => {
     if (!e.target.files || e.target.files.length === 0) return;
 
-    // Esperar sesión si no está lista
     let currentSession = session;
     if (!currentSession) {
       const { data } = await supabase.auth.getSession();
       currentSession = data.session;
     }
 
+    if (!currentSession) {
+      showAlert('Debes iniciar sesión para subir archivos a la Bóveda.');
+      e.target.value = '';
+      return;
+    }
+
     const files = Array.from(e.target.files);
     setSubiendoArchivo(true);
 
     try {
-      const nuevosItems: MediaItem[] = [];
-
-      for (let i = 0; i < files.length; i++) {
-        const file = files[i];
-        const countTipo = galeriaMultimedia.filter(item => item.tipo === tipo).length + i + 1;
-        const inicial = tipo === 'video' ? 'V' : tipo === 'foto' ? 'F' : 'A';
-        const id = (Date.now() + i).toString();
-
-        let finalUrl = URL.createObjectURL(file); // Fallback local
-
-        if (currentSession) {
-          // Subir a Supabase Storage
-          const fileExt = file.name.split('.').pop();
-          const fileName = `${currentSession.user.id}/${id}.${fileExt}`;
-
-          const { error: uploadError } = await supabase.storage
-            .from('media_bodega')
-            .upload(fileName, file);
-
-          if (!uploadError) {
-            const { data: { publicUrl } } = supabase.storage
-              .from('media_bodega')
-              .getPublicUrl(fileName);
-            finalUrl = publicUrl;
-          } else {
-            console.error('Error subiendo al storage:', uploadError);
-          }
-        }
-
-        const nuevoItem: MediaItem = {
-          id,
-          url: finalUrl,
-          tipo,
-          nombre: file.name,
-          creado_en: new Date().toLocaleTimeString(),
-          esOverlay: false,
-          etiqueta: `${inicial}${countTipo}`
-        };
-
-        nuevosItems.push(nuevoItem);
-      }
+      const nuevosItems = await uploadMediaFilesToBodega({
+        supabase,
+        session: currentSession,
+        files,
+        existingItems: galeriaMultimedia,
+        forcedTipo: tipo,
+        fuente: 'manual'
+      });
 
       setGaleriaMultimedia(prev => [...prev, ...nuevosItems]);
-
-      if (session) {
-        // Sincronizar con Supabase (fuera del state updater para evitar doble ejecución en StrictMode)
-        const { error } = await supabase.from('galeria_multimedia')
-          .insert(nuevosItems.map(item => ({ ...item, user_id: session.user.id })));
-
-        if (error) console.error('Error insertando en base de datos:', error);
-      }
 
       if (tipo === 'video' && !mediaActivaUrl) {
         setVideoFile(files[0]);
@@ -1000,10 +965,11 @@ export default function NaylaCore() {
         setClipSeleccionado(nuevosItems[0].id); // Marcar como seleccionado
         setVideoResultadoUrl(null);
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error procesando subida:', err);
-      showAlert('Hubo un error al procesar los archivos.');
+      showAlert(err?.message || 'Hubo un error al procesar los archivos.');
     } finally {
+      e.target.value = '';
       setSubiendoArchivo(false);
     }
   };
