@@ -13,6 +13,21 @@ const supabaseAdmin = supabaseUrl && supabaseServiceRoleKey
   ? createClient(supabaseUrl, supabaseServiceRoleKey)
   : null;
 
+const availableEffectsCatalog = {
+  transiciones: {
+    campo: 'transitionType',
+    valores: ['fade', 'wipe', 'slide', 'zoom']
+  },
+  filtros: {
+    campo: 'efecto',
+    valores: ['grayscale', 'sepia', 'vintage', 'blur']
+  },
+  overlays: {
+    campo: 'overlay',
+    valores: ['vignette', 'film-grain', 'light-leak']
+  }
+};
+
 export const config = {
   api: {
     bodyParser: {
@@ -66,14 +81,24 @@ Contrato único ejecutable:
 {
   "action": "BUILD_TIMELINE",
   "assets": [
-    { "type": "foto", "source": "url", "url": "https://..." },
-    { "type": "video", "source": "url", "url": "https://..." },
-    { "type": "audio", "source": "url", "url": "https://..." }
+    { "type": "foto", "source": "url", "url": "https://...", "efecto": "vintage", "transitionType": "fade", "transitionDuration": 0.5, "fadeIn": 0.5, "fadeOut": 0.5 },
+    { "type": "video", "source": "url", "url": "https://...", "efecto": "grayscale", "transitionType": "slide", "transitionDuration": 0.5, "fadeIn": 0.5, "fadeOut": 0.5 },
+    { "type": "audio", "source": "url", "url": "https://...", "fadeIn": 1, "fadeOut": 1 }
   ],
   "render": true
 }
 
 Usa type únicamente como "foto", "video" o "audio". Usa source únicamente como "url".
+Campos opcionales por asset si el usuario pide efectos: "efecto", "transitionType", "transitionDuration", "fadeIn", "fadeOut", "overlay", "overlayIntensity". Usa "efecto" exactamente en español.
+
+Catálogo real disponible hoy (usa solo estos nombres; no inventes Ken Burns, pan, rotate ni otros no implementados):
+${JSON.stringify(availableEffectsCatalog, null, 2)}
+
+Reglas para usar el catálogo:
+- Para filtros visuales por foto/video, escribe el valor directamente en el campo "efecto".
+- Para transiciones entre clips, escribe el valor en "transitionType" y acompáñalo con "transitionDuration" en segundos.
+- Para overlays visuales, escribe el valor en el campo "overlay".
+- Si el usuario pide efectos pero no especifica cuál, elige únicamente de este catálogo real.
 Si no hay medios suficientes para armar el timeline, responde texto normal explicando qué falta.
 Para todo lo que no sea construir el timeline con medios existentes, responde normalmente en texto.
 `;
