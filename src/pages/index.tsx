@@ -583,6 +583,30 @@ export default function NaylaCore() {
     }
   }, [renderLogs]);
 
+
+
+
+  useEffect(() => {
+    const handleResize = () => {
+      // In mobile/tablet landscape (width > height and width < 1024), we expand the aspect ratio
+      if (window.innerWidth <= 1024 && window.innerWidth > window.innerHeight) {
+        setCanvasRatio('16/9');
+      } else {
+        setCanvasRatio('9/16');
+      }
+    };
+
+    window.addEventListener('resize', handleResize);
+    window.addEventListener('orientationchange', handleResize);
+    handleResize(); // Initial check
+
+    return () => {
+      window.removeEventListener('resize', handleResize);
+      window.removeEventListener('orientationchange', handleResize);
+    };
+  }, []);
+
+
   const fetchStorageFiles = async () => {
     setIsLoadingStorage(true);
     try {
@@ -2086,7 +2110,7 @@ export default function NaylaCore() {
 
         <section className="editor-preview-panel" onClick={(e) => { e.stopPropagation(); setIsVideoExpanded(prev => !prev); }} style={{ width: '100%', padding: '0', backgroundColor: '#050505' }}>
           <div ref={containerRef} onPointerDown={handlePointerDown} onPointerMove={handlePointerMove} onPointerUp={handlePointerUp} onPointerLeave={handlePointerUp}
-            className="editor-preview-canvas w-full max-w-[430px] mx-auto aspect-[9/16] relative flex items-center justify-center overflow-hidden touch-none" style={{ aspectRatio: canvasRatio, backgroundColor: darkMode ? '#0a0a0a' : '#f0f0f0', border: darkMode ? '1px solid #1a1a1a' : '1px solid #ddd' }}>
+            className="editor-preview-canvas w-full mx-auto relative flex items-center justify-center overflow-hidden touch-none" style={{ aspectRatio: canvasRatio, maxWidth: canvasRatio === '16/9' ? '100%' : (isVideoExpanded ? 'none' : '430px'), backgroundColor: darkMode ? '#0a0a0a' : '#f0f0f0', border: darkMode ? '1px solid #1a1a1a' : '1px solid #ddd' }}>
             {(lineaDeTiempo.filter(t => t.tipo === 'video' || t.tipo === 'foto').length > 0 || videoResultadoUrl || mediaActivaUrl) ? (
               <>
 
@@ -2188,7 +2212,7 @@ export default function NaylaCore() {
         </div>
 
         {/* COLUMNA DERECHA: Herramientas, Galería y Controles */}
-        <div className="editor-tools-panel flex flex-col w-full md:w-1/2 flex-1 overflow-hidden" onClick={() => { if (!isVideoExpanded) setExpandedPanel('right'); }} style={{ flexGrow: expandedPanel === 'right' ? 1.45 : expandedPanel === 'left' ? 0.75 : 1, transition: 'flex-grow 320ms ease, width 320ms ease' }}>
+        {!isVideoExpanded && (<div className="editor-tools-panel flex flex-col w-full md:w-1/2 flex-1 overflow-hidden" onClick={() => { if (!isVideoExpanded) setExpandedPanel('right'); }} style={{ flexGrow: expandedPanel === 'right' ? 1.45 : expandedPanel === 'left' ? 0.75 : 1, transition: 'flex-grow 320ms ease, width 320ms ease' }}>
 
 
         {/* NUEVA ESTRUCTURA DE HERRAMIENTAS */}
@@ -2932,7 +2956,7 @@ export default function NaylaCore() {
         )}
 
         {/* FILA DE SUB-HERRAMIENTAS */}
-        <div className={`editor-subtools-bar flex gap-2 w-full p-3 border-t ${darkMode ? 'bg-neutral-950 border-neutral-900' : 'bg-gray-50 border-gray-200'}`} onClick={(e) => e.stopPropagation()} style={{ overflowX: 'auto', flexWrap: 'nowrap' }}>
+        <div className={`editor-subtools-bar flex gap-2 w-full p-3 border-t ${darkMode ? 'bg-neutral-950 border-neutral-900' : 'bg-gray-50 border-gray-200'}`} onClick={(e) => e.stopPropagation()} style={{ overflowX: 'auto', flexWrap: 'nowrap', backgroundColor: canvasRatio === '16/9' ? 'rgba(0, 0, 0, 0.8)' : undefined, position: canvasRatio === '16/9' ? 'fixed' : undefined, bottom: canvasRatio === '16/9' ? '80px' : undefined, zIndex: canvasRatio === '16/9' ? 9999 : undefined, left: canvasRatio === '16/9' ? '0' : undefined, right: canvasRatio === '16/9' ? '0' : undefined }}>
           {SUB_TOOLS[mainNav]?.map((tool) => {
             if (tool.id === 'subir-vf') {
               return (
@@ -2988,7 +3012,7 @@ export default function NaylaCore() {
         </div>
 
         {/* FILA DE BOTONES PRINCIPALES */}
-        <div className={`editor-maintools-bar flex gap-2 w-full p-3 ${darkMode ? 'bg-black' : 'bg-white'}`} onClick={(e) => e.stopPropagation()} style={{ overflowX: 'auto', flexWrap: 'nowrap' }}>
+        <div className={`editor-maintools-bar flex gap-2 w-full p-3 ${darkMode ? 'bg-black' : 'bg-white'}`} onClick={(e) => e.stopPropagation()} style={{ overflowX: 'auto', flexWrap: 'nowrap', backgroundColor: canvasRatio === '16/9' ? 'rgba(0, 0, 0, 0.8)' : undefined, position: canvasRatio === '16/9' ? 'fixed' : undefined, bottom: canvasRatio === '16/9' ? '0' : undefined, left: canvasRatio === '16/9' ? '0' : undefined, right: canvasRatio === '16/9' ? '0' : undefined, zIndex: canvasRatio === '16/9' ? 9999 : undefined }}>
           {MAIN_TOOLS.map((tool) => (
             <button key={tool.id} className={`main-btn w-full ${mainNav === tool.id ? 'active' : ''} ${!darkMode ? 'bg-gray-100 border-gray-300 text-black' : ''}`} style={{ backgroundColor: !darkMode ? (mainNav === tool.id ? '#000' : '#f3f4f6') : undefined, color: !darkMode ? (mainNav === tool.id ? '#fff' : '#000') : undefined }} onClick={() => {
               setMainNav(tool.id);
@@ -3007,7 +3031,7 @@ export default function NaylaCore() {
         </div>
 
         {/* NAYLA CHAT SIDEBAR */}
-        {isChatOpen && (
+        {!isVideoExpanded && isChatOpen && (
           <div className="nayla-chat-panel" onClick={(e) => { e.stopPropagation(); if (!isVideoExpanded) setExpandedPanel('right'); }} style={{
             position: 'absolute',
             top: 0,
@@ -3161,6 +3185,7 @@ export default function NaylaCore() {
         )}
 
         </div>
+        )}
       </div>
 
       {customAlertMsg && (
