@@ -1,5 +1,6 @@
 import { NextApiRequest, NextApiResponse } from 'next';
 import { createClient } from '@supabase/supabase-js';
+import { requireFirebaseUser } from '../../lib/firebaseAdmin';
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== 'POST') {
@@ -7,15 +8,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
 
   // La UI pasa fotoBaseUrl, prompt, email
-  const { prompt, email } = req.body;
+  const { prompt } = req.body;
 
-  if (!prompt || !email) {
-    return res.status(400).json({ error: 'El prompt y el email son requeridos.' });
+  if (!prompt) {
+    return res.status(400).json({ error: 'El prompt es requerido.' });
   }
 
-  if (email !== 'ajn.liq.128@proton.me') {
-    return res.status(403).json({ error: 'Acceso denegado. Se requiere cuenta de administrador.' });
-  }
+  try { await requireFirebaseUser(req); } catch { return res.status(401).json({ error: 'Token Firebase inválido.' }); }
 
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://dummy.supabase.co';
   const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'dummy_key';

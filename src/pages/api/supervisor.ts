@@ -1,5 +1,6 @@
 import { NextApiRequest, NextApiResponse } from 'next';
 import { createClient } from '@supabase/supabase-js';
+import { isFirebaseAdmin, requireFirebaseUser } from '../../lib/firebaseAdmin';
 import { executeWithApiKey } from '../../utils/apiKeyManager';
 import { GroqProvider, MistralProvider } from '../../utils/llmProvider';
 import { z } from 'zod';
@@ -36,9 +37,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         let isAuthorized = false;
 
         if (authHeader && supabase) {
-            const token = authHeader.split(' ')[1] || '';
-            const { data: { user } } = await supabase.auth.getUser(token);
-            if (user?.email === 'ajn.liq.128@proton.me') {
+            const user = await requireFirebaseUser(req);
+            if (isFirebaseAdmin(user)) {
                  isAuthorized = true;
             }
         }

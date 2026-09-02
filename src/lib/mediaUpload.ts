@@ -1,4 +1,5 @@
-import type { SupabaseClient, Session } from '@supabase/supabase-js';
+import type { SupabaseClient } from '@supabase/supabase-js';
+import type { FirebaseSession } from './firebaseClient';
 
 export type MediaKind = 'foto' | 'video' | 'audio';
 
@@ -17,7 +18,7 @@ export type UploadableMediaFile = Pick<File, 'name' | 'type'> & Blob;
 
 type UploadMediaToBodegaParams = {
   supabase: SupabaseClient;
-  session: Session;
+  session: FirebaseSession;
   files: UploadableMediaFile[];
   existingItems?: MediaItem[];
   forcedTipo?: MediaKind;
