@@ -1,19 +1,18 @@
 import { NextApiRequest, NextApiResponse } from 'next';
+import { requireFirebaseUser } from '../../lib/firebaseAdmin';
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  const { texto, email } = req.body;
+  const { texto } = req.body;
 
-  if (!texto || !email) {
-    return res.status(400).json({ error: 'Texto y email son requeridos.' });
+  if (!texto) {
+    return res.status(400).json({ error: 'Texto requerido.' });
   }
 
-  if (email !== 'ajn.liq.128@proton.me') {
-    return res.status(403).json({ error: 'Acceso denegado. Se requiere cuenta de administrador.' });
-  }
+  try { await requireFirebaseUser(req); } catch { return res.status(401).json({ error: 'Token Firebase inválido.' }); }
 
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://dummy.supabase.co';
   const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'dummy_key';
