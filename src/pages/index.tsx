@@ -8,7 +8,7 @@ import { SortableTimelineItem } from '../components/SortableTimelineItem';
 import { getVideoMetadata, getAudioDurationInSeconds } from '@remotion/media-utils';
 import { createClient } from '@supabase/supabase-js';
 import { uploadMediaFilesToBodega } from '../lib/mediaUpload';
-import { completeFirebaseEmailLink, getFirebaseSession, observeFirebaseSession, sendFirebaseEmailLink, signOutFirebase, type FirebaseSession } from '../lib/firebaseClient';
+import { completeFirebaseEmailLink, getFirebaseSession, observeFirebaseSession, sendFirebaseEmailLink, signOutFirebase, signInWithGoogle, checkGoogleRedirectResult, type FirebaseSession } from '../lib/firebaseClient';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://dummy.supabase.co';
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'dummy_key';
@@ -95,8 +95,9 @@ export default function NaylaCore() {
   const [darkMode, setDarkMode] = useState(true);
   const [session, setSession] = useState<FirebaseSession | null>(null);
   const [emailInput, setEmailInput] = useState('');
-  const [otpInput, setOtpInput] = useState('');
+  const [promptForEmailOnLink, setPromptForEmailOnLink] = useState(false);
   const [otpEnviado, setOtpEnviado] = useState(false);
+  const [resendCooldown, setResendCooldown] = useState(0);
   const [authLoading, setAuthLoading] = useState(false);
   const [iaApiKey, setIaApiKey] = useState('');
   const [iaPrompt, setIaPrompt] = useState('Haz un video con 3 clips y ponles subtítulos');
@@ -690,7 +691,25 @@ export default function NaylaCore() {
 
   useEffect(() => {
     let unsubscribe: (() => void) | undefined;
-    completeFirebaseEmailLink().catch((error) => console.error('Error verificando enlace Firebase:', error));
+
+    // Validar el redirect de Google
+    checkGoogleRedirectResult().then((result) => {
+      if (result) {
+        setSession(result);
+        cargarDatosUsuario(result.user.id);
+      }
+    }).catch((error) => console.error('Error verificando Google Redirect:', error));
+
+    completeFirebaseEmailLink().catch((error) => {
+      console.error('Error verificando enlace Firebase:', error);
+      if (error.name === 'MissingEmailError' || error.message.includes('MISSING_EMAIL_FOR_SIGN_IN')) {
+        setPromptForEmailOnLink(true);
+        setMessage('Abriste el enlace en otro navegador. Por favor ingresa tu correo para confirmar.');
+      } else {
+        setMessage('El enlace ha expirado o no es válido. Solicita uno nuevo.');
+      }
+    });
+
     getFirebaseSession().then((current) => {
       setSession(current);
       if (current) cargarDatosUsuario(current.user.id);
@@ -904,19 +923,44 @@ export default function NaylaCore() {
     if (!emailInput) return;
     setAuthLoading(true); setMessage('');
     try {
-      await sendFirebaseEmailLink(emailInput);
-      setOtpEnviado(true);
-    } catch (err) { setMessage('Error crítico de transmisión.'); }
+      if (promptForEmailOnLink) {
+        await completeFirebaseEmailLink(emailInput);
+        setPromptForEmailOnLink(false);
+      } else {
+        await sendFirebaseEmailLink(emailInput);
+        setOtpEnviado(true);
+        setResendCooldown(60);
+      }
+    } catch (err: any) {
+      if (promptForEmailOnLink) {
+        setMessage('Error validando enlace con este correo.');
+      } else {
+        setMessage('Error crítico de transmisión.');
+      }
+    }
     finally { setAuthLoading(false); }
   };
 
-  const handleOtpVerify = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setMessage('Firebase verifica el acceso mediante el enlace enviado al correo. Ábrelo para continuar.');
-  };
+  useEffect(() => {
+    let interval: NodeJS.Timeout;
+    if (resendCooldown > 0) {
+      interval = setInterval(() => setResendCooldown((prev) => prev - 1), 1000);
+    }
+    return () => clearInterval(interval);
+  }, [resendCooldown]);
 
-  const handlePasteCode = async () => {
-    try { const text = await navigator.clipboard.readText(); if (text) setOtpInput(text.trim()); } catch (err) {}
+  const handleResendLink = async () => {
+    if (resendCooldown > 0 || !emailInput) return;
+    setAuthLoading(true); setMessage('');
+    try {
+      await sendFirebaseEmailLink(emailInput);
+      setResendCooldown(60);
+      setMessage('Enlace reenviado.');
+    } catch (err) {
+      setMessage('Error reenviando el enlace.');
+    } finally {
+      setAuthLoading(false);
+    }
   };
 
   const [subiendoArchivo, setSubiendoArchivo] = useState(false);
@@ -2010,22 +2054,53 @@ export default function NaylaCore() {
           )}
           <form onSubmit={handleEmailAuth}>
             <input type="email" placeholder="CORREO MAESTRO" value={emailInput} onChange={(e) => setEmailInput(e.target.value)} disabled={otpEnviado} style={{ width: '100%', padding: '1rem', backgroundColor: '#0a0a0a', border: '1px solid #404040', borderRadius: '16px', color: darkMode ? '#fff' : '#000', fontSize: '0.8rem', marginBottom: '1rem', textAlign: 'center', outline: 'none' }} />
-            <button type="submit" disabled={authLoading || otpEnviado} className="neon-btn nav-btn" style={{ width: '100%', marginBottom: '1rem' }}>{authLoading && !otpEnviado ? 'PROCESANDO...' : 'SOLICITAR ACCESO'}</button>
+            <button type="submit" disabled={authLoading || otpEnviado} className="neon-btn nav-btn" style={{ width: '100%', marginBottom: '1rem' }}>{authLoading && !otpEnviado ? 'PROCESANDO...' : (promptForEmailOnLink ? 'CONFIRMAR CORREO' : 'SOLICITAR ACCESO')}</button>
             {message && !otpEnviado && <p style={{ color: '#ff4444', fontSize: '0.8rem', margin: 0 }}>{message}</p>}
           </form>
+          {!promptForEmailOnLink && (
+            <div style={{ marginTop: '1rem' }}>
+              <button
+                type="button"
+                disabled={authLoading || otpEnviado}
+                onClick={async () => {
+                  try {
+                    setAuthLoading(true);
+                    const result = await signInWithGoogle();
+                    // if result is null, it means a redirect was triggered, no need to do anything else.
+                    if (result) {
+                      setSession(result);
+                      cargarDatosUsuario(result.user.id);
+                    }
+                  } catch (err: any) {
+                    setMessage('Error con Google Auth: ' + err.message);
+                  } finally {
+                    setAuthLoading(false);
+                  }
+                }}
+                className="neon-btn nav-btn"
+                style={{ width: '100%', backgroundColor: '#fff', color: '#000', fontWeight: 'bold' }}
+              >
+                CONTINUAR CON GOOGLE
+              </button>
+            </div>
+          )}
         </div>
         <div style={{ position: 'fixed', bottom: otpEnviado ? 0 : '-100%', left: 0, right: 0, backgroundColor: '#000', borderTop: '1px solid #fff', borderLeft: '1px solid #fff', borderRight: '1px solid #fff', borderTopLeftRadius: '24px', borderTopRightRadius: '24px', padding: '2.5rem', transition: 'bottom 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275)', display: 'flex', flexDirection: 'column', alignItems: 'center', zIndex: 100 }}>
           <div style={{ width: '40px', height: '4px', backgroundColor: '#fff', borderRadius: '2px', marginBottom: '2rem', opacity: 0.5 }} />
-          {otpEnviado && <p style={{ color: '#00ffcc', fontSize: '0.8rem', marginBottom: '1rem', letterSpacing: '1px', fontWeight: 'bold' }}>CÓDIGO ENVIADO — REVISA TU CORREO</p>}
-          <h2 style={{ fontSize: '0.9rem', letterSpacing: '2px', margin: '0 0 1.5rem 0', textTransform: 'uppercase' }}>CÓDIGO DE ACCESO</h2>
-          <form onSubmit={handleOtpVerify} style={{ width: '100%', maxWidth: '350px' }}>
-            <input type="text" inputMode="numeric" placeholder="CÓDIGO 000000" value={otpInput} onChange={(e) => setOtpInput(e.target.value)} style={{ width: '100%', padding: '1rem', backgroundColor: '#0a0a0a', border: '1px solid #fff', borderRadius: '16px', color: darkMode ? '#fff' : '#000', fontSize: '1rem', marginBottom: '1rem', textAlign: 'center', outline: 'none', letterSpacing: '4px' }} />
-            <div style={{ display: 'flex', gap: '10px', marginBottom: '1rem' }}>
-              <button type="button" onClick={handlePasteCode} className="neon-btn nav-btn" style={{ flex: 1, padding: '0.8rem' }}>PEGAR CÓDIGO</button>
-              <button type="submit" disabled={authLoading} className="neon-btn nav-btn" style={{ flex: 1, backgroundColor: '#fff', color: '#000', fontWeight: 'bold', padding: '0.8rem' }}>{authLoading ? 'VERIFICANDO...' : 'INGRESAR'}</button>
-            </div>
+          {otpEnviado && <p style={{ color: '#00ffcc', fontSize: '0.8rem', marginBottom: '1rem', letterSpacing: '1px', fontWeight: 'bold' }}>ENLACE ENVIADO — REVISA TU CORREO</p>}
+          <h2 style={{ fontSize: '0.9rem', letterSpacing: '2px', margin: '0 0 1.5rem 0', textTransform: 'uppercase', textAlign: 'center' }}>HAZ CLICK EN EL ENLACE PARA INGRESAR</h2>
+          <div style={{ width: '100%', maxWidth: '350px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+            <button
+              type="button"
+              onClick={handleResendLink}
+              disabled={resendCooldown > 0 || authLoading}
+              className="neon-btn nav-btn"
+              style={{ width: '100%', padding: '0.8rem' }}
+            >
+              {resendCooldown > 0 ? `REENVIAR EN ${resendCooldown}s` : 'REENVIAR ENLACE'}
+            </button>
             {message && otpEnviado && <p style={{ color: '#ff4444', fontSize: '0.8rem', margin: 0, textAlign: 'center' }}>{message}</p>}
-          </form>
+          </div>
         </div>
       </div>
     );

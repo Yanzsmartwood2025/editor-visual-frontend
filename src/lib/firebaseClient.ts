@@ -46,15 +46,49 @@ export const sendFirebaseEmailLink = async (email: string) => {
   window.localStorage.setItem('nayla.firebase.emailForSignIn', email);
 };
 
-export const completeFirebaseEmailLink = async (): Promise<FirebaseSession | null> => {
+export const completeFirebaseEmailLink = async (emailOverride?: string): Promise<FirebaseSession | null> => {
   const { auth, sdk } = await firebase();
   if (!sdk.isSignInWithEmailLink(auth, window.location.href)) return null;
-  const email = window.localStorage.getItem('nayla.firebase.emailForSignIn');
-  if (!email) throw new Error('Abre el enlace de verificación en el mismo dispositivo donde solicitaste el acceso.');
+  const email = emailOverride || window.localStorage.getItem('nayla.firebase.emailForSignIn');
+  if (!email) {
+    const error = new Error('MISSING_EMAIL_FOR_SIGN_IN');
+    error.name = 'MissingEmailError';
+    throw error;
+  }
   const credential = await sdk.signInWithEmailLink(auth, email, window.location.href);
   window.localStorage.removeItem('nayla.firebase.emailForSignIn');
   window.history.replaceState({}, document.title, '/');
   return { user: { id: credential.user.uid, email: credential.user.email }, accessToken: await credential.user.getIdToken() };
+};
+
+export const signInWithGoogle = async (): Promise<FirebaseSession | null> => {
+  const { auth, sdk } = await firebase();
+  const provider = new sdk.GoogleAuthProvider();
+  try {
+    const credential = await sdk.signInWithPopup(auth, provider);
+    return { user: { id: credential.user.uid, email: credential.user.email }, accessToken: await credential.user.getIdToken() };
+  } catch (error: any) {
+    if (error.code === 'auth/popup-blocked' || error.code === 'auth/popup-closed-by-user' || error.code === 'auth/cancelled-popup-request') {
+      console.warn('Popup bloqueado o falló, intentando con redirect...');
+      await sdk.signInWithRedirect(auth, provider);
+      return null; // The redirect will reload the page
+    }
+    throw error;
+  }
+};
+
+export const checkGoogleRedirectResult = async (): Promise<FirebaseSession | null> => {
+  const { auth, sdk } = await firebase();
+  try {
+    const credential = await sdk.getRedirectResult(auth);
+    if (credential && credential.user) {
+      return { user: { id: credential.user.uid, email: credential.user.email }, accessToken: await credential.user.getIdToken() };
+    }
+    return null;
+  } catch (error) {
+    console.error('Error procesando redirect de Google:', error);
+    throw error;
+  }
 };
 
 export const signOutFirebase = async () => {
