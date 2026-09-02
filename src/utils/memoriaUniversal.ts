@@ -8,6 +8,7 @@ export interface RegistrarMemoriaParams {
     personaje_id?: string;
     contexto_programa?: string;
     estado?: string;
+    user_id?: string;
 }
 
 export function detectarPlataforma(url: string): string {
@@ -36,12 +37,13 @@ export async function registrarMemoriaUniversal(
         personaje_id = 'Nayla',
         contexto_programa = 'General',
         estado = 'completado'
+        , user_id
     } = params;
 
     const originalUrlForPlatform = metadata?.originalUrl || url;
     const plataforma = detectarPlataforma(originalUrlForPlatform);
 
-    // 1. Ingest into memoria_nayla (for the gallery)
+    // Keep the audit memory and the user-visible gallery in the same transaction-like flow.
     const { data: memoriaData, error: memoriaError } = await supabase
         .from('memoria_nayla')
         .insert({
@@ -50,6 +52,7 @@ export async function registrarMemoriaUniversal(
             nombre: nombre,
             estado: estado,
             metadata: metadata
+            , user_id
         })
         .select('id')
         .single();
@@ -58,6 +61,21 @@ export async function registrarMemoriaUniversal(
         console.error('[MemoriaUniversal] Error inserting into memoria_nayla:', memoriaError);
         throw memoriaError;
     }
+
+    const galleryError = user_id ? (await supabase
+        .from('galeria_multimedia')
+        .upsert({
+            id: memoriaData.id,
+            user_id,
+            url,
+            tipo: tipo === 'video_clip' ? 'video' : tipo,
+            nombre,
+            creado_en: new Date().toISOString(),
+            esOverlay: false,
+            etiqueta: 'BODEGA',
+            memoria_id: memoriaData.id,
+        }, { onConflict: 'memoria_id' })).error : null;
+    if (galleryError) throw galleryError;
 
     // 2. Manage identidades_sociales_universales
     // Since we don't have a specific user ID to match on initially if it's just a URL,

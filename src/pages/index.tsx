@@ -8,6 +8,7 @@ import { SortableTimelineItem } from '../components/SortableTimelineItem';
 import { getVideoMetadata, getAudioDurationInSeconds } from '@remotion/media-utils';
 import { createClient } from '@supabase/supabase-js';
 import { uploadMediaFilesToBodega } from '../lib/mediaUpload';
+import { completeFirebaseEmailLink, getFirebaseSession, observeFirebaseSession, sendFirebaseEmailLink, signOutFirebase, type FirebaseSession } from '../lib/firebaseClient';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://dummy.supabase.co';
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'dummy_key';
@@ -92,7 +93,7 @@ const SUB_TOOLS: Record<string, any[]> = {
 
 export default function NaylaCore() {
   const [darkMode, setDarkMode] = useState(true);
-  const [session, setSession] = useState(null);
+  const [session, setSession] = useState<FirebaseSession | null>(null);
   const [emailInput, setEmailInput] = useState('');
   const [otpInput, setOtpInput] = useState('');
   const [otpEnviado, setOtpEnviado] = useState(false);
@@ -688,20 +689,21 @@ export default function NaylaCore() {
   }, [isPlaying, isUserScrolling]);
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      if (session) cargarDatosUsuario(session.user.id);
-    });
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setSession(session);
-      if (session) cargarDatosUsuario(session.user.id);
-    });
+    let unsubscribe: (() => void) | undefined;
+    completeFirebaseEmailLink().catch((error) => console.error('Error verificando enlace Firebase:', error));
+    getFirebaseSession().then((current) => {
+      setSession(current);
+      if (current) cargarDatosUsuario(current.user.id);
+    }).catch((error) => console.warn('Firebase no configurado:', error));
+    observeFirebaseSession((current) => {
+      setSession(current);
+      if (current) cargarDatosUsuario(current.user.id);
+    }).then((listener) => { unsubscribe = listener; }).catch(() => undefined);
 
     const timer = setTimeout(() => setShowIntro(false), 3000);
     return () => {
       clearTimeout(timer);
-      subscription.unsubscribe();
+      unsubscribe?.();
     };
   }, []);
 
@@ -902,8 +904,7 @@ export default function NaylaCore() {
     if (!emailInput) return;
     setAuthLoading(true); setMessage('');
     try {
-      const { error } = await supabase.auth.signInWithOtp({ email: emailInput, options: { shouldCreateUser: true } });
-      if (error) throw error;
+      await sendFirebaseEmailLink(emailInput);
       setOtpEnviado(true);
     } catch (err) { setMessage('Error crítico de transmisión.'); }
     finally { setAuthLoading(false); }
@@ -911,16 +912,7 @@ export default function NaylaCore() {
 
   const handleOtpVerify = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!otpInput || !emailInput) return;
-    setAuthLoading(true); setMessage('');
-    try {
-      const { data, error } = await supabase.auth.verifyOtp({ email: emailInput, token: otpInput, type: 'email' });
-      if (error) throw error;
-      if (data?.session) setSession(data.session);
-      setShowIntro(true);
-      setTimeout(() => setShowIntro(false), 3000);
-    } catch (err) { setMessage('Código incorrecto.'); }
-    finally { setAuthLoading(false); }
+    setMessage('Firebase verifica el acceso mediante el enlace enviado al correo. Ábrelo para continuar.');
   };
 
   const handlePasteCode = async () => {
@@ -932,11 +924,7 @@ export default function NaylaCore() {
   const handleSubirMultimedia = async (e: React.ChangeEvent<HTMLInputElement>, tipo: 'foto' | 'video' | 'audio') => {
     if (!e.target.files || e.target.files.length === 0) return;
 
-    let currentSession = session;
-    if (!currentSession) {
-      const { data } = await supabase.auth.getSession();
-      currentSession = data.session;
-    }
+    const currentSession = session || await getFirebaseSession();
 
     if (!currentSession) {
       showAlert('Debes iniciar sesión para subir archivos a la Bóveda.');
@@ -2304,7 +2292,7 @@ export default function NaylaCore() {
           )}
           {session && (
             <button
-              onClick={() => supabase.auth.signOut().then(() => setSession(null))}
+              onClick={() => signOutFirebase().then(() => setSession(null))}
               className="neon-btn nav-btn"
               style={{ padding: '4px 10px', fontSize: '0.6rem', color: '#ff4444' }}
             >

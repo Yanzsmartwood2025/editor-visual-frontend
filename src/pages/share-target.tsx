@@ -5,6 +5,7 @@ import { useRouter } from 'next/router';
 import { createClient } from '@supabase/supabase-js';
 import { cleanupExpiredPendingShares, deletePendingShare, getPendingShare, isPendingShareExpired, PendingShare } from '../lib/shareTargetQueue';
 import { uploadMediaFilesToBodega } from '../lib/mediaUpload';
+import { getFirebaseSession, sendFirebaseEmailLink } from '../lib/firebaseClient';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://dummy.supabase.co';
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'dummy_key';
@@ -34,7 +35,7 @@ export default function ShareTargetPage() {
       return;
     }
 
-    const { data: { session } } = await supabase.auth.getSession();
+    const session = await getFirebaseSession();
     if (!session) {
       setStatus('needs-auth');
       setMessage('Recibimos tu archivo. Inicia sesión para guardarlo automáticamente en tu Bóveda.');
@@ -96,8 +97,7 @@ export default function ShareTargetPage() {
     setMessage('Enviando código de acceso...');
 
     try {
-      const { error } = await supabase.auth.signInWithOtp({ email: emailInput, options: { shouldCreateUser: true } });
-      if (error) throw error;
+      await sendFirebaseEmailLink(emailInput);
       setOtpSent(true);
       setMessage('Código enviado. Revisa tu email e ingrésalo para continuar.');
     } catch (error: any) {
@@ -110,20 +110,7 @@ export default function ShareTargetPage() {
 
   const handleOtpVerify = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (!otpInput || !emailInput || !pendingShare) return;
-    setAuthLoading(true);
-    setMessage('Verificando sesión...');
-
-    try {
-      const { error } = await supabase.auth.verifyOtp({ email: emailInput, token: otpInput, type: 'email' });
-      if (error) throw error;
-      await processPendingShare(pendingShare);
-    } catch (error: any) {
-      setStatus('needs-auth');
-      setMessage(error?.message || 'Código incorrecto. Intenta nuevamente.');
-    } finally {
-      setAuthLoading(false);
-    }
+    setMessage('Abre el enlace de Firebase enviado al correo para verificar tu acceso.');
   };
 
   const discardPendingShare = async () => {

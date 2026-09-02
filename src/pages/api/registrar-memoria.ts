@@ -1,6 +1,7 @@
 import { NextApiRequest, NextApiResponse } from 'next';
 import { createClient } from '@supabase/supabase-js';
 import { registrarMemoriaUniversal, RegistrarMemoriaParams } from '../../utils/memoriaUniversal';
+import { requireFirebaseUser } from '../../lib/firebaseAdmin';
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
     if (req.method !== 'POST') {
@@ -12,17 +13,16 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const ORACLE_SECRET = process.env.ORACLE_SECRET;
     const isOracleCall = authHeader === `Bearer ${ORACLE_SECRET}`;
 
-    // Si no es el oráculo, verificamos si mandaron el email de admin
-    const { email } = req.body;
-
-    if (!isOracleCall && email !== 'ajn.liq.128@proton.me') {
-        return res.status(403).json({ error: 'Acceso denegado.' });
+    let userId = req.body.user_id as string | undefined;
+    if (!isOracleCall) {
+        try { userId = (await requireFirebaseUser(req)).uid; }
+        catch (error: unknown) { return res.status(401).json({ error: error instanceof Error ? error.message : 'No autorizado.' }); }
     }
 
     const { url, tipo, nombre, metadata, personaje_id, contexto_programa, estado } = req.body as RegistrarMemoriaParams;
 
-    if (!url || !tipo || !nombre) {
-        return res.status(400).json({ error: 'Faltan parámetros requeridos (url, tipo, nombre).' });
+    if (!url || !tipo || !nombre || !userId) {
+        return res.status(400).json({ error: 'Faltan url, tipo, nombre o user_id (UID de Firebase).' });
     }
 
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://dummy.supabase.co';
@@ -38,6 +38,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
             personaje_id,
             contexto_programa,
             estado
+            , user_id: userId
         });
 
         res.status(200).json({ success: true, data: result });
