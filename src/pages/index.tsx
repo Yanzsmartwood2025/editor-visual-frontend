@@ -14,7 +14,7 @@ const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://dummy.supab
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'dummy_key';
 
 if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
-  console.warn('Supabase no está configurado. Auth/storage siguen en compatibilidad temporal; la IA usa llaves de Vercel/Coolify y el render va por Oracle Cloud PC.');
+  console.warn('Supabase no está configurado. La autenticación usa Firebase; Supabase se reserva para datos y almacenamiento del editor.');
 }
 const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
@@ -692,32 +692,41 @@ export default function NaylaCore() {
   useEffect(() => {
     let unsubscribe: (() => void) | undefined;
 
-    // Validar el redirect de Google
-    checkGoogleRedirectResult().then((result) => {
-      if (result) {
-        setSession(result);
-        cargarDatosUsuario(result.user.id);
-      }
-    }).catch((error) => console.error('Error verificando Google Redirect:', error));
+    const firebaseConfigured = Boolean(
+      process.env.NEXT_PUBLIC_FIREBASE_API_KEY &&
+      process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN &&
+      process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID &&
+      process.env.NEXT_PUBLIC_FIREBASE_APP_ID
+    );
 
-    completeFirebaseEmailLink().catch((error) => {
-      console.error('Error verificando enlace Firebase:', error);
-      if (error.name === 'MissingEmailError' || error.message.includes('MISSING_EMAIL_FOR_SIGN_IN')) {
-        setPromptForEmailOnLink(true);
-        setMessage('Abriste el enlace en otro navegador. Por favor ingresa tu correo para confirmar.');
-      } else {
-        setMessage('El enlace ha expirado o no es válido. Solicita uno nuevo.');
-      }
-    });
+    if (firebaseConfigured) {
+      // Validar el redirect de Google y el enlace de correo únicamente cuando Firebase está configurado.
+      checkGoogleRedirectResult().then((result) => {
+        if (result) {
+          setSession(result);
+          cargarDatosUsuario(result.user.id);
+        }
+      }).catch((error) => console.error('Error verificando Google Redirect:', error));
 
-    getFirebaseSession().then((current) => {
-      setSession(current);
-      if (current) cargarDatosUsuario(current.user.id);
-    }).catch((error) => console.warn('Firebase no configurado:', error));
-    observeFirebaseSession((current) => {
-      setSession(current);
-      if (current) cargarDatosUsuario(current.user.id);
-    }).then((listener) => { unsubscribe = listener; }).catch(() => undefined);
+      completeFirebaseEmailLink().catch((error) => {
+        console.error('Error verificando enlace Firebase:', error);
+        if (error.name === 'MissingEmailError' || error.message.includes('MISSING_EMAIL_FOR_SIGN_IN')) {
+          setPromptForEmailOnLink(true);
+          setMessage('Abriste el enlace en otro navegador. Por favor ingresa tu correo para confirmar.');
+        } else {
+          setMessage('El enlace ha expirado o no es válido. Solicita uno nuevo.');
+        }
+      });
+
+      getFirebaseSession().then((current) => {
+        setSession(current);
+        if (current) cargarDatosUsuario(current.user.id);
+      }).catch((error) => console.warn('Firebase no configurado:', error));
+      observeFirebaseSession((current) => {
+        setSession(current);
+        if (current) cargarDatosUsuario(current.user.id);
+      }).then((listener) => { unsubscribe = listener; }).catch(() => undefined);
+    }
 
     const timer = setTimeout(() => setShowIntro(false), 3000);
     return () => {
@@ -2033,10 +2042,10 @@ export default function NaylaCore() {
       );
     }
     return (
-      <div style={{ minHeight: '100vh', backgroundColor: '#000', color: darkMode ? '#fff' : '#000', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', fontFamily: 'system-ui, sans-serif', overflow: 'hidden' }}>
+      <div style={{ minHeight: '100vh', background: 'radial-gradient(circle at 50% 0%, #18233a 0%, #080b12 42%, #020304 100%)', color: '#fff', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', fontFamily: 'system-ui, sans-serif', overflow: 'hidden', padding: '1rem', position: 'relative' }}>
         <Head><title>NAYLA - AUTENTICACIÓN</title></Head>
         <style>{globalStyles}</style>
-        <div style={{ width: '100%', maxWidth: '400px', border: '1px solid #262626', backgroundColor: '#050505', padding: '2.5rem', borderRadius: '24px', textAlign: 'center', opacity: otpEnviado ? 0.5 : 1, transition: 'opacity 0.3s' }}>
+        <div style={{ width: '100%', maxWidth: '400px', border: '1px solid rgba(255,255,255,0.18)', background: 'rgba(15, 20, 32, 0.62)', backdropFilter: 'blur(24px)', WebkitBackdropFilter: 'blur(24px)', boxShadow: '0 24px 80px rgba(0,0,0,0.45), inset 0 1px 0 rgba(255,255,255,0.1)', padding: 'clamp(1.5rem, 8vw, 2.5rem)', borderRadius: '28px', textAlign: 'center', opacity: otpEnviado ? 0.5 : 1, transition: 'opacity 0.3s' }}>
                     <h1 style={{ fontSize: '1rem', letterSpacing: '4px', margin: '0 0 2rem 0', textTransform: 'uppercase' }}>NAYLA</h1>
           {process.env.NODE_ENV === 'development' && (
             <button
@@ -2055,8 +2064,8 @@ export default function NaylaCore() {
           <section aria-labelledby="correo-heading" style={{ textAlign: 'left' }}>
             <h2 id="correo-heading" style={{ fontSize: '0.72rem', letterSpacing: '2px', color: '#a3a3a3', margin: '0 0 0.65rem', textTransform: 'uppercase' }}>Correo electrónico</h2>
             <form onSubmit={handleEmailAuth}>
-              <input aria-label="Correo electrónico" type="email" placeholder="tu@correo.com" value={emailInput} onChange={(e) => setEmailInput(e.target.value)} disabled={otpEnviado} style={{ width: '100%', padding: '1rem', backgroundColor: '#0a0a0a', border: '1px solid #404040', borderRadius: '16px', color: darkMode ? '#fff' : '#000', fontSize: '0.8rem', marginBottom: '1rem', textAlign: 'center', outline: 'none' }} />
-              <button type="submit" disabled={authLoading || otpEnviado} className="neon-btn nav-btn" style={{ width: '100%', marginBottom: '1rem' }}>{authLoading && !otpEnviado ? 'PROCESANDO...' : (promptForEmailOnLink ? 'CONFIRMAR CORREO' : 'SOLICITAR ACCESO')}</button>
+              <input aria-label="Correo electrónico" type="email" placeholder="tu@correo.com" value={emailInput} onChange={(e) => setEmailInput(e.target.value)} disabled={otpEnviado} style={{ width: '100%', padding: '1rem', background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.2)', borderRadius: '16px', color: '#fff', fontSize: '0.9rem', marginBottom: '1rem', textAlign: 'center', outline: 'none', backdropFilter: 'blur(12px)' }} />
+              <button type="submit" disabled={authLoading || otpEnviado} className="neon-btn nav-btn" style={{ width: '100%', marginBottom: '1rem', border: '1px solid rgba(255,255,255,0.28)', background: 'rgba(255,255,255,0.14)', color: '#fff', boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.16)', backdropFilter: 'blur(12px)' }}>{authLoading && !otpEnviado ? 'PROCESANDO...' : (promptForEmailOnLink ? 'CONFIRMAR CORREO' : 'SOLICITAR ACCESO')}</button>
               {message && !otpEnviado && <p style={{ color: '#ff4444', fontSize: '0.8rem', margin: 0 }}>{message}</p>}
             </form>
           </section>
