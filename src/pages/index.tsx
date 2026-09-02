@@ -2052,21 +2052,29 @@ export default function NaylaCore() {
               DEV LOGIN
             </button>
           )}
-          <form onSubmit={handleEmailAuth}>
-            <input type="email" placeholder="CORREO MAESTRO" value={emailInput} onChange={(e) => setEmailInput(e.target.value)} disabled={otpEnviado} style={{ width: '100%', padding: '1rem', backgroundColor: '#0a0a0a', border: '1px solid #404040', borderRadius: '16px', color: darkMode ? '#fff' : '#000', fontSize: '0.8rem', marginBottom: '1rem', textAlign: 'center', outline: 'none' }} />
-            <button type="submit" disabled={authLoading || otpEnviado} className="neon-btn nav-btn" style={{ width: '100%', marginBottom: '1rem' }}>{authLoading && !otpEnviado ? 'PROCESANDO...' : (promptForEmailOnLink ? 'CONFIRMAR CORREO' : 'SOLICITAR ACCESO')}</button>
-            {message && !otpEnviado && <p style={{ color: '#ff4444', fontSize: '0.8rem', margin: 0 }}>{message}</p>}
-          </form>
+          <section aria-labelledby="correo-heading" style={{ textAlign: 'left' }}>
+            <h2 id="correo-heading" style={{ fontSize: '0.72rem', letterSpacing: '2px', color: '#a3a3a3', margin: '0 0 0.65rem', textTransform: 'uppercase' }}>Correo electrónico</h2>
+            <form onSubmit={handleEmailAuth}>
+              <input aria-label="Correo electrónico" type="email" placeholder="tu@correo.com" value={emailInput} onChange={(e) => setEmailInput(e.target.value)} disabled={otpEnviado} style={{ width: '100%', padding: '1rem', backgroundColor: '#0a0a0a', border: '1px solid #404040', borderRadius: '16px', color: darkMode ? '#fff' : '#000', fontSize: '0.8rem', marginBottom: '1rem', textAlign: 'center', outline: 'none' }} />
+              <button type="submit" disabled={authLoading || otpEnviado} className="neon-btn nav-btn" style={{ width: '100%', marginBottom: '1rem' }}>{authLoading && !otpEnviado ? 'PROCESANDO...' : (promptForEmailOnLink ? 'CONFIRMAR CORREO' : 'SOLICITAR ACCESO')}</button>
+              {message && !otpEnviado && <p style={{ color: '#ff4444', fontSize: '0.8rem', margin: 0 }}>{message}</p>}
+            </form>
+          </section>
           {!promptForEmailOnLink && (
-            <div style={{ marginTop: '1rem' }}>
+            <section aria-labelledby="gmail-heading" style={{ marginTop: '1.5rem', textAlign: 'left' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.9rem', color: '#737373', fontSize: '0.68rem', letterSpacing: '1.5px', textTransform: 'uppercase' }}>
+                <span aria-hidden="true" style={{ height: '1px', flex: 1, backgroundColor: '#262626' }} />
+                <h2 id="gmail-heading" style={{ margin: 0, fontSize: '0.68rem', fontWeight: 'normal' }}>Gmail</h2>
+                <span aria-hidden="true" style={{ height: '1px', flex: 1, backgroundColor: '#262626' }} />
+              </div>
               <button
                 type="button"
+                aria-label="Continuar con Gmail"
                 disabled={authLoading || otpEnviado}
                 onClick={async () => {
                   try {
                     setAuthLoading(true);
                     const result = await signInWithGoogle();
-                    // if result is null, it means a redirect was triggered, no need to do anything else.
                     if (result) {
                       setSession(result);
                       cargarDatosUsuario(result.user.id);
@@ -2078,11 +2086,17 @@ export default function NaylaCore() {
                   }
                 }}
                 className="neon-btn nav-btn"
-                style={{ width: '100%', backgroundColor: '#fff', color: '#000', fontWeight: 'bold' }}
+                style={{ width: '100%', backgroundColor: '#fff', color: '#000', fontWeight: 'bold', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.7rem' }}
               >
-                CONTINUAR CON GOOGLE
+                <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" role="img">
+                  <path fill="#4285F4" d="M21.35 12.27c0-.72-.06-1.42-.18-2.09H12v3.95h5.24a4.48 4.48 0 0 1-1.94 2.94v2.45h3.14c1.84-1.69 2.91-4.18 2.91-7.25Z" />
+                  <path fill="#34A853" d="M12 21.5c2.63 0 4.84-.87 6.45-2.36l-3.14-2.45c-.87.58-1.98.92-3.31.92-2.54 0-4.69-1.72-5.46-4.03H3.3v2.53A9.74 9.74 0 0 0 12 21.5Z" />
+                  <path fill="#FBBC05" d="M6.54 13.58a5.85 5.85 0 0 1 0-3.16V7.89H3.3a9.75 9.75 0 0 0 0 8.22l3.24-2.53Z" />
+                  <path fill="#EA4335" d="M12 6.39c1.43 0 2.72.49 3.73 1.45l2.8-2.8C16.84 3.43 14.63 2.5 12 2.5a9.74 9.74 0 0 0-8.7 5.39l3.24 2.53C7.31 8.11 9.46 6.39 12 6.39Z" />
+                </svg>
+                CONTINUAR CON GMAIL
               </button>
-            </div>
+            </section>
           )}
         </div>
         <div style={{ position: 'fixed', bottom: otpEnviado ? 0 : '-100%', left: 0, right: 0, backgroundColor: '#000', borderTop: '1px solid #fff', borderLeft: '1px solid #fff', borderRight: '1px solid #fff', borderTopLeftRadius: '24px', borderTopRightRadius: '24px', padding: '2.5rem', transition: 'bottom 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275)', display: 'flex', flexDirection: 'column', alignItems: 'center', zIndex: 100 }}>
