@@ -5,6 +5,7 @@ import Head from 'next/head';
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
 import { arrayMove, SortableContext, horizontalListSortingStrategy } from '@dnd-kit/sortable';
 import { SortableTimelineItem } from '../components/SortableTimelineItem';
+import MagicRingsBackground from '../components/MagicRingsBackground';
 import { getVideoMetadata, getAudioDurationInSeconds } from '@remotion/media-utils';
 import { createClient } from '@supabase/supabase-js';
 import { uploadMediaFilesToBodega } from '../lib/mediaUpload';
@@ -2026,7 +2027,8 @@ export default function NaylaCore() {
   if (!session) {
     if (showIntro) {
       return (
-        <div style={{ minHeight: '100vh', backgroundColor: '#000', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center' }}>
+        <div style={{ minHeight: '100vh', backgroundColor: '#000', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', position: 'relative', isolation: 'isolate' }}>
+          <MagicRingsBackground />
           <style>{`@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }`}</style>
           <img src="/assets/imagenes/Icono-intro.jpeg" alt="NAYLA" style={{ width: '150px', height: '150px', borderRadius: '24px', objectFit: 'cover', animation: 'fadeIn 1s ease-in-out' }} />
           <div style={{
@@ -2130,7 +2132,8 @@ export default function NaylaCore() {
   }
 
   return (
-    <div className={`editor-shell h-[100dvh] w-full flex flex-col overflow-x-hidden select-none ${darkMode ? 'bg-black text-gray-200' : 'bg-white text-gray-800'}`} style={{ fontFamily: 'system-ui, sans-serif' }}>
+    <div className={`editor-shell relative isolate h-[100dvh] w-full flex flex-col overflow-x-hidden select-none ${darkMode ? 'bg-black text-gray-200' : 'bg-white text-gray-800'}`} style={{ fontFamily: 'system-ui, sans-serif' }}>
+    <MagicRingsBackground enabled={darkMode} />
 
   {/* Modal y Barra del Administrador de Cola de Renders */}
   {Object.keys(activeRenderJobs).length > 0 && (
