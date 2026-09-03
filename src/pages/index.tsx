@@ -8,7 +8,7 @@ import { SortableTimelineItem } from '../components/SortableTimelineItem';
 import { getVideoMetadata, getAudioDurationInSeconds } from '@remotion/media-utils';
 import { createClient } from '@supabase/supabase-js';
 import { uploadMediaFilesToBodega } from '../lib/mediaUpload';
-import { completeFirebaseEmailLink, getFirebaseSession, observeFirebaseSession, sendFirebaseEmailLink, signOutFirebase, signInWithGoogle, checkGoogleRedirectResult, type FirebaseSession } from '../lib/firebaseClient';
+import { completeFirebaseEmailLink, getFirebaseSession, observeFirebaseSession, sendFirebaseEmailLink, signOutFirebase, signInWithGoogle, checkGoogleRedirectResult, refreshFirebaseToken, type FirebaseSession } from '../lib/firebaseClient';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://dummy.supabase.co';
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'dummy_key';
@@ -16,7 +16,18 @@ const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'dummy_key'
 if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
   console.warn('Supabase no está configurado. Auth/storage siguen en compatibilidad temporal; la IA usa llaves de Vercel/Coolify y el render va por Oracle Cloud PC.');
 }
-const supabase = createClient(supabaseUrl, supabaseAnonKey);
+
+
+const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+  accessToken: async () => {
+    try {
+      const session = await getFirebaseSession();
+      return session ? session.accessToken : null;
+    } catch (e) {
+      return null;
+    }
+  }
+});
 
 type Rect = { id: string; x: number; y: number; width: number; height: number };
 type MediaItem = { id: string; url: string; tipo: 'foto' | 'video' | 'audio'; nombre: string; creado_en: string; esOverlay: boolean; etiqueta: string; fuente?: string };
@@ -692,15 +703,37 @@ export default function NaylaCore() {
   useEffect(() => {
     let unsubscribe: (() => void) | undefined;
 
+  const setAuthenticatedClaimAndRefresh = async (session: FirebaseSession) => {
+    try {
+      const res = await fetch('/api/verify-login', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${session.accessToken}` }
+      });
+      if (res.ok) {
+        await refreshFirebaseToken();
+      }
+    } catch (e) {
+      console.error('Error setting authenticated claim', e);
+    }
+  };
+
+
     // Validar el redirect de Google
-    checkGoogleRedirectResult().then((result) => {
+    checkGoogleRedirectResult().then(async (result) => {
       if (result) {
+        await setAuthenticatedClaimAndRefresh(result);
         setSession(result);
         cargarDatosUsuario(result.user.id);
       }
     }).catch((error) => console.error('Error verificando Google Redirect:', error));
 
-    completeFirebaseEmailLink().catch((error) => {
+    completeFirebaseEmailLink().then(async (result) => {
+      if (result) {
+        await setAuthenticatedClaimAndRefresh(result);
+        setSession(result);
+        cargarDatosUsuario(result.user.id);
+      }
+    }).catch((error) => {
       console.error('Error verificando enlace Firebase:', error);
       if (error.name === 'MissingEmailError' || error.message.includes('MISSING_EMAIL_FOR_SIGN_IN')) {
         setPromptForEmailOnLink(true);
@@ -2068,6 +2101,7 @@ export default function NaylaCore() {
                     const result = await signInWithGoogle();
                     // if result is null, it means a redirect was triggered, no need to do anything else.
                     if (result) {
+                      await setAuthenticatedClaimAndRefresh(result);
                       setSession(result);
                       cargarDatosUsuario(result.user.id);
                     }

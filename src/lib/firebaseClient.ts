@@ -95,3 +95,10 @@ export const signOutFirebase = async () => {
   const { auth, sdk } = await firebase();
   await sdk.signOut(auth);
 };
+
+export const refreshFirebaseToken = async (): Promise<void> => {
+  const { auth } = await firebase();
+  if (auth.currentUser) {
+    await auth.currentUser.getIdToken(true);
+  }
+};

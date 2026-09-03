@@ -26,3 +26,8 @@ export async function requireFirebaseUser(req: NextApiRequest): Promise<Firebase
 
 export const isFirebaseAdmin = (identity: FirebaseIdentity) =>
   (process.env.FIREBASE_ADMIN_EMAILS || '').split(',').map((email) => email.trim()).filter(Boolean).includes(identity.email || '');
+
+export async function setAuthenticatedRole(uid: string): Promise<void> {
+  const auth = await getFirebaseAdminAuth();
+  await auth.setCustomUserClaims(uid, { role: 'authenticated' });
+}
