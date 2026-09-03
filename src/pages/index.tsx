@@ -2024,8 +2024,10 @@ export default function NaylaCore() {
     }
   `;
 
-  if (!session) {
-    if (showIntro) {
+  // Bypass temporal solo en preview/desarrollo: la autenticación Firebase permanece intacta
+  // y vuelve a ser obligatoria automáticamente en producción.
+  if (process.env.NODE_ENV === 'production' && !session) {
+  if (showIntro) {
       return (
         <div style={{ minHeight: '100vh', backgroundColor: '#000', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', position: 'relative', isolation: 'isolate' }}>
           <MagicRingsBackground />
