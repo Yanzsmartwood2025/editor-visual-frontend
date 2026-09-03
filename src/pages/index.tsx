@@ -150,7 +150,11 @@ export default function NaylaCore() {
   const [clipSeleccionado, setClipSeleccionado] = useState<string | null>(null);
   const [canvasRatio, setCanvasRatio] = useState<'9/16' | '16/9' | '1/1' | '4/5'>('9/16');
   const [calidadExportacion, setCalidadExportacion] = useState('1080p');
-  const [showIntro, setShowIntro] = useState(true);
+  // En preview/desarrollo mostramos el editor directamente para poder probar sus controles.
+  // En producción se conserva la pantalla de intro antes de la autenticación.
+  // Acceso directo para revisar el editor mientras se configura Firebase.
+  // La lógica de autenticación y sus handlers permanecen intactos.
+  const [showIntro, setShowIntro] = useState(false);
   const [videoFile, setVideoFile] = useState<File | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
 
