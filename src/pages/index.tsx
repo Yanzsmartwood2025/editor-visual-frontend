@@ -8,7 +8,7 @@ import { SortableTimelineItem } from '../components/SortableTimelineItem';
 import { getVideoMetadata, getAudioDurationInSeconds } from '@remotion/media-utils';
 import { createClient } from '@supabase/supabase-js';
 import { uploadMediaFilesToBodega } from '../lib/mediaUpload';
-import { completeFirebaseEmailLink, getFirebaseSession, observeFirebaseSession, sendFirebaseEmailLink, signOutFirebase, signInWithGoogle, checkGoogleRedirectResult, type FirebaseSession } from '../lib/firebaseClient';
+import { getFirebaseSession, observeFirebaseSession, signOutFirebase, signInWithCustomTokenValue, type FirebaseSession } from '../lib/firebaseClient';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://dummy.supabase.co';
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'dummy_key';
@@ -94,11 +94,8 @@ const SUB_TOOLS: Record<string, any[]> = {
 export default function NaylaCore() {
   const [darkMode, setDarkMode] = useState(true);
   const [session, setSession] = useState<FirebaseSession | null>(null);
-  const [emailInput, setEmailInput] = useState('');
-  const [promptForEmailOnLink, setPromptForEmailOnLink] = useState(false);
-  const [otpEnviado, setOtpEnviado] = useState(false);
-  const [resendCooldown, setResendCooldown] = useState(0);
-  const [authLoading, setAuthLoading] = useState(false);
+  const [authChecked, setAuthChecked] = useState(false);
+  const [authError, setAuthError] = useState('');
   const [iaApiKey, setIaApiKey] = useState('');
   const [iaPrompt, setIaPrompt] = useState('Haz un video con 3 clips y ponles subtítulos');
   const [iaLoading, setIaLoading] = useState(false);
@@ -115,7 +112,6 @@ export default function NaylaCore() {
     setCustomAlertMsg(msg);
   };
 
-  const [message, setMessage] = useState('');
   const [mainNav, setMainNav] = useState<string>('boveda');
   const [subTool, setSubTool] = useState<string | null>(null);
   const [isVideoExpanded, setIsVideoExpanded] = useState<boolean>(false);
@@ -691,40 +687,84 @@ export default function NaylaCore() {
 
   useEffect(() => {
     let unsubscribe: (() => void) | undefined;
+    let cancelled = false;
 
-    // Validar el redirect de Google
-    checkGoogleRedirectResult().then((result) => {
-      if (result) {
-        setSession(result);
-        cargarDatosUsuario(result.user.id);
+    // Este editor ya no tiene login propio. La sesión llega de dos formas:
+    // 1) Un Custom Token de Firebase en el fragmento de la URL (#authToken=...),
+    //    generado por el Home cuando el usuario hace click en "Nayla Editor".
+    // 2) Una sesión de Firebase ya activa en este navegador (visita repetida).
+    // Si no hay ninguna de las dos, se redirige de vuelta al Home.
+    const consumeTokenFromUrl = async () => {
+      if (typeof window === 'undefined') return false;
+      const hash = window.location.hash || '';
+      const match = hash.match(/authToken=([^&]+)/);
+      if (!match) return false;
+      const token = decodeURIComponent(match[1]);
+      // Limpiar el token de la URL de inmediato, nunca debe quedar visible
+      // ni en el historial del navegador.
+      window.history.replaceState({}, document.title, window.location.pathname + window.location.search);
+      try {
+        const result = await signInWithCustomTokenValue(token);
+        if (cancelled) return true;
+        if (result) {
+          setSession(result);
+          cargarDatosUsuario(result.user.id);
+        }
+        return true;
+      } catch (error) {
+        console.error('Error al validar la sesión recibida del Home:', error);
+        if (!cancelled) setAuthError('No se pudo validar tu acceso. Volviendo al inicio...');
+        return true;
       }
-    }).catch((error) => console.error('Error verificando Google Redirect:', error));
+    };
 
-    completeFirebaseEmailLink().catch((error) => {
-      console.error('Error verificando enlace Firebase:', error);
-      if (error.name === 'MissingEmailError' || error.message.includes('MISSING_EMAIL_FOR_SIGN_IN')) {
-        setPromptForEmailOnLink(true);
-        setMessage('Abriste el enlace en otro navegador. Por favor ingresa tu correo para confirmar.');
-      } else {
-        setMessage('El enlace ha expirado o no es válido. Solicita uno nuevo.');
+    (async () => {
+      const tokenHandled = await consumeTokenFromUrl();
+
+      if (!tokenHandled) {
+        try {
+          const current = await getFirebaseSession();
+          if (!cancelled && current) {
+            setSession(current);
+            cargarDatosUsuario(current.user.id);
+          }
+        } catch (error) {
+          console.warn('Firebase no configurado:', error);
+        }
       }
-    });
 
-    getFirebaseSession().then((current) => {
-      setSession(current);
-      if (current) cargarDatosUsuario(current.user.id);
-    }).catch((error) => console.warn('Firebase no configurado:', error));
+      if (!cancelled) setAuthChecked(true);
+    })();
+
     observeFirebaseSession((current) => {
+      if (cancelled) return;
       setSession(current);
       if (current) cargarDatosUsuario(current.user.id);
     }).then((listener) => { unsubscribe = listener; }).catch(() => undefined);
 
     const timer = setTimeout(() => setShowIntro(false), 3000);
     return () => {
+      cancelled = true;
       clearTimeout(timer);
       unsubscribe?.();
     };
   }, []);
+
+  // Sin sesión y ya terminamos de revisar token/sesión local: no hay forma de
+  // entrar aquí directamente, hay que volver al Home a iniciar sesión.
+  useEffect(() => {
+    if (showIntro || session || !authChecked) return;
+    const mainSiteUrl = process.env.NEXT_PUBLIC_MAIN_SITE_URL;
+    if (!mainSiteUrl) {
+      console.error('NEXT_PUBLIC_MAIN_SITE_URL no está configurada; no se puede redirigir al Home.');
+      setAuthError('Configuración incompleta: falta la URL del sitio principal.');
+      return;
+    }
+    const timer = setTimeout(() => {
+      window.location.href = mainSiteUrl;
+    }, authError ? 2000 : 300);
+    return () => clearTimeout(timer);
+  }, [showIntro, session, authChecked, authError]);
 
   useEffect(() => {
     if (mainNav === 'nube') {
@@ -916,51 +956,6 @@ export default function NaylaCore() {
 
   const descargarTodasConMarco = () => {
     marcoImagenes.forEach((img, i) => setTimeout(() => descargarImagenConMarco(img.procesada, img.nombre), i * 300));
-  };
-
-  const handleEmailAuth = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!emailInput) return;
-    setAuthLoading(true); setMessage('');
-    try {
-      if (promptForEmailOnLink) {
-        await completeFirebaseEmailLink(emailInput);
-        setPromptForEmailOnLink(false);
-      } else {
-        await sendFirebaseEmailLink(emailInput);
-        setOtpEnviado(true);
-        setResendCooldown(60);
-      }
-    } catch (err: any) {
-      if (promptForEmailOnLink) {
-        setMessage('Error validando enlace con este correo.');
-      } else {
-        setMessage('Error crítico de transmisión.');
-      }
-    }
-    finally { setAuthLoading(false); }
-  };
-
-  useEffect(() => {
-    let interval: NodeJS.Timeout;
-    if (resendCooldown > 0) {
-      interval = setInterval(() => setResendCooldown((prev) => prev - 1), 1000);
-    }
-    return () => clearInterval(interval);
-  }, [resendCooldown]);
-
-  const handleResendLink = async () => {
-    if (resendCooldown > 0 || !emailInput) return;
-    setAuthLoading(true); setMessage('');
-    try {
-      await sendFirebaseEmailLink(emailInput);
-      setResendCooldown(60);
-      setMessage('Enlace reenviado.');
-    } catch (err) {
-      setMessage('Error reenviando el enlace.');
-    } finally {
-      setAuthLoading(false);
-    }
   };
 
   const [subiendoArchivo, setSubiendoArchivo] = useState(false);
@@ -2032,76 +2027,27 @@ export default function NaylaCore() {
         </div>
       );
     }
+    // Este editor no tiene login propio: si llegamos aquí es porque todavía
+    // no se validó ningún token/sesión, o porque no había ninguno y estamos
+    // a punto de mandar de vuelta al usuario al Home a iniciar sesión.
     return (
-      <div style={{ minHeight: '100vh', backgroundColor: '#000', color: darkMode ? '#fff' : '#000', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', fontFamily: 'system-ui, sans-serif', overflow: 'hidden' }}>
-        <Head><title>NAYLA - AUTENTICACIÓN</title></Head>
+      <div style={{ minHeight: '100vh', backgroundColor: '#000', color: '#fff', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', fontFamily: 'system-ui, sans-serif', overflow: 'hidden' }}>
+        <Head><title>NAYLA EDITOR</title></Head>
         <style>{globalStyles}</style>
-        <div style={{ width: '100%', maxWidth: '400px', border: '1px solid #262626', backgroundColor: '#050505', padding: '2.5rem', borderRadius: '24px', textAlign: 'center', opacity: otpEnviado ? 0.5 : 1, transition: 'opacity 0.3s' }}>
-                    <h1 style={{ fontSize: '1rem', letterSpacing: '4px', margin: '0 0 2rem 0', textTransform: 'uppercase' }}>NAYLA</h1>
-          {process.env.NODE_ENV === 'development' && (
-            <button
-              id="dev-login-bypass"
-              type="button"
-              onClick={() => {
-                setSession({ user: { id: 'test-user-id', email: 'test@example.com' } });
-                setShowIntro(true);
-                setTimeout(() => setShowIntro(false), 100);
-              }}
-              style={{ padding: '10px', backgroundColor: '#333', color: 'white', marginBottom: '10px', width: '100%' }}
-            >
-              DEV LOGIN
-            </button>
-          )}
-          <form onSubmit={handleEmailAuth}>
-            <input type="email" placeholder="CORREO MAESTRO" value={emailInput} onChange={(e) => setEmailInput(e.target.value)} disabled={otpEnviado} style={{ width: '100%', padding: '1rem', backgroundColor: '#0a0a0a', border: '1px solid #404040', borderRadius: '16px', color: darkMode ? '#fff' : '#000', fontSize: '0.8rem', marginBottom: '1rem', textAlign: 'center', outline: 'none' }} />
-            <button type="submit" disabled={authLoading || otpEnviado} className="neon-btn nav-btn" style={{ width: '100%', marginBottom: '1rem' }}>{authLoading && !otpEnviado ? 'PROCESANDO...' : (promptForEmailOnLink ? 'CONFIRMAR CORREO' : 'SOLICITAR ACCESO')}</button>
-            {message && !otpEnviado && <p style={{ color: '#ff4444', fontSize: '0.8rem', margin: 0 }}>{message}</p>}
-          </form>
-          {!promptForEmailOnLink && (
-            <div style={{ marginTop: '1rem' }}>
-              <button
-                type="button"
-                disabled={authLoading || otpEnviado}
-                onClick={async () => {
-                  try {
-                    setAuthLoading(true);
-                    const result = await signInWithGoogle();
-                    // if result is null, it means a redirect was triggered, no need to do anything else.
-                    if (result) {
-                      setSession(result);
-                      cargarDatosUsuario(result.user.id);
-                    }
-                  } catch (err: any) {
-                    setMessage('Error con Google Auth: ' + err.message);
-                  } finally {
-                    setAuthLoading(false);
-                  }
-                }}
-                className="neon-btn nav-btn"
-                style={{ width: '100%', backgroundColor: '#fff', color: '#000', fontWeight: 'bold' }}
-              >
-                CONTINUAR CON GOOGLE
-              </button>
-            </div>
-          )}
-        </div>
-        <div style={{ position: 'fixed', bottom: otpEnviado ? 0 : '-100%', left: 0, right: 0, backgroundColor: '#000', borderTop: '1px solid #fff', borderLeft: '1px solid #fff', borderRight: '1px solid #fff', borderTopLeftRadius: '24px', borderTopRightRadius: '24px', padding: '2.5rem', transition: 'bottom 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275)', display: 'flex', flexDirection: 'column', alignItems: 'center', zIndex: 100 }}>
-          <div style={{ width: '40px', height: '4px', backgroundColor: '#fff', borderRadius: '2px', marginBottom: '2rem', opacity: 0.5 }} />
-          {otpEnviado && <p style={{ color: '#00ffcc', fontSize: '0.8rem', marginBottom: '1rem', letterSpacing: '1px', fontWeight: 'bold' }}>ENLACE ENVIADO — REVISA TU CORREO</p>}
-          <h2 style={{ fontSize: '0.9rem', letterSpacing: '2px', margin: '0 0 1.5rem 0', textTransform: 'uppercase', textAlign: 'center' }}>HAZ CLICK EN EL ENLACE PARA INGRESAR</h2>
-          <div style={{ width: '100%', maxWidth: '350px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
-            <button
-              type="button"
-              onClick={handleResendLink}
-              disabled={resendCooldown > 0 || authLoading}
-              className="neon-btn nav-btn"
-              style={{ width: '100%', padding: '0.8rem' }}
-            >
-              {resendCooldown > 0 ? `REENVIAR EN ${resendCooldown}s` : 'REENVIAR ENLACE'}
-            </button>
-            {message && otpEnviado && <p style={{ color: '#ff4444', fontSize: '0.8rem', margin: 0, textAlign: 'center' }}>{message}</p>}
-          </div>
-        </div>
+        <style>{`@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }`}</style>
+        <img src="/assets/imagenes/Icono-intro.jpeg" alt="NAYLA" style={{ width: '120px', height: '120px', borderRadius: '24px', objectFit: 'cover', animation: 'fadeIn 0.6s ease-in-out' }} />
+        <div style={{
+          width: '30px',
+          height: '30px',
+          border: '3px solid #333',
+          borderTop: '3px solid #fff',
+          borderRadius: '50%',
+          animation: 'spin 1s linear infinite',
+          marginTop: '24px'
+        }} />
+        <p style={{ marginTop: '1.5rem', fontSize: '0.8rem', letterSpacing: '2px', textTransform: 'uppercase', color: authError ? '#ff4444' : '#888' }}>
+          {authError || 'Verificando acceso...'}
+        </p>
       </div>
     );
   }
