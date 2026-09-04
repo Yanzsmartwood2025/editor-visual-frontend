@@ -95,3 +95,12 @@ export const signOutFirebase = async () => {
   const { auth, sdk } = await firebase();
   await sdk.signOut(auth);
 };
+
+// Este editor ya no tiene login propio: la sesión llega como un Firebase Custom
+// Token generado por el Home (Repo 1) y pasado en el fragmento de la URL
+// (#authToken=...). Este editor solo lo consume.
+export const signInWithCustomTokenValue = async (token: string): Promise<FirebaseSession | null> => {
+  const { auth, sdk } = await firebase();
+  const credential = await sdk.signInWithCustomToken(auth, token);
+  return { user: { id: credential.user.uid, email: credential.user.email }, accessToken: await credential.user.getIdToken() };
+};
