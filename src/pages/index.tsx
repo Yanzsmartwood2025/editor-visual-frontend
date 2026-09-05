@@ -715,7 +715,8 @@ export default function NaylaCore() {
         console.error('Error al validar la sesión recibida del Home:', error);
         if (cancelled) return true;
         const code = error?.code ? ` (${error.code})` : '';
-        setAuthError(`No se pudo validar tu acceso${code}. Volviendo al inicio...`);
+        const detail = error?.message ? `\n${error.message}` : '';
+        setAuthError(`No se pudo validar tu acceso${code}. Volviendo al inicio...${detail}`);
         return true;
       }
     };
@@ -764,7 +765,7 @@ export default function NaylaCore() {
     }
     const timer = setTimeout(() => {
       window.location.href = mainSiteUrl;
-    }, authError ? 2000 : 300);
+    }, authError ? 8000 : 300);
     return () => clearTimeout(timer);
   }, [showIntro, session, authChecked, authError]);
 
@@ -2047,7 +2048,7 @@ export default function NaylaCore() {
           animation: 'spin 1s linear infinite',
           marginTop: '24px'
         }} />
-        <p style={{ marginTop: '1.5rem', fontSize: '0.8rem', letterSpacing: '2px', textTransform: 'uppercase', color: authError ? '#ff4444' : '#888' }}>
+        <p style={{ marginTop: '1.5rem', fontSize: '0.8rem', letterSpacing: '1px', textTransform: authError ? 'none' : 'uppercase', color: authError ? '#ff4444' : '#888', whiteSpace: 'pre-line', textAlign: 'center', maxWidth: '90%', wordBreak: 'break-word' }}>
           {authError || 'Verificando acceso...'}
         </p>
       </div>
