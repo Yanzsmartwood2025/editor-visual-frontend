@@ -4,7 +4,6 @@ export type FirebaseSession = {
 };
 
 type FirebaseAuthModule = any;
-const dynamicImport = (moduleName: string) => Function('name', 'return import(name)')(moduleName) as Promise<any>;
 
 const firebaseConfig = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
@@ -16,10 +15,16 @@ const firebaseConfig = {
 const configured = () => Boolean(firebaseConfig.apiKey && firebaseConfig.authDomain && firebaseConfig.projectId && firebaseConfig.appId);
 
 async function firebase() {
-  if (!configured()) throw new Error('Firebase Auth no está configurado. Define las variables NEXT_PUBLIC_FIREBASE_* պահանջidas.');
+  if (!configured()) throw new Error('Firebase Auth no está configurado. Define las variables NEXT_PUBLIC_FIREBASE_* requeridas.');
+  // Import literal (no envuelto en Function/string) para que Turbopack/webpack
+  // lo reconozca y lo empaquete en build. La versión anterior usaba
+  // Function('name','return import(name)') para forzar carga diferida, pero
+  // eso hace que el navegador reciba un import() con specifier "firebase/app"
+  // sin resolver, y los navegadores no saben resolver specifiers "desnudos"
+  // por sí solos -> Failed to resolve module specifier 'firebase/app'.
   const [{ getApps, initializeApp }, auth] = await Promise.all([
-    dynamicImport('firebase/app'),
-    dynamicImport('firebase/auth'),
+    import('firebase/app'),
+    import('firebase/auth'),
   ]);
   const app = getApps()[0] || initializeApp(firebaseConfig);
   return { auth: auth.getAuth(app), sdk: auth as FirebaseAuthModule };
