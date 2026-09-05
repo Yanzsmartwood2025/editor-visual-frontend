@@ -711,9 +711,11 @@ export default function NaylaCore() {
           cargarDatosUsuario(result.user.id);
         }
         return true;
-      } catch (error) {
+      } catch (error: any) {
         console.error('Error al validar la sesión recibida del Home:', error);
-        if (!cancelled) setAuthError('No se pudo validar tu acceso. Volviendo al inicio...');
+        if (cancelled) return true;
+        const code = error?.code ? ` (${error.code})` : '';
+        setAuthError(`No se pudo validar tu acceso${code}. Volviendo al inicio...`);
         return true;
       }
     };
