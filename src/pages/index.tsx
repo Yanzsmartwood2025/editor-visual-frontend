@@ -23,7 +23,7 @@ type MediaItem = { id: string; url: string; tipo: 'foto' | 'video' | 'audio'; no
 type TimelineItem = { id: string; mediaId: string; tipo: 'foto' | 'video' | 'audio'; nombre: string; etiqueta: string; url: string; durationInSeconds?: number; originalDurationInSeconds?: number; volume?: number; fadeIn?: number; fadeOut?: number; scale?: number; delay?: number; startFrom?: number; trimBefore?: number; trimAfter?: number; loop?: boolean; playbackRate?: number; transitionDuration?: number; transitionType?: 'fade' | 'none' | 'wipe' | 'slide' | 'zoom'; efecto?: string; overlay?: string; overlayIntensity?: number; };
 type SubtitleItem = { id: string; texto: string; inicioSec: number; finSec: number; };
 type LogoItem = { id: string; url: string; x: number; y: number; scale: number; opacity: number; inicioSec?: number; finSec?: number; fadeIn?: number; fadeOut?: number; };
-type ExpandedPanel = 'left' | 'right' | null;
+type ExpandedSurface = 'tools' | 'chat' | null;
 
 type RenderJob = {
   jobId: string;
@@ -119,7 +119,7 @@ export default function NaylaCore() {
   const [sourceVideoRatio, setSourceVideoRatio] = useState<number | null>(null);
   const [centeredMainToolId, setCenteredMainToolId] = useState<string>('boveda');
   const [centeredSubToolId, setCenteredSubToolId] = useState<string | null>(null);
-  const [expandedPanel, setExpandedPanel] = useState<ExpandedPanel>(null);
+  const [expandedSurface, setExpandedSurface] = useState<ExpandedSurface>(null);
   const [filtroGaleria, setFiltroGaleria] = useState<string>('todo'); // todo, videos, fotos, audios
   const [searchQuery, setSearchQuery] = useState('');
 
@@ -325,6 +325,23 @@ export default function NaylaCore() {
   const [chatInput, setChatInput] = useState('');
   const [chatMessages, setChatMessages] = useState<{role: 'user' | 'ai', text: string}[]>([]);
   const [chatProcessing, setChatProcessing] = useState(false);
+  const toolsOverlayRef = useRef<HTMLDivElement>(null);
+  const chatOverlayRef = useRef<HTMLDivElement>(null);
+  const lastFocusedElementRef = useRef<HTMLElement | null>(null);
+
+  const openExpandedSurface = (surface: Exclude<ExpandedSurface, null>) => {
+    lastFocusedElementRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    if (surface === 'chat') {
+      setIsChatOpen(true);
+      setMobileOverlaysVisible(true);
+    }
+    setExpandedSurface(surface);
+  };
+
+  const closeExpandedSurface = () => {
+    setExpandedSurface(null);
+    requestAnimationFrame(() => lastFocusedElementRef.current?.focus());
+  };
 
 
   useEffect(() => {
@@ -343,6 +360,73 @@ export default function NaylaCore() {
       window.visualViewport?.removeEventListener('resize', updateViewportMode);
     };
   }, []);
+
+  useEffect(() => {
+    if (!expandedSurface) return;
+
+    const overlay = expandedSurface === 'tools' ? toolsOverlayRef.current : chatOverlayRef.current;
+    const focusableSelector = 'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+    const focusable = () => Array.from(overlay?.querySelectorAll<HTMLElement>(focusableSelector) || []);
+    const firstFocusable = focusable()[0];
+    firstFocusable?.focus();
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        closeExpandedSurface();
+        return;
+      }
+      if (event.key !== 'Tab') return;
+
+      const items = focusable();
+      if (!items.length) return;
+      const first = items[0];
+      const last = items[items.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [expandedSurface]);
+
+  useEffect(() => {
+    let swipeStart: { x: number; y: number; surface: Exclude<ExpandedSurface, null> } | null = null;
+    const ignoredSelector = 'input, textarea, select, button, a, .editor-preview-canvas, .editor-timeline-panel, .timeline-track, [data-no-edge-swipe]';
+
+    const handlePointerDown = (event: PointerEvent) => {
+      if (expandedSurface || event.pointerType === 'mouse') return;
+      const target = event.target as Element | null;
+      if (target?.closest(ignoredSelector)) return;
+      const edge = 24;
+      if (event.clientX <= edge) swipeStart = { x: event.clientX, y: event.clientY, surface: 'tools' };
+      else if (event.clientX >= window.innerWidth - edge) swipeStart = { x: event.clientX, y: event.clientY, surface: 'chat' };
+    };
+    const handlePointerUp = (event: PointerEvent) => {
+      if (!swipeStart) return;
+      const start = swipeStart;
+      swipeStart = null;
+      const deltaX = event.clientX - start.x;
+      const deltaY = event.clientY - start.y;
+      const isInwardSwipe = start.surface === 'tools' ? deltaX >= 72 : deltaX <= -72;
+      if (isInwardSwipe && Math.abs(deltaX) > Math.abs(deltaY)) openExpandedSurface(start.surface);
+    };
+    const clearSwipe = () => { swipeStart = null; };
+
+    window.addEventListener('pointerdown', handlePointerDown);
+    window.addEventListener('pointerup', handlePointerUp);
+    window.addEventListener('pointercancel', clearSwipe);
+    return () => {
+      window.removeEventListener('pointerdown', handlePointerDown);
+      window.removeEventListener('pointerup', handlePointerUp);
+      window.removeEventListener('pointercancel', clearSwipe);
+    };
+  }, [expandedSurface]);
 
   useEffect(() => {
     setCenteredMainToolId(mainNav);
@@ -400,6 +484,7 @@ export default function NaylaCore() {
     } else {
       setIsChatOpen(true);
       setMobileOverlaysVisible(true);
+      openExpandedSurface('chat');
     }
     setSubTool(null);
   };
@@ -427,6 +512,7 @@ export default function NaylaCore() {
       setSelectedAiProvider(tool.id);
       setIsChatOpen(true);
       setMobileOverlaysVisible(true);
+      openExpandedSurface('chat');
     } else if (['marco', 'delogo', 'script', 'supervisor', 'youtube', 'pixabay', 'musicastock', 'noticias', 'artistas', 'stockvideo', 'sonidos', 'iafoto', 'enlace', 'render'].includes(tool.id)) {
       setToolMessage(null);
     } else {
@@ -1681,6 +1767,78 @@ export default function NaylaCore() {
 
     .editor-shell { height: 100dvh; overflow: hidden; display: flex; flex-direction: column; }
 
+    .editor-grid.tools-surface-expanded .editor-tools-panel {
+      display: contents !important;
+    }
+    .editor-toolbars.surface-expanded,
+    .nayla-chat-panel.surface-expanded {
+      position: fixed !important;
+      inset: 0 !important;
+      width: 100vw !important;
+      height: 100dvh !important;
+      min-height: 0;
+      z-index: 9500 !important;
+      display: flex !important;
+      flex-direction: column;
+      overflow: auto;
+      background: ${darkMode ? '#050505' : '#fff'} !important;
+      border: 0 !important;
+      border-radius: 0 !important;
+      box-shadow: none !important;
+      opacity: 1;
+      animation: surface-overlay-in 260ms ease both;
+    }
+    .editor-toolbars.surface-expanded {
+      padding: max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+      gap: 16px;
+    }
+    .surface-overlay-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      flex: 0 0 auto;
+      color: ${darkMode ? '#fff' : '#000'};
+    }
+    .surface-overlay-close {
+      min-width: 44px;
+      min-height: 44px;
+      border: 1px solid ${darkMode ? '#404040' : '#d1d5db'};
+      border-radius: 999px;
+      background: transparent;
+      color: inherit;
+      cursor: pointer;
+    }
+    .editor-toolbars.surface-expanded .editor-subtools-bar,
+    .editor-toolbars.surface-expanded .editor-maintools-bar {
+      position: static !important;
+      display: flex !important;
+      width: 100% !important;
+      flex: 1 1 0;
+      min-height: 0;
+      overflow: auto !important;
+      border: 1px solid ${darkMode ? '#1a1a1a' : '#e5e7eb'} !important;
+      border-radius: 16px;
+      background: ${darkMode ? '#0a0a0a' : '#f9fafb'} !important;
+      padding: 16px !important;
+      opacity: 1 !important;
+      pointer-events: auto !important;
+    }
+    .nayla-chat-panel.surface-expanded {
+      transform: none !important;
+      color: ${darkMode ? '#fff' : '#000'} !important;
+    }
+    @keyframes surface-overlay-in {
+      from { opacity: 0; transform: translateX(var(--surface-enter-x, 16px)); }
+      to { opacity: 1; transform: translateX(0); }
+    }
+    .editor-toolbars.surface-expanded { --surface-enter-x: -16px; }
+    .nayla-chat-panel.surface-expanded { --surface-enter-x: 16px; }
+    @media (prefers-reduced-motion: reduce) {
+      .editor-toolbars.surface-expanded,
+      .nayla-chat-panel.surface-expanded { animation: none; }
+    }
+
 
     @media (max-width: 767px) {
       .editor-grid.phone-video-mode {
@@ -1711,6 +1869,8 @@ export default function NaylaCore() {
       .editor-grid.phone-video-mode .editor-timeline-panel,
       .editor-grid.phone-video-mode .panel-container,
       .editor-grid.phone-video-mode .editor-media-gallery { display: none !important; }
+      .editor-grid.phone-video-mode.tools-surface-expanded .editor-tools-panel,
+      .editor-grid.phone-video-mode.chat-surface-expanded .editor-tools-panel { display: contents !important; }
       .editor-grid.phone-video-mode .editor-playback-bar,
       .editor-grid.phone-video-mode .editor-subtools-bar,
       .editor-grid.phone-video-mode .editor-maintools-bar {
@@ -1944,6 +2104,7 @@ export default function NaylaCore() {
         box-shadow: 0 12px 30px rgba(0,0,0,0.25);
       }
       .editor-tools-panel { display: contents; }
+      .editor-toolbars { display: contents; }
       .editor-tools-panel .panel-container {
         grid-area: inspector;
         min-width: 0;
@@ -2370,10 +2531,10 @@ export default function NaylaCore() {
         </div>
       </header>
 
-      <div className={`editor-grid flex flex-col md:flex-row w-full gap-4 flex-1 overflow-hidden ${isPhoneViewport ? 'phone-video-mode' : ''} ${mobileOverlaysVisible ? 'mobile-overlays-visible' : 'mobile-overlays-hidden'} ${!isPhoneViewport && isVideoExpanded ? 'video-expanded' : ''} ${expandedPanel === 'left' ? 'left-expanded' : ''} ${expandedPanel === 'right' ? 'right-expanded' : ''}`}>
+      <div className={`editor-grid flex flex-col md:flex-row w-full gap-4 flex-1 overflow-hidden ${isPhoneViewport ? 'phone-video-mode' : ''} ${mobileOverlaysVisible ? 'mobile-overlays-visible' : 'mobile-overlays-hidden'} ${!isPhoneViewport && isVideoExpanded ? 'video-expanded' : ''} ${expandedSurface === 'tools' ? 'tools-surface-expanded' : ''} ${expandedSurface === 'chat' ? 'chat-surface-expanded' : ''}`}>
 
         {/* COLUMNA IZQUIERDA: Monitor de Video y Línea de Tiempo */}
-        <div className="editor-left-stack flex flex-col w-full md:w-1/2" onClick={() => { if (!isVideoExpanded) setExpandedPanel('left'); }} style={{ flexGrow: expandedPanel === 'left' ? 1.45 : expandedPanel === 'right' ? 0.75 : 1, transition: 'flex-grow 320ms ease, width 320ms ease' }}>
+        <div className="editor-left-stack flex flex-col w-full md:w-1/2">
 
         <section className="editor-preview-panel" onClick={(e) => { e.stopPropagation(); if (!isPhoneViewport) setIsVideoExpanded(prev => !prev); }} onPointerUp={handleVideoSurfaceTap} style={{ width: '100%', padding: '0', backgroundColor: '#050505' }}>
           <div ref={containerRef} onPointerDown={handlePointerDown} onPointerMove={handlePointerMove} onPointerUp={handlePointerUp} onPointerLeave={handlePointerUp}
@@ -2484,7 +2645,7 @@ export default function NaylaCore() {
         </div>
 
         {/* COLUMNA DERECHA: Herramientas, Galería y Controles */}
-        {!isVideoExpanded && (<div className="editor-tools-panel flex flex-col w-full md:w-1/2 flex-1 overflow-hidden" onClick={() => { if (!isVideoExpanded) setExpandedPanel('right'); }} style={{ flexGrow: expandedPanel === 'right' ? 1.45 : expandedPanel === 'left' ? 0.75 : 1, transition: 'flex-grow 320ms ease, width 320ms ease' }}>
+        {!isVideoExpanded && (<div className="editor-tools-panel flex flex-col w-full md:w-1/2 flex-1 overflow-hidden">
 
 
         {/* NUEVA ESTRUCTURA DE HERRAMIENTAS */}
@@ -3227,8 +3388,15 @@ export default function NaylaCore() {
           </div>
         )}
 
+        <div ref={toolsOverlayRef} className={`editor-toolbars ${expandedSurface === 'tools' ? 'surface-expanded' : ''}`} role={expandedSurface === 'tools' ? 'dialog' : undefined} aria-modal={expandedSurface === 'tools' ? true : undefined} aria-label={expandedSurface === 'tools' ? 'Herramientas del editor' : undefined}>
+        {expandedSurface === 'tools' && (
+          <div className="surface-overlay-header">
+            <strong>HERRAMIENTAS</strong>
+            <button className="surface-overlay-close" type="button" onClick={closeExpandedSurface} aria-label="Cerrar herramientas">✕</button>
+          </div>
+        )}
         {/* FILA DE SUB-HERRAMIENTAS */}
-        <div className={`editor-subtools-bar flex gap-2 w-full p-3 border-t ${darkMode ? 'bg-neutral-950 border-neutral-900' : 'bg-gray-50 border-gray-200'}`} onClick={(e) => e.stopPropagation()} style={{ overflowX: 'auto', flexWrap: 'nowrap', backgroundColor: canvasRatio === '16/9' ? 'rgba(0, 0, 0, 0.8)' : undefined, position: canvasRatio === '16/9' ? 'fixed' : undefined, bottom: canvasRatio === '16/9' ? '80px' : undefined, zIndex: canvasRatio === '16/9' ? 9999 : undefined, left: canvasRatio === '16/9' ? '0' : undefined, right: canvasRatio === '16/9' ? '0' : undefined }}>
+        <div ref={subToolsCarouselRef} className={`editor-subtools-bar flex gap-2 w-full p-3 border-t ${darkMode ? 'bg-neutral-950 border-neutral-900' : 'bg-gray-50 border-gray-200'}`} onClick={(e) => e.stopPropagation()} style={{ overflowX: 'auto', flexWrap: 'nowrap', backgroundColor: canvasRatio === '16/9' ? 'rgba(0, 0, 0, 0.8)' : undefined, position: canvasRatio === '16/9' ? 'fixed' : undefined, bottom: canvasRatio === '16/9' ? '80px' : undefined, zIndex: canvasRatio === '16/9' ? 9999 : undefined, left: canvasRatio === '16/9' ? '0' : undefined, right: canvasRatio === '16/9' ? '0' : undefined }}>
           {SUB_TOOLS[mainNav]?.map((tool) => {
             if (tool.id === 'subir-vf') {
               return (
@@ -3268,7 +3436,7 @@ export default function NaylaCore() {
         </div>
 
         {/* FILA DE BOTONES PRINCIPALES */}
-        <div className={`editor-maintools-bar flex gap-2 w-full p-3 ${darkMode ? 'bg-black' : 'bg-white'}`} onClick={(e) => e.stopPropagation()} style={{ overflowX: 'auto', flexWrap: 'nowrap', backgroundColor: canvasRatio === '16/9' ? 'rgba(0, 0, 0, 0.8)' : undefined, position: canvasRatio === '16/9' ? 'fixed' : undefined, bottom: canvasRatio === '16/9' ? '0' : undefined, left: canvasRatio === '16/9' ? '0' : undefined, right: canvasRatio === '16/9' ? '0' : undefined, zIndex: canvasRatio === '16/9' ? 9999 : undefined }}>
+        <div ref={mainToolsCarouselRef} className={`editor-maintools-bar flex gap-2 w-full p-3 ${darkMode ? 'bg-black' : 'bg-white'}`} onClick={(e) => e.stopPropagation()} style={{ overflowX: 'auto', flexWrap: 'nowrap', backgroundColor: canvasRatio === '16/9' ? 'rgba(0, 0, 0, 0.8)' : undefined, position: canvasRatio === '16/9' ? 'fixed' : undefined, bottom: canvasRatio === '16/9' ? '0' : undefined, left: canvasRatio === '16/9' ? '0' : undefined, right: canvasRatio === '16/9' ? '0' : undefined, zIndex: canvasRatio === '16/9' ? 9999 : undefined }}>
           {MAIN_TOOLS.map((tool) => (
             <button key={tool.id} data-tool-id={tool.id} className={`main-btn w-full ${centeredMainToolId === tool.id ? 'centered' : ''} ${mainNav === tool.id ? 'active' : ''} ${!darkMode ? 'bg-gray-100 border-gray-300 text-black' : ''}`} style={{ backgroundColor: !darkMode ? (mainNav === tool.id ? '#000' : '#f3f4f6') : undefined, color: !darkMode ? (mainNav === tool.id ? '#fff' : '#000') : undefined }} onClick={() => handleMainCarouselToolPress(tool)}>
               <div>{tool.icon}</div>
@@ -3278,9 +3446,11 @@ export default function NaylaCore() {
 
         </div>
 
+        </div>
+
         {/* NAYLA CHAT SIDEBAR */}
         {!isVideoExpanded && isChatOpen && (
-          <div className="nayla-chat-panel" onClick={(e) => { e.stopPropagation(); if (!isVideoExpanded) setExpandedPanel('right'); }} style={{
+          <div ref={chatOverlayRef} className={`nayla-chat-panel ${expandedSurface === 'chat' ? 'surface-expanded' : ''}`} role={expandedSurface === 'chat' ? 'dialog' : undefined} aria-modal={expandedSurface === 'chat' ? true : undefined} aria-label={expandedSurface === 'chat' ? 'Chat de Nayla' : undefined} onClick={(e) => e.stopPropagation()} style={{
             position: 'absolute',
             top: 0,
             right: 0,
@@ -3303,7 +3473,7 @@ export default function NaylaCore() {
                   <h3 style={{ margin: 0, color: darkMode ? '#fff' : '#000', fontSize: '1rem', fontWeight: 'bold' }}>Nayla</h3>
                   {isPhoneViewport && <span style={{ fontSize: '0.78rem', opacity: 0.78 }}>← Volver al video con la X</span>}
                 </div>
-                <button onClick={() => { setIsChatOpen(false); if (isPhoneViewport) setMobileOverlaysVisible(true); }} style={{ background: 'none', border: 'none', color: darkMode ? '#fff' : '#000', cursor: 'pointer' }}>
+                <button onClick={() => { closeExpandedSurface(); setIsChatOpen(false); if (isPhoneViewport) setMobileOverlaysVisible(true); }} aria-label="Cerrar chat" style={{ background: 'none', border: 'none', color: darkMode ? '#fff' : '#000', cursor: 'pointer' }}>
                   <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
                 </button>
               </div>
