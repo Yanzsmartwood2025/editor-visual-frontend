@@ -436,14 +436,19 @@ export default function NaylaCore() {
   const updateCenteredToolFromScroll = (container: HTMLDivElement | null, setter: (id: string) => void) => {
     if (!container) return;
     const containerRect = container.getBoundingClientRect();
-    const centerX = containerRect.left + containerRect.width / 2;
+    const phoneColumn = isPhoneViewport;
+    const containerCenter = phoneColumn
+      ? containerRect.top + containerRect.height / 2
+      : containerRect.left + containerRect.width / 2;
     let closestId = '';
     let closestDistance = Number.POSITIVE_INFINITY;
 
     Array.from(container.querySelectorAll<HTMLElement>('[data-tool-id]')).forEach((item) => {
       const rect = item.getBoundingClientRect();
-      const itemCenter = rect.left + rect.width / 2;
-      const distance = Math.abs(centerX - itemCenter);
+      const itemCenter = phoneColumn
+        ? rect.top + rect.height / 2
+        : rect.left + rect.width / 2;
+      const distance = Math.abs(containerCenter - itemCenter);
       if (distance < closestDistance) {
         closestDistance = distance;
         closestId = item.dataset.toolId || '';
@@ -455,7 +460,11 @@ export default function NaylaCore() {
 
   const centerCarouselItem = (container: HTMLDivElement | null, toolId: string) => {
     const target = container?.querySelector<HTMLElement>(`[data-tool-id="${toolId}"]`);
-    target?.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+    target?.scrollIntoView({
+      behavior: 'smooth',
+      inline: isPhoneViewport ? 'nearest' : 'center',
+      block: isPhoneViewport ? 'center' : 'nearest'
+    });
   };
 
   const handleVideoSurfaceTap = (e: React.PointerEvent<HTMLElement>) => {
@@ -1842,6 +1851,7 @@ export default function NaylaCore() {
 
     @media (max-width: 767px) {
       .editor-grid.phone-video-mode {
+        --phone-tools-width: 96px;
         position: fixed;
         inset: 0;
         z-index: 8000;
@@ -1855,7 +1865,7 @@ export default function NaylaCore() {
       .editor-grid.phone-video-mode .editor-left-stack,
       .editor-grid.phone-video-mode .editor-preview-panel,
       .editor-grid.phone-video-mode .editor-preview-canvas {
-        width: 100vw !important;
+        width: calc(100vw - var(--phone-tools-width)) !important;
         height: 100dvh !important;
         max-width: none !important;
         max-height: none !important;
@@ -1864,34 +1874,32 @@ export default function NaylaCore() {
         border-radius: 0 !important;
         background: #000 !important;
       }
-      .editor-grid.phone-video-mode .editor-preview-panel { position: fixed; inset: 0; z-index: 1; }
-      .editor-grid.phone-video-mode .editor-tools-panel,
+      .editor-grid.phone-video-mode .editor-preview-panel {
+        position: fixed;
+        inset: 0 0 0 var(--phone-tools-width);
+        z-index: 1;
+      }
       .editor-grid.phone-video-mode .editor-timeline-panel,
       .editor-grid.phone-video-mode .panel-container,
       .editor-grid.phone-video-mode .editor-media-gallery { display: none !important; }
-      .editor-grid.phone-video-mode.tools-surface-expanded .editor-tools-panel,
-      .editor-grid.phone-video-mode.chat-surface-expanded .editor-tools-panel { display: contents !important; }
-      .editor-grid.phone-video-mode .editor-playback-bar,
-      .editor-grid.phone-video-mode .editor-subtools-bar,
-      .editor-grid.phone-video-mode .editor-maintools-bar {
-        opacity: 0;
-        pointer-events: none;
-        transition: opacity 180ms ease, transform 180ms ease;
+      .editor-grid.phone-video-mode .editor-tools-panel,
+      .editor-grid.phone-video-mode .editor-toolbars { display: contents !important; }
+      .editor-grid.phone-video-mode .editor-toolbars.surface-expanded {
+        display: flex !important;
       }
-      .editor-grid.phone-video-mode.mobile-overlays-visible .editor-tools-panel {
+      .editor-grid.phone-video-mode .editor-toolbars.surface-expanded .editor-subtools-bar,
+      .editor-grid.phone-video-mode .editor-toolbars.surface-expanded .editor-maintools-bar {
+        position: static !important;
+        width: 100% !important;
+        flex: 1 1 0;
+      }
+      .editor-grid.phone-video-mode .editor-playback-bar {
         display: flex !important;
         position: fixed;
-        inset: 0;
-        z-index: 20;
-        pointer-events: none;
-      }
-      .editor-grid.phone-video-mode.mobile-overlays-visible .editor-playback-bar {
-        display: flex !important;
-        position: fixed;
-        left: 50%;
-        bottom: 190px;
-        transform: translateX(-50%);
-        width: min(560px, calc(100vw - 28px));
+        left: calc(var(--phone-tools-width) + 14px);
+        right: 14px;
+        bottom: max(14px, env(safe-area-inset-bottom));
+        width: auto;
         z-index: 30;
         opacity: 1;
         pointer-events: auto;
@@ -1899,33 +1907,35 @@ export default function NaylaCore() {
         border-radius: 999px;
         background: linear-gradient(135deg, rgba(0,0,0,0.82), rgba(0,0,0,0.58)) !important;
       }
-      .editor-grid.phone-video-mode.mobile-overlays-visible .editor-subtools-bar,
-      .editor-grid.phone-video-mode.mobile-overlays-visible .editor-maintools-bar {
+      .editor-grid.phone-video-mode .editor-subtools-bar,
+      .editor-grid.phone-video-mode .editor-maintools-bar {
         display: flex !important;
-        position: fixed;
-        left: 0;
-        right: 0;
-        z-index: 31;
-        opacity: 1;
-        pointer-events: auto;
-        overflow-x: auto !important;
+        position: fixed !important;
+        left: 0 !important;
+        width: var(--phone-tools-width) !important;
+        z-index: 31 !important;
+        opacity: 1 !important;
+        pointer-events: auto !important;
+        flex-direction: column;
         flex-wrap: nowrap !important;
-        scroll-snap-type: x mandatory;
-        scroll-padding: 50vw;
+        align-items: center;
+        overflow-x: hidden !important;
+        overflow-y: auto !important;
+        scroll-snap-type: y mandatory;
+        scroll-padding: 50%;
         -webkit-overflow-scrolling: touch;
-        background: linear-gradient(180deg, rgba(0,0,0,0), rgba(0,0,0,0.84) 32%, rgba(0,0,0,0.96)) !important;
+        background: linear-gradient(90deg, rgba(0,0,0,0.96), rgba(0,0,0,0.84)) !important;
         border: 0 !important;
-        padding-left: calc(50vw - 48px) !important;
-        padding-right: calc(50vw - 48px) !important;
+        padding: 10px 6px !important;
       }
-      .editor-grid.phone-video-mode.mobile-overlays-visible .editor-subtools-bar { bottom: 104px; }
-      .editor-grid.phone-video-mode.mobile-overlays-visible .editor-maintools-bar { bottom: 0; }
+      .editor-grid.phone-video-mode .editor-subtools-bar { top: 0; bottom: 50%; }
+      .editor-grid.phone-video-mode .editor-maintools-bar { top: 50%; bottom: 0; }
       .editor-grid.phone-video-mode .main-btn,
       .editor-grid.phone-video-mode .sub-btn {
-        flex: 0 0 96px !important;
-        width: 96px !important;
-        min-width: 96px !important;
-        min-height: 96px !important;
+        flex: 0 0 84px !important;
+        width: 84px !important;
+        min-width: 84px !important;
+        min-height: 84px !important;
         scroll-snap-align: center;
         color: #fff !important;
         background: transparent !important;
@@ -1935,20 +1945,20 @@ export default function NaylaCore() {
       }
       .editor-grid.phone-video-mode .main-btn.centered,
       .editor-grid.phone-video-mode .sub-btn.centered {
-        transform: scale(1.22) translateY(-8px);
+        transform: scale(1.08);
         opacity: 1;
       }
       .editor-grid.phone-video-mode .main-btn > div:first-child,
       .editor-grid.phone-video-mode .sub-btn .icon-container {
-        width: 72px !important;
-        height: 72px !important;
-        border-radius: 22px !important;
+        width: 58px !important;
+        height: 58px !important;
+        border-radius: 18px !important;
         display: flex;
         align-items: center;
         justify-content: center;
         background: rgba(255,255,255,0.14) !important;
         border: 1px solid rgba(255,255,255,0.26) !important;
-        box-shadow: 0 16px 34px rgba(0,0,0,0.5);
+        box-shadow: 0 12px 26px rgba(0,0,0,0.5);
       }
       .editor-grid.phone-video-mode .main-btn.centered > div:first-child,
       .editor-grid.phone-video-mode .sub-btn.centered .icon-container {
@@ -2035,32 +2045,28 @@ export default function NaylaCore() {
         flex: 1;
         min-height: 0;
         display: grid;
-        grid-template-columns: minmax(220px, 0.9fr) minmax(360px, 1.6fr) minmax(280px, 1fr);
-        grid-template-rows: minmax(0, 1fr) 150px clamp(112px, 14vh, 156px) clamp(118px, 15vh, 170px);
+        grid-template-columns: clamp(88px, 7vw, 104px) minmax(0, 0.9fr) minmax(280px, 1.6fr) minmax(0, 1fr);
+        grid-template-rows: minmax(0, 1fr) 150px;
         transition: grid-template-columns 320ms ease;
         grid-template-areas:
-          "media preview inspector"
-          "timeline timeline inspector"
-          "subtools subtools subtools"
-          "maintools maintools maintools";
+          "subtools media preview inspector"
+          "maintools timeline timeline inspector";
         gap: 12px;
         padding: 12px;
         overflow: hidden;
         background: ${darkMode ? '#000' : '#f3f4f6'};
       }
       .editor-grid.left-expanded {
-        grid-template-columns: minmax(300px, 1.35fr) minmax(280px, 1fr) minmax(220px, 0.72fr);
+        grid-template-columns: clamp(88px, 7vw, 104px) minmax(300px, 1.35fr) minmax(280px, 1fr) minmax(220px, 0.72fr);
       }
       .editor-grid.right-expanded {
-        grid-template-columns: minmax(180px, 0.72fr) minmax(280px, 1fr) minmax(340px, 1.45fr);
+        grid-template-columns: clamp(88px, 7vw, 104px) minmax(180px, 0.72fr) minmax(280px, 1fr) minmax(340px, 1.45fr);
       }
       .editor-grid.video-expanded {
-        grid-template-columns: 0px 1fr 0px;
+        grid-template-columns: 0px 0px 1fr 0px;
         grid-template-areas:
-          "media preview inspector"
-          "timeline timeline timeline"
-          "subtools subtools subtools"
-          "maintools maintools maintools";
+          "subtools media preview inspector"
+          "maintools timeline timeline inspector";
       }
       .editor-left-stack { display: contents; }
       .editor-preview-panel {
@@ -2079,8 +2085,8 @@ export default function NaylaCore() {
       }
       .editor-preview-canvas {
         width: min(100%, 760px) !important;
-        max-width: min(760px, calc(100vw - 620px)) !important;
-        max-height: calc(100vh - 280px);
+        max-width: min(760px, calc(100vw - 700px)) !important;
+        max-height: calc(100% - 76px);
         margin: 0 auto;
         border-radius: 14px;
       }
@@ -2129,8 +2135,12 @@ export default function NaylaCore() {
         border-radius: 16px;
         background: ${darkMode ? '#050505' : '#fff'} !important;
         box-shadow: 0 12px 30px rgba(0,0,0,0.25);
-        overflow: auto;
-        padding: clamp(12px, 1.4vh, 18px) clamp(14px, 1.6vw, 22px) !important;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        overflow-x: hidden !important;
+        overflow-y: auto !important;
+        padding: clamp(12px, 1.4vh, 18px) 10px !important;
       }
       .editor-maintools-bar {
         grid-area: maintools;
@@ -2139,17 +2149,30 @@ export default function NaylaCore() {
         border-radius: 16px;
         background: ${darkMode ? '#050505' : '#fff'} !important;
         box-shadow: 0 12px 30px rgba(0,0,0,0.25);
-        overflow: auto;
-        padding: clamp(12px, 1.4vh, 18px) clamp(14px, 1.6vw, 22px) !important;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        overflow-x: hidden !important;
+        overflow-y: auto !important;
+        padding: clamp(12px, 1.4vh, 18px) 10px !important;
       }
-      /* Agrandar botones en desktop para aprovechar el espacio inferior */
-      .editor-subtools-bar .sub-btn { min-height: 100%; min-width: clamp(88px, 9vw, 128px); }
-      .editor-subtools-bar .sub-btn .icon-container { width: clamp(58px, 6vw, 76px); height: clamp(58px, 6vw, 76px); }
-      .editor-subtools-bar .sub-btn span { font-size: clamp(10px, 0.85vw, 13px); margin-top: 6px; }
+      .editor-subtools-bar .sub-btn {
+        flex: 0 0 auto;
+        width: 100%;
+        min-width: 0;
+        min-height: clamp(76px, 10vh, 104px);
+      }
+      .editor-subtools-bar .sub-btn .icon-container { width: clamp(44px, 4vw, 62px); height: clamp(44px, 4vw, 62px); }
+      .editor-subtools-bar .sub-btn span { font-size: clamp(9px, 0.75vw, 12px); margin-top: 4px; }
 
-      .editor-maintools-bar .main-btn { min-height: 100%; min-width: clamp(100px, 12vw, 150px); }
-      .editor-maintools-bar .main-btn svg { width: clamp(34px, 3.5vw, 48px); height: clamp(34px, 3.5vw, 48px); }
-      .editor-maintools-bar .main-btn span { font-size: clamp(11px, 0.9vw, 14px); margin-top: 8px; }
+      .editor-maintools-bar .main-btn {
+        flex: 0 0 auto;
+        width: 100%;
+        min-width: 0;
+        min-height: clamp(76px, 10vh, 104px);
+      }
+      .editor-maintools-bar .main-btn svg { width: clamp(28px, 2.5vw, 40px); height: clamp(28px, 2.5vw, 40px); }
+      .editor-maintools-bar .main-btn span { font-size: clamp(10px, 0.8vw, 13px); margin-top: 5px; }
 
       .editor-media-gallery { grid-area: media; overflow: hidden; display: flex; flex-direction: column; }
       .nayla-chat-panel {
@@ -2168,18 +2191,18 @@ export default function NaylaCore() {
 
     @media (min-width: 1366px) {
       .editor-grid {
-        grid-template-columns: minmax(240px, 0.9fr) minmax(500px, 1.6fr) minmax(300px, 1fr);
-        grid-template-rows: minmax(0, 1fr) 150px clamp(112px, 14vh, 156px) clamp(118px, 15vh, 170px);
+        grid-template-columns: clamp(96px, 7vw, 112px) minmax(240px, 0.9fr) minmax(500px, 1.6fr) minmax(300px, 1fr);
+        grid-template-rows: minmax(0, 1fr) 150px;
       }
       .editor-preview-canvas {
-        max-width: min(820px, calc(100vw - 700px)) !important;
+        max-width: min(820px, calc(100vw - 790px)) !important;
       }
     }
 
     @media (min-width: 1600px) {
       .editor-grid {
-        grid-template-columns: minmax(300px, 0.95fr) minmax(680px, 1.65fr) minmax(340px, 1.05fr);
-        grid-template-rows: minmax(0, 1fr) 160px clamp(120px, 14vh, 164px) clamp(124px, 15vh, 178px);
+        grid-template-columns: clamp(104px, 7vw, 120px) minmax(300px, 0.95fr) minmax(680px, 1.65fr) minmax(340px, 1.05fr);
+        grid-template-rows: minmax(0, 1fr) 160px;
       }
       .editor-preview-canvas {
         max-width: 920px !important;
@@ -3396,7 +3419,7 @@ export default function NaylaCore() {
           </div>
         )}
         {/* FILA DE SUB-HERRAMIENTAS */}
-        <div ref={subToolsCarouselRef} className={`editor-subtools-bar flex gap-2 w-full p-3 border-t ${darkMode ? 'bg-neutral-950 border-neutral-900' : 'bg-gray-50 border-gray-200'}`} onClick={(e) => e.stopPropagation()} style={{ overflowX: 'auto', flexWrap: 'nowrap', backgroundColor: canvasRatio === '16/9' ? 'rgba(0, 0, 0, 0.8)' : undefined, position: canvasRatio === '16/9' ? 'fixed' : undefined, bottom: canvasRatio === '16/9' ? '80px' : undefined, zIndex: canvasRatio === '16/9' ? 9999 : undefined, left: canvasRatio === '16/9' ? '0' : undefined, right: canvasRatio === '16/9' ? '0' : undefined }}>
+        <div ref={subToolsCarouselRef} className={`editor-subtools-bar flex gap-2 w-full p-3 border-t ${darkMode ? 'bg-neutral-950 border-neutral-900' : 'bg-gray-50 border-gray-200'}`} onClick={(e) => e.stopPropagation()} style={{ overflowX: 'auto', flexWrap: 'nowrap' }}>
           {SUB_TOOLS[mainNav]?.map((tool) => {
             if (tool.id === 'subir-vf') {
               return (
@@ -3436,7 +3459,7 @@ export default function NaylaCore() {
         </div>
 
         {/* FILA DE BOTONES PRINCIPALES */}
-        <div ref={mainToolsCarouselRef} className={`editor-maintools-bar flex gap-2 w-full p-3 ${darkMode ? 'bg-black' : 'bg-white'}`} onClick={(e) => e.stopPropagation()} style={{ overflowX: 'auto', flexWrap: 'nowrap', backgroundColor: canvasRatio === '16/9' ? 'rgba(0, 0, 0, 0.8)' : undefined, position: canvasRatio === '16/9' ? 'fixed' : undefined, bottom: canvasRatio === '16/9' ? '0' : undefined, left: canvasRatio === '16/9' ? '0' : undefined, right: canvasRatio === '16/9' ? '0' : undefined, zIndex: canvasRatio === '16/9' ? 9999 : undefined }}>
+        <div ref={mainToolsCarouselRef} className={`editor-maintools-bar flex gap-2 w-full p-3 ${darkMode ? 'bg-black' : 'bg-white'}`} onClick={(e) => e.stopPropagation()} style={{ overflowX: 'auto', flexWrap: 'nowrap' }}>
           {MAIN_TOOLS.map((tool) => (
             <button key={tool.id} data-tool-id={tool.id} className={`main-btn w-full ${centeredMainToolId === tool.id ? 'centered' : ''} ${mainNav === tool.id ? 'active' : ''} ${!darkMode ? 'bg-gray-100 border-gray-300 text-black' : ''}`} style={{ backgroundColor: !darkMode ? (mainNav === tool.id ? '#000' : '#f3f4f6') : undefined, color: !darkMode ? (mainNav === tool.id ? '#fff' : '#000') : undefined }} onClick={() => handleMainCarouselToolPress(tool)}>
               <div>{tool.icon}</div>
