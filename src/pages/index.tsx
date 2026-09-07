@@ -823,9 +823,16 @@ export default function NaylaCore() {
           if (!cancelled && current) {
             setSession(current);
             cargarDatosUsuario(current.user.id);
+          } else if (process.env.NODE_ENV === 'development' && typeof window !== 'undefined' && window.location.search.includes('dev=1')) {
+            const devSession = { user: { id: 'dev-user', email: 'dev@nayla.app' }, accessToken: 'dev-token' };
+            setSession(devSession as any);
           }
         } catch (error) {
           console.warn('Firebase no configurado:', error);
+          if (process.env.NODE_ENV === 'development' && typeof window !== 'undefined' && window.location.search.includes('dev=1')) {
+            const devSession = { user: { id: 'dev-user', email: 'dev@nayla.app' }, accessToken: 'dev-token' };
+            setSession(devSession as any);
+          }
         }
       }
 
@@ -1907,18 +1914,18 @@ export default function NaylaCore() {
         border-radius: 999px;
         background: linear-gradient(135deg, rgba(0,0,0,0.82), rgba(0,0,0,0.58)) !important;
       }
-      .editor-grid.phone-video-mode .editor-subtools-bar,
-      .editor-grid.phone-video-mode .editor-maintools-bar {
+      .editor-grid.phone-video-mode .editor-toolbars {
         display: flex !important;
         position: fixed !important;
+        top: 0 !important;
+        bottom: 0 !important;
         left: 0 !important;
         width: var(--phone-tools-width) !important;
         z-index: 31 !important;
         opacity: 1 !important;
         pointer-events: auto !important;
-        flex-direction: column;
-        flex-wrap: nowrap !important;
-        align-items: center;
+        flex-direction: column !important;
+        align-items: center !important;
         overflow-x: hidden !important;
         overflow-y: auto !important;
         scroll-snap-type: y mandatory;
@@ -1926,10 +1933,23 @@ export default function NaylaCore() {
         -webkit-overflow-scrolling: touch;
         background: linear-gradient(90deg, rgba(0,0,0,0.96), rgba(0,0,0,0.84)) !important;
         border: 0 !important;
+        border-radius: 0 !important;
         padding: 10px 6px !important;
+        gap: 10px !important;
       }
-      .editor-grid.phone-video-mode .editor-subtools-bar { top: 0; bottom: 50%; }
-      .editor-grid.phone-video-mode .editor-maintools-bar { top: 50%; bottom: 0; }
+      .editor-grid.phone-video-mode .editor-subtools-bar,
+      .editor-grid.phone-video-mode .editor-maintools-bar {
+        display: flex !important;
+        position: static !important;
+        width: 100% !important;
+        height: auto !important;
+        flex-direction: column !important;
+        align-items: center !important;
+        background: transparent !important;
+        border: 0 !important;
+        padding: 0 !important;
+        gap: 10px !important;
+      }
       .editor-grid.phone-video-mode .main-btn,
       .editor-grid.phone-video-mode .sub-btn {
         flex: 0 0 84px !important;
@@ -2045,12 +2065,12 @@ export default function NaylaCore() {
         flex: 1;
         min-height: 0;
         display: grid;
-        grid-template-columns: clamp(88px, 7vw, 104px) minmax(0, 0.9fr) minmax(280px, 1.6fr) minmax(0, 1fr);
+        grid-template-columns: clamp(88px, 7vw, 104px) minmax(220px, 0.8fr) minmax(320px, 1.8fr) minmax(240px, 1fr);
         grid-template-rows: minmax(0, 1fr) 150px;
         transition: grid-template-columns 320ms ease;
         grid-template-areas:
-          "subtools media preview inspector"
-          "maintools timeline timeline inspector";
+          "leftbar media preview inspector"
+          "leftbar timeline timeline inspector";
         gap: 12px;
         padding: 12px;
         overflow: hidden;
@@ -2065,8 +2085,8 @@ export default function NaylaCore() {
       .editor-grid.video-expanded {
         grid-template-columns: 0px 0px 1fr 0px;
         grid-template-areas:
-          "subtools media preview inspector"
-          "maintools timeline timeline inspector";
+          "leftbar media preview inspector"
+          "leftbar timeline timeline inspector";
       }
       .editor-left-stack { display: contents; }
       .editor-preview-panel {
@@ -2084,9 +2104,10 @@ export default function NaylaCore() {
         cursor: pointer;
       }
       .editor-preview-canvas {
-        width: min(100%, 760px) !important;
-        max-width: min(760px, calc(100vw - 700px)) !important;
-        max-height: calc(100% - 76px);
+        width: 100% !important;
+        height: 100% !important;
+        max-width: 100% !important;
+        max-height: calc(100% - 64px) !important;
         margin: 0 auto;
         border-radius: 14px;
       }
@@ -2128,9 +2149,10 @@ export default function NaylaCore() {
         flex: 1;
         border-top: 0;
       }
-      .editor-subtools-bar {
-        grid-area: subtools;
+      .editor-toolbars {
+        grid-area: leftbar;
         min-width: 0;
+        height: 100%;
         border: 1px solid ${darkMode ? '#1a1a1a' : '#e5e7eb'};
         border-radius: 16px;
         background: ${darkMode ? '#050505' : '#fff'} !important;
@@ -2140,39 +2162,38 @@ export default function NaylaCore() {
         align-items: center;
         overflow-x: hidden !important;
         overflow-y: auto !important;
-        padding: clamp(12px, 1.4vh, 18px) 10px !important;
+        padding: clamp(10px, 1.2vh, 14px) 8px !important;
+        gap: 12px;
       }
+      .editor-subtools-bar,
       .editor-maintools-bar {
-        grid-area: maintools;
-        min-width: 0;
-        border: 1px solid ${darkMode ? '#1a1a1a' : '#e5e7eb'};
-        border-radius: 16px;
-        background: ${darkMode ? '#050505' : '#fff'} !important;
-        box-shadow: 0 12px 30px rgba(0,0,0,0.25);
+        width: 100%;
         display: flex;
         flex-direction: column;
         align-items: center;
-        overflow-x: hidden !important;
-        overflow-y: auto !important;
-        padding: clamp(12px, 1.4vh, 18px) 10px !important;
+        border: none !important;
+        background: transparent !important;
+        box-shadow: none !important;
+        padding: 0 !important;
+        gap: 8px !important;
       }
       .editor-subtools-bar .sub-btn {
         flex: 0 0 auto;
         width: 100%;
         min-width: 0;
-        min-height: clamp(76px, 10vh, 104px);
+        min-height: clamp(68px, 8.5vh, 92px);
       }
-      .editor-subtools-bar .sub-btn .icon-container { width: clamp(44px, 4vw, 62px); height: clamp(44px, 4vw, 62px); }
-      .editor-subtools-bar .sub-btn span { font-size: clamp(9px, 0.75vw, 12px); margin-top: 4px; }
+      .editor-subtools-bar .sub-btn .icon-container { width: clamp(40px, 3.5vw, 54px); height: clamp(40px, 3.5vw, 54px); }
+      .editor-subtools-bar .sub-btn span { font-size: clamp(9px, 0.75vw, 11px); margin-top: 3px; }
 
       .editor-maintools-bar .main-btn {
         flex: 0 0 auto;
         width: 100%;
         min-width: 0;
-        min-height: clamp(76px, 10vh, 104px);
+        min-height: clamp(68px, 8.5vh, 92px);
       }
-      .editor-maintools-bar .main-btn svg { width: clamp(28px, 2.5vw, 40px); height: clamp(28px, 2.5vw, 40px); }
-      .editor-maintools-bar .main-btn span { font-size: clamp(10px, 0.8vw, 13px); margin-top: 5px; }
+      .editor-maintools-bar .main-btn svg { width: clamp(24px, 2.2vw, 36px); height: clamp(24px, 2.2vw, 36px); }
+      .editor-maintools-bar .main-btn span { font-size: clamp(9px, 0.75vw, 12px); margin-top: 4px; }
 
       .editor-media-gallery { grid-area: media; overflow: hidden; display: flex; flex-direction: column; }
       .nayla-chat-panel {
@@ -2191,21 +2212,21 @@ export default function NaylaCore() {
 
     @media (min-width: 1366px) {
       .editor-grid {
-        grid-template-columns: clamp(96px, 7vw, 112px) minmax(240px, 0.9fr) minmax(500px, 1.6fr) minmax(300px, 1fr);
+        grid-template-columns: clamp(96px, 7vw, 112px) minmax(220px, 0.8fr) minmax(500px, 1.8fr) minmax(280px, 1fr);
         grid-template-rows: minmax(0, 1fr) 150px;
       }
       .editor-preview-canvas {
-        max-width: min(820px, calc(100vw - 790px)) !important;
+        max-width: 100% !important;
       }
     }
 
     @media (min-width: 1600px) {
       .editor-grid {
-        grid-template-columns: clamp(104px, 7vw, 120px) minmax(300px, 0.95fr) minmax(680px, 1.65fr) minmax(340px, 1.05fr);
+        grid-template-columns: clamp(104px, 7vw, 120px) minmax(260px, 0.85fr) minmax(680px, 1.85fr) minmax(320px, 1fr);
         grid-template-rows: minmax(0, 1fr) 160px;
       }
       .editor-preview-canvas {
-        max-width: 920px !important;
+        max-width: 100% !important;
       }
     }
   `;
@@ -2561,7 +2582,7 @@ export default function NaylaCore() {
 
         <section className="editor-preview-panel" onClick={(e) => { e.stopPropagation(); if (!isPhoneViewport) setIsVideoExpanded(prev => !prev); }} onPointerUp={handleVideoSurfaceTap} style={{ width: '100%', padding: '0', backgroundColor: '#050505' }}>
           <div ref={containerRef} onPointerDown={handlePointerDown} onPointerMove={handlePointerMove} onPointerUp={handlePointerUp} onPointerLeave={handlePointerUp}
-            className="editor-preview-canvas w-full mx-auto relative flex items-center justify-center overflow-hidden touch-none" style={{ aspectRatio: canvasRatio, maxWidth: canvasRatio === '16/9' ? '100%' : (isVideoExpanded ? 'none' : '430px'), backgroundColor: darkMode ? '#0a0a0a' : '#f0f0f0', border: darkMode ? '1px solid #1a1a1a' : '1px solid #ddd' }}>
+            className="editor-preview-canvas w-full mx-auto relative flex items-center justify-center overflow-hidden touch-none" style={{ aspectRatio: canvasRatio, maxWidth: '100%', maxHeight: '100%', backgroundColor: darkMode ? '#0a0a0a' : '#f0f0f0', border: darkMode ? '1px solid #1a1a1a' : '1px solid #ddd' }}>
             {(lineaDeTiempo.filter(t => t.tipo === 'video' || t.tipo === 'foto').length > 0 || videoResultadoUrl || mediaActivaUrl) ? (
               <>
 
@@ -3418,7 +3439,18 @@ export default function NaylaCore() {
             <button className="surface-overlay-close" type="button" onClick={closeExpandedSurface} aria-label="Cerrar herramientas">✕</button>
           </div>
         )}
-        {/* FILA DE SUB-HERRAMIENTAS */}
+
+        {/* FILA DE BOTONES PRINCIPALES (MAIN_TOOLS PRIMERO) */}
+        <div ref={mainToolsCarouselRef} className={`editor-maintools-bar flex gap-2 w-full p-3 ${darkMode ? 'bg-black' : 'bg-white'}`} onClick={(e) => e.stopPropagation()} style={{ overflowX: 'auto', flexWrap: 'nowrap' }}>
+          {MAIN_TOOLS.map((tool) => (
+            <button key={tool.id} data-tool-id={tool.id} className={`main-btn w-full ${centeredMainToolId === tool.id ? 'centered' : ''} ${mainNav === tool.id ? 'active' : ''} ${!darkMode ? 'bg-gray-100 border-gray-300 text-black' : ''}`} style={{ backgroundColor: !darkMode ? (mainNav === tool.id ? '#000' : '#f3f4f6') : undefined, color: !darkMode ? (mainNav === tool.id ? '#fff' : '#000') : undefined }} onClick={() => handleMainCarouselToolPress(tool)}>
+              <div>{tool.icon}</div>
+              <span className={!darkMode && mainNav !== tool.id ? 'text-black font-bold' : ''}>{tool.nombre}</span>
+            </button>
+          ))}
+        </div>
+
+        {/* FILA DE SUB-HERRAMIENTAS (SUB_TOOLS DEBAJO) */}
         <div ref={subToolsCarouselRef} className={`editor-subtools-bar flex gap-2 w-full p-3 border-t ${darkMode ? 'bg-neutral-950 border-neutral-900' : 'bg-gray-50 border-gray-200'}`} onClick={(e) => e.stopPropagation()} style={{ overflowX: 'auto', flexWrap: 'nowrap' }}>
           {SUB_TOOLS[mainNav]?.map((tool) => {
             if (tool.id === 'subir-vf') {
@@ -3456,17 +3488,6 @@ export default function NaylaCore() {
               </button>
             );
           })}
-        </div>
-
-        {/* FILA DE BOTONES PRINCIPALES */}
-        <div ref={mainToolsCarouselRef} className={`editor-maintools-bar flex gap-2 w-full p-3 ${darkMode ? 'bg-black' : 'bg-white'}`} onClick={(e) => e.stopPropagation()} style={{ overflowX: 'auto', flexWrap: 'nowrap' }}>
-          {MAIN_TOOLS.map((tool) => (
-            <button key={tool.id} data-tool-id={tool.id} className={`main-btn w-full ${centeredMainToolId === tool.id ? 'centered' : ''} ${mainNav === tool.id ? 'active' : ''} ${!darkMode ? 'bg-gray-100 border-gray-300 text-black' : ''}`} style={{ backgroundColor: !darkMode ? (mainNav === tool.id ? '#000' : '#f3f4f6') : undefined, color: !darkMode ? (mainNav === tool.id ? '#fff' : '#000') : undefined }} onClick={() => handleMainCarouselToolPress(tool)}>
-              <div>{tool.icon}</div>
-              <span className={!darkMode && mainNav !== tool.id ? 'text-black font-bold' : ''}>{tool.nombre}</span>
-            </button>
-          ))}
-
         </div>
 
         </div>
