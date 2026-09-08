@@ -114,6 +114,7 @@ export default function NaylaCore() {
   const [subTool, setSubTool] = useState<string | null>(null);
   const [isVideoExpanded, setIsVideoExpanded] = useState<boolean>(false);
   const [mobileOverlaysVisible, setMobileOverlaysVisible] = useState<boolean>(false);
+  const [viewportOverride, setViewportOverride] = useState<'auto' | 'pc' | 'phone'>('auto');
   const [isPhoneViewport, setIsPhoneViewport] = useState<boolean>(false);
   const [deviceOrientation, setDeviceOrientation] = useState<'portrait' | 'landscape'>('portrait');
   const [sourceVideoRatio, setSourceVideoRatio] = useState<number | null>(null);
@@ -348,7 +349,13 @@ export default function NaylaCore() {
     const updateViewportMode = () => {
       const width = window.visualViewport?.width || window.innerWidth;
       const height = window.visualViewport?.height || window.innerHeight;
-      setIsPhoneViewport(width < 768);
+      if (viewportOverride === 'pc') {
+        setIsPhoneViewport(false);
+      } else if (viewportOverride === 'phone') {
+        setIsPhoneViewport(true);
+      } else {
+        setIsPhoneViewport(width < 1024);
+      }
       setDeviceOrientation(width > height ? 'landscape' : 'portrait');
     };
 
@@ -359,7 +366,7 @@ export default function NaylaCore() {
       window.removeEventListener('resize', updateViewportMode);
       window.visualViewport?.removeEventListener('resize', updateViewportMode);
     };
-  }, []);
+  }, [viewportOverride]);
 
   useEffect(() => {
     if (!expandedSurface) return;
@@ -2056,7 +2063,7 @@ export default function NaylaCore() {
       overflow: hidden;
     }
 
-    @media (min-width: 768px) {
+    @media (min-width: 1024px) {
 
       .editor-grid {
         width: 100%;
@@ -2065,28 +2072,22 @@ export default function NaylaCore() {
         flex: 1;
         min-height: 0;
         display: grid;
-        grid-template-columns: clamp(88px, 7vw, 104px) minmax(220px, 0.8fr) minmax(320px, 1.8fr) minmax(240px, 1fr) 300px;
+        grid-template-columns: clamp(88px, 7vw, 104px) minmax(220px, 0.8fr) minmax(320px, 4fr) 300px;
         grid-template-rows: minmax(0, 1fr) 150px;
         transition: grid-template-columns 320ms ease;
         grid-template-areas:
-          "leftbar media preview inspector nayla"
-          "leftbar timeline timeline inspector nayla";
+          "leftbar media preview nayla"
+          "leftbar timeline timeline nayla";
         gap: 12px;
         padding: 12px;
         overflow: hidden;
         background: ${darkMode ? '#000' : '#f3f4f6'};
       }
-      .editor-grid.left-expanded {
-        grid-template-columns: clamp(88px, 7vw, 104px) minmax(300px, 1.35fr) minmax(280px, 1fr) minmax(220px, 0.72fr) 300px;
-      }
-      .editor-grid.right-expanded {
-        grid-template-columns: clamp(88px, 7vw, 104px) minmax(180px, 0.72fr) minmax(280px, 1fr) minmax(340px, 1.45fr) 300px;
-      }
       .editor-grid.video-expanded {
-        grid-template-columns: 0px 0px 1fr 0px 0px;
+        grid-template-columns: 0px 0px 1fr 0px;
         grid-template-areas:
-          "leftbar media preview inspector nayla"
-          "leftbar timeline timeline inspector nayla";
+          "leftbar media preview nayla"
+          "leftbar timeline timeline nayla";
       }
       .editor-left-stack { display: contents; }
       .editor-preview-panel {
@@ -2195,7 +2196,6 @@ export default function NaylaCore() {
       .editor-maintools-bar .main-btn svg { width: clamp(24px, 2.2vw, 36px); height: clamp(24px, 2.2vw, 36px); }
       .editor-maintools-bar .main-btn span { font-size: clamp(9px, 0.75vw, 12px); margin-top: 4px; }
 
-
       .editor-media-gallery { grid-area: media; overflow: hidden; display: flex; flex-direction: column; }
       .nayla-chat-panel {
         grid-area: nayla;
@@ -2210,24 +2210,12 @@ export default function NaylaCore() {
         box-shadow: 0 12px 30px rgba(0,0,0,0.25) !important;
         transform: none !important;
       }
-
-      .nayla-chat-panel {
-        grid-area: inspector;
-        position: relative !important;
-        inset: auto !important;
-        width: 100% !important;
-        height: 100% !important;
-        min-height: 0;
-        border-left: 0 !important;
-        box-shadow: none !important;
-        transform: none !important;
-      }
     }
 
 
     @media (min-width: 1366px) {
       .editor-grid {
-        grid-template-columns: clamp(96px, 7vw, 112px) minmax(220px, 0.8fr) minmax(500px, 1.8fr) minmax(280px, 1fr) 320px;
+        grid-template-columns: clamp(96px, 7vw, 112px) minmax(220px, 0.8fr) minmax(500px, 4fr) 320px;
         grid-template-rows: minmax(0, 1fr) 150px;
       }
       .editor-preview-canvas {
@@ -2237,7 +2225,7 @@ export default function NaylaCore() {
 
     @media (min-width: 1600px) {
       .editor-grid {
-        grid-template-columns: clamp(104px, 7vw, 120px) minmax(260px, 0.85fr) minmax(680px, 1.85fr) minmax(320px, 1fr) 350px;
+        grid-template-columns: clamp(104px, 7vw, 120px) minmax(260px, 0.85fr) minmax(680px, 4fr) 350px;
         grid-template-rows: minmax(0, 1fr) 160px;
       }
       .editor-preview-canvas {
@@ -2546,6 +2534,34 @@ export default function NaylaCore() {
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
             )}
           </button>
+
+          {/* BOTÓN MODO COMPUTADORA / MODO TELÉFONO */}
+          <button
+            onClick={() => {
+              if (viewportOverride === 'auto') setViewportOverride('phone');
+              else if (viewportOverride === 'phone') setViewportOverride('pc');
+              else setViewportOverride('auto');
+            }}
+            className="neon-btn nav-btn"
+            style={{
+              padding: '6px',
+              color: viewportOverride !== 'auto' ? '#00ffcc' : (darkMode ? '#fff' : '#000'),
+              borderColor: viewportOverride !== 'auto' ? '#00ffcc' : undefined
+            }}
+            title={
+              viewportOverride === 'pc'
+                ? 'Modo Computadora Forzado (Clic para Auto)'
+                : viewportOverride === 'phone'
+                ? 'Modo Celular Forzado (Clic para Modo PC)'
+                : 'Vista Automática (Clic para Modo Celular)'
+            }
+          >
+            {isPhoneViewport ? (
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="5" y="2" width="14" height="20" rx="2" ry="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg>
+            ) : (
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+            )}
+          </button>
           <select value={calidadExportacion} onChange={(e) => setCalidadExportacion(e.target.value)} style={{ backgroundColor: '#000', color: darkMode ? '#fff' : '#000', border: '1px solid #404040', borderRadius: '8px', padding: '6px 10px', fontSize: '0.7rem', outline: 'none' }}>
             <option value="480p">480p</option>
             <option value="720p">720p</option>
@@ -2593,11 +2609,11 @@ export default function NaylaCore() {
       <div className={`editor-grid flex flex-col md:flex-row w-full gap-4 flex-1 overflow-hidden ${isPhoneViewport ? 'phone-video-mode' : ''} ${mobileOverlaysVisible ? 'mobile-overlays-visible' : 'mobile-overlays-hidden'} ${!isPhoneViewport && isVideoExpanded ? 'video-expanded' : ''} ${expandedSurface === 'tools' ? 'tools-surface-expanded' : ''} ${expandedSurface === 'chat' ? 'chat-surface-expanded' : ''}`}>
 
         {/* COLUMNA IZQUIERDA: Monitor de Video y Línea de Tiempo */}
-        <div className="editor-left-stack flex flex-col w-full md:w-1/2">
+        <div className="editor-left-stack flex flex-col w-full">
 
         <section className="editor-preview-panel" onClick={(e) => { e.stopPropagation(); if (!isPhoneViewport) setIsVideoExpanded(prev => !prev); }} onPointerUp={handleVideoSurfaceTap} style={{ width: '100%', padding: '0', backgroundColor: '#050505' }}>
           <div ref={containerRef} onPointerDown={handlePointerDown} onPointerMove={handlePointerMove} onPointerUp={handlePointerUp} onPointerLeave={handlePointerUp}
-            className="editor-preview-canvas w-full mx-auto relative flex items-center justify-center overflow-hidden touch-none" style={{ aspectRatio: canvasRatio, maxWidth: '100%', maxHeight: '100%', backgroundColor: darkMode ? '#0a0a0a' : '#f0f0f0', border: darkMode ? '1px solid #1a1a1a' : '1px solid #ddd' }}>
+            className="editor-preview-canvas w-full relative flex items-center justify-center overflow-hidden touch-none" style={{ maxWidth: '100%', maxHeight: '100%', backgroundColor: darkMode ? '#0a0a0a' : '#f0f0f0', border: darkMode ? '1px solid #1a1a1a' : '1px solid #ddd' }}>
             {(lineaDeTiempo.filter(t => t.tipo === 'video' || t.tipo === 'foto').length > 0 || videoResultadoUrl || mediaActivaUrl) ? (
               <>
 
@@ -2704,7 +2720,7 @@ export default function NaylaCore() {
         </div>
 
         {/* COLUMNA DERECHA: Herramientas, Galería y Controles */}
-        {!isVideoExpanded && (<div className="editor-tools-panel flex flex-col w-full md:w-1/2 flex-1 overflow-hidden">
+        {!isVideoExpanded && (<div className="editor-tools-panel flex flex-col w-full flex-1 overflow-hidden">
 
 
         {/* NUEVA ESTRUCTURA DE HERRAMIENTAS */}
@@ -3457,7 +3473,7 @@ export default function NaylaCore() {
 
         {/* FILA DE BOTONES PRINCIPALES (MAIN_TOOLS PRIMERO) */}
         <div ref={mainToolsCarouselRef} className={`editor-maintools-bar flex gap-2 w-full p-3 ${darkMode ? 'bg-black' : 'bg-white'}`} onClick={(e) => e.stopPropagation()} style={{ overflowX: 'auto', flexWrap: 'nowrap' }}>
-          {MAIN_TOOLS.map((tool) => (
+          {MAIN_TOOLS.filter(tool => isPhoneViewport || tool.id !== 'ia').map((tool) => (
             <button key={tool.id} data-tool-id={tool.id} className={`main-btn w-full ${centeredMainToolId === tool.id ? 'centered' : ''} ${mainNav === tool.id ? 'active' : ''} ${!darkMode ? 'bg-gray-100 border-gray-300 text-black' : ''}`} style={{ backgroundColor: !darkMode ? (mainNav === tool.id ? '#000' : '#f3f4f6') : undefined, color: !darkMode ? (mainNav === tool.id ? '#fff' : '#000') : undefined }} onClick={() => handleMainCarouselToolPress(tool)}>
               <div>{tool.icon}</div>
               <span className={!darkMode && mainNav !== tool.id ? 'text-black font-bold' : ''}>{tool.nombre}</span>
@@ -3524,28 +3540,34 @@ export default function NaylaCore() {
             transform: isPhoneViewport ? (isChatOpen ? 'translateX(0)' : 'translateX(100%)') : 'none',
             transition: isPhoneViewport ? 'transform 0.3s ease-in-out' : 'none'
           }}>
-            {/* Header Sidebar */}
+            {/* Header Sidebar / Panel */}
             <div style={{ padding: '16px', borderBottom: `1px solid ${darkMode ? '#1a1a1a' : '#e5e7eb'}`, display: 'flex', flexDirection: 'column', gap: '12px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                   <img
                     src="/assets/imagenes/Icono-intro.jpeg"
-                    alt="Nayla Avatar"
-                    style={{ width: '40px', height: '40px', borderRadius: '8px', objectFit: 'cover' }}
+                    alt="Nayla"
+                    style={{ width: '42px', height: '42px', borderRadius: '50%', objectFit: 'cover', border: '2px solid #00cc66' }}
                   />
-                  <div style={{ display: 'flex', flexDirection: 'column' }}>
-                    <h3 style={{ margin: 0, color: darkMode ? '#fff' : '#000', fontSize: '1rem', fontWeight: 'bold' }}>Nayla</h3>
-                    <span style={{ fontSize: '0.75rem', color: '#888' }}>Asistente de Inteligencia Artificial</span>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginTop: '4px' }}>
-                      <div style={{ width: '6px', height: '6px', backgroundColor: '#00cc66', borderRadius: '50%', boxShadow: '0 0 6px #00cc66' }}></div>
-                      <span style={{ fontSize: '0.7rem', color: '#00cc66' }}>En línea • {chatMessages.length} msgs</span>
+                  <div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <h3 style={{ margin: 0, color: darkMode ? '#fff' : '#000', fontSize: '1.05rem', fontWeight: 'bold' }}>Nayla</h3>
+                      <span style={{ backgroundColor: darkMode ? '#1a1a1a' : '#e5e7eb', color: darkMode ? '#00ffcc' : '#00aa88', fontSize: '0.75rem', fontWeight: 'bold', padding: '2px 8px', borderRadius: '12px' }}>
+                        {chatMessages.length}
+                      </span>
+                    </div>
+                    <p style={{ margin: '2px 0 0 0', color: '#888', fontSize: '0.72rem' }}>Asistente de Inteligencia Artificial</p>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '5px', marginTop: '3px' }}>
+                      <div style={{ width: '7px', height: '7px', backgroundColor: '#00cc66', borderRadius: '50%', boxShadow: '0 0 8px #00cc66' }}></div>
+                      <span style={{ fontSize: '0.7rem', color: '#00cc66', fontWeight: '500' }}>En línea</span>
                     </div>
                   </div>
-                  {isPhoneViewport && <span style={{ fontSize: '0.78rem', opacity: 0.78, marginLeft: '8px' }}>← Volver al video con la X</span>}
                 </div>
-                <button onClick={() => { closeExpandedSurface(); setIsChatOpen(false); if (isPhoneViewport) setMobileOverlaysVisible(true); }} aria-label="Cerrar chat" style={{ background: 'none', border: 'none', color: darkMode ? '#fff' : '#000', cursor: 'pointer' }}>
-                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-                </button>
+                {isPhoneViewport && (
+                  <button onClick={() => { closeExpandedSurface(); setIsChatOpen(false); if (isPhoneViewport) setMobileOverlaysVisible(true); }} aria-label="Cerrar chat" style={{ background: 'none', border: 'none', color: darkMode ? '#fff' : '#000', cursor: 'pointer' }}>
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                  </button>
+                )}
               </div>
               {/* Toggle Nayla Fast / Pro */}
               <div style={{ display: 'flex', gap: '4px', backgroundColor: darkMode ? '#1a1a1a' : '#f3f4f6', padding: '4px', borderRadius: '8px' }}>
