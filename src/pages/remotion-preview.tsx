@@ -1,11 +1,8 @@
 import Head from 'next/head';
-import dynamic from 'next/dynamic';
+import { Player } from '@remotion/player';
 import { MainComposition } from '../components/MainComposition';
 
-const Player = dynamic(() => import('@remotion/player').then(m => m.Player), {
-  ssr: false,
-});
-
+// Definición de tipos y props por defecto (iguales a Root.tsx para test)
 const defaultProps = {
   timeline: [
     {
@@ -62,7 +59,7 @@ export default function RemotionPreview() {
         {/* Player Container */}
         <div className="relative w-full" style={{ aspectRatio: '9/16' }}>
             <Player
-            component={MainComposition as any}
+            component={MainComposition}
             inputProps={defaultProps}
             durationInFrames={durationInFrames}
             fps={fps}
