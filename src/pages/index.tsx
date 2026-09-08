@@ -2072,22 +2072,22 @@ export default function NaylaCore() {
         flex: 1;
         min-height: 0;
         display: grid;
-        grid-template-columns: clamp(88px, 7vw, 104px) minmax(340px, 2.2fr) minmax(240px, 1fr) minmax(280px, 1.2fr);
+        grid-template-columns: clamp(88px, 7vw, 104px) minmax(220px, 0.8fr) minmax(320px, 4fr) 300px;
         grid-template-rows: minmax(0, 1fr) 150px;
         transition: grid-template-columns 320ms ease;
         grid-template-areas:
-          "leftbar preview media nayla"
-          "leftbar timeline media nayla";
+          "leftbar media preview nayla"
+          "leftbar timeline timeline nayla";
         gap: 12px;
         padding: 12px;
         overflow: hidden;
         background: ${darkMode ? '#000' : '#f3f4f6'};
       }
       .editor-grid.video-expanded {
-        grid-template-columns: 0px 1fr 0px 0px;
+        grid-template-columns: 0px 0px 1fr 0px;
         grid-template-areas:
-          "leftbar preview media nayla"
-          "leftbar timeline media nayla";
+          "leftbar media preview nayla"
+          "leftbar timeline timeline nayla";
       }
       .editor-left-stack { display: contents; }
       .editor-preview-panel {
@@ -2215,7 +2215,7 @@ export default function NaylaCore() {
 
     @media (min-width: 1366px) {
       .editor-grid {
-        grid-template-columns: clamp(96px, 7vw, 112px) minmax(500px, 2.4fr) minmax(260px, 1fr) minmax(320px, 1.3fr);
+        grid-template-columns: clamp(96px, 7vw, 112px) minmax(220px, 0.8fr) minmax(500px, 4fr) 320px;
         grid-template-rows: minmax(0, 1fr) 150px;
       }
       .editor-preview-canvas {
@@ -2225,7 +2225,7 @@ export default function NaylaCore() {
 
     @media (min-width: 1600px) {
       .editor-grid {
-        grid-template-columns: clamp(104px, 7vw, 120px) minmax(680px, 2.6fr) minmax(300px, 1fr) minmax(350px, 1.3fr);
+        grid-template-columns: clamp(104px, 7vw, 120px) minmax(260px, 0.85fr) minmax(680px, 4fr) 350px;
         grid-template-rows: minmax(0, 1fr) 160px;
       }
       .editor-preview-canvas {
@@ -2609,11 +2609,11 @@ export default function NaylaCore() {
       <div className={`editor-grid flex flex-col md:flex-row w-full gap-4 flex-1 overflow-hidden ${isPhoneViewport ? 'phone-video-mode' : ''} ${mobileOverlaysVisible ? 'mobile-overlays-visible' : 'mobile-overlays-hidden'} ${!isPhoneViewport && isVideoExpanded ? 'video-expanded' : ''} ${expandedSurface === 'tools' ? 'tools-surface-expanded' : ''} ${expandedSurface === 'chat' ? 'chat-surface-expanded' : ''}`}>
 
         {/* COLUMNA IZQUIERDA: Monitor de Video y Línea de Tiempo */}
-        <div className="editor-left-stack flex flex-col w-full md:w-1/2">
+        <div className="editor-left-stack flex flex-col w-full">
 
         <section className="editor-preview-panel" onClick={(e) => { e.stopPropagation(); if (!isPhoneViewport) setIsVideoExpanded(prev => !prev); }} onPointerUp={handleVideoSurfaceTap} style={{ width: '100%', padding: '0', backgroundColor: '#050505' }}>
           <div ref={containerRef} onPointerDown={handlePointerDown} onPointerMove={handlePointerMove} onPointerUp={handlePointerUp} onPointerLeave={handlePointerUp}
-            className="editor-preview-canvas w-full mx-auto relative flex items-center justify-center overflow-hidden touch-none" style={{ aspectRatio: canvasRatio, maxWidth: '100%', maxHeight: '100%', backgroundColor: darkMode ? '#0a0a0a' : '#f0f0f0', border: darkMode ? '1px solid #1a1a1a' : '1px solid #ddd' }}>
+            className="editor-preview-canvas w-full relative flex items-center justify-center overflow-hidden touch-none" style={{ maxWidth: '100%', maxHeight: '100%', backgroundColor: darkMode ? '#0a0a0a' : '#f0f0f0', border: darkMode ? '1px solid #1a1a1a' : '1px solid #ddd' }}>
             {(lineaDeTiempo.filter(t => t.tipo === 'video' || t.tipo === 'foto').length > 0 || videoResultadoUrl || mediaActivaUrl) ? (
               <>
 
@@ -2720,7 +2720,7 @@ export default function NaylaCore() {
         </div>
 
         {/* COLUMNA DERECHA: Herramientas, Galería y Controles */}
-        {!isVideoExpanded && (<div className="editor-tools-panel flex flex-col w-full md:w-1/2 flex-1 overflow-hidden">
+        {!isVideoExpanded && (<div className="editor-tools-panel flex flex-col w-full flex-1 overflow-hidden">
 
 
         {/* NUEVA ESTRUCTURA DE HERRAMIENTAS */}
