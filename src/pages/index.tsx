@@ -39,6 +39,10 @@ type MarcoConfig = {
   color: string;
 };
 
+const POSICIONES: MarcoConfig['posicion'][] = ['derecha', 'izquierda', 'abajo', 'arriba', 'derecha+abajo', 'derecha+arriba', 'izquierda+abajo', 'izquierda+arriba'];
+const ICONOS_POS: Record<string, string> = { derecha: '→', izquierda: '←', abajo: '↓', arriba: '↑', 'derecha+abajo': '↘', 'derecha+arriba': '↗', 'izquierda+abajo': '↙', 'izquierda+arriba': '↖' };
+
+
 
 const MAIN_TOOLS = [
   { id: 'editor', nombre: 'EDITOR', icon: <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><line x1="20" y1="4" x2="8.12" y2="15.88"/><line x1="14.47" y1="14.48" x2="20" y2="20"/><line x1="8.12" y1="8.12" x2="12" y2="12"/></svg> },
@@ -90,6 +94,50 @@ const SUB_TOOLS: Record<string, any[]> = {
 
 
 export default function NaylaCore() {
+  const globalStyles = `
+    .main-btn { width: 100%; border: 1px solid transparent; color: #a3a3a3; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; font-size: 11px; font-weight: bold; cursor: pointer; transition: all 0.2s ease; border-radius: 14px; padding: 10px 4px; min-height: 64px; background: #0a0a0a; border-color: #262626; }
+    .main-btn:hover { color: #ffffff; border-color: #404040; }
+    .main-btn.active { background: #ffffff; color: #000000; border-color: #ffffff; box-shadow: 0 0 15px rgba(255,255,255,0.5); }
+
+    .sub-btn { background: transparent; border: none; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; font-size: 10px; cursor: pointer; transition: 0.2s; padding: 6px; min-width: 60px; color: #a3a3a3; }
+    .sub-btn:hover { color: #ffffff; }
+    .sub-btn.active { color: #ffffff; font-weight: bold; }
+
+    .sub-btn .icon-container { width: 44px; height: 44px; display: flex; justify-content: center; align-items: center; border-radius: 12px; transition: all 0.2s ease; border: 1px solid transparent; background: #111; }
+    .sub-btn:hover .icon-container { background: #222; }
+    .sub-btn.active .icon-container { background: #ffffff; color: #000000; border-color: #ffffff; box-shadow: 0 0 10px rgba(255,255,255,0.4); }
+    .sub-btn svg { width: 22px; height: 22px; }
+    .main-btn svg { width: 24px; height: 24px; }
+
+    .sub-row { display: flex; gap: 6px; overflow-x: auto; padding: 8px; align-items: center; }
+    .sub-row::-webkit-scrollbar { height: 0; }
+    .source-badge { position: absolute; top: 6px; right: 6px; font-size: 0.55rem; font-weight: bold; padding: 2px 4px; border-radius: 4px; color: #fff; z-index: 10; letter-spacing: 0.5px; }
+    .source-badge.yt { background-color: #cc0000; }
+    .source-badge.px { background-color: #009900; }
+    .source-badge.ia { background-color: #6600cc; }
+    .source-badge.mio { background-color: #404040; }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+    ::-webkit-scrollbar { height: 4px; width: 4px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #404040; border-radius: 10px; }
+    * { -webkit-tap-highlight-color: transparent; }
+    button:focus, button:active { outline: none; background-color: inherit; }
+    .neon-btn { background: #0a0a0a; border: 1px solid #262626; color: #a3a3a3; transition: all 0.2s ease; display: flex; justify-content: center; align-items: center; gap: 8px; }
+    .neon-btn:active, .neon-btn.active { background: #ffffff; color: #000000; border-color: #ffffff; box-shadow: 0 0 15px rgba(255,255,255,0.5); }
+    .nav-btn { font-size: 0.7rem; font-weight: bold; padding: 0.8rem 1.2rem; border-radius: 100px; cursor: pointer; text-transform: uppercase; white-space: nowrap; }
+    .timeline-track { display: flex; height: 70px; overflow-x: auto; align-items: center; gap: 0; -webkit-overflow-scrolling: touch; }
+    .timeline-track::-webkit-scrollbar { height: 0; }
+    .clip-block { height: 70px; position: relative; cursor: pointer; flex-shrink: 0; border-top: 2px solid transparent; border-bottom: 2px solid transparent; border-right: 1px solid #000; transition: 0.2s; }
+    .clip-block:first-child { border-top-left-radius: 10px; border-bottom-left-radius: 10px; }
+    .clip-block:last-child { border-top-right-radius: 10px; border-bottom-right-radius: 10px; border-right: none; }
+    .clip-block.selected { border: 2px solid #ffffff; box-sizing: border-box; z-index: 10; box-shadow: 0 0 15px rgba(255,255,255,0.4); border-radius: 10px; }
+    .audio-block { height: 35px; border-radius: 8px; flex-shrink: 0; min-width: 120px; display: flex; align-items: center; justify-content: center; color: #fff; font-size: 0.65rem; cursor: pointer; margin-right: 2px; border: 1px solid #404040; }
+
+    .editor-shell { height: 100dvh; overflow: hidden; display: flex; flex-direction: column; }
+    .marco-pos-btn { background: #0a0a0a; border: 1px solid #262626; color: #a3a3a3; border-radius: 10px; padding: 8px 6px; font-size: 0.7rem; cursor: pointer; transition: 0.2s; text-align: center; font-weight: bold; }
+    .marco-pos-btn.selected { background: #ffffff; color: #000000; border-color: #ffffff; box-shadow: 0 0 10px rgba(255,255,255,0.5); }
+  `;
   const [darkMode, setDarkMode] = useState(true);
   const [session, setSession] = useState<FirebaseSession | null>(null);
   const [authChecked, setAuthChecked] = useState(false);
@@ -146,23 +194,54 @@ export default function NaylaCore() {
   const [calidadExportacion, setCalidadExportacion] = useState('1080p');
   const [showIntro, setShowIntro] = useState(true);
   const [videoFile, setVideoFile] = useState<File | null>(null);
-  const [isProcessing, setIsProcessing] = useState(false);
-
-  // Render Jobs State
-  const [activeRenderJobs, setActiveRenderJobs] = useState<Record<string, RenderJob>>({});
-  const [isRenderQueueVisible, setIsRenderQueueVisible] = useState(false);
-
-  const [renderLogs, setRenderLogs] = useState<string[]>([]);
-  const logsEndRef = useRef<HTMLDivElement | null>(null);
+    const [isProcessing, setIsProcessing] = useState(false);
+  const [isPlaying, setIsPlaying] = useState(false);
   const [mediaActivaUrl, setMediaActivaUrl] = useState<string | null>(null);
   const [videoResultadoUrl, setVideoResultadoUrl] = useState<string | null>(null);
   const [videoMetadata, setVideoMetadata] = useState({ width: 1080, height: 1920 });
-  const [isPlaying, setIsPlaying] = useState(false);
   const [isScriptRunning, setIsScriptRunning] = useState(false);
-
-  // Storage Viewer States
+  const [activeRenderJobs, setActiveRenderJobs] = useState<Record<string, RenderJob>>({});
+  const [isRenderQueueVisible, setIsRenderQueueVisible] = useState(false);
+  const [renderLogs, setRenderLogs] = useState<string[]>([]);
   const [storageFiles, setStorageFiles] = useState<any[]>([]);
   const [isLoadingStorage, setIsLoadingStorage] = useState<boolean>(false);
+
+  // Floating & overlay UI states
+  const [isSubPanelOpen, setIsSubPanelOpen] = useState(true);
+  const [isAiModalOpen, setIsAiModalOpen] = useState(false);
+  const [isCleanMode, setIsCleanMode] = useState(false);
+  const [showPlaybackControls, setShowPlaybackControls] = useState(true);
+  const playbackControlsTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  const pistaVideo = lineaDeTiempo.filter(t => t.tipo === 'video' || t.tipo === 'foto');
+  const pistaAudio = lineaDeTiempo.filter(t => t.tipo === 'audio');
+  const hayClips = pistaVideo.length > 0;
+
+  const resetPlaybackControlsTimer = () => {
+    setShowPlaybackControls(true);
+    if (playbackControlsTimerRef.current) {
+      clearTimeout(playbackControlsTimerRef.current);
+    }
+    playbackControlsTimerRef.current = setTimeout(() => {
+      setShowPlaybackControls(false);
+    }, 5000);
+  };
+
+  useEffect(() => {
+    if (isPlaying) {
+      resetPlaybackControlsTimer();
+    } else {
+      setShowPlaybackControls(true);
+      if (playbackControlsTimerRef.current) clearTimeout(playbackControlsTimerRef.current);
+    }
+  }, [isPlaying]);
+
+
+  // Render Jobs State
+
+    const logsEndRef = useRef<HTMLDivElement | null>(null);
+
+  // Storage Viewer States
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
@@ -1731,510 +1810,10 @@ export default function NaylaCore() {
 
   const removeRect = (id: string) => setRects(rects.filter(r => r.id !== id));
 
-  const pistaVideo = lineaDeTiempo.filter(t => t.tipo === 'video' || t.tipo === 'foto');
-  const pistaAudio = lineaDeTiempo.filter(t => t.tipo === 'audio');
-  const hayClips = pistaVideo.length > 0;
-
-  const POSICIONES: MarcoConfig['posicion'][] = ['derecha', 'izquierda', 'abajo', 'arriba', 'derecha+abajo', 'derecha+arriba', 'izquierda+abajo', 'izquierda+arriba'];
-  const ICONOS_POS: Record<string, string> = { derecha: '→', izquierda: '←', abajo: '↓', arriba: '↑', 'derecha+abajo': '↘', 'derecha+arriba': '↗', 'izquierda+abajo': '↙', 'izquierda+arriba': '↖' };
-
-  const globalStyles = `
-    .main-btn { flex: 1 0 clamp(86px, 18vw, 132px); border: 1px solid transparent; color: #a3a3a3; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; font-size: clamp(10px, 1.7vw, 13px); font-weight: bold; cursor: pointer; transition: all 0.2s ease; border-radius: 16px; min-height: clamp(84px, 13vh, 118px); }
-    .main-btn.active { box-shadow: 0 0 15px rgba(0,0,0,0.2); }
-    ${darkMode ? '.main-btn { background: #0a0a0a; border-color: #262626; } .main-btn:hover { color: #ffffff; border-color: #404040; } .main-btn.active { background: #ffffff; color: #000000; border-color: #ffffff; box-shadow: 0 0 15px rgba(255,255,255,0.5); }' : '.main-btn { background: #f3f4f6; border-color: #e5e7eb; color: #4b5563; } .main-btn:hover { color: #000000; border-color: #d1d5db; } .main-btn.active { background: #000000; color: #ffffff; border-color: #000000; }'}
-
-    .sub-btn { background: transparent; border: none; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; font-size: clamp(9px, 1.6vw, 12px); cursor: pointer; transition: 0.2s; flex: 1 0 clamp(76px, 15vw, 118px); min-height: clamp(78px, 12vh, 112px); padding: 8px; }
-    ${darkMode ? '.sub-btn { color: #a3a3a3; } .sub-btn:hover { color: #ffffff; } .sub-btn.active { color: #ffffff; font-weight: bold; }' : '.sub-btn { color: #4b5563; } .sub-btn:hover { color: #000000; } .sub-btn.active { color: #000000; font-weight: bold; }'}
-
-    .sub-btn .icon-container { width: clamp(52px, 9vw, 72px); height: clamp(52px, 9vw, 72px); display: flex; justify-content: center; align-items: center; border-radius: 16px; transition: all 0.2s ease; border: 1px solid transparent; }
-    .sub-btn svg { width: clamp(28px, 5vw, 40px); height: clamp(28px, 5vw, 40px); }
-    .main-btn svg { width: clamp(30px, 6vw, 44px); height: clamp(30px, 6vw, 44px); }
-    ${darkMode ? '.sub-btn .icon-container { background: #111; } .sub-btn:hover .icon-container { background: #222; } .sub-btn.active .icon-container { background: #ffffff; color: #000000; border-color: #ffffff; box-shadow: 0 0 10px rgba(255,255,255,0.4); }' : '.sub-btn .icon-container { background: #e5e7eb; border-color: #d1d5db; } .sub-btn:hover .icon-container { background: #d1d5db; } .sub-btn.active .icon-container { background: #000000; color: #ffffff; border-color: #000000; box-shadow: 0 0 10px rgba(0,0,0,0.2); }'}
-
-    .sub-row { display: flex; gap: 4px; overflow-x: auto; padding: 12px 16px; align-items: center; min-height: 70px; }
-    .sub-row::-webkit-scrollbar { height: 0; }
-    .main-row { display: flex; gap: 12px; overflow-x: auto; padding: 16px; width: 100%; }
-    .main-row::-webkit-scrollbar { height: 0; }
-    .source-badge { position: absolute; top: 6px; right: 6px; font-size: 0.55rem; font-weight: bold; padding: 2px 4px; border-radius: 4px; color: #fff; z-index: 10; letter-spacing: 0.5px; }
-    .source-badge.yt { background-color: #cc0000; }
-    .source-badge.px { background-color: #009900; }
-    .source-badge.ia { background-color: #6600cc; }
-    .source-badge.mio { background-color: #404040; }
-
-    @keyframes spin { to { transform: rotate(360deg); } }
-    ::-webkit-scrollbar { height: 4px; width: 4px; }
-    ::-webkit-scrollbar-track { background: transparent; }
-    ::-webkit-scrollbar-thumb { background: #404040; border-radius: 10px; }
-    * { -webkit-tap-highlight-color: transparent; }
-    button:focus, button:active { outline: none; background-color: inherit; }
-    .neon-btn { background: #0a0a0a; border: 1px solid #262626; color: #a3a3a3; transition: all 0.2s ease; display: flex; justify-content: center; align-items: center; gap: 8px; }
-    .neon-btn:active, .neon-btn.active { background: #ffffff; color: #000000; border-color: #ffffff; box-shadow: 0 0 15px rgba(255,255,255,0.5); }
-    .nav-btn { font-size: 0.7rem; font-weight: bold; padding: 0.8rem 1.2rem; border-radius: 100px; cursor: pointer; text-transform: uppercase; white-space: nowrap; }
-    .tool-btn { background: transparent; border: none; color: #a3a3a3; display: flex; flex-direction: column; align-items: center; gap: 6px; font-size: 0.7rem; cursor: pointer; transition: 0.2s; min-width: 70px; }
-    .tool-btn:hover { color: #ffffff; }
-    .tool-icon { width: 54px; height: 54px; display: flex; justify-content: center; align-items: center; border-radius: 14px; transition: all 0.2s ease; border: 1px solid transparent; }
-    .tool-btn.active .tool-icon, .tool-btn:active .tool-icon { background: #ffffff !important; color: #000000 !important; box-shadow: 0 0 15px rgba(255,255,255,0.7) !important; border-color: #ffffff !important; }
-    .tool-btn.active span, .tool-btn:active span { color: #ffffff; font-weight: bold; }
-    .timeline-track { display: flex; height: 70px; overflow-x: auto; align-items: center; gap: 0; -webkit-overflow-scrolling: touch; }
-    .timeline-track::-webkit-scrollbar { height: 0; }
-    .clip-block { height: 70px; position: relative; cursor: pointer; flex-shrink: 0; border-top: 2px solid transparent; border-bottom: 2px solid transparent; border-right: 1px solid #000; transition: 0.2s; }
-    .clip-block:first-child { border-top-left-radius: 10px; border-bottom-left-radius: 10px; }
-    .clip-block:last-child { border-top-right-radius: 10px; border-bottom-right-radius: 10px; border-right: none; }
-    .clip-block.selected { border: 2px solid #ffffff; box-sizing: border-box; z-index: 10; box-shadow: 0 0 15px rgba(255,255,255,0.4); border-radius: 10px; }
-    .audio-block { height: 35px; border-radius: 8px; flex-shrink: 0; min-width: 120px; display: flex; align-items: center; justify-content: center; color: #fff; font-size: 0.65rem; cursor: pointer; margin-right: 2px; border: 1px solid #404040; }
-    .toolbar-container { display: flex; gap: 8px; overflow-x: auto; padding: 12px 16px; background-color: #050505; border-top: 1px solid #1a1a1a; min-height: 95px; position: relative; z-index: 100; align-items: center; }
-    .toolbar-container::-webkit-scrollbar { height: 0; }
-    .panel-container { background-color: #050505; border-top: 1px solid #1a1a1a; padding: 15px; position: absolute; bottom: 95px; left: 0; right: 0; z-index: 90; box-shadow: 0 -5px 20px rgba(0,0,0,0.8); }
-    .marco-pos-btn { background: #0a0a0a; border: 1px solid #262626; color: #a3a3a3; border-radius: 10px; padding: 8px 6px; font-size: 0.7rem; cursor: pointer; transition: 0.2s; text-align: center; font-weight: bold; }
-    .marco-pos-btn.selected { background: #ffffff; color: #000000; border-color: #ffffff; box-shadow: 0 0 10px rgba(255,255,255,0.5); }
-
-    .editor-shell { height: 100dvh; overflow: hidden; display: flex; flex-direction: column; }
-
-    .editor-grid.tools-surface-expanded .editor-tools-panel {
-      display: contents !important;
-    }
-    .editor-toolbars.surface-expanded,
-    .nayla-chat-panel.surface-expanded {
-      position: fixed !important;
-      inset: 0 !important;
-      width: 100vw !important;
-      height: 100dvh !important;
-      min-height: 0;
-      z-index: 9500 !important;
-      display: flex !important;
-      flex-direction: column;
-      overflow: auto;
-      background: ${darkMode ? '#050505' : '#fff'} !important;
-      border: 0 !important;
-      border-radius: 0 !important;
-      box-shadow: none !important;
-      opacity: 1;
-      animation: surface-overlay-in 260ms ease both;
-    }
-    .editor-toolbars.surface-expanded {
-      padding: max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
-      gap: 16px;
-    }
-    .surface-overlay-header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 16px;
-      flex: 0 0 auto;
-      color: ${darkMode ? '#fff' : '#000'};
-    }
-    .surface-overlay-close {
-      min-width: 44px;
-      min-height: 44px;
-      border: 1px solid ${darkMode ? '#404040' : '#d1d5db'};
-      border-radius: 999px;
-      background: transparent;
-      color: inherit;
-      cursor: pointer;
-    }
-    .editor-toolbars.surface-expanded .editor-subtools-bar,
-    .editor-toolbars.surface-expanded .editor-maintools-bar {
-      position: static !important;
-      display: flex !important;
-      width: 100% !important;
-      flex: 1 1 0;
-      min-height: 0;
-      overflow: auto !important;
-      border: 1px solid ${darkMode ? '#1a1a1a' : '#e5e7eb'} !important;
-      border-radius: 16px;
-      background: ${darkMode ? '#0a0a0a' : '#f9fafb'} !important;
-      padding: 16px !important;
-      opacity: 1 !important;
-      pointer-events: auto !important;
-    }
-    .nayla-chat-panel.surface-expanded {
-      transform: none !important;
-      color: ${darkMode ? '#fff' : '#000'} !important;
-    }
-    @keyframes surface-overlay-in {
-      from { opacity: 0; transform: translateX(var(--surface-enter-x, 16px)); }
-      to { opacity: 1; transform: translateX(0); }
-    }
-    .editor-toolbars.surface-expanded { --surface-enter-x: -16px; }
-    .nayla-chat-panel.surface-expanded { --surface-enter-x: 16px; }
-    @media (prefers-reduced-motion: reduce) {
-      .editor-toolbars.surface-expanded,
-      .nayla-chat-panel.surface-expanded { animation: none; }
-    }
 
 
-    @media (max-width: 767px) {
-      .editor-grid.phone-video-mode {
-        --phone-tools-width: 96px;
-        position: fixed;
-        inset: 0;
-        z-index: 8000;
-        width: 100vw;
-        height: 100dvh;
-        padding: 0 !important;
-        gap: 0 !important;
-        overflow: hidden !important;
-        background: #000 !important;
-      }
-      .editor-grid.phone-video-mode .editor-left-stack,
-      .editor-grid.phone-video-mode .editor-preview-panel,
-      .editor-grid.phone-video-mode .editor-preview-canvas {
-        width: calc(100vw - var(--phone-tools-width)) !important;
-        height: 100dvh !important;
-        max-width: none !important;
-        max-height: none !important;
-        aspect-ratio: auto !important;
-        border: 0 !important;
-        border-radius: 0 !important;
-        background: #000 !important;
-      }
-      .editor-grid.phone-video-mode .editor-preview-panel {
-        position: fixed;
-        inset: 0 0 0 var(--phone-tools-width);
-        z-index: 1;
-      }
-      .editor-grid.phone-video-mode .editor-timeline-panel,
-      .editor-grid.phone-video-mode .panel-container,
-      .editor-grid.phone-video-mode .editor-media-gallery { display: none !important; }
-      .editor-grid.phone-video-mode .editor-tools-panel,
-      .editor-grid.phone-video-mode .editor-toolbars { display: contents !important; }
-      .editor-grid.phone-video-mode .editor-toolbars.surface-expanded {
-        display: flex !important;
-      }
-      .editor-grid.phone-video-mode .editor-toolbars.surface-expanded .editor-subtools-bar,
-      .editor-grid.phone-video-mode .editor-toolbars.surface-expanded .editor-maintools-bar {
-        position: static !important;
-        width: 100% !important;
-        flex: 1 1 0;
-      }
-      .editor-grid.phone-video-mode .editor-playback-bar {
-        display: flex !important;
-        position: fixed;
-        left: calc(var(--phone-tools-width) + 14px);
-        right: 14px;
-        bottom: max(14px, env(safe-area-inset-bottom));
-        width: auto;
-        z-index: 30;
-        opacity: 1;
-        pointer-events: auto;
-        border: 1px solid rgba(255,255,255,0.18);
-        border-radius: 999px;
-        background: linear-gradient(135deg, rgba(0,0,0,0.82), rgba(0,0,0,0.58)) !important;
-      }
-      .editor-grid.phone-video-mode .editor-toolbars {
-        display: flex !important;
-        position: fixed !important;
-        top: 0 !important;
-        bottom: 0 !important;
-        left: 0 !important;
-        width: var(--phone-tools-width) !important;
-        z-index: 31 !important;
-        opacity: 1 !important;
-        pointer-events: auto !important;
-        flex-direction: column !important;
-        align-items: center !important;
-        overflow-x: hidden !important;
-        overflow-y: auto !important;
-        scroll-snap-type: y mandatory;
-        scroll-padding: 50%;
-        -webkit-overflow-scrolling: touch;
-        background: linear-gradient(90deg, rgba(0,0,0,0.96), rgba(0,0,0,0.84)) !important;
-        border: 0 !important;
-        border-radius: 0 !important;
-        padding: 10px 6px !important;
-        gap: 10px !important;
-      }
-      .editor-grid.phone-video-mode .editor-subtools-bar,
-      .editor-grid.phone-video-mode .editor-maintools-bar {
-        display: flex !important;
-        position: static !important;
-        width: 100% !important;
-        height: auto !important;
-        flex-direction: column !important;
-        align-items: center !important;
-        background: transparent !important;
-        border: 0 !important;
-        padding: 0 !important;
-        gap: 10px !important;
-      }
-      .editor-grid.phone-video-mode .main-btn,
-      .editor-grid.phone-video-mode .sub-btn {
-        flex: 0 0 84px !important;
-        width: 84px !important;
-        min-width: 84px !important;
-        min-height: 84px !important;
-        scroll-snap-align: center;
-        color: #fff !important;
-        background: transparent !important;
-        text-shadow: 0 2px 10px rgba(0,0,0,0.9);
-        transform: scale(0.88);
-        opacity: 0.72;
-      }
-      .editor-grid.phone-video-mode .main-btn.centered,
-      .editor-grid.phone-video-mode .sub-btn.centered {
-        transform: scale(1.08);
-        opacity: 1;
-      }
-      .editor-grid.phone-video-mode .main-btn > div:first-child,
-      .editor-grid.phone-video-mode .sub-btn .icon-container {
-        width: 58px !important;
-        height: 58px !important;
-        border-radius: 18px !important;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        background: rgba(255,255,255,0.14) !important;
-        border: 1px solid rgba(255,255,255,0.26) !important;
-        box-shadow: 0 12px 26px rgba(0,0,0,0.5);
-      }
-      .editor-grid.phone-video-mode .main-btn.centered > div:first-child,
-      .editor-grid.phone-video-mode .sub-btn.centered .icon-container {
-        background: rgba(255,255,255,0.95) !important;
-        color: #000 !important;
-      }
-      .editor-grid.phone-video-mode .nayla-chat-panel {
-        position: fixed !important;
-        inset: 0 !important;
-        width: 100vw !important;
-        height: 100dvh !important;
-        z-index: 60 !important;
-        color: #fff !important;
-        background: linear-gradient(160deg, rgba(0,0,0,0.86), rgba(5,5,10,0.68) 48%, rgba(0,0,0,0.9)) !important;
-        border-left: 0 !important;
-        box-shadow: none !important;
-        backdrop-filter: blur(2px);
-        -webkit-backdrop-filter: blur(2px);
-        pointer-events: auto;
-      }
-      .editor-grid.phone-video-mode .nayla-chat-panel * { color: inherit; }
-    }
 
-    .editor-grid.video-expanded .editor-preview-panel {
-      position: fixed;
-      inset: 0;
-      z-index: 9000;
-      border-radius: 0;
-      border: 0;
-      background: #000 !important;
-    }
-    .editor-grid.video-expanded .editor-preview-canvas {
-      width: 100vw !important;
-      height: 100vh !important;
-      max-width: none !important;
-      max-height: none !important;
-      border: 0 !important;
-      border-radius: 0 !important;
-    }
-    .editor-grid.video-expanded .editor-playback-bar {
-      position: fixed;
-      left: 50%;
-      bottom: 24px;
-      transform: translateX(-50%);
-      width: min(680px, calc(100vw - 32px));
-      z-index: 9001;
-    }
-    .editor-grid.video-expanded .editor-media-gallery,
-    .editor-grid.video-expanded .panel-container,
-    .editor-grid.video-expanded .nayla-chat-panel {
-      display: none !important;
-    }
-    .responsive-panel-height {
-      min-height: auto;
-    }
-    @media (min-width: 768px) {
-      .responsive-panel-height {
-        min-height: 35vh;
-      }
-    }
-
-    /* Base real de .editor-grid: las clases "flex flex-col ... flex-1 overflow-hidden"
-       en el className son de Tailwind, pero este proyecto no tiene Tailwind instalado
-       (no hay tailwind.config, ni el paquete, ni carga por CDN) -> esas clases nunca
-       aplicaron nada. Sin esta regla, .editor-grid no tenía NINGÚN estilo base fuera
-       de los estados especiales (phone-video-mode/video-expanded) y del media query
-       de escritorio, dejando el layout sin estirarse para llenar el alto real. */
-    .editor-grid {
-      display: flex;
-      flex-direction: column;
-      width: 100%;
-      gap: 1rem;
-      flex: 1;
-      min-height: 0;
-      overflow: hidden;
-    }
-
-    @media (min-width: 1024px) {
-
-      .editor-grid {
-        width: 100%;
-        max-width: none;
-        margin: 0;
-        flex: 1;
-        min-height: 0;
-        display: grid;
-        grid-template-columns: clamp(88px, 7vw, 104px) minmax(220px, 0.8fr) minmax(320px, 4fr) 300px;
-        grid-template-rows: minmax(0, 1fr) 150px;
-        transition: grid-template-columns 320ms ease;
-        grid-template-areas:
-          "leftbar media preview nayla"
-          "leftbar timeline timeline nayla";
-        gap: 12px;
-        padding: 12px;
-        overflow: hidden;
-        background: ${darkMode ? '#000' : '#f3f4f6'};
-      }
-      .editor-grid.video-expanded {
-        grid-template-columns: 0px 0px 1fr 0px;
-        grid-template-areas:
-          "leftbar media preview nayla"
-          "leftbar timeline timeline nayla";
-      }
-      .editor-left-stack { display: contents; }
-      .editor-preview-panel {
-        grid-area: preview;
-        min-width: 0;
-        min-height: 0;
-        height: 100%;
-        border: 1px solid ${darkMode ? '#1a1a1a' : '#e5e7eb'};
-        border-radius: 16px;
-        overflow: hidden;
-        display: flex;
-        flex-direction: column;
-        justify-content: center;
-        background: ${darkMode ? '#050505' : '#fff'} !important;
-        cursor: pointer;
-      }
-      .editor-preview-canvas {
-        width: 100% !important;
-        height: 100% !important;
-        max-width: 100% !important;
-        max-height: calc(100% - 64px) !important;
-        margin: 0 auto;
-        border-radius: 14px;
-      }
-      .editor-playback-bar {
-        grid-area: preview;
-        align-self: end;
-        justify-self: stretch;
-        margin: 0 18px 18px;
-        border: 1px solid ${darkMode ? '#1a1a1a' : '#e5e7eb'};
-        border-radius: 999px;
-        background-color: rgba(0,0,0,0.75) !important;
-        z-index: 2;
-      }
-      .editor-timeline-panel {
-        grid-area: timeline;
-        height: auto !important;
-        min-height: 0;
-        border: 1px solid ${darkMode ? '#1a1a1a' : '#e5e7eb'};
-        border-radius: 16px;
-        overflow: hidden;
-        box-shadow: 0 12px 30px rgba(0,0,0,0.25);
-      }
-      .editor-tools-panel { display: contents; }
-      .editor-toolbars { display: contents; }
-      .editor-tools-panel .panel-container {
-        grid-area: inspector;
-        min-width: 0;
-        min-height: 0;
-        height: 100%;
-        overflow: auto;
-        border: 1px solid ${darkMode ? '#1a1a1a' : '#e5e7eb'};
-        border-radius: 16px;
-        background: ${darkMode ? '#050505' : '#fff'};
-        box-shadow: 0 12px 30px rgba(0,0,0,0.25);
-        position: relative !important;
-        bottom: auto !important;
-        left: auto !important;
-        right: auto !important;
-        flex: 1;
-        border-top: 0;
-      }
-      .editor-toolbars {
-        grid-area: leftbar;
-        min-width: 0;
-        height: 100%;
-        border: 1px solid ${darkMode ? '#1a1a1a' : '#e5e7eb'};
-        border-radius: 16px;
-        background: ${darkMode ? '#050505' : '#fff'} !important;
-        box-shadow: 0 12px 30px rgba(0,0,0,0.25);
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        overflow-x: hidden !important;
-        overflow-y: auto !important;
-        padding: clamp(10px, 1.2vh, 14px) 8px !important;
-        gap: 12px;
-      }
-      .editor-subtools-bar,
-      .editor-maintools-bar {
-        width: 100%;
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        border: none !important;
-        background: transparent !important;
-        box-shadow: none !important;
-        padding: 0 !important;
-        gap: 8px !important;
-      }
-      .editor-subtools-bar .sub-btn {
-        flex: 0 0 auto;
-        width: 100%;
-        min-width: 0;
-        min-height: clamp(68px, 8.5vh, 92px);
-      }
-      .editor-subtools-bar .sub-btn .icon-container { width: clamp(40px, 3.5vw, 54px); height: clamp(40px, 3.5vw, 54px); }
-      .editor-subtools-bar .sub-btn span { font-size: clamp(9px, 0.75vw, 11px); margin-top: 3px; }
-
-      .editor-maintools-bar .main-btn {
-        flex: 0 0 auto;
-        width: 100%;
-        min-width: 0;
-        min-height: clamp(68px, 8.5vh, 92px);
-      }
-      .editor-maintools-bar .main-btn svg { width: clamp(24px, 2.2vw, 36px); height: clamp(24px, 2.2vw, 36px); }
-      .editor-maintools-bar .main-btn span { font-size: clamp(9px, 0.75vw, 12px); margin-top: 4px; }
-
-      .editor-media-gallery { grid-area: media; overflow: hidden; display: flex; flex-direction: column; }
-      .nayla-chat-panel {
-        grid-area: nayla;
-        position: relative !important;
-        inset: auto !important;
-        width: 100% !important;
-        height: 100% !important;
-        min-height: 0;
-        border: 1px solid ${darkMode ? '#1a1a1a' : '#e5e7eb'} !important;
-        border-radius: 16px;
-        overflow: hidden;
-        box-shadow: 0 12px 30px rgba(0,0,0,0.25) !important;
-        transform: none !important;
-      }
-    }
-
-
-    @media (min-width: 1366px) {
-      .editor-grid {
-        grid-template-columns: clamp(96px, 7vw, 112px) minmax(220px, 0.8fr) minmax(500px, 4fr) 320px;
-        grid-template-rows: minmax(0, 1fr) 150px;
-      }
-      .editor-preview-canvas {
-        max-width: 100% !important;
-      }
-    }
-
-    @media (min-width: 1600px) {
-      .editor-grid {
-        grid-template-columns: clamp(104px, 7vw, 120px) minmax(260px, 0.85fr) minmax(680px, 4fr) 350px;
-        grid-template-rows: minmax(0, 1fr) 160px;
-      }
-      .editor-preview-canvas {
-        max-width: 100% !important;
-      }
-    }
-  `;
-
-  if (!session) {
+if (!session) {
     if (showIntro) {
       return (
         <div style={{ minHeight: '100vh', backgroundColor: '#000', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center' }}>
@@ -2606,62 +2185,439 @@ export default function NaylaCore() {
         </div>
       </header>
 
-      <div className={`editor-grid flex flex-col md:flex-row w-full gap-4 flex-1 overflow-hidden ${isPhoneViewport ? 'phone-video-mode' : ''} ${mobileOverlaysVisible ? 'mobile-overlays-visible' : 'mobile-overlays-hidden'} ${!isPhoneViewport && isVideoExpanded ? 'video-expanded' : ''} ${expandedSurface === 'tools' ? 'tools-surface-expanded' : ''} ${expandedSurface === 'chat' ? 'chat-surface-expanded' : ''}`}>
+      {/* CONTENEDOR PRINCIPAL DEL EDITOR */}
+      <div className="flex-1 flex flex-col min-h-0 w-full relative overflow-hidden bg-black text-gray-200">
 
-        {/* COLUMNA IZQUIERDA: Monitor de Video y Línea de Tiempo */}
-        <div className="editor-left-stack flex flex-col w-full">
+        {/* SECCIÓN SUPERIOR: BARRA IZQUIERDA + PANEL FLOTANTE + PREVIEW DE VIDEO */}
+        <div className="flex-1 min-h-0 flex w-full relative overflow-hidden">
 
-        <section className="editor-preview-panel" onClick={(e) => { e.stopPropagation(); if (!isPhoneViewport) setIsVideoExpanded(prev => !prev); }} onPointerUp={handleVideoSurfaceTap} style={{ width: '100%', padding: '0', backgroundColor: '#050505' }}>
-          <div ref={containerRef} onPointerDown={handlePointerDown} onPointerMove={handlePointerMove} onPointerUp={handlePointerUp} onPointerLeave={handlePointerUp}
-            className="editor-preview-canvas w-full relative flex items-center justify-center overflow-hidden touch-none" style={{ maxWidth: '100%', maxHeight: '100%', backgroundColor: darkMode ? '#0a0a0a' : '#f0f0f0', border: darkMode ? '1px solid #1a1a1a' : '1px solid #ddd' }}>
-            {(lineaDeTiempo.filter(t => t.tipo === 'video' || t.tipo === 'foto').length > 0 || videoResultadoUrl || mediaActivaUrl) ? (
-              <>
+          {/* 1. BARRA DE HERRAMIENTAS IZQUIERDA */}
+          {!isCleanMode && (
+            <div style={{
+              width: '76px',
+              flexShrink: 0,
+              backgroundColor: '#050505',
+              borderRight: '1px solid #1a1a1a',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              padding: '12px 6px',
+              gap: '12px',
+              zIndex: 40,
+              overflowY: 'auto'
+            }}>
+              {MAIN_TOOLS.map((tool) => {
+                const isActive = tool.id === 'ia' ? isAiModalOpen : (mainNav === tool.id && isSubPanelOpen);
+                return (
+                  <button
+                    key={tool.id}
+                    className={`main-btn ${isActive ? 'active' : ''}`}
+                    onClick={() => {
+                      if (tool.id === 'ia') {
+                        setIsAiModalOpen(true);
+                      } else {
+                        if (mainNav === tool.id && isSubPanelOpen) {
+                          setIsSubPanelOpen(false);
+                        } else {
+                          setMainNav(tool.id);
+                          setIsSubPanelOpen(true);
+                          setSubTool(SUB_TOOLS[tool.id]?.[0]?.id || null);
+                        }
+                      }
+                    }}
+                  >
+                    <div>{tool.icon}</div>
+                    <span>{tool.nombre}</span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
 
-                <video
-                  key={lineaDeTiempo[0]?.url || mediaActivaUrl}
-                  src={lineaDeTiempo.filter(t => t.tipo === 'video').at(clipSeleccionado ? lineaDeTiempo.findIndex(t => t.id === clipSeleccionado) : 0)?.url || mediaActivaUrl || ''}
-                  style={{ width: '100%', height: '100%', objectFit: isPhoneViewport ? phoneVideoObjectFit : 'contain', borderRadius: '0' }}
-                  controls={false}
-                  playsInline
-                  muted={false}
-                  ref={playerRef as any}
-                  onEnded={handleVideoEnded}
-                  onLoadedMetadata={(e) => { const video = e.currentTarget; if (video.videoWidth && video.videoHeight) setSourceVideoRatio(video.videoWidth / video.videoHeight); }}
-                />
-
-                {!videoResultadoUrl && rects.map((r) => (
-                  <div key={r.id} onPointerDown={(e) => { e.stopPropagation(); if (!containerRef.current) return; const c = containerRef.current.getBoundingClientRect(); setDraggingInfo({ id: r.id, offsetX: (e.clientX - c.left) - r.x, offsetY: (e.clientY - c.top) - r.y }); }}
-                    style={{ position: 'absolute', left: `${r.x}px`, top: `${r.y}px`, width: `${r.width}px`, height: `${r.height}px`, border: '1px solid #fff', backgroundColor: 'rgba(255,255,255,0.1)', pointerEvents: 'auto', cursor: 'move', borderRadius: '8px' }}>
-                    <div onPointerDown={(e) => { e.stopPropagation(); removeRect(r.id); }} style={{ position: 'absolute', top: '-10px', right: '-10px', width: '20px', height: '20px', backgroundColor: '#fff', color: '#000', borderRadius: '50%', display: 'flex', justifyContent: 'center', alignItems: 'center', cursor: 'pointer', fontSize: '10px', fontWeight: 'bold', zIndex: 10 }}>✕</div>
-                    <div onPointerDown={(e) => { e.stopPropagation(); setResizingInfo({ id: r.id, corner: 'se' }); }} style={{ position: 'absolute', bottom: '-6px', right: '-6px', width: '12px', height: '12px', backgroundColor: '#fff', cursor: 'nwse-resize', zIndex: 10, borderRadius: '50%' }} />
-                  </div>
-                ))}
-                {currentRect && isDrawing && <div style={{ position: 'absolute', left: `${currentRect.x}px`, top: `${currentRect.y}px`, width: `${currentRect.width}px`, height: `${currentRect.height}px`, border: '1px dashed #fff', pointerEvents: 'none', borderRadius: '8px' }} />}
-              </>
-            ) : (
-              <div style={{ display: 'flex', height: '100%', justifyContent: 'center', alignItems: 'center' }}>
-                <img src="/assets/imagenes/Icono-intro.jpeg" alt="NAYLA" style={{ width: '80px', height: '80px', borderRadius: '0', opacity: 0.5, filter: 'grayscale(100%)' }} />
+          {/* 2. PANEL FLOTANTE SOBREPUESTO DE OPCIONES / SUBHERRAMIENTAS */}
+          {isSubPanelOpen && !isCleanMode && (
+            <div style={{
+              position: 'absolute',
+              left: isCleanMode ? '12px' : '84px',
+              top: '12px',
+              bottom: '12px',
+              width: 'min(360px, calc(100vw - 100px))',
+              backgroundColor: 'rgba(10, 10, 10, 0.95)',
+              backdropFilter: 'blur(16px)',
+              WebkitBackdropFilter: 'blur(16px)',
+              border: '1px solid #262626',
+              borderRadius: '16px',
+              zIndex: 50,
+              display: 'flex',
+              flexDirection: 'column',
+              overflow: 'hidden',
+              boxShadow: '0 12px 40px rgba(0,0,0,0.8)'
+            }}>
+              {/* Header del Panel Flotante */}
+              <div style={{
+                display: 'flex',
+                justify: 'space-between',
+                alignItems: 'center',
+                padding: '12px 16px',
+                borderBottom: '1px solid #262626',
+                backgroundColor: '#050505'
+              }}>
+                <span style={{ fontSize: '0.8rem', fontWeight: 'bold', color: '#fff', letterSpacing: '1px' }}>
+                  {mainNav.toUpperCase()}
+                </span>
+                <button
+                  onClick={() => setIsSubPanelOpen(false)}
+                  style={{ background: 'none', border: 'none', color: '#a3a3a3', cursor: 'pointer', fontSize: '18px', fontWeight: 'bold' }}
+                >
+                  ✕
+                </button>
               </div>
-            )}
-          </div>
-        </section>
 
-        <div className="editor-playback-bar" onClick={(e) => e.stopPropagation()} style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 20px', alignItems: 'center', backgroundColor: '#000', borderBottom: '1px solid #1a1a1a' }}>
-          <span style={{ color: '#737373', fontSize: '0.75rem', fontFamily: 'monospace' }}>00:00:00</span>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '18px' }}>
-            <button onClick={(e) => { e.stopPropagation(); seekBy(-10); }} style={{ background: 'none', border: 'none', color: '#ffffff', fontSize: '1.15rem', cursor: 'pointer', outline: 'none' }}>↺10</button>
-            <button onClick={(e) => { e.stopPropagation(); togglePlay(); }} style={{ background: 'none', border: 'none', color: '#ffffff', fontSize: '1.5rem', cursor: 'pointer', outline: 'none' }}>{isPlaying ? '⏸' : '▶'}</button>
-            <button onClick={(e) => { e.stopPropagation(); seekBy(10); }} style={{ background: 'none', border: 'none', color: '#ffffff', fontSize: '1.15rem', cursor: 'pointer', outline: 'none' }}>10↻</button>
+              {/* Sub-herramientas (Iconos Horizontales) */}
+              <div style={{
+                display: 'flex',
+                gap: '6px',
+                overflowX: 'auto',
+                padding: '10px 12px',
+                borderBottom: '1px solid #1a1a1a',
+                backgroundColor: '#0a0a0a'
+              }}>
+                {SUB_TOOLS[mainNav]?.map((tool) => {
+                  if (tool.id === 'subir-vf') {
+                    return (
+                      <label key={tool.id} className="sub-btn">
+                        <div className="icon-container">{tool.icon}</div>
+                        <span>{tool.nombre}</span>
+                        <input type="file" multiple accept="video/*,image/*" onChange={(e) => handleSubirMultimedia(e, 'video')} style={{ display: 'none' }} />
+                      </label>
+                    );
+                  }
+                  if (tool.id === 'subir-a') {
+                    return (
+                      <label key={tool.id} className="sub-btn">
+                        <div className="icon-container">{tool.icon}</div>
+                        <span>{tool.nombre}</span>
+                        <input type="file" multiple accept="audio/*" onChange={(e) => handleSubirMultimedia(e, 'audio')} style={{ display: 'none' }} />
+                      </label>
+                    );
+                  }
+                  if (tool.isFilter) {
+                    return (
+                      <button key={tool.id} className={`sub-btn ${filtroGaleria === tool.filterValue ? 'active' : ''}`} onClick={() => setFiltroGaleria(tool.filterValue)}>
+                        <div className="icon-container">
+                          <span style={{ fontSize: '10px' }}>{tool.nombre.substring(0,2).toUpperCase()}</span>
+                        </div>
+                        <span>{tool.nombre}</span>
+                      </button>
+                    );
+                  }
+                  return (
+                    <button key={tool.id} className={`sub-btn ${subTool === tool.id ? 'active' : ''}`} onClick={() => handleSubCarouselToolPress(tool)}>
+                      <div className="icon-container">{tool.icon}</div>
+                      <span>{tool.nombre}</span>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Contenido Dinámico del Panel Flotante */}
+              <div style={{ flex: 1, overflowY: 'auto', padding: '12px' }}>
+                {toolMessage ? (
+                  <div style={{ textAlign: 'center', padding: '2rem', color: '#a3a3a3', fontSize: '0.9rem', letterSpacing: '1px' }}>{toolMessage}</div>
+                ) : mainNav === 'nube' ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <p style={{ fontSize: '0.75rem', color: '#fff', fontWeight: 'bold', margin: 0 }}>EXPLORADOR DE STORAGE</p>
+                      <button className="neon-btn nav-btn" onClick={fetchStorageFiles} style={{ padding: '4px 8px', fontSize: '0.65rem' }}>
+                        {isLoadingStorage ? '...' : 'Actualizar'}
+                      </button>
+                    </div>
+                    {isLoadingStorage ? (
+                      <div style={{ textAlign: 'center', padding: '1rem', color: '#737373', fontSize: '0.8rem' }}>Cargando archivos...</div>
+                    ) : storageFiles.length === 0 ? (
+                      <div style={{ textAlign: 'center', padding: '1rem', color: '#737373', fontSize: '0.8rem' }}>No hay archivos en la bodega.</div>
+                    ) : (
+                      storageFiles.map((file, i) => {
+                        if (file.id === null && !file.name.includes('.')) return null;
+                        if (file.name === '.emptyFolderPlaceholder') return null;
+                        return (
+                          <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#111', border: '1px solid #222', padding: '8px 10px', borderRadius: '8px' }}>
+                            <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
+                              <p style={{ fontSize: '0.75rem', color: '#fff', margin: 0, fontWeight: '500', overflow: 'hidden', textOverflow: 'ellipsis' }}>{file.name}</p>
+                            </div>
+                            <button onClick={() => deleteStorageFile(file.name)} style={{ background: 'none', border: 'none', color: '#ff4444', cursor: 'pointer', padding: '4px' }}>
+                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                            </button>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                ) : subTool && ['marco', 'delogo', 'script', 'supervisor', 'render'].includes(subTool) ? (
+                  <div>
+                    {subTool === 'marco' && (
+                      <div>
+                        <p style={{ fontSize: '0.75rem', color: '#fff', fontWeight: 'bold', marginBottom: '1rem' }}>MARCO — CUBRIR MARCA DE AGUA</p>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '6px', marginBottom: '1rem' }}>
+                          {POSICIONES.map(pos => (
+                            <button key={pos} className={`marco-pos-btn ${marcoConfig.posicion === pos ? 'selected' : ''}`} onClick={() => setMarcoConfig({ ...marcoConfig, posicion: pos })}>
+                              {ICONOS_POS[pos]}<br /><span style={{ fontSize: '0.5rem', opacity: 0.7 }}>{pos}</span>
+                            </button>
+                          ))}
+                        </div>
+                        <p style={{ fontSize: '0.65rem', color: '#737373', marginBottom: '6px' }}>Grosor: {marcoConfig.grosor}px</p>
+                        <input type="range" min="20" max="200" value={marcoConfig.grosor} onChange={(e) => setMarcoConfig({ ...marcoConfig, grosor: parseInt(e.target.value) })} style={{ width: '100%', marginBottom: '1rem', accentColor: '#fff' }} />
+                        <button onClick={procesarImagenesConMarco} disabled={marcoProcesando} className="neon-btn nav-btn" style={{ width: '100%', backgroundColor: '#fff', color: '#000', fontWeight: 'bold' }}>
+                          {marcoProcesando ? 'PROCESANDO...' : 'APLICAR A TODAS LAS FOTOS'}
+                        </button>
+                      </div>
+                    )}
+                    {subTool === 'delogo' && (
+                      <div>
+                        <p style={{ fontSize: '0.75rem', color: '#fff', fontWeight: 'bold', marginBottom: '1rem' }}>SUPRESIÓN DE MARCA DE AGUA (DELOGO)</p>
+                        <p style={{ fontSize: '0.7rem', color: '#a3a3a3', marginBottom: '1rem' }}>1. Selecciona un video.<br />2. Dibuja un rectángulo blanco sobre el logo.<br />3. Elige el motor.</p>
+                        <div style={{ display: 'flex', gap: '8px' }}>
+                          <button onClick={() => processVideo('local')} disabled={isProcessing} className="neon-btn nav-btn" style={{ flex: 1 }}>LOCAL</button>
+                          <button onClick={() => processVideo('nube')} disabled={isProcessing} className="neon-btn nav-btn" style={{ flex: 1 }}>NUBE</button>
+                        </div>
+                      </div>
+                    )}
+                    {subTool === 'script' && (
+                      <div>
+                        <p style={{ fontSize: '0.75rem', color: '#fff', fontWeight: 'bold', marginBottom: '0.5rem' }}>SCRIPT MANUAL / PLANTILLAS</p>
+                        <textarea value={codigoJsInput} onChange={(e) => setCodigoJsInput(e.target.value)} style={{ width: '100%', height: '100px', backgroundColor: '#0a0a0a', border: '1px solid #262626', borderRadius: '8px', color: '#00ffcc', padding: '8px', fontFamily: 'monospace', outline: 'none', marginBottom: '0.8rem', resize: 'vertical', fontSize: '0.75rem' }} />
+                        <button onClick={ejecutarScript} disabled={isScriptRunning} className="neon-btn nav-btn" style={{ width: '100%', backgroundColor: '#fff', color: '#000', fontWeight: 'bold' }}>
+                          {isScriptRunning ? 'EJECUTANDO...' : 'EJECUTAR SCRIPT ▶'}
+                        </button>
+                      </div>
+                    )}
+                    {subTool === 'render' && (
+                      <div>
+                        <p style={{ fontSize: '0.75rem', color: '#fff', fontWeight: 'bold', marginBottom: '0.5rem' }}>RENDERIZAR VIDEO</p>
+                        <p style={{ fontSize: '0.7rem', color: '#737373', marginBottom: '1rem' }}>Clips en timeline: {lineaDeTiempo.length}</p>
+                        <button onClick={async () => {
+                          if (lineaDeTiempo.length === 0) return showAlert('Añade al menos un clip.');
+                          setIsProcessing(true);
+                          try {
+                            const lineaValidada = await validarTimelineParaRender(lineaDeTiempo);
+                            await solicitarRenderTimeline(lineaValidada);
+                            setIsProcessing(false);
+                          } catch (err: any) {
+                            setIsProcessing(false);
+                            showAlert('Error: ' + err.message);
+                          }
+                        }} disabled={isProcessing} className="neon-btn nav-btn" style={{ width: '100%', backgroundColor: '#fff', color: '#000', fontWeight: 'bold', padding: '10px' }}>
+                          {isProcessing ? 'INICIANDO...' : 'INICIAR RENDER ▶'}
+                        </button>
+                      </div>
+                    )}
+                    {subTool === 'supervisor' && (
+                      <div>
+                        <p style={{ fontSize: '0.75rem', color: '#fff', fontWeight: 'bold', marginBottom: '0.5rem' }}>SUPERVISOR IA</p>
+                        <textarea value={iaPrompt} onChange={(e) => setIaPrompt(e.target.value)} placeholder="Describe la edición..." style={{ width: '100%', height: '70px', backgroundColor: '#0a0a0a', border: '1px solid #262626', borderRadius: '8px', color: '#00ffcc', padding: '8px', fontFamily: 'monospace', outline: 'none', marginBottom: '0.8rem', resize: 'vertical', fontSize: '0.75rem' }} />
+                        <button onClick={async () => {
+                          if (!iaPrompt) return;
+                          setIaLoading(true);
+                          try {
+                            const res = await fetch('/api/supervisor', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ prompt: iaPrompt, apiKey: iaApiKey, galeria: galeriaMultimedia }) });
+                            const data = await res.json();
+                            if (data.error) throw new Error(data.error);
+                            const NaylaEngine = getEngineContext();
+                            const AsyncFunction = Object.getPrototypeOf(async function(){}).constructor;
+                            const execute = new AsyncFunction('NaylaEngine', data.code);
+                            await execute(NaylaEngine);
+                            showAlert('Ejecución IA finalizada');
+                          } catch (err: any) { showAlert("Error: " + err.message); }
+                          finally { setIaLoading(false); }
+                        }} disabled={iaLoading} className="neon-btn nav-btn" style={{ width: '100%', backgroundColor: '#fff', color: '#000', fontWeight: 'bold' }}>
+                          {iaLoading ? 'PROCESANDO...' : 'GENERAR Y EJECUTAR 🤖'}
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  /* GALERÍA DE MEDIOS (BÓVEDA / BUSCAR) */
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(100px, 1fr))', gap: '8px' }}>
+                    {galeriaMultimedia
+                      .filter(item => {
+                        if (filtroGaleria === 'videos') return item.tipo === 'video';
+                        if (filtroGaleria === 'fotos') return item.tipo === 'foto';
+                        if (filtroGaleria === 'audios') return item.tipo === 'audio';
+                        return true;
+                      })
+                      .map(item => (
+                        <div key={item.id} className="neon-btn" style={{ padding: '8px', borderRadius: '10px', flexDirection: 'column', position: 'relative', justifyContent: 'space-between', width: '100%', minHeight: '110px' }}>
+                          <span style={{ fontSize: '0.6rem', backgroundColor: '#262626', padding: '2px 4px', borderRadius: '4px', color: '#fff', fontWeight: 'bold' }}>{item.etiqueta}</span>
+                          <div
+                            onClick={() => {
+                              setMediaActivaUrl(item.url);
+                              setClipSeleccionado(item.id);
+                              setVideoResultadoUrl(null);
+                              if (item.tipo === 'video' && playerRef.current) {
+                                const playPromise = playerRef.current.play();
+                                if (playPromise !== undefined) playPromise.catch(() => {});
+                                setIsPlaying(true);
+                              }
+                            }}
+                            style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', width: '100%', cursor: 'pointer', margin: '8px 0' }}>
+                            {item.tipo === 'video' && <svg width="20" height="20" viewBox="0 0 24 24" fill="white"><polygon points="5,3 19,12 5,21"/></svg>}
+                            {item.tipo === 'audio' && <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>}
+                            {item.tipo === 'foto' && <img src={item.url} style={{ width: '100%', height: '36px', objectFit: 'contain', borderRadius: '4px' }} alt={item.nombre} />}
+                            <span style={{ fontSize: '0.55rem', color: '#fff', textAlign: 'center', marginTop: '4px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', width: '100%' }}>{item.nombre}</span>
+                          </div>
+                          <button onClick={() => agregarAlTimeline(item)} style={{ padding: '4px', fontSize: '0.5rem', width: '100%', backgroundColor: '#fff', color: '#000', border: 'none', borderRadius: '100px', fontWeight: 'bold', cursor: 'pointer' }}>+ PISTA</button>
+                        </div>
+                      ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* 3. VISOR DE VIDEO PRINCIPAL (OCUPA TODO EL ESPACIO RESTANTE PEUADO A LOS ICONOS) */}
+          <div
+            onPointerMove={resetPlaybackControlsTimer}
+            onPointerUp={(e) => {
+              resetPlaybackControlsTimer();
+            }}
+            onDoubleClick={(e) => {
+              e.stopPropagation();
+              setIsCleanMode(prev => !prev);
+            }}
+            data-testid="video-preview-container"
+            style={{
+              flex: 1,
+              height: '100%',
+              position: 'relative',
+              backgroundColor: '#000',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              overflow: 'hidden',
+              cursor: 'pointer'
+            }}
+          >
+            {/* CUADRO / BOTÓN FLOTANTE SUPERIOR DERECHO DE NAYLA IA */}
+            {!isCleanMode && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setIsAiModalOpen(true);
+                }}
+                style={{
+                  position: 'absolute',
+                  top: '14px',
+                  right: '14px',
+                  zIndex: 35,
+                  borderRadius: '12px',
+                  border: '1px solid rgba(0, 255, 204, 0.5)',
+                  backgroundColor: 'rgba(5, 5, 5, 0.85)',
+                  backdropFilter: 'blur(10px)',
+                  WebkitBackdropFilter: 'blur(10px)',
+                  padding: '6px 12px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  cursor: 'pointer',
+                  color: '#fff',
+                  boxShadow: '0 4px 20px rgba(0,0,0,0.6)',
+                  transition: 'all 0.2s ease'
+                }}
+              >
+                <img
+                  src="/assets/imagenes/Icono-intro.jpeg"
+                  alt="Nayla"
+                  style={{ width: '26px', height: '26px', borderRadius: '50%', objectFit: 'cover', border: '1px solid #00cc66' }}
+                />
+                <span style={{ fontSize: '0.75rem', fontWeight: 'bold', letterSpacing: '1px', color: '#00ffcc' }}>NAYLA IA</span>
+                <div style={{ width: '6px', height: '6px', backgroundColor: '#00cc66', borderRadius: '50%', boxShadow: '0 0 6px #00cc66' }} />
+              </button>
+            )}
+
+            {/* VIDEO O CANVAS PRINCIPAL */}
+            <div ref={containerRef} onPointerDown={handlePointerDown} onPointerMove={handlePointerMove} onPointerUp={handlePointerUp} onPointerLeave={handlePointerUp}
+              style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative' }}>
+              {(lineaDeTiempo.filter(t => t.tipo === 'video' || t.tipo === 'foto').length > 0 || videoResultadoUrl || mediaActivaUrl) ? (
+                <>
+                  <video
+                    key={lineaDeTiempo[0]?.url || mediaActivaUrl}
+                    src={lineaDeTiempo.filter(t => t.tipo === 'video').at(clipSeleccionado ? lineaDeTiempo.findIndex(t => t.id === clipSeleccionado) : 0)?.url || mediaActivaUrl || ''}
+                    style={{ width: '100%', height: '100%', objectFit: 'contain' }}
+                    controls={false}
+                    playsInline
+                    muted={false}
+                    ref={playerRef as any}
+                    onEnded={handleVideoEnded}
+                    onLoadedMetadata={(e) => { const video = e.currentTarget; if (video.videoWidth && video.videoHeight) setSourceVideoRatio(video.videoWidth / video.videoHeight); }}
+                  />
+
+                  {!videoResultadoUrl && rects.map((r) => (
+                    <div key={r.id} onPointerDown={(e) => { e.stopPropagation(); if (!containerRef.current) return; const c = containerRef.current.getBoundingClientRect(); setDraggingInfo({ id: r.id, offsetX: (e.clientX - c.left) - r.x, offsetY: (e.clientY - c.top) - r.y }); }}
+                      style={{ position: 'absolute', left: `${r.x}px`, top: `${r.y}px`, width: `${r.width}px`, height: `${r.height}px`, border: '1px solid #fff', backgroundColor: 'rgba(255,255,255,0.1)', pointerEvents: 'auto', cursor: 'move', borderRadius: '8px' }}>
+                      <div onPointerDown={(e) => { e.stopPropagation(); removeRect(r.id); }} style={{ position: 'absolute', top: '-10px', right: '-10px', width: '20px', height: '20px', backgroundColor: '#fff', color: '#000', borderRadius: '50%', display: 'flex', justifyContent: 'center', alignItems: 'center', cursor: 'pointer', fontSize: '10px', fontWeight: 'bold', zIndex: 10 }}>✕</div>
+                      <div onPointerDown={(e) => { e.stopPropagation(); setResizingInfo({ id: r.id, corner: 'se' }); }} style={{ position: 'absolute', bottom: '-6px', right: '-6px', width: '12px', height: '12px', backgroundColor: '#fff', cursor: 'nwse-resize', zIndex: 10, borderRadius: '50%' }} />
+                    </div>
+                  ))}
+                  {currentRect && isDrawing && <div style={{ position: 'absolute', left: `${currentRect.x}px`, top: `${currentRect.y}px`, width: `${currentRect.width}px`, height: `${currentRect.height}px`, border: '1px dashed #fff', pointerEvents: 'none', borderRadius: '8px' }} />}
+                </>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', height: '100%', justifyContent: 'center', alignItems: 'center', gap: '12px' }}>
+                  <img src="/assets/imagenes/Icono-intro.jpeg" alt="NAYLA" style={{ width: '80px', height: '80px', borderRadius: '16px', opacity: 0.4, filter: 'grayscale(100%)' }} />
+                  <span style={{ fontSize: '0.8rem', color: '#555', letterSpacing: '1px' }}>NAYLA EDITOR</span>
+                </div>
+              )}
+            </div>
+
+            {/* REPRODUCTOR FLOTANTE AUTO-OCULTABLE (5 SEGUNDOS) */}
+            <div
+              onClick={(e) => e.stopPropagation()}
+              style={{
+                position: 'absolute',
+                bottom: '18px',
+                left: '50%',
+                transform: 'translateX(-50%)',
+                zIndex: 30,
+                border: '1px solid rgba(255, 255, 255, 0.2)',
+                borderRadius: '999px',
+                backgroundColor: 'rgba(0, 0, 0, 0.85)',
+                backdropFilter: 'blur(10px)',
+                WebkitBackdropFilter: 'blur(10px)',
+                padding: '8px 24px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '20px',
+                transition: 'opacity 0.3s ease',
+                opacity: (showPlaybackControls || !isPlaying) ? 1 : 0,
+                pointerEvents: (showPlaybackControls || !isPlaying) ? 'auto' : 'none'
+              }}
+            >
+              <span style={{ color: '#737373', fontSize: '0.75rem', fontFamily: 'monospace' }}>00:00:00</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '18px' }}>
+                <button onClick={(e) => { e.stopPropagation(); seekBy(-10); }} style={{ background: 'none', border: 'none', color: '#ffffff', fontSize: '1.15rem', cursor: 'pointer', outline: 'none' }}>↺10</button>
+                <button onClick={(e) => { e.stopPropagation(); togglePlay(); }} style={{ background: 'none', border: 'none', color: '#ffffff', fontSize: '1.5rem', cursor: 'pointer', outline: 'none' }}>{isPlaying ? '⏸' : '▶'}</button>
+                <button onClick={(e) => { e.stopPropagation(); seekBy(10); }} style={{ background: 'none', border: 'none', color: '#ffffff', fontSize: '1.15rem', cursor: 'pointer', outline: 'none' }}>10↻</button>
+              </div>
+              <span style={{ color: '#737373', fontSize: '0.75rem', fontFamily: 'monospace' }}>00:00:00</span>
+            </div>
           </div>
-          <span style={{ color: '#737373', fontSize: '0.75rem', fontFamily: 'monospace' }}>00:00:00</span>
         </div>
 
-        {/* TIMELINE HORIZONTAL */}
-        <section className="editor-timeline-panel" style={{ height: '140px', backgroundColor: '#050505', position: 'relative', borderBottom: '1px solid #1a1a1a', overflow: 'hidden', display: 'flex', flexDirection: 'column', padding: '10px 0' }} onClick={() => setClipSeleccionado(null)}>
-          <div style={{ position: 'absolute', left: '50%', top: 0, bottom: 0, width: '2px', backgroundColor: '#fff', zIndex: 50, pointerEvents: 'none', boxShadow: '0 0 10px rgba(255,255,255,0.8)', transition: 'left 0.3s ease' }} />
+        {/* SECCIÓN INFERIOR: LÍNEA DE TIEMPO Y TRACKS */}
+        <div style={{
+          height: '135px',
+          flexShrink: 0,
+          backgroundColor: '#050505',
+          borderTop: '1px solid #1a1a1a',
+          display: 'flex',
+          flexDirection: 'column',
+          position: 'relative',
+          padding: '8px 0',
+          overflow: 'hidden'
+        }} onClick={() => setClipSeleccionado(null)}>
+          <div style={{ position: 'absolute', left: '50%', top: 0, bottom: 0, width: '2px', backgroundColor: '#fff', zIndex: 50, pointerEvents: 'none', boxShadow: '0 0 10px rgba(255,255,255,0.8)' }} />
           <div className="timeline-track" ref={timelineRef}
             onScroll={(e) => {
-              if (!isUserScrolling) return; // Only sync back if user is manually scrolling
+              if (!isUserScrolling) return;
               if (!playerRef.current) return;
               const scrollPos = e.currentTarget.scrollLeft;
               const seconds = scrollPos / 20;
@@ -2671,12 +2627,11 @@ export default function NaylaCore() {
             onPointerDown={() => setIsUserScrolling(true)}
             onPointerUp={() => { setTimeout(() => setIsUserScrolling(false), 50); }}
             onPointerLeave={() => { setTimeout(() => setIsUserScrolling(false), 50); }}
-            style={{ paddingLeft: '50%', paddingRight: '50%', transition: 'padding-left 0.3s ease' }}
+            style={{ paddingLeft: '50%', paddingRight: '50%' }}
             onClick={(e) => e.stopPropagation()}>
-            {/* FIX BOTÓN +: agregado e.stopPropagation() */}
             <div className="neon-btn"
-              onClick={(e) => { e.stopPropagation(); setNavActiva('galeria'); setToolMessage(null); }}
-              style={{ width: '40px', height: '60px', minWidth: '40px', borderRadius: '10px', flexShrink: 0, marginRight: hayClips ? '6px' : '0', borderStyle: 'dashed', cursor: 'pointer', fontSize: '1.4rem', transition: 'margin 0.3s ease' }}>+</div>
+              onClick={(e) => { e.stopPropagation(); setMainNav('boveda'); setIsSubPanelOpen(true); }}
+              style={{ width: '40px', height: '60px', minWidth: '40px', borderRadius: '10px', flexShrink: 0, marginRight: hayClips ? '6px' : '0', borderStyle: 'dashed', cursor: 'pointer', fontSize: '1.4rem' }}>+</div>
 
             <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
               <SortableContext items={pistaVideo.map(c => c.id)} strategy={horizontalListSortingStrategy}>
@@ -2690,12 +2645,11 @@ export default function NaylaCore() {
                       setClipSeleccionado(clip.id);
                       setMediaActivaUrl(clip.url);
                       setVideoResultadoUrl(null);
-                      // Move player to the start of this clip
                       if (playerRef.current) {
                         let frameCount = 0;
                         for (let i = 0; i < lineaDeTiempo.length; i++) {
-                           if (lineaDeTiempo[i].id === clip.id) break;
-                           frameCount += Math.round((lineaDeTiempo[i].durationInSeconds || 5) * 30);
+                          if (lineaDeTiempo[i].id === clip.id) break;
+                          frameCount += Math.round((lineaDeTiempo[i].durationInSeconds || 5) * 30);
                         }
                         playerRef.current.currentTime = (frameCount) / 30;
                       }
@@ -2705,9 +2659,9 @@ export default function NaylaCore() {
                 ))}
               </SortableContext>
             </DndContext>
-
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', height: '35px', overflowX: 'auto', padding: '0 50%', gap: '2px', marginTop: '8px' }} onClick={(e) => e.stopPropagation()}>
+
+          <div style={{ display: 'flex', alignItems: 'center', height: '32px', overflowX: 'auto', padding: '0 50%', gap: '2px', marginTop: '6px' }} onClick={(e) => e.stopPropagation()}>
             {pistaAudio.map((clip) => (
               <div key={clip.id} onClick={() => setClipSeleccionado(clip.id)} className="audio-block neon-btn" style={{ borderColor: clipSeleccionado === clip.id ? '#fff' : '#404040' }}>
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ marginRight: '5px' }}><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
@@ -2715,991 +2669,174 @@ export default function NaylaCore() {
               </div>
             ))}
           </div>
-        </section>
-
         </div>
 
-        {/* COLUMNA DERECHA: Herramientas, Galería y Controles */}
-        {!isVideoExpanded && (<div className="editor-tools-panel flex flex-col w-full flex-1 overflow-hidden">
-
-
-        {/* NUEVA ESTRUCTURA DE HERRAMIENTAS */}
-
-        {/* AREA DE PANELES COMPLEJOS (Reemplaza a la galería si están activos) */}
-        {toolMessage ? (
-          <div className="panel-container responsive-panel-height" style={{ position: 'relative', bottom: 'auto', flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <div style={{ textAlign: 'center', padding: '2rem', color: '#a3a3a3', fontSize: '1rem', letterSpacing: '2px' }}>{toolMessage}</div>
-          </div>
-        ) : mainNav === 'nube' ? (
-          <div className="panel-container responsive-panel-height" style={{ position: 'relative', bottom: 'auto', flex: 1, overflowY: 'auto', padding: '16px' }}>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '1rem' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <p style={{ fontSize: '0.75rem', color: darkMode ? '#fff' : '#000', fontWeight: 'bold', letterSpacing: '1px', margin: 0 }}>EXPLORADOR DE STORAGE (media_bodega)</p>
-                <div style={{ display: 'flex', gap: '8px' }}>
-                  <button className="neon-btn nav-btn" onClick={fetchStorageFiles} style={{ padding: '6px 12px', fontSize: '0.7rem' }}>
-                    {isLoadingStorage ? 'Cargando...' : 'Actualizar'}
-                  </button>
-                </div>
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <button
-                  onClick={() => {
-                    setIsMultiSelectStorageMode(!isMultiSelectStorageMode);
-                    if (isMultiSelectStorageMode) setSelectedStorageFiles([]);
-                  }}
-                  style={{
-                    backgroundColor: isMultiSelectStorageMode ? '#333' : 'transparent',
-                    border: '1px solid #555',
-                    color: '#fff',
-                    padding: '6px 12px',
-                    borderRadius: '6px',
-                    cursor: 'pointer',
-                    fontSize: '0.7rem',
-                    fontWeight: 'bold',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '6px'
-                  }}
-                >
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
-                  {isMultiSelectStorageMode ? 'Cancelar Selección' : 'Selección Múltiple'}
-                </button>
-                {isMultiSelectStorageMode && selectedStorageFiles.length > 0 && (
-                  <button
-                    onClick={() => deleteStorageFiles(selectedStorageFiles)}
-                    style={{
-                      backgroundColor: '#ff4444',
-                      border: 'none',
-                      color: '#fff',
-                      padding: '6px 12px',
-                      borderRadius: '6px',
-                      cursor: 'pointer',
-                      fontSize: '0.7rem',
-                      fontWeight: 'bold',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '6px'
-                    }}
-                  >
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
-                    Eliminar ({selectedStorageFiles.length})
-                  </button>
-                )}
-              </div>
-            </div>
-
-            {isLoadingStorage ? (
-              <div style={{ textAlign: 'center', padding: '2rem', color: '#737373', fontSize: '0.8rem' }}>Cargando archivos...</div>
-            ) : storageFiles.length === 0 ? (
-              <div style={{ textAlign: 'center', padding: '2rem', color: '#737373', fontSize: '0.8rem' }}>No hay archivos en la bodega.</div>
-            ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                {storageFiles.map((file, i) => {
-                  const isFolder = file.id === null && !file.name.includes('.');
-                  if (isFolder || file.name === '.emptyFolderPlaceholder') return null; // Saltar carpetas o placeholders
-
-                  const size = file.metadata?.size;
-                  const sizeFormatted = size ? (size / 1024 / 1024).toFixed(2) + ' MB' : 'Desconocido';
-                  const dateFormatted = file.created_at ? new Date(file.created_at).toLocaleString() : '';
-
-                  const isSelected = isMultiSelectStorageMode && selectedStorageFiles.includes(file.name);
-                  const computedBorderColor = isSelected ? '#ff4444' : (darkMode ? '#222' : '#e5e5e5');
-                  const computedBorderWidth = isSelected ? '2px' : '1px';
-
-                  return (
-                    <div key={i}
-                      onContextMenu={(e) => e.preventDefault()}
-                      onPointerDown={() => {
-                        longPressTimerRef.current = setTimeout(() => {
-                          if (!isMultiSelectStorageMode) {
-                            setIsMultiSelectStorageMode(true);
-                            setSelectedStorageFiles([file.name]);
-                          }
-                        }, 600);
-                      }}
-                      onPointerUp={() => {
-                        if (longPressTimerRef.current) {
-                          clearTimeout(longPressTimerRef.current);
-                          longPressTimerRef.current = null;
-                        }
-                      }}
-                      onPointerLeave={() => {
-                        if (longPressTimerRef.current) {
-                          clearTimeout(longPressTimerRef.current);
-                          longPressTimerRef.current = null;
-                        }
-                      }}
-                      onPointerMove={() => {
-                        if (longPressTimerRef.current) {
-                          clearTimeout(longPressTimerRef.current);
-                          longPressTimerRef.current = null;
-                        }
-                      }}
-                      onPointerCancel={() => {
-                        if (longPressTimerRef.current) {
-                          clearTimeout(longPressTimerRef.current);
-                          longPressTimerRef.current = null;
-                        }
-                      }}
-                      onClick={() => {
-                        if (isMultiSelectStorageMode) {
-                          if (selectedStorageFiles.includes(file.name)) {
-                            setSelectedStorageFiles(selectedStorageFiles.filter(name => name !== file.name));
-                          } else {
-                            setSelectedStorageFiles([...selectedStorageFiles, file.name]);
-                          }
-                        }
-                      }}
-                      style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: darkMode ? '#111' : '#f9f9f9', borderStyle: 'solid', borderColor: computedBorderColor, borderWidth: computedBorderWidth, padding: '10px 12px', borderRadius: '8px', cursor: isMultiSelectStorageMode ? 'pointer' : 'default', WebkitTouchCallout: 'none', WebkitUserSelect: 'none', userSelect: 'none' }}>
-                      <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1, marginRight: '10px' }}>
-                        <p style={{ fontSize: '0.8rem', color: darkMode ? '#fff' : '#000', margin: 0, fontWeight: '500', overflow: 'hidden', textOverflow: 'ellipsis' }}>{file.name}</p>
-                        <p style={{ fontSize: '0.65rem', color: '#737373', margin: '4px 0 0 0' }}>{sizeFormatted} • {dateFormatted}</p>
-                      </div>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          if (!isMultiSelectStorageMode) {
-                            deleteStorageFile(file.name);
-                          }
-                        }}
-                        style={{ background: 'none', border: 'none', color: '#ff4444', cursor: 'pointer', padding: '4px', opacity: isMultiSelectStorageMode ? 0.3 : 1, pointerEvents: isMultiSelectStorageMode ? 'none' : 'auto' }}
-                        title="Eliminar archivo"
-                      >
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
-                      </button>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        ) : subTool && ['marco', 'delogo', 'script', 'supervisor', 'render'].includes(subTool) ? (
-          <div className="panel-container responsive-panel-height" style={{ position: 'relative', bottom: 'auto', flex: 1, overflowY: 'auto' }}>
-            {/* COMPONENTES DE PANELES COMPLEJOS */}
-            {subTool === 'marco' && (
-              <div>
-                <p style={{ fontSize: '0.75rem', color: darkMode ? '#fff' : '#000', fontWeight: 'bold', marginBottom: '1rem', letterSpacing: '1px' }}>MARCO — CUBRIR MARCA DE AGUA</p>
-                <p style={{ fontSize: '0.65rem', color: '#737373', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '1px' }}>Posición del marco</p>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '6px', marginBottom: '1.2rem' }}>
-                  {POSICIONES.map(pos => (
-                    <button key={pos} className={`marco-pos-btn ${marcoConfig.posicion === pos ? 'selected' : ''}`} onClick={() => setMarcoConfig({ ...marcoConfig, posicion: pos })}>
-                      {ICONOS_POS[pos]}<br /><span style={{ fontSize: '0.5rem', opacity: 0.7 }}>{pos}</span>
-                    </button>
-                  ))}
-                </div>
-                <p style={{ fontSize: '0.65rem', color: '#737373', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '1px' }}>Grosor: {marcoConfig.grosor}px</p>
-                <input type="range" min="20" max="200" value={marcoConfig.grosor} onChange={(e) => setMarcoConfig({ ...marcoConfig, grosor: parseInt(e.target.value) })} style={{ width: '100%', marginBottom: '1.2rem', accentColor: '#fff' }} />
-                <p style={{ fontSize: '0.65rem', color: '#737373', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '1px' }}>Color</p>
-                <div style={{ display: 'flex', gap: '10px', marginBottom: '1.2rem', alignItems: 'center' }}>
-                  {['#ffffff', '#000000', '#1a1a1a', '#f5f5f5', '#e0e0e0'].map(color => (
-                    <div key={color} onClick={() => setMarcoConfig({ ...marcoConfig, color })} style={{ width: '36px', height: '36px', borderRadius: '50%', backgroundColor: color, cursor: 'pointer', border: marcoConfig.color === color ? '3px solid #00ffcc' : '2px solid #333', flexShrink: 0 }} />
-                  ))}
-                  <input type="color" value={marcoConfig.color} onChange={(e) => setMarcoConfig({ ...marcoConfig, color: e.target.value })} style={{ width: '36px', height: '36px', borderRadius: '50%', border: 'none', cursor: 'pointer' }} />
-                </div>
-                <button onClick={procesarImagenesConMarco} disabled={marcoProcesando} className="neon-btn nav-btn"
-                  style={{ width: '100%', backgroundColor: marcoProcesando ? '#0a0a0a' : '#fff', color: marcoProcesando ? '#a3a3a3' : '#000', borderColor: marcoProcesando ? '#262626' : '#fff' }}>
-                  {marcoProcesando ? 'PROCESANDO...' : '⚡ APLICAR A TODAS LAS FOTOS'}
-                </button>
-                {marcoImagenes.length > 0 && (
-                  <div style={{ marginTop: '1.5rem' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-                      <p style={{ fontSize: '0.75rem', color: '#00ffcc', fontWeight: 'bold', margin: 0 }}>✓ {marcoImagenes.length} imágenes procesadas</p>
-                      <button onClick={descargarTodasConMarco} className="neon-btn nav-btn" style={{ padding: '6px 14px', fontSize: '0.65rem' }}>DESCARGAR TODAS</button>
-                    </div>
-                    <div style={{ display: 'flex', gap: '10px', overflowX: 'auto', paddingBottom: '8px' }}>
-                      {marcoImagenes.map((img, i) => (
-                        <div key={i} style={{ flexShrink: 0, textAlign: 'center' }}>
-                          <img src={img.procesada} style={{ width: '70px', height: '120px', objectFit: 'cover', borderRadius: '8px', border: '1px solid #333', display: 'block', marginBottom: '6px' }} />
-                          <button onClick={() => descargarImagenConMarco(img.procesada, img.nombre)} style={{ background: 'none', border: '1px solid #333', color: '#a3a3a3', borderRadius: '6px', padding: '3px 6px', fontSize: '0.55rem', cursor: 'pointer' }}>↓ DL</button>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {subTool === 'delogo' && (
-              <div>
-                <p style={{ fontSize: '0.75rem', color: darkMode ? '#fff' : '#000', fontWeight: 'bold', marginBottom: '1rem', letterSpacing: '1px' }}>SUPRESIÓN DE MARCA DE AGUA (DELOGO)</p>
-                <div style={{ backgroundColor: '#0a0a0a', padding: '1.5rem', borderRadius: '16px', border: '1px dashed #404040', marginBottom: '1rem' }}>
-                  <p style={{ fontSize: '0.7rem', color: '#a3a3a3', marginBottom: '1rem' }}>1. Selecciona un video en la pista.<br />2. Dibuja un rectángulo blanco sobre el logo en el monitor.<br />3. Elige el motor de procesamiento.</p>
-                  <div style={{ display: 'flex', gap: '10px' }}>
-                    <button onClick={() => processVideo('local')} disabled={isProcessing} className="neon-btn nav-btn" style={{ flex: 1 }}>{isProcessing ? 'PROCESANDO...' : 'BORRAR LOGO (LOCAL)'}</button>
-                    <button onClick={() => processVideo('nube')} disabled={isProcessing} className="neon-btn nav-btn" style={{ flex: 1 }}>{isProcessing ? 'PROCESANDO...' : 'BORRAR LOGO (APIS)'}</button>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {subTool === 'script' && (
-              <div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-                  <p style={{ fontSize: '0.75rem', color: darkMode ? '#fff' : '#000', fontWeight: 'bold', letterSpacing: '1px' }}>SCRIPT MANUAL / PLANTILLAS</p>
-                  <div style={{ display: 'flex', gap: '8px' }}>
-                    {moldesScripts.length > 0 && (
-                      <select value={moldeActivo} onChange={cargarMolde} style={{ backgroundColor: '#0a0a0a', color: darkMode ? '#fff' : '#000', border: '1px solid #404040', borderRadius: '8px', padding: '4px 8px', fontSize: '0.65rem' }}>
-                        <option value="">-- Seleccionar Plantilla --</option>
-                        {moldesScripts.map(m => (
-                          <option key={m.nombre} value={m.nombre}>{m.nombre}</option>
-                        ))}
-                      </select>
-                    )}
-                    <button onClick={guardarMolde} className="neon-btn nav-btn" style={{ padding: '4px 10px', fontSize: '0.6rem' }}>GUARDAR PLANTILLA</button>
-                    {moldeActivo && <button onClick={eliminarMoldeActivo} className="neon-btn nav-btn" style={{ padding: '4px 10px', fontSize: '0.6rem', color: '#ff4444' }}>X</button>}
-                  </div>
-                </div>
-                <p style={{ fontSize: '0.65rem', color: '#737373', marginBottom: '10px' }}>
-                  Comandos disponibles: <br />
-                  <code style={{ color: '#00ffcc' }}>NaylaEngine.agregar(["V1", "V2"]);</code> - Agrega clips por etiqueta.<br />
-                  <code style={{ color: '#00ffcc' }}>{"NaylaEngine.modificar('V1', { volume: 0.5 });"}</code> - Cambia volumen y efectos.<br />
-                  <code style={{ color: '#00ffcc' }}>{"NaylaEngine.modificar('global', { fadeOutFinal: 2 });"}</code> - Fade a negro (2s) al final.<br />
-                  <code style={{ color: '#00ffcc' }}>{"NaylaEngine.agregarSubtitulos([{ texto: \"Hola\", inicioSec: 0, finSec: 2 }]);"}</code> - Agrega subtítulos.<br />
-                  <code style={{ color: '#00ffcc' }}>NaylaEngine.limpiarSubtitulos();</code> - Borra los subtítulos.<br />
-                  <code style={{ color: '#00ffcc' }}>NaylaEngine.limpiar();</code> - Borra pista y subtítulos.
-                </p>
-                <textarea value={codigoJsInput} onChange={(e) => setCodigoJsInput(e.target.value)} style={{ width: '100%', height: '100px', backgroundColor: '#0a0a0a', border: '1px solid #262626', borderRadius: '12px', color: '#00ffcc', padding: '1rem', fontFamily: 'monospace', outline: 'none', marginBottom: '1rem', resize: 'vertical' }} />
-                <button onClick={ejecutarScript} disabled={isScriptRunning} className="neon-btn nav-btn" style={{ width: '100%', backgroundColor: isScriptRunning ? '#404040' : '#fff', color: isScriptRunning ? '#a3a3a3' : '#000', fontWeight: 'bold' }}>
-                  {isScriptRunning ? 'EJECUTANDO SCRIPT...' : 'EJECUTAR SCRIPT ▶'}
-                </button>
-              </div>
-            )}
-
-
-            {subTool === 'render' && (
-              <div style={{ padding: '10px' }}>
-                <div style={{ fontWeight: 'bold', letterSpacing: '2px', color: '#a3a3a3', marginBottom: '15px' }}>RENDERIZAR VIDEO</div>
-                <div style={{ marginBottom: '15px', backgroundColor: '#0a0a0a', border: '1px solid #262626', padding: '15px', borderRadius: '8px' }}>
-                  <p style={{ fontSize: '0.8rem', color: '#737373', marginBottom: '10px' }}>
-                    Se enviará el estado actual del timeline para ser procesado por Remotion.
-                  </p>
-                  <ul style={{ fontSize: '0.8rem', color: '#00ffcc', listStyle: 'none', padding: 0 }}>
-                    <li>Clips en timeline: {lineaDeTiempo.length}</li>
-                    <li>Subtítulos: {subtitulos.length}</li>
-                    <li>Formato (Canvas Ratio): {canvasRatio}</li>
-                  </ul>
-                </div>
-                <button
-                  onClick={async () => {
-                    if (lineaDeTiempo.length === 0) {
-                      showAlert('La línea de tiempo está vacía. Añade al menos un clip.');
-                      return;
-                    }
-
-                    setIsProcessing(true);
-                    try {
-                      // Validar duraciones antes de enviar a render
-                      const lineaValidada = [...lineaDeTiempo];
-                      for (let i = 0; i < lineaValidada.length; i++) {
-                        const item = lineaValidada[i];
-                        if (item.tipo === 'audio' && item.durationInSeconds === undefined) {
-                           try {
-                             const duration = await getAudioDurationInSeconds(item.url);
-                             if (duration !== undefined) {
-                               lineaValidada[i] = { ...item, durationInSeconds: duration, originalDurationInSeconds: item.originalDurationInSeconds || duration };
-                             } else {
-                               throw new Error("No duration returned");
-                             }
-                           } catch (e) {
-                             throw new Error(`El archivo ${item.nombre || item.etiqueta} (${item.url}) no tiene una duración de audio válida y no se pudo obtener. Verifica que el archivo sea accesible y esté en un formato soportado.`);
-                           }
-                        } else if (item.tipo === 'video' && item.durationInSeconds === undefined) {
-                           try {
-                             const metadata = await getVideoMetadata(item.url);
-                             if (metadata && metadata.durationInSeconds !== undefined) {
-                               lineaValidada[i] = { ...item, durationInSeconds: metadata.durationInSeconds, originalDurationInSeconds: item.originalDurationInSeconds || metadata.durationInSeconds };
-                             } else {
-                               throw new Error("No duration returned");
-                             }
-                           } catch (e) {
-                             throw new Error(`El archivo ${item.nombre || item.etiqueta} (${item.url}) no tiene una duración válida y no se pudo obtener. Verifica que el archivo sea accesible y esté en un formato soportado.`);
-                           }
-                        }
-                      }
-
-                      const inputProps = {
-                        timeline: lineaValidada,
-                        subtitles: subtitulos,
-                        logos: logos,
-                        canvasRatio,
-                        settings: globalSettings
-                      };
-                      const res = await fetch('/api/render', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ inputProps })
-                      });
-                      const data = await res.json();
-                      if (!res.ok) throw new Error(data.error || 'Error al solicitar renderizado');
-
-                      const jobId = data.jobId;
-                      if (jobId) {
-                          const newJob = { jobId, status: 'queued', url: null, error: null, logs: ['Job añadido a la cola...'] };
-                          const updatedJobs = { ...activeRenderJobs, [jobId]: newJob };
-                          setActiveRenderJobs(updatedJobs as any);
-                          localStorage.setItem('activeRenderJobs', JSON.stringify(updatedJobs));
-                          setIsRenderQueueVisible(true);
-
-                          // No bloqueamos la UI globalmente, el nuevo modal manejará la vista.
-                          setIsProcessing(false);
-                      } else {
-                        setIsProcessing(false);
-                      }
-                    } catch (err: any) {
-                      setIsProcessing(false);
-                      showAlert('Error: ' + err.message);
-                    }
-                  }}
-                  disabled={isProcessing || isScriptRunning}
-                  className="neon-btn nav-btn"
-                  style={{ width: '100%', backgroundColor: isProcessing || isScriptRunning ? '#404040' : '#fff', color: isProcessing || isScriptRunning ? '#a3a3a3' : '#000', fontWeight: 'bold', padding: '12px' }}
-                >
-                  {isProcessing ? 'RENDERIZANDO EN LA NUBE... (ESPERE)' : (isScriptRunning ? 'ESPERANDO SCRIPT...' : 'INICIAR RENDER (REMOTION) ▶')}
-                </button>
-              </div>
-            )}
-
-            {subTool === 'supervisor' && (
-              <div style={{ padding: '10px' }}>
-                <div style={{ fontWeight: 'bold', letterSpacing: '2px', color: '#a3a3a3', marginBottom: '15px' }}>SUPERVISOR IA</div>
-
-                <div style={{ marginBottom: '15px', backgroundColor: '#0a0a0a', border: '1px solid #262626', padding: '10px', borderRadius: '8px' }}>
-                   <div style={{ fontSize: '0.7rem', color: '#737373', marginBottom: '5px' }}>Si no tienes API Key, usa el servicio premium (5$ PayPal/Bitcoin)</div>
-                   <button className="neon-btn nav-btn" style={{ padding: '6px 15px', fontSize: '0.7rem', width: '100%', marginBottom: '10px', backgroundColor: '#d4af37', color: '#000', fontWeight: 'bold' }}>CONTRATAR PLAN IA ($5)</button>
-
-                   <div style={{ fontSize: '0.7rem', color: '#737373', marginBottom: '5px' }}>O ingresa tu propia API Key de Groq:</div>
-                   <input
-                     type="password"
-                     placeholder="gsk_..."
-                     value={iaApiKey}
-                     onChange={(e) => setIaApiKey(e.target.value)}
-                     style={{ width: '100%', backgroundColor: '#050505', border: '1px solid #262626', color: darkMode ? '#fff' : '#000', padding: '8px', borderRadius: '5px', fontSize: '0.7rem' }}
-                   />
-                </div>
-
-                <textarea
-                  value={iaPrompt}
-                  onChange={(e) => setIaPrompt(e.target.value)}
-                  placeholder="Describe lo que quieres que haga la IA (ej: Agrega todos los videos, baja el volumen y pon el subtítulo 'Inicio')"
-                  style={{ width: '100%', height: '80px', backgroundColor: '#0a0a0a', border: '1px solid #262626', borderRadius: '8px', color: '#00ffcc', padding: '1rem', fontFamily: 'monospace', outline: 'none', marginBottom: '1rem', resize: 'vertical' }}
-                />
-
-                <div style={{ display: 'flex', gap: '10px' }}>
-                  <button
-                    onClick={async () => {
-                       if(!iaPrompt) return;
-                       setIaLoading(true);
-                       try {
-                          const res = await fetch('/api/supervisor', {
-                             method: 'POST',
-                             headers: { 'Content-Type': 'application/json' },
-                             body: JSON.stringify({ prompt: iaPrompt, apiKey: iaApiKey, galeria: galeriaMultimedia })
-                          });
-                          const data = await res.json();
-                          if(data.error) throw new Error(data.error);
-
-                          console.log("Código IA:", data.code);
-                          const NaylaEngine = getEngineContext();
-                          const AsyncFunction = Object.getPrototypeOf(async function(){}).constructor;
-                          const execute = new AsyncFunction('NaylaEngine', data.code);
-                          await execute(NaylaEngine);
-                          showAlert('Ejecución IA finalizada');
-                       } catch(err: any) {
-                          showAlert("Error en IA: " + err.message);
-                       } finally {
-                          setIaLoading(false);
-                       }
-                    }}
-                    disabled={iaLoading}
-                    className="neon-btn nav-btn"
-                    style={{ flex: 1, backgroundColor: '#fff', color: '#000', fontWeight: 'bold' }}
-                  >
-                    {iaLoading ? 'PROCESANDO...' : 'GENERAR Y EJECUTAR 🤖'}
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
-        ) : (
-          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', backgroundColor: '#000' }}>
-
-            {/* AREA DE BÚSQUEDA (Si hay sub-herramienta de búsqueda activa) */}
-            {subTool && ['youtube', 'pixabay', 'musicastock', 'noticias', 'artistas', 'stockvideo'].includes(subTool) && (
-              <div style={{ padding: '10px 16px', backgroundColor: '#050505', borderBottom: '1px solid #1a1a1a', display: 'flex', gap: '8px' }}>
-                <input
-                  type="text"
-                  placeholder={`Buscar en ${SUB_TOOLS['buscar'].find(t => t.id === subTool)?.nombre || ''}...`}
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  style={{ flex: 1, padding: '8px 12px', backgroundColor: '#111', border: '1px solid #333', borderRadius: '8px', color: darkMode ? '#fff' : '#000', fontSize: '0.8rem', outline: 'none' }}
-                />
-                <button className="neon-btn nav-btn" style={{ padding: '8px 16px' }} onClick={async () => {
-                  if (!searchQuery) return;
-                  const btnNombre = SUB_TOOLS.buscar.find(t => t.id === subTool)?.nombre;
-                  const newMockId = `mock-${Date.now()}`;
-                  const count = galeriaMultimedia.length + 1;
-
-                  let tipo: 'video' | 'foto' | 'audio' = 'video';
-                  let fuente = subTool;
-
-                  if (subTool === 'pixabay') tipo = 'foto';
-                  if (subTool === 'musicastock') tipo = 'audio';
-                  if (subTool === 'noticias') tipo = 'foto';
-                  if (subTool === 'artistas') tipo = 'foto';
-
-                  const inicial = tipo === 'video' ? 'V' : tipo === 'foto' ? 'F' : 'A';
-
-                  const mockItem: MediaItem = {
-                    id: newMockId,
-                    url: 'https://www.w3schools.com/html/mov_bbb.mp4',
-                    tipo,
-                    nombre: `${btnNombre} Resultado ${count}`,
-                    creado_en: new Date().toLocaleTimeString(),
-                    esOverlay: false,
-                    etiqueta: `${inicial}${count}`,
-                    fuente
-                  };
-
-                  setGaleriaMultimedia(prev => [...prev, mockItem]);
-                  setSearchQuery('');
-                }}>BUSCAR</button>
-              </div>
-            )}
-
-            {/* AREA DE INPUT PARA ENLACES O IA (Si sub-herramienta lo requiere y no es panel complejo) */}
-            {subTool === 'enlace' && (
-              <div style={{ padding: '10px 16px', backgroundColor: '#050505', borderBottom: '1px solid #1a1a1a', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                <textarea
-                  placeholder="Pega uno o varios enlaces web aquí (separados por saltos de línea o comas)..."
-                  value={enlaceInput}
-                  onChange={(e) => setEnlaceInput(e.target.value)}
-                  rows={2}
-                  style={{ width: '100%', padding: '0.8rem', backgroundColor: '#111', border: '1px solid #333', borderRadius: '8px', color: darkMode ? '#fff' : '#000', outline: 'none', resize: 'vertical' }}
-                />
-                <button
-                  onClick={handleExtraerDesdeEnlace}
-                  disabled={descargasActivas.some(d => d.status === 'procesando') || !enlaceInput}
-                  className="neon-btn nav-btn"
-                  style={{ padding: '0.8rem', backgroundColor: descargasActivas.some(d => d.status === 'procesando') ? '#404040' : '#fff', color: descargasActivas.some(d => d.status === 'procesando') ? '#a3a3a3' : '#000', fontWeight: 'bold' }}
-                >
-                  {descargasActivas.some(d => d.status === 'procesando') ? 'PROCESANDO ENLACES EN COLA...' : 'PROCESAR ENLACES EN COLA'}
-                </button>
-                {descargasActivas.length > 0 && (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '8px' }}>
-                    {descargasActivas.map(d => (
-                      <div key={d.id} style={{ display: 'flex', alignItems: 'center', fontSize: '0.8rem', color: darkMode ? '#ccc' : '#666', backgroundColor: darkMode ? '#1a1a1a' : '#f0f0f0', padding: '4px 8px', borderRadius: '4px' }}>
-                        <span style={{ marginRight: '8px', fontSize: '1rem' }}>
-                          {d.status === 'procesando' ? '🔄' : d.status === 'listo' ? '✅' : '❌'}
-                        </span>
-                        <span style={{ flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                          {d.url}
-                        </span>
-                        <span>
-                          {d.status === 'procesando' ? 'Descargando...' : d.status === 'listo' ? 'Listo' : 'Error'}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
-
-            {subTool === 'sonidos' && (
-              <div style={{ padding: '10px 16px', backgroundColor: '#050505', borderBottom: '1px solid #1a1a1a', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                <textarea
-                  value={iaAudioTexto}
-                  onChange={(e) => setIaAudioTexto(e.target.value)}
-                  placeholder="Escribe el texto para generar voz..."
-                  style={{ width: '100%', height: '60px', backgroundColor: '#111', border: '1px solid #333', color: darkMode ? '#fff' : '#000', padding: '10px', borderRadius: '8px', fontSize: '0.8rem', resize: 'none' }}
-                />
-                <button
-                  className="neon-btn nav-btn"
-                  style={{ backgroundColor: '#00cc66', color: '#000', fontWeight: 'bold' }}
-                  onClick={async () => {
-                    if (!iaAudioTexto) return showAlert('Ingresa texto primero');
-                    try {
-                      const res = await fetch('/api/ia-audio', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ texto: iaAudioTexto, email: session?.user?.email })
-                      });
-                      const data = await res.json();
-                      if (data.error) throw new Error(data.error);
-
-                      showAlert(`Audio generado (Simulado). URL: ${data.url}`);
-                      setGaleriaMultimedia(prev => [...prev, { id: `ia-audio-${Date.now()}`, nombre: 'Audio Generado IA', tipo: 'audio', url: data.url, etiqueta: 'A_IA', fuente: 'ia' }]);
-                    } catch (err: any) {
-                      showAlert("Error IA Audio: " + err.message);
-                    }
-                  }}
-                >
-                  GENERAR AUDIO
-                </button>
-              </div>
-            )}
-
-            {subTool === 'iafoto' && (
-              <div style={{ padding: '10px 16px', backgroundColor: '#050505', borderBottom: '1px solid #1a1a1a', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                <select
-                  value={iaFotosFotoBase}
-                  onChange={(e) => setIaFotosFotoBase(e.target.value)}
-                  style={{ width: '100%', backgroundColor: '#111', border: '1px solid #333', color: darkMode ? '#fff' : '#000', padding: '8px', borderRadius: '8px', fontSize: '0.8rem' }}
-                >
-                  <option value="">-- Seleccionar Foto Base --</option>
-                  {galeriaMultimedia.filter(m => m.tipo === 'foto').map(m => (
-                    <option key={m.id} value={m.url}>{m.nombre || m.etiqueta}</option>
-                  ))}
-                </select>
-                <textarea
-                  value={iaFotosPrompt}
-                  onChange={(e) => setIaFotosPrompt(e.target.value)}
-                  placeholder="Describe la nueva escena manteniendo la consistencia..."
-                  style={{ width: '100%', height: '60px', backgroundColor: '#111', border: '1px solid #333', color: darkMode ? '#fff' : '#000', padding: '10px', borderRadius: '8px', fontSize: '0.8rem', resize: 'none' }}
-                />
-                <button
-                  className="neon-btn nav-btn"
-                  style={{ backgroundColor: '#00cc66', color: '#000', fontWeight: 'bold' }}
-                  onClick={async () => {
-                    if (!iaFotosFotoBase || !iaFotosPrompt) return showAlert('Selecciona foto base y escribe el prompt');
-                    try {
-                      const res = await fetch('/api/ia-fotos', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ fotoBaseUrl: iaFotosFotoBase, prompt: iaFotosPrompt, email: session?.user?.email })
-                      });
-                      const data = await res.json();
-                      if (data.error) throw new Error(data.error);
-
-                      showAlert(`Foto generada (Simulada). URL: ${data.url}`);
-                      setGaleriaMultimedia(prev => [...prev, { id: `ia-foto-${Date.now()}`, nombre: 'Foto Generada IA', tipo: 'foto', url: data.url, etiqueta: 'I_IA', fuente: 'ia' }]);
-                    } catch (err: any) {
-                      showAlert("Error IA Fotos: " + err.message);
-                    }
-                  }}
-                >
-                  GENERAR FOTO
-                </button>
-              </div>
-            )}
-
-            {/* GALERÍA SIEMPRE VISIBLE */}
-            <div className="editor-media-gallery" style={{ flex: 1, padding: '16px', overflowY: 'auto' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-                <button
-                  onClick={() => {
-                    setIsMultiSelectMode(!isMultiSelectMode);
-                    if (isMultiSelectMode) setSelectedMediaIds([]);
-                  }}
-                  style={{
-                    backgroundColor: isMultiSelectMode ? '#333' : 'transparent',
-                    border: '1px solid #555',
-                    color: '#fff',
-                    padding: '6px 12px',
-                    borderRadius: '6px',
-                    cursor: 'pointer',
-                    fontSize: '0.8rem',
-                    fontWeight: 'bold',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '6px'
-                  }}
-                >
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
-                  {isMultiSelectMode ? 'Cancelar Selección' : 'Selección Múltiple'}
-                </button>
-
-                {isMultiSelectMode && selectedMediaIds.length > 0 && (
-                  <button
-                    onClick={async () => {
-                      if (!confirm(`¿Eliminar ${selectedMediaIds.length} elemento(s)?`)) return;
-                      await eliminarItemsGaleria(selectedMediaIds);
-                      setSelectedMediaIds([]);
-                      setIsMultiSelectMode(false);
-                    }}
-                    style={{
-                      backgroundColor: '#ff4444',
-                      border: 'none',
-                      color: '#fff',
-                      padding: '6px 12px',
-                      borderRadius: '6px',
-                      cursor: 'pointer',
-                      fontSize: '0.8rem',
-                      fontWeight: 'bold',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '6px'
-                    }}
-                  >
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
-                    Eliminar ({selectedMediaIds.length})
-                  </button>
-                )}
-              </div>
-
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(110px, 1fr))', gap: '10px' }}>
-                {galeriaMultimedia
-                  .filter(item => {
-                    if (filtroGaleria === 'videos') return item.tipo === 'video';
-                    if (filtroGaleria === 'fotos') return item.tipo === 'foto';
-                    if (filtroGaleria === 'audios') return item.tipo === 'audio';
-                    return true;
-                  })
-                  .map(item => {
-                    const srcFuente = item.fuente || 'propio';
-                    let bgBadge = 'mio';
-                    let txtBadge = 'MIO';
-                    if (srcFuente === 'youtube') { bgBadge = 'yt'; txtBadge = 'YT'; }
-                    else if (srcFuente === 'pixabay' || srcFuente === 'noticias' || srcFuente === 'artistas' || srcFuente === 'musicastock' || srcFuente === 'stockvideo') { bgBadge = 'px'; txtBadge = 'PX'; }
-                    else if (srcFuente === 'ia' || srcFuente === 'sonidos' || srcFuente === 'iafoto') { bgBadge = 'ia'; txtBadge = 'IA'; }
-                    else if (srcFuente === 'render') { bgBadge = 'render'; txtBadge = 'RENDER'; }
-
-                    const isSelected = isMultiSelectMode && selectedMediaIds.includes(item.id);
-
-                    let computedBorderColor = 'transparent';
-                    let computedBorderWidth = '1px';
-                    if (isSelected) {
-                      computedBorderColor = '#ff4444';
-                      computedBorderWidth = '3px';
-                    } else if (srcFuente === 'render') {
-                      computedBorderColor = '#00ffcc';
-                      computedBorderWidth = '1px';
-                    }
-
-                    return (
-                      <div key={item.id} className="neon-btn"
-                        onContextMenu={(e) => e.preventDefault()}
-                        onPointerDown={() => {
-                          longPressTimerRef.current = setTimeout(() => {
-                            if (!isMultiSelectMode) {
-                              setIsMultiSelectMode(true);
-                              setSelectedMediaIds([item.id]);
-                            }
-                          }, 600);
-                        }}
-                        onPointerUp={() => {
-                          if (longPressTimerRef.current) {
-                            clearTimeout(longPressTimerRef.current);
-                            longPressTimerRef.current = null;
-                          }
-                        }}
-                        onPointerLeave={() => {
-                          if (longPressTimerRef.current) {
-                            clearTimeout(longPressTimerRef.current);
-                            longPressTimerRef.current = null;
-                          }
-                        }}
-                        onPointerMove={() => {
-                          if (longPressTimerRef.current) {
-                            clearTimeout(longPressTimerRef.current);
-                            longPressTimerRef.current = null;
-                          }
-                        }}
-                        onPointerCancel={() => {
-                          if (longPressTimerRef.current) {
-                            clearTimeout(longPressTimerRef.current);
-                            longPressTimerRef.current = null;
-                          }
-                        }}
-                        style={{ minHeight: '120px', padding: '10px', borderRadius: '12px', borderStyle: 'solid', borderColor: computedBorderColor, borderWidth: computedBorderWidth, flexDirection: 'column', position: 'relative', justifyContent: 'space-between', width: '100%', WebkitTouchCallout: 'none', WebkitUserSelect: 'none', userSelect: 'none' }}>
-                        <div className={`source-badge ${bgBadge}`} style={srcFuente === 'render' ? { backgroundColor: '#00ffcc', color: '#000' } : {}}>{txtBadge}</div>
-                        <div style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                          <span style={{ fontSize: '0.65rem', backgroundColor: '#262626', padding: '2px 6px', borderRadius: '4px', color: darkMode ? '#fff' : '#000', fontWeight: 'bold' }}>{item.etiqueta}</span>
-                          <div style={{ display: 'flex', gap: '4px', zIndex: 10 }}>
-                            <button onClick={() => descargarIndividual(item.url, item.nombre, item.tipo)} title="Descargar" style={{ background: 'rgba(255,255,255,0.1)', border: '1px solid #fff', borderRadius: '50%', width: '22px', height: '22px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', padding: 0 }}>
-                              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5"><path d="M12 5v14M5 12l7 7 7-7"/></svg>
-                            </button>
-                            <button onClick={() => eliminarDeGaleria(item.id)} title="Eliminar" style={{ background: 'rgba(255,255,255,0.1)', border: '1px solid #fff', borderRadius: '50%', width: '22px', height: '22px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', padding: 0 }}>
-                              <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-                            </button>
-                          </div>
-                        </div>
-
-                        <div
-                          onClick={() => {
-                            if (isMultiSelectMode) {
-                              if (selectedMediaIds.includes(item.id)) {
-                                setSelectedMediaIds(selectedMediaIds.filter(id => id !== item.id));
-                              } else {
-                                setSelectedMediaIds([...selectedMediaIds, item.id]);
-                              }
-                              return;
-                            }
-                            setMediaActivaUrl(item.url);
-                            setClipSeleccionado(item.id);
-                            setVideoResultadoUrl(null);
-                            if (item.tipo === 'video' && playerRef.current) {
-                              const playPromise = playerRef.current.play(); if (playPromise !== undefined) { playPromise.catch(error => console.log('Autoplay prevented:', error)); }
-                              setIsPlaying(true);
-                            }
-                          }}
-                          style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', width: '100%', overflow: 'hidden', cursor: 'pointer', marginTop: '15px' }}>
-                          {item.tipo === 'video' && <svg width="24" height="24" viewBox="0 0 24 24" fill="white"><polygon points="5,3 19,12 5,21"/></svg>}
-                          {item.tipo === 'audio' && <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>}
-                          {item.tipo === 'foto' && <img src={item.url} style={{ width: '100%', height: '40px', objectFit: 'contain', borderRadius: '4px' }} alt={item.nombre} />}
-                          <input type="text" value={item.nombre} onChange={(e) => renombrarItem(item.id, e.target.value)} style={{ background: 'transparent', border: 'none', color: darkMode ? '#fff' : '#000', outline: 'none', width: '100%', textAlign: 'center', fontSize: '0.55rem', marginTop: '8px', textOverflow: 'ellipsis', whiteSpace: 'nowrap', overflow: 'hidden' }} title={item.nombre} />
-                        </div>
-
-                        {srcFuente === 'render' ? (
-                          <div style={{ display: 'flex', gap: '8px', width: '100%', marginTop: 'auto' }}>
-                             <button onClick={() => {
-                                setMediaActivaUrl(item.url);
-                                setClipSeleccionado(item.id);
-                                setVideoResultadoUrl(item.url);
-                                if (playerRef.current) {
-                                  const playPromise = playerRef.current.play(); if (playPromise !== undefined) { playPromise.catch(error => console.log('Autoplay prevented:', error)); }
-                                  setIsPlaying(true);
-                                }
-                             }} style={{ padding: '6px', fontSize: '0.5rem', flex: 1, backgroundColor: '#00ffcc', color: '#000', border: 'none', borderRadius: '100px', fontWeight: 'bold', cursor: 'pointer' }}>▶ REPRODUCIR</button>
-                             <button onClick={() => descargarIndividual(item.url, item.nombre, item.tipo)} style={{ padding: '6px', fontSize: '0.5rem', flex: 1, backgroundColor: 'transparent', color: '#00ffcc', border: '1px solid #00ffcc', borderRadius: '100px', fontWeight: 'bold', cursor: 'pointer' }}>⬇ DESCARGAR</button>
-                          </div>
-                        ) : (
-                          <button onClick={() => agregarAlTimeline(item)} style={{ padding: '6px', fontSize: '0.5rem', width: '100%', marginTop: 'auto', backgroundColor: '#fff', color: '#000', border: 'none', borderRadius: '100px', fontWeight: 'bold', cursor: 'pointer' }}>+ PISTA</button>
-                        )}
-                      </div>
-                    );
-                })}
-              </div>
-            </div>
-          </div>
-        )}
-
-        <div ref={toolsOverlayRef} className={`editor-toolbars ${expandedSurface === 'tools' ? 'surface-expanded' : ''}`} role={expandedSurface === 'tools' ? 'dialog' : undefined} aria-modal={expandedSurface === 'tools' ? true : undefined} aria-label={expandedSurface === 'tools' ? 'Herramientas del editor' : undefined}>
-        {expandedSurface === 'tools' && (
-          <div className="surface-overlay-header">
-            <strong>HERRAMIENTAS</strong>
-            <button className="surface-overlay-close" type="button" onClick={closeExpandedSurface} aria-label="Cerrar herramientas">✕</button>
-          </div>
-        )}
-
-        {/* FILA DE BOTONES PRINCIPALES (MAIN_TOOLS PRIMERO) */}
-        <div ref={mainToolsCarouselRef} className={`editor-maintools-bar flex gap-2 w-full p-3 ${darkMode ? 'bg-black' : 'bg-white'}`} onClick={(e) => e.stopPropagation()} style={{ overflowX: 'auto', flexWrap: 'nowrap' }}>
-          {MAIN_TOOLS.filter(tool => isPhoneViewport || tool.id !== 'ia').map((tool) => (
-            <button key={tool.id} data-tool-id={tool.id} className={`main-btn w-full ${centeredMainToolId === tool.id ? 'centered' : ''} ${mainNav === tool.id ? 'active' : ''} ${!darkMode ? 'bg-gray-100 border-gray-300 text-black' : ''}`} style={{ backgroundColor: !darkMode ? (mainNav === tool.id ? '#000' : '#f3f4f6') : undefined, color: !darkMode ? (mainNav === tool.id ? '#fff' : '#000') : undefined }} onClick={() => handleMainCarouselToolPress(tool)}>
-              <div>{tool.icon}</div>
-              <span className={!darkMode && mainNav !== tool.id ? 'text-black font-bold' : ''}>{tool.nombre}</span>
-            </button>
-          ))}
-        </div>
-
-        {/* FILA DE SUB-HERRAMIENTAS (SUB_TOOLS DEBAJO) */}
-        <div ref={subToolsCarouselRef} className={`editor-subtools-bar flex gap-2 w-full p-3 border-t ${darkMode ? 'bg-neutral-950 border-neutral-900' : 'bg-gray-50 border-gray-200'}`} onClick={(e) => e.stopPropagation()} style={{ overflowX: 'auto', flexWrap: 'nowrap' }}>
-          {SUB_TOOLS[mainNav]?.map((tool) => {
-            if (tool.id === 'subir-vf') {
-              return (
-                <label key={tool.id} data-tool-id={tool.id} onClick={(e) => { if (isPhoneViewport && centeredSubToolId !== tool.id) { e.preventDefault(); handleSubCarouselToolPress(tool); } }} className={`sub-btn w-full ${centeredSubToolId === tool.id ? 'centered' : ''} ${!darkMode ? 'text-black' : ''}`}>
-                  <div className={`icon-container ${!darkMode ? 'bg-gray-200 border-gray-300' : ''}`}>{tool.icon}</div>
-                  <span className={!darkMode ? 'text-black font-medium' : ''}>{tool.nombre}</span>
-                  <input type="file" multiple accept="video/*,image/*" onChange={(e) => handleSubirMultimedia(e, 'video')} style={{ display: 'none' }} />
-                </label>
-              );
-            }
-            if (tool.id === 'subir-a') {
-              return (
-                <label key={tool.id} data-tool-id={tool.id} onClick={(e) => { if (isPhoneViewport && centeredSubToolId !== tool.id) { e.preventDefault(); handleSubCarouselToolPress(tool); } }} className={`sub-btn w-full ${centeredSubToolId === tool.id ? 'centered' : ''} ${!darkMode ? 'text-black' : ''}`}>
-                  <div className={`icon-container ${!darkMode ? 'bg-gray-200 border-gray-300' : ''}`}>{tool.icon}</div>
-                  <span className={!darkMode ? 'text-black font-medium' : ''}>{tool.nombre}</span>
-                  <input type="file" multiple accept="audio/*" onChange={(e) => handleSubirMultimedia(e, 'audio')} style={{ display: 'none' }} />
-                </label>
-              );
-            }
-            if (tool.isFilter) {
-              return (
-                <button key={tool.id} data-tool-id={tool.id} className={`sub-btn w-full ${centeredSubToolId === tool.id ? 'centered' : ''} ${filtroGaleria === tool.filterValue ? 'active' : ''} ${!darkMode ? 'text-black' : ''}`} onClick={() => handleSubCarouselToolPress(tool)}>
-                  <div className={`icon-container ${!darkMode ? 'bg-gray-200 border-gray-300' : ''}`} style={{ border: filtroGaleria === tool.filterValue ? (darkMode ? '1px solid #fff' : '1px solid #000') : (darkMode ? '1px solid #333' : '1px solid #d1d5db') }}>
-                    <span style={{ fontSize: '10px' }} className={!darkMode ? 'text-black' : ''}>{tool.nombre.substring(0,2).toUpperCase()}</span>
-                  </div>
-                  <span className={!darkMode ? 'text-black font-medium' : ''}>{tool.nombre}</span>
-                </button>
-              );
-            }
-            return (
-              <button key={tool.id} data-tool-id={tool.id} className={`sub-btn w-full ${centeredSubToolId === tool.id ? 'centered' : ''} ${subTool === tool.id ? 'active' : ''} ${!darkMode ? 'text-black' : ''}`} onClick={() => handleSubCarouselToolPress(tool)}>
-                <div className={`icon-container ${!darkMode ? 'bg-gray-200 border-gray-300' : ''}`}>{tool.icon}</div>
-                <span className={!darkMode ? 'text-black font-medium' : ''}>{tool.nombre}</span>
-              </button>
-            );
-          })}
-        </div>
-
-        </div>
-
-        {/* NAYLA CHAT SIDEBAR / PANEL DERECHO PERSISTENTE */}
-        {!isVideoExpanded && (!isPhoneViewport || isChatOpen) && (
-          <div ref={chatOverlayRef} className={`nayla-chat-panel ${expandedSurface === 'chat' ? 'surface-expanded' : ''}`} role={expandedSurface === 'chat' ? 'dialog' : undefined} aria-modal={expandedSurface === 'chat' ? true : undefined} aria-label={expandedSurface === 'chat' ? 'Chat de Nayla' : undefined} onClick={(e) => e.stopPropagation()} style={{
-            position: isPhoneViewport ? 'absolute' : 'relative',
-            top: isPhoneViewport ? 0 : undefined,
-            right: isPhoneViewport ? 0 : undefined,
-            width: isPhoneViewport ? '350px' : '100%',
-            height: '100%',
-            backgroundColor: darkMode ? '#050505' : '#fff',
-            borderLeft: isPhoneViewport ? `1px solid ${darkMode ? '#1a1a1a' : '#e5e7eb'}` : undefined,
-            display: 'flex',
-            flexDirection: 'column',
-            zIndex: isPhoneViewport ? 100 : undefined,
-            boxShadow: isPhoneViewport ? '-4px 0 15px rgba(0,0,0,0.5)' : undefined,
-            transform: isPhoneViewport ? (isChatOpen ? 'translateX(0)' : 'translateX(100%)') : 'none',
-            transition: isPhoneViewport ? 'transform 0.3s ease-in-out' : 'none'
-          }}>
-            {/* Header Sidebar / Panel */}
-            <div style={{ padding: '16px', borderBottom: `1px solid ${darkMode ? '#1a1a1a' : '#e5e7eb'}`, display: 'flex', flexDirection: 'column', gap: '12px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                  <img
-                    src="/assets/imagenes/Icono-intro.jpeg"
-                    alt="Nayla"
-                    style={{ width: '42px', height: '42px', borderRadius: '50%', objectFit: 'cover', border: '2px solid #00cc66' }}
-                  />
-                  <div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <h3 style={{ margin: 0, color: darkMode ? '#fff' : '#000', fontSize: '1.05rem', fontWeight: 'bold' }}>Nayla</h3>
-                      <span style={{ backgroundColor: darkMode ? '#1a1a1a' : '#e5e7eb', color: darkMode ? '#00ffcc' : '#00aa88', fontSize: '0.75rem', fontWeight: 'bold', padding: '2px 8px', borderRadius: '12px' }}>
-                        {chatMessages.length}
-                      </span>
-                    </div>
-                    <p style={{ margin: '2px 0 0 0', color: '#888', fontSize: '0.72rem' }}>Asistente de Inteligencia Artificial</p>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '5px', marginTop: '3px' }}>
-                      <div style={{ width: '7px', height: '7px', backgroundColor: '#00cc66', borderRadius: '50%', boxShadow: '0 0 8px #00cc66' }}></div>
-                      <span style={{ fontSize: '0.7rem', color: '#00cc66', fontWeight: '500' }}>En línea</span>
-                    </div>
-                  </div>
-                </div>
-                {isPhoneViewport && (
-                  <button onClick={() => { closeExpandedSurface(); setIsChatOpen(false); if (isPhoneViewport) setMobileOverlaysVisible(true); }} aria-label="Cerrar chat" style={{ background: 'none', border: 'none', color: darkMode ? '#fff' : '#000', cursor: 'pointer' }}>
-                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-                  </button>
-                )}
-              </div>
-              {/* Toggle Nayla Fast / Pro */}
-              <div style={{ display: 'flex', gap: '4px', backgroundColor: darkMode ? '#1a1a1a' : '#f3f4f6', padding: '4px', borderRadius: '8px' }}>
-                <button
-                  onClick={() => setSelectedAiProvider('groq')}
-                  style={{
-                    flex: 1,
-                    padding: '6px',
-                    borderRadius: '6px',
-                    border: 'none',
-                    backgroundColor: selectedAiProvider === 'groq' ? (darkMode ? '#333' : '#fff') : 'transparent',
-                    color: selectedAiProvider === 'groq' ? (darkMode ? '#fff' : '#000') : '#666',
-                    fontWeight: selectedAiProvider === 'groq' ? 'bold' : 'normal',
-                    fontSize: '0.85rem',
-                    cursor: 'pointer',
-                    boxShadow: selectedAiProvider === 'groq' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
-                    transition: 'all 0.2s'
-                  }}
-                >
-                  Nayla Fast
-                </button>
-                <button
-                  onClick={() => setSelectedAiProvider('mistral')}
-                  style={{
-                    flex: 1,
-                    padding: '6px',
-                    borderRadius: '6px',
-                    border: 'none',
-                    backgroundColor: selectedAiProvider === 'mistral' ? (darkMode ? '#333' : '#fff') : 'transparent',
-                    color: selectedAiProvider === 'mistral' ? (darkMode ? '#fff' : '#000') : '#666',
-                    fontWeight: selectedAiProvider === 'mistral' ? 'bold' : 'normal',
-                    fontSize: '0.85rem',
-                    cursor: 'pointer',
-                    boxShadow: selectedAiProvider === 'mistral' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
-                    transition: 'all 0.2s'
-                  }}
-                >
-                  Nayla Pro
-                </button>
-              </div>
-            </div>
-
-            {/* Mensajes */}
-            <div style={{ flex: 1, padding: '16px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '12px' }}>
-              {chatMessages.length === 0 ? (
-                <div style={{ textAlign: 'center', color: '#666', marginTop: '20px', fontSize: '0.9rem' }}>
-                  ¡Hola! Soy Nayla, tu curador de contenido inteligente. Pega un enlace o dime qué necesitas.
-                </div>
-              ) : (
-                chatMessages.map((msg, i) => (
-                  <div key={i} style={{
-                    alignSelf: msg.role === 'user' ? 'flex-end' : 'flex-start',
-                    backgroundColor: msg.role === 'user' ? (darkMode ? '#1a1a1a' : '#f3f4f6') : (darkMode ? '#0a0a0a' : '#e5e7eb'),
-                    color: darkMode ? '#fff' : '#000',
-                    padding: '10px 14px',
-                    borderRadius: '12px',
-                    maxWidth: '85%',
-                    border: msg.role === 'ai' ? `1px solid ${darkMode ? '#262626' : '#d1d5db'}` : 'none',
-                    fontSize: '0.9rem'
-                  }}>
-                    {msg.text}
-                  </div>
-                ))
-              )}
-              {chatProcessing && (
-                <div style={{ alignSelf: 'flex-start', color: '#666', padding: '10px 14px', fontSize: '0.9rem', fontStyle: 'italic' }}>
-                  Nayla está pensando...
-                </div>
-              )}
-              {extrayendoVideo && (
-                <div style={{ alignSelf: 'center', width: '100%', marginTop: '10px' }}>
-                  <div style={{ fontSize: '0.8rem', color: '#00cc66', marginBottom: '4px', textAlign: 'center' }}>Procesando video...</div>
-                  <div style={{ width: '100%', backgroundColor: '#262626', height: '4px', borderRadius: '2px', overflow: 'hidden' }}>
-                    <div style={{ height: '100%', width: '100%', backgroundColor: '#00cc66', animation: 'progress-bar 2s infinite ease-in-out' }} />
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* Input Área */}
-            <div style={{ padding: '16px', borderTop: `1px solid ${darkMode ? '#1a1a1a' : '#e5e7eb'}` }}>
-              <div style={{ display: 'flex', gap: '8px' }}>
-                <input
-                  type="text"
-                  value={chatInput}
-                  onChange={(e) => setChatInput(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && sendNaylaMessage()}
-                  placeholder="Escribe aquí..."
-                  style={{
-                    flex: 1,
-                    padding: '10px 14px',
-                    backgroundColor: darkMode ? '#111' : '#f9fafb',
-                    border: `1px solid ${darkMode ? '#333' : '#d1d5db'}`,
-                    borderRadius: '8px',
-                    color: darkMode ? '#fff' : '#000',
-                    outline: 'none',
-                    fontSize: '0.9rem'
-                  }}
-                />
-                <button
-                  onClick={sendNaylaMessage}
-                  disabled={chatProcessing || extrayendoVideo}
-                  style={{
-                    padding: '10px',
-                    backgroundColor: chatProcessing || extrayendoVideo ? '#333' : '#00cc66',
-                    color: '#000',
-                    border: 'none',
-                    borderRadius: '8px',
-                    cursor: chatProcessing || extrayendoVideo ? 'not-allowed' : 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center'
-                  }}
-                >
-                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
-                </button>
-              </div>
-            </div>
-            <style>{`
-              @keyframes progress-bar {
-                0% { transform: translateX(-100%); }
-                100% { transform: translateX(100%); }
-              }
-            `}</style>
-          </div>
-        )}
-
-        </div>
-        )}
       </div>
 
-      {customAlertMsg && (
+      {/* 4. MODAL / OVERLAY PANTALLA COMPLETA DE NAYLA IA */}
+      {isAiModalOpen && (
+        <div style={{
+          position: 'fixed',
+          inset: 0,
+          zIndex: 9900,
+          backgroundColor: '#050505',
+          display: 'flex',
+          flexDirection: 'column',
+          overflow: 'hidden'
+        }}>
+          {/* Header Modal IA */}
+          <div style={{
+            padding: '16px 20px',
+            borderBottom: '1px solid #1a1a1a',
+            backgroundColor: '#0a0a0a',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+              <img
+                src="/assets/imagenes/Icono-intro.jpeg"
+                alt="Nayla"
+                style={{ width: '42px', height: '42px', borderRadius: '50%', objectFit: 'cover', border: '2px solid #00cc66' }}
+              />
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <h3 style={{ margin: 0, color: '#fff', fontSize: '1.1rem', fontWeight: 'bold' }}>Nayla IA</h3>
+                  <span style={{ backgroundColor: '#1a1a1a', color: '#00ffcc', fontSize: '0.75rem', fontWeight: 'bold', padding: '2px 8px', borderRadius: '12px' }}>
+                    {chatMessages.length}
+                  </span>
+                </div>
+                <p style={{ margin: '2px 0 0 0', color: '#888', fontSize: '0.75rem' }}>Asistente Curador de Contenido Inteligente</p>
+              </div>
+            </div>
+
+            {/* Botón de Cerrar X */}
+            <button
+              onClick={() => setIsAiModalOpen(false)}
+              style={{
+                background: '#1a1a1a',
+                border: '1px solid #333',
+                color: '#fff',
+                width: '38px',
+                height: '38px',
+                borderRadius: '50%',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontSize: '18px',
+                fontWeight: 'bold'
+              }}
+            >
+              ✕
+            </button>
+          </div>
+
+          {/* Toggle Fast / Pro */}
+          <div style={{ padding: '10px 20px', backgroundColor: '#050505', borderBottom: '1px solid #1a1a1a', display: 'flex', gap: '10px' }}>
+            <button
+              onClick={() => setSelectedAiProvider('groq')}
+              style={{
+                flex: 1,
+                padding: '8px',
+                borderRadius: '8px',
+                border: '1px solid #333',
+                backgroundColor: selectedAiProvider === 'groq' ? '#222' : 'transparent',
+                color: selectedAiProvider === 'groq' ? '#00ffcc' : '#888',
+                fontWeight: 'bold',
+                fontSize: '0.85rem',
+                cursor: 'pointer'
+              }}
+            >
+              Nayla Fast
+            </button>
+            <button
+              onClick={() => setSelectedAiProvider('mistral')}
+              style={{
+                flex: 1,
+                padding: '8px',
+                borderRadius: '8px',
+                border: '1px solid #333',
+                backgroundColor: selectedAiProvider === 'mistral' ? '#222' : 'transparent',
+                color: selectedAiProvider === 'mistral' ? '#00ffcc' : '#888',
+                fontWeight: 'bold',
+                fontSize: '0.85rem',
+                cursor: 'pointer'
+              }}
+            >
+              Nayla Pro
+            </button>
+          </div>
+
+          {/* Chat Messages Body */}
+          <div style={{ flex: 1, padding: '20px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+            {chatMessages.length === 0 ? (
+              <div style={{ textAlign: 'center', color: '#666', marginTop: '40px', fontSize: '0.95rem' }}>
+                ¡Hola! Soy Nayla. Dime qué necesitas o pega un enlace para asistirte en la edición.
+              </div>
+            ) : (
+              chatMessages.map((msg, i) => (
+                <div key={i} style={{
+                  alignSelf: msg.role === 'user' ? 'flex-end' : 'flex-start',
+                  backgroundColor: msg.role === 'user' ? '#1a1a1a' : '#0d0d0d',
+                  color: '#fff',
+                  padding: '12px 16px',
+                  borderRadius: '14px',
+                  maxWidth: '80%',
+                  border: msg.role === 'ai' ? '1px solid #262626' : '1px solid #333',
+                  fontSize: '0.95rem',
+                  lineHeight: '1.5'
+                }}>
+                  {msg.text}
+                </div>
+              ))
+            )}
+            {chatProcessing && (
+              <div style={{ alignSelf: 'flex-start', color: '#00ffcc', padding: '10px', fontSize: '0.9rem', fontStyle: 'italic' }}>
+                Nayla está pensando...
+              </div>
+            )}
+          </div>
+
+          {/* Chat Input */}
+          <div style={{ padding: '16px 20px', borderTop: '1px solid #1a1a1a', backgroundColor: '#0a0a0a', display: 'flex', gap: '10px' }}>
+            <input
+              type="text"
+              value={chatInput}
+              onChange={(e) => setChatInput(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && sendNaylaMessage()}
+              placeholder="Escribe aquí tu mensaje o solicitud..."
+              style={{
+                flex: 1,
+                padding: '12px 16px',
+                backgroundColor: '#111',
+                border: '1px solid #333',
+                borderRadius: '10px',
+                color: '#fff',
+                outline: 'none',
+                fontSize: '0.95rem'
+              }}
+            />
+            <button
+              onClick={sendNaylaMessage}
+              disabled={chatProcessing}
+              style={{
+                padding: '12px 24px',
+                backgroundColor: chatProcessing ? '#333' : '#00cc66',
+                color: '#000',
+                border: 'none',
+                borderRadius: '10px',
+                fontWeight: 'bold',
+                cursor: chatProcessing ? 'not-allowed' : 'pointer'
+              }}
+            >
+              ENVIAR
+            </button>
+          </div>
+        </div>
+      )}
+
+{customAlertMsg && (
         <div style={{
           position: 'fixed',
           top: 0,
