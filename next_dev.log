@@ -1,0 +1,338 @@
+npm warn Unknown project config "auto-install-peers". This will stop working in the next major version of npm. See `npm help npmrc` for supported config options.
+▲ Next.js 16.2.10 (Turbopack)
+- Local:         http://localhost:3000
+- Network:       http://192.168.0.2:3000
+✓ Ready in 554ms
+
+Supabase no está configurado. Auth/storage siguen en compatibilidad temporal; la IA usa llaves de Vercel/Coolify y el render va por Oracle Cloud PC.
+ GET /?dev=1 200 in 2.8s (next.js: 2.7s, application-code: 74ms)
+[browser] Supabase no está configurado. Auth/storage siguen en compatibilidad temporal; la IA usa llaves de Vercel/Coolify y el render va por Oracle Cloud PC. (src/pages/index.tsx:17:11)
+[browser] Firebase no configurado: Error: Firebase Auth no está configurado. Define las variables NEXT_PUBLIC_FIREBASE_* requeridas.
+    at firebase (src/lib/firebaseClient.ts:18:28)
+    at getFirebaseSession (src/lib/firebaseClient.ts:34:26)
+    at NaylaCore.useEffect (src/pages/index.tsx:927:6)
+  16 |
+  17 | async function firebase() {
+> 18 |   if (!configured()) throw new Error('Firebase Auth no está configurado. Define las variab...
+     |                            ^
+  19 |   // Import literal (no envuelto en Function/string) para que Turbopack/webpack
+  20 |   // lo reconozca y lo empaquete en build. La versión anterior usaba
+  21 |   // Function('name','return import(name)') para forzar carga diferida, pero (src/pages/index.tsx:918:19)
+ GET /?dev=1 200 in 26ms (next.js: 6ms, application-code: 20ms)
+[browser] Supabase no está configurado. Auth/storage siguen en compatibilidad temporal; la IA usa llaves de Vercel/Coolify y el render va por Oracle Cloud PC. (src/pages/index.tsx:17:11)
+[browser] Firebase no configurado: Error: Firebase Auth no está configurado. Define las variables NEXT_PUBLIC_FIREBASE_* requeridas.
+    at firebase (src/lib/firebaseClient.ts:18:28)
+    at getFirebaseSession (src/lib/firebaseClient.ts:34:26)
+    at NaylaCore.useEffect (src/pages/index.tsx:927:6)
+  16 |
+  17 | async function firebase() {
+> 18 |   if (!configured()) throw new Error('Firebase Auth no está configurado. Define las variab...
+     |                            ^
+  19 |   // Import literal (no envuelto en Function/string) para que Turbopack/webpack
+  20 |   // lo reconozca y lo empaquete en build. La versión anterior usaba
+  21 |   // Function('name','return import(name)') para forzar carga diferida, pero (src/pages/index.tsx:918:19)
+ GET /?dev=1 200 in 77ms (next.js: 18ms, application-code: 59ms)
+[browser] Supabase no está configurado. Auth/storage siguen en compatibilidad temporal; la IA usa llaves de Vercel/Coolify y el render va por Oracle Cloud PC. (src/pages/index.tsx:17:11)
+[browser] Firebase no configurado: Error: Firebase Auth no está configurado. Define las variables NEXT_PUBLIC_FIREBASE_* requeridas.
+    at firebase (src/lib/firebaseClient.ts:18:28)
+    at getFirebaseSession (src/lib/firebaseClient.ts:34:26)
+    at NaylaCore.useEffect (src/pages/index.tsx:927:6)
+  16 |
+  17 | async function firebase() {
+> 18 |   if (!configured()) throw new Error('Firebase Auth no está configurado. Define las variab...
+     |                            ^
+  19 |   // Import literal (no envuelto en Function/string) para que Turbopack/webpack
+  20 |   // lo reconozca y lo empaquete en build. La versión anterior usaba
+  21 |   // Function('name','return import(name)') para forzar carga diferida, pero (src/pages/index.tsx:918:19)
+ GET /?dev=1 200 in 20ms (next.js: 5ms, application-code: 15ms)
+[browser] Supabase no está configurado. Auth/storage siguen en compatibilidad temporal; la IA usa llaves de Vercel/Coolify y el render va por Oracle Cloud PC. (src/pages/index.tsx:17:11)
+[browser] Firebase no configurado: Error: Firebase Auth no está configurado. Define las variables NEXT_PUBLIC_FIREBASE_* requeridas.
+    at firebase (src/lib/firebaseClient.ts:18:28)
+    at getFirebaseSession (src/lib/firebaseClient.ts:34:26)
+    at NaylaCore.useEffect (src/pages/index.tsx:927:6)
+  16 |
+  17 | async function firebase() {
+> 18 |   if (!configured()) throw new Error('Firebase Auth no está configurado. Define las variab...
+     |                            ^
+  19 |   // Import literal (no envuelto en Function/string) para que Turbopack/webpack
+  20 |   // lo reconozca y lo empaquete en build. La versión anterior usaba
+  21 |   // Function('name','return import(name)') para forzar carga diferida, pero (src/pages/index.tsx:918:19)
+ GET /?dev=1 200 in 23ms (next.js: 6ms, application-code: 17ms)
+[browser] Supabase no está configurado. Auth/storage siguen en compatibilidad temporal; la IA usa llaves de Vercel/Coolify y el render va por Oracle Cloud PC. (src/pages/index.tsx:17:11)
+[browser] Firebase no configurado: Error: Firebase Auth no está configurado. Define las variables NEXT_PUBLIC_FIREBASE_* requeridas.
+    at firebase (src/lib/firebaseClient.ts:18:28)
+    at getFirebaseSession (src/lib/firebaseClient.ts:34:26)
+    at NaylaCore.useEffect (src/pages/index.tsx:927:6)
+  16 |
+  17 | async function firebase() {
+> 18 |   if (!configured()) throw new Error('Firebase Auth no está configurado. Define las variab...
+     |                            ^
+  19 |   // Import literal (no envuelto en Function/string) para que Turbopack/webpack
+  20 |   // lo reconozca y lo empaquete en build. La versión anterior usaba
+  21 |   // Function('name','return import(name)') para forzar carga diferida, pero (src/pages/index.tsx:918:19)
+ GET /?dev=1 200 in 19ms (next.js: 4ms, application-code: 15ms)
+[browser] Supabase no está configurado. Auth/storage siguen en compatibilidad temporal; la IA usa llaves de Vercel/Coolify y el render va por Oracle Cloud PC. (src/pages/index.tsx:17:11)
+[browser] Firebase no configurado: Error: Firebase Auth no está configurado. Define las variables NEXT_PUBLIC_FIREBASE_* requeridas.
+    at firebase (src/lib/firebaseClient.ts:18:28)
+    at getFirebaseSession (src/lib/firebaseClient.ts:34:26)
+    at NaylaCore.useEffect (src/pages/index.tsx:927:6)
+  16 |
+  17 | async function firebase() {
+> 18 |   if (!configured()) throw new Error('Firebase Auth no está configurado. Define las variab...
+     |                            ^
+  19 |   // Import literal (no envuelto en Function/string) para que Turbopack/webpack
+  20 |   // lo reconozca y lo empaquete en build. La versión anterior usaba
+  21 |   // Function('name','return import(name)') para forzar carga diferida, pero (src/pages/index.tsx:918:19)
+ GET /?dev=1 200 in 65ms (next.js: 16ms, application-code: 49ms)
+[browser] Supabase no está configurado. Auth/storage siguen en compatibilidad temporal; la IA usa llaves de Vercel/Coolify y el render va por Oracle Cloud PC. (src/pages/index.tsx:17:11)
+[browser] Firebase no configurado: Error: Firebase Auth no está configurado. Define las variables NEXT_PUBLIC_FIREBASE_* requeridas.
+    at firebase (src/lib/firebaseClient.ts:18:28)
+    at getFirebaseSession (src/lib/firebaseClient.ts:34:26)
+    at NaylaCore.useEffect (src/pages/index.tsx:927:6)
+  16 |
+  17 | async function firebase() {
+> 18 |   if (!configured()) throw new Error('Firebase Auth no está configurado. Define las variab...
+     |                            ^
+  19 |   // Import literal (no envuelto en Function/string) para que Turbopack/webpack
+  20 |   // lo reconozca y lo empaquete en build. La versión anterior usaba
+  21 |   // Function('name','return import(name)') para forzar carga diferida, pero (src/pages/index.tsx:918:19)
+ GET /?dev=1 200 in 21ms (next.js: 4ms, application-code: 17ms)
+[browser] Supabase no está configurado. Auth/storage siguen en compatibilidad temporal; la IA usa llaves de Vercel/Coolify y el render va por Oracle Cloud PC. (src/pages/index.tsx:17:11)
+[browser] Firebase no configurado: Error: Firebase Auth no está configurado. Define las variables NEXT_PUBLIC_FIREBASE_* requeridas.
+    at firebase (src/lib/firebaseClient.ts:18:28)
+    at getFirebaseSession (src/lib/firebaseClient.ts:34:26)
+    at NaylaCore.useEffect (src/pages/index.tsx:927:6)
+  16 |
+  17 | async function firebase() {
+> 18 |   if (!configured()) throw new Error('Firebase Auth no está configurado. Define las variab...
+     |                            ^
+  19 |   // Import literal (no envuelto en Function/string) para que Turbopack/webpack
+  20 |   // lo reconozca y lo empaquete en build. La versión anterior usaba
+  21 |   // Function('name','return import(name)') para forzar carga diferida, pero (src/pages/index.tsx:918:19)
+ GET /?dev=1 200 in 21ms (next.js: 5ms, application-code: 17ms)
+[browser] Supabase no está configurado. Auth/storage siguen en compatibilidad temporal; la IA usa llaves de Vercel/Coolify y el render va por Oracle Cloud PC. (src/pages/index.tsx:17:11)
+[browser] Firebase no configurado: Error: Firebase Auth no está configurado. Define las variables NEXT_PUBLIC_FIREBASE_* requeridas.
+    at firebase (src/lib/firebaseClient.ts:18:28)
+    at getFirebaseSession (src/lib/firebaseClient.ts:34:26)
+    at NaylaCore.useEffect (src/pages/index.tsx:927:6)
+  16 |
+  17 | async function firebase() {
+> 18 |   if (!configured()) throw new Error('Firebase Auth no está configurado. Define las variab...
+     |                            ^
+  19 |   // Import literal (no envuelto en Function/string) para que Turbopack/webpack
+  20 |   // lo reconozca y lo empaquete en build. La versión anterior usaba
+  21 |   // Function('name','return import(name)') para forzar carga diferida, pero (src/pages/index.tsx:918:19)
+ GET /?dev=1 200 in 19ms (next.js: 4ms, application-code: 15ms)
+[browser] Supabase no está configurado. Auth/storage siguen en compatibilidad temporal; la IA usa llaves de Vercel/Coolify y el render va por Oracle Cloud PC. (src/pages/index.tsx:17:11)
+[browser] Firebase no configurado: Error: Firebase Auth no está configurado. Define las variables NEXT_PUBLIC_FIREBASE_* requeridas.
+    at firebase (src/lib/firebaseClient.ts:18:28)
+    at getFirebaseSession (src/lib/firebaseClient.ts:34:26)
+    at NaylaCore.useEffect (src/pages/index.tsx:927:6)
+  16 |
+  17 | async function firebase() {
+> 18 |   if (!configured()) throw new Error('Firebase Auth no está configurado. Define las variab...
+     |                            ^
+  19 |   // Import literal (no envuelto en Function/string) para que Turbopack/webpack
+  20 |   // lo reconozca y lo empaquete en build. La versión anterior usaba
+  21 |   // Function('name','return import(name)') para forzar carga diferida, pero (src/pages/index.tsx:918:19)
+ GET /?dev=1 200 in 21ms (next.js: 5ms, application-code: 16ms)
+[browser] Supabase no está configurado. Auth/storage siguen en compatibilidad temporal; la IA usa llaves de Vercel/Coolify y el render va por Oracle Cloud PC. (src/pages/index.tsx:17:11)
+[browser] Firebase no configurado: Error: Firebase Auth no está configurado. Define las variables NEXT_PUBLIC_FIREBASE_* requeridas.
+    at firebase (src/lib/firebaseClient.ts:18:28)
+    at getFirebaseSession (src/lib/firebaseClient.ts:34:26)
+    at NaylaCore.useEffect (src/pages/index.tsx:927:6)
+  16 |
+  17 | async function firebase() {
+> 18 |   if (!configured()) throw new Error('Firebase Auth no está configurado. Define las variab...
+     |                            ^
+  19 |   // Import literal (no envuelto en Function/string) para que Turbopack/webpack
+  20 |   // lo reconozca y lo empaquete en build. La versión anterior usaba
+  21 |   // Function('name','return import(name)') para forzar carga diferida, pero (src/pages/index.tsx:918:19)
+ GET /?dev=1 200 in 18ms (next.js: 4ms, application-code: 13ms)
+[browser] Supabase no está configurado. Auth/storage siguen en compatibilidad temporal; la IA usa llaves de Vercel/Coolify y el render va por Oracle Cloud PC. (src/pages/index.tsx:17:11)
+[browser] Firebase no configurado: Error: Firebase Auth no está configurado. Define las variables NEXT_PUBLIC_FIREBASE_* requeridas.
+    at firebase (src/lib/firebaseClient.ts:18:28)
+    at getFirebaseSession (src/lib/firebaseClient.ts:34:26)
+    at NaylaCore.useEffect (src/pages/index.tsx:927:6)
+  16 |
+  17 | async function firebase() {
+> 18 |   if (!configured()) throw new Error('Firebase Auth no está configurado. Define las variab...
+     |                            ^
+  19 |   // Import literal (no envuelto en Function/string) para que Turbopack/webpack
+  20 |   // lo reconozca y lo empaquete en build. La versión anterior usaba
+  21 |   // Function('name','return import(name)') para forzar carga diferida, pero (src/pages/index.tsx:918:19)
+✓ Compiled in 106ms
+Supabase no está configurado. Auth/storage siguen en compatibilidad temporal; la IA usa llaves de Vercel/Coolify y el render va por Oracle Cloud PC.
+ GET /?dev=1 200 in 128ms (next.js: 102ms, application-code: 27ms)
+[browser] Supabase no está configurado. Auth/storage siguen en compatibilidad temporal; la IA usa llaves de Vercel/Coolify y el render va por Oracle Cloud PC. (src/pages/index.tsx:17:11)
+[browser] Firebase no configurado: Error: Firebase Auth no está configurado. Define las variables NEXT_PUBLIC_FIREBASE_* requeridas.
+    at firebase (src/lib/firebaseClient.ts:18:28)
+    at getFirebaseSession (src/lib/firebaseClient.ts:34:26)
+    at NaylaCore.useEffect (src/pages/index.tsx:927:6)
+  16 |
+  17 | async function firebase() {
+> 18 |   if (!configured()) throw new Error('Firebase Auth no está configurado. Define las variab...
+     |                            ^
+  19 |   // Import literal (no envuelto en Function/string) para que Turbopack/webpack
+  20 |   // lo reconozca y lo empaquete en build. La versión anterior usaba
+  21 |   // Function('name','return import(name)') para forzar carga diferida, pero (src/pages/index.tsx:918:19)
+ GET /?dev=1 200 in 23ms (next.js: 5ms, application-code: 19ms)
+[browser] Supabase no está configurado. Auth/storage siguen en compatibilidad temporal; la IA usa llaves de Vercel/Coolify y el render va por Oracle Cloud PC. (src/pages/index.tsx:17:11)
+[browser] Firebase no configurado: Error: Firebase Auth no está configurado. Define las variables NEXT_PUBLIC_FIREBASE_* requeridas.
+    at firebase (src/lib/firebaseClient.ts:18:28)
+    at getFirebaseSession (src/lib/firebaseClient.ts:34:26)
+    at NaylaCore.useEffect (src/pages/index.tsx:927:6)
+  16 |
+  17 | async function firebase() {
+> 18 |   if (!configured()) throw new Error('Firebase Auth no está configurado. Define las variab...
+     |                            ^
+  19 |   // Import literal (no envuelto en Function/string) para que Turbopack/webpack
+  20 |   // lo reconozca y lo empaquete en build. La versión anterior usaba
+  21 |   // Function('name','return import(name)') para forzar carga diferida, pero (src/pages/index.tsx:918:19)
+ GET /?dev=1 200 in 17ms (next.js: 3ms, application-code: 14ms)
+[browser] Supabase no está configurado. Auth/storage siguen en compatibilidad temporal; la IA usa llaves de Vercel/Coolify y el render va por Oracle Cloud PC. (src/pages/index.tsx:17:11)
+[browser] Firebase no configurado: Error: Firebase Auth no está configurado. Define las variables NEXT_PUBLIC_FIREBASE_* requeridas.
+    at firebase (src/lib/firebaseClient.ts:18:28)
+    at getFirebaseSession (src/lib/firebaseClient.ts:34:26)
+    at NaylaCore.useEffect (src/pages/index.tsx:927:6)
+  16 |
+  17 | async function firebase() {
+> 18 |   if (!configured()) throw new Error('Firebase Auth no está configurado. Define las variab...
+     |                            ^
+  19 |   // Import literal (no envuelto en Function/string) para que Turbopack/webpack
+  20 |   // lo reconozca y lo empaquete en build. La versión anterior usaba
+  21 |   // Function('name','return import(name)') para forzar carga diferida, pero (src/pages/index.tsx:918:19)
+ GET /?dev=1 200 in 19ms (next.js: 4ms, application-code: 15ms)
+[browser] Supabase no está configurado. Auth/storage siguen en compatibilidad temporal; la IA usa llaves de Vercel/Coolify y el render va por Oracle Cloud PC. (src/pages/index.tsx:17:11)
+[browser] Firebase no configurado: Error: Firebase Auth no está configurado. Define las variables NEXT_PUBLIC_FIREBASE_* requeridas.
+    at firebase (src/lib/firebaseClient.ts:18:28)
+    at getFirebaseSession (src/lib/firebaseClient.ts:34:26)
+    at NaylaCore.useEffect (src/pages/index.tsx:927:6)
+  16 |
+  17 | async function firebase() {
+> 18 |   if (!configured()) throw new Error('Firebase Auth no está configurado. Define las variab...
+     |                            ^
+  19 |   // Import literal (no envuelto en Function/string) para que Turbopack/webpack
+  20 |   // lo reconozca y lo empaquete en build. La versión anterior usaba
+  21 |   // Function('name','return import(name)') para forzar carga diferida, pero (src/pages/index.tsx:918:19)
+ GET /?dev=1 200 in 18ms (next.js: 4ms, application-code: 15ms)
+[browser] Supabase no está configurado. Auth/storage siguen en compatibilidad temporal; la IA usa llaves de Vercel/Coolify y el render va por Oracle Cloud PC. (src/pages/index.tsx:17:11)
+[browser] Firebase no configurado: Error: Firebase Auth no está configurado. Define las variables NEXT_PUBLIC_FIREBASE_* requeridas.
+    at firebase (src/lib/firebaseClient.ts:18:28)
+    at getFirebaseSession (src/lib/firebaseClient.ts:34:26)
+    at NaylaCore.useEffect (src/pages/index.tsx:927:6)
+  16 |
+  17 | async function firebase() {
+> 18 |   if (!configured()) throw new Error('Firebase Auth no está configurado. Define las variab...
+     |                            ^
+  19 |   // Import literal (no envuelto en Function/string) para que Turbopack/webpack
+  20 |   // lo reconozca y lo empaquete en build. La versión anterior usaba
+  21 |   // Function('name','return import(name)') para forzar carga diferida, pero (src/pages/index.tsx:918:19)
+ GET /?dev=1 200 in 18ms (next.js: 4ms, application-code: 14ms)
+[browser] Supabase no está configurado. Auth/storage siguen en compatibilidad temporal; la IA usa llaves de Vercel/Coolify y el render va por Oracle Cloud PC. (src/pages/index.tsx:17:11)
+[browser] Firebase no configurado: Error: Firebase Auth no está configurado. Define las variables NEXT_PUBLIC_FIREBASE_* requeridas.
+    at firebase (src/lib/firebaseClient.ts:18:28)
+    at getFirebaseSession (src/lib/firebaseClient.ts:34:26)
+    at NaylaCore.useEffect (src/pages/index.tsx:927:6)
+  16 |
+  17 | async function firebase() {
+> 18 |   if (!configured()) throw new Error('Firebase Auth no está configurado. Define las variab...
+     |                            ^
+  19 |   // Import literal (no envuelto en Function/string) para que Turbopack/webpack
+  20 |   // lo reconozca y lo empaquete en build. La versión anterior usaba
+  21 |   // Function('name','return import(name)') para forzar carga diferida, pero (src/pages/index.tsx:918:19)
+ GET /?dev=1 200 in 17ms (next.js: 3ms, application-code: 14ms)
+[browser] Supabase no está configurado. Auth/storage siguen en compatibilidad temporal; la IA usa llaves de Vercel/Coolify y el render va por Oracle Cloud PC. (src/pages/index.tsx:17:11)
+[browser] Firebase no configurado: Error: Firebase Auth no está configurado. Define las variables NEXT_PUBLIC_FIREBASE_* requeridas.
+    at firebase (src/lib/firebaseClient.ts:18:28)
+    at getFirebaseSession (src/lib/firebaseClient.ts:34:26)
+    at NaylaCore.useEffect (src/pages/index.tsx:927:6)
+  16 |
+  17 | async function firebase() {
+> 18 |   if (!configured()) throw new Error('Firebase Auth no está configurado. Define las variab...
+     |                            ^
+  19 |   // Import literal (no envuelto en Function/string) para que Turbopack/webpack
+  20 |   // lo reconozca y lo empaquete en build. La versión anterior usaba
+  21 |   // Function('name','return import(name)') para forzar carga diferida, pero (src/pages/index.tsx:918:19)
+ GET /?dev=1 200 in 17ms (next.js: 4ms, application-code: 13ms)
+[browser] Supabase no está configurado. Auth/storage siguen en compatibilidad temporal; la IA usa llaves de Vercel/Coolify y el render va por Oracle Cloud PC. (src/pages/index.tsx:17:11)
+[browser] Firebase no configurado: Error: Firebase Auth no está configurado. Define las variables NEXT_PUBLIC_FIREBASE_* requeridas.
+    at firebase (src/lib/firebaseClient.ts:18:28)
+    at getFirebaseSession (src/lib/firebaseClient.ts:34:26)
+    at NaylaCore.useEffect (src/pages/index.tsx:927:6)
+  16 |
+  17 | async function firebase() {
+> 18 |   if (!configured()) throw new Error('Firebase Auth no está configurado. Define las variab...
+     |                            ^
+  19 |   // Import literal (no envuelto en Function/string) para que Turbopack/webpack
+  20 |   // lo reconozca y lo empaquete en build. La versión anterior usaba
+  21 |   // Function('name','return import(name)') para forzar carga diferida, pero (src/pages/index.tsx:918:19)
+ GET /?dev=1 200 in 21ms (next.js: 4ms, application-code: 17ms)
+[browser] Supabase no está configurado. Auth/storage siguen en compatibilidad temporal; la IA usa llaves de Vercel/Coolify y el render va por Oracle Cloud PC. (src/pages/index.tsx:17:11)
+[browser] Firebase no configurado: Error: Firebase Auth no está configurado. Define las variables NEXT_PUBLIC_FIREBASE_* requeridas.
+    at firebase (src/lib/firebaseClient.ts:18:28)
+    at getFirebaseSession (src/lib/firebaseClient.ts:34:26)
+    at NaylaCore.useEffect (src/pages/index.tsx:927:6)
+  16 |
+  17 | async function firebase() {
+> 18 |   if (!configured()) throw new Error('Firebase Auth no está configurado. Define las variab...
+     |                            ^
+  19 |   // Import literal (no envuelto en Function/string) para que Turbopack/webpack
+  20 |   // lo reconozca y lo empaquete en build. La versión anterior usaba
+  21 |   // Function('name','return import(name)') para forzar carga diferida, pero (src/pages/index.tsx:918:19)
+✓ Compiled in 99ms
+Supabase no está configurado. Auth/storage siguen en compatibilidad temporal; la IA usa llaves de Vercel/Coolify y el render va por Oracle Cloud PC.
+ GET /?dev=1 200 in 130ms (next.js: 98ms, application-code: 32ms)
+[browser] Supabase no está configurado. Auth/storage siguen en compatibilidad temporal; la IA usa llaves de Vercel/Coolify y el render va por Oracle Cloud PC. (src/pages/index.tsx:17:11)
+[browser] Firebase no configurado: Error: Firebase Auth no está configurado. Define las variables NEXT_PUBLIC_FIREBASE_* requeridas.
+    at firebase (src/lib/firebaseClient.ts:18:28)
+    at getFirebaseSession (src/lib/firebaseClient.ts:34:26)
+    at NaylaCore.useEffect (src/pages/index.tsx:928:6)
+  16 |
+  17 | async function firebase() {
+> 18 |   if (!configured()) throw new Error('Firebase Auth no está configurado. Define las variab...
+     |                            ^
+  19 |   // Import literal (no envuelto en Function/string) para que Turbopack/webpack
+  20 |   // lo reconozca y lo empaquete en build. La versión anterior usaba
+  21 |   // Function('name','return import(name)') para forzar carga diferida, pero (src/pages/index.tsx:919:19)
+ GET /?dev=1 200 in 18ms (next.js: 3ms, application-code: 15ms)
+[browser] Supabase no está configurado. Auth/storage siguen en compatibilidad temporal; la IA usa llaves de Vercel/Coolify y el render va por Oracle Cloud PC. (src/pages/index.tsx:17:11)
+[browser] Firebase no configurado: Error: Firebase Auth no está configurado. Define las variables NEXT_PUBLIC_FIREBASE_* requeridas.
+    at firebase (src/lib/firebaseClient.ts:18:28)
+    at getFirebaseSession (src/lib/firebaseClient.ts:34:26)
+    at NaylaCore.useEffect (src/pages/index.tsx:928:6)
+  16 |
+  17 | async function firebase() {
+> 18 |   if (!configured()) throw new Error('Firebase Auth no está configurado. Define las variab...
+     |                            ^
+  19 |   // Import literal (no envuelto en Function/string) para que Turbopack/webpack
+  20 |   // lo reconozca y lo empaquete en build. La versión anterior usaba
+  21 |   // Function('name','return import(name)') para forzar carga diferida, pero (src/pages/index.tsx:919:19)
+✓ Compiled in 119ms
+Supabase no está configurado. Auth/storage siguen en compatibilidad temporal; la IA usa llaves de Vercel/Coolify y el render va por Oracle Cloud PC.
+ GET /?dev=1 200 in 136ms (next.js: 100ms, application-code: 36ms)
+[browser] Supabase no está configurado. Auth/storage siguen en compatibilidad temporal; la IA usa llaves de Vercel/Coolify y el render va por Oracle Cloud PC. (src/pages/index.tsx:17:11)
+[browser] Firebase no configurado: Error: Firebase Auth no está configurado. Define las variables NEXT_PUBLIC_FIREBASE_* requeridas.
+    at firebase (src/lib/firebaseClient.ts:18:28)
+    at getFirebaseSession (src/lib/firebaseClient.ts:34:26)
+    at NaylaCore.useEffect (src/pages/index.tsx:929:6)
+  16 |
+  17 | async function firebase() {
+> 18 |   if (!configured()) throw new Error('Firebase Auth no está configurado. Define las variab...
+     |                            ^
+  19 |   // Import literal (no envuelto en Function/string) para que Turbopack/webpack
+  20 |   // lo reconozca y lo empaquete en build. La versión anterior usaba
+  21 |   // Function('name','return import(name)') para forzar carga diferida, pero (src/pages/index.tsx:920:19)
+ GET /?dev=1 200 in 19ms (next.js: 3ms, application-code: 16ms)
+[browser] Supabase no está configurado. Auth/storage siguen en compatibilidad temporal; la IA usa llaves de Vercel/Coolify y el render va por Oracle Cloud PC. (src/pages/index.tsx:17:11)
+[browser] Firebase no configurado: Error: Firebase Auth no está configurado. Define las variables NEXT_PUBLIC_FIREBASE_* requeridas.
+    at firebase (src/lib/firebaseClient.ts:18:28)
+    at getFirebaseSession (src/lib/firebaseClient.ts:34:26)
+    at NaylaCore.useEffect (src/pages/index.tsx:929:6)
+  16 |
+  17 | async function firebase() {
+> 18 |   if (!configured()) throw new Error('Firebase Auth no está configurado. Define las variab...
+     |                            ^
+  19 |   // Import literal (no envuelto en Function/string) para que Turbopack/webpack
+  20 |   // lo reconozca y lo empaquete en build. La versión anterior usaba
+  21 |   // Function('name','return import(name)') para forzar carga diferida, pero (src/pages/index.tsx:920:19)
