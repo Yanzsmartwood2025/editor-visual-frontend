@@ -95,9 +95,9 @@ const SUB_TOOLS: Record<string, any[]> = {
 
 export default function NaylaCore() {
   const globalStyles = `
-    .main-btn { width: 100%; border: 1px solid transparent; color: #a3a3a3; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; font-size: 11px; font-weight: bold; cursor: pointer; transition: all 0.2s ease; border-radius: 14px; padding: 10px 4px; min-height: 64px; background: #0a0a0a; border-color: #262626; }
+    .main-btn { width: 100%; border: 1px solid transparent; color: #a3a3a3; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; font-size: 8.5px; font-weight: bold; cursor: pointer; transition: all 0.2s ease; border-radius: 10px; padding: 6px 2px; min-height: 50px; background: #0a0a0a; border-color: #262626; }
     .main-btn:hover { color: #ffffff; border-color: #404040; }
-    .main-btn.active { background: #ffffff; color: #000000; border-color: #ffffff; box-shadow: 0 0 15px rgba(255,255,255,0.5); }
+    .main-btn.active { background: #ffffff; color: #000000; border-color: #ffffff; box-shadow: 0 0 12px rgba(255,255,255,0.5); }
 
     .sub-btn { background: transparent; border: none; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; font-size: 10px; cursor: pointer; transition: 0.2s; padding: 6px; min-width: 60px; color: #a3a3a3; }
     .sub-btn:hover { color: #ffffff; }
@@ -107,7 +107,7 @@ export default function NaylaCore() {
     .sub-btn:hover .icon-container { background: #222; }
     .sub-btn.active .icon-container { background: #ffffff; color: #000000; border-color: #ffffff; box-shadow: 0 0 10px rgba(255,255,255,0.4); }
     .sub-btn svg { width: 22px; height: 22px; }
-    .main-btn svg { width: 24px; height: 24px; }
+    .main-btn svg { width: 19px; height: 19px; }
 
     .sub-row { display: flex; gap: 6px; overflow-x: auto; padding: 8px; align-items: center; }
     .sub-row::-webkit-scrollbar { height: 0; }
@@ -134,7 +134,8 @@ export default function NaylaCore() {
     .clip-block.selected { border: 2px solid #ffffff; box-sizing: border-box; z-index: 10; box-shadow: 0 0 15px rgba(255,255,255,0.4); border-radius: 10px; }
     .audio-block { height: 35px; border-radius: 8px; flex-shrink: 0; min-width: 120px; display: flex; align-items: center; justify-content: center; color: #fff; font-size: 0.65rem; cursor: pointer; margin-right: 2px; border: 1px solid #404040; }
 
-    .editor-shell { height: 100dvh; overflow: hidden; display: flex; flex-direction: column; }
+    html, body, #__next { height: 100%; min-height: 100vh; margin: 0; padding: 0; background-color: #000; color: #fff; }
+    .editor-shell { height: 100%; min-height: 100vh; min-height: 100dvh; width: 100%; overflow: hidden; display: flex; flex-direction: column; background-color: #000; color: #e5e5e5; }
     .marco-pos-btn { background: #0a0a0a; border: 1px solid #262626; color: #a3a3a3; border-radius: 10px; padding: 8px 6px; font-size: 0.7rem; cursor: pointer; transition: 0.2s; text-align: center; font-weight: bold; }
     .marco-pos-btn.selected { background: #ffffff; color: #000000; border-color: #ffffff; box-shadow: 0 0 10px rgba(255,255,255,0.5); }
   `;
@@ -1857,7 +1858,7 @@ if (!session) {
   }
 
   return (
-    <div className={`editor-shell h-[100dvh] w-full flex flex-col overflow-x-hidden select-none ${darkMode ? 'bg-black text-gray-200' : 'bg-white text-gray-800'}`} style={{ fontFamily: 'system-ui, sans-serif' }}>
+    <div className={`editor-shell h-full min-h-screen w-full flex flex-col overflow-x-hidden select-none ${darkMode ? 'bg-black text-gray-200' : 'bg-white text-gray-800'}`} style={{ fontFamily: 'system-ui, sans-serif' }}>
 
   {/* Modal y Barra del Administrador de Cola de Renders */}
   {Object.keys(activeRenderJobs).length > 0 && (
@@ -2194,15 +2195,15 @@ if (!session) {
           {/* 1. BARRA DE HERRAMIENTAS IZQUIERDA */}
           {!isCleanMode && (
             <div style={{
-              width: '76px',
+              width: '56px',
               flexShrink: 0,
               backgroundColor: '#050505',
               borderRight: '1px solid #1a1a1a',
               display: 'flex',
               flexDirection: 'column',
               alignItems: 'center',
-              padding: '12px 6px',
-              gap: '12px',
+              padding: '8px 3px',
+              gap: '6px',
               zIndex: 40,
               overflowY: 'auto'
             }}>
@@ -2238,7 +2239,7 @@ if (!session) {
           {isSubPanelOpen && !isCleanMode && (
             <div style={{
               position: 'absolute',
-              left: isCleanMode ? '12px' : '84px',
+              left: isCleanMode ? '12px' : '64px',
               top: '12px',
               bottom: '12px',
               width: 'min(360px, calc(100vw - 100px))',
@@ -2506,18 +2507,18 @@ if (!session) {
                 }}
                 style={{
                   position: 'absolute',
-                  top: '14px',
-                  right: '14px',
+                  top: '12px',
+                  right: '12px',
                   zIndex: 35,
                   borderRadius: '12px',
                   border: '1px solid rgba(0, 255, 204, 0.5)',
                   backgroundColor: 'rgba(5, 5, 5, 0.85)',
                   backdropFilter: 'blur(10px)',
                   WebkitBackdropFilter: 'blur(10px)',
-                  padding: '6px 12px',
+                  padding: '5px 10px',
                   display: 'flex',
                   alignItems: 'center',
-                  gap: '8px',
+                  gap: '6px',
                   cursor: 'pointer',
                   color: '#fff',
                   boxShadow: '0 4px 20px rgba(0,0,0,0.6)',
@@ -2527,9 +2528,9 @@ if (!session) {
                 <img
                   src="/assets/imagenes/Icono-intro.jpeg"
                   alt="Nayla"
-                  style={{ width: '26px', height: '26px', borderRadius: '50%', objectFit: 'cover', border: '1px solid #00cc66' }}
+                  style={{ width: '22px', height: '22px', borderRadius: '50%', objectFit: 'cover', border: '1px solid #00cc66' }}
                 />
-                <span style={{ fontSize: '0.75rem', fontWeight: 'bold', letterSpacing: '1px', color: '#00ffcc' }}>NAYLA IA</span>
+                <span style={{ fontSize: '0.7rem', fontWeight: 'bold', letterSpacing: '1px', color: '#00ffcc' }}>NAYLA IA</span>
                 <div style={{ width: '6px', height: '6px', backgroundColor: '#00cc66', borderRadius: '50%', boxShadow: '0 0 6px #00cc66' }} />
               </button>
             )}
@@ -2542,7 +2543,7 @@ if (!session) {
                   <video
                     key={lineaDeTiempo[0]?.url || mediaActivaUrl}
                     src={lineaDeTiempo.filter(t => t.tipo === 'video').at(clipSeleccionado ? lineaDeTiempo.findIndex(t => t.id === clipSeleccionado) : 0)?.url || mediaActivaUrl || ''}
-                    style={{ width: '100%', height: '100%', objectFit: 'contain' }}
+                    style={{ width: '100%', height: '100%', objectFit: 'contain', backgroundColor: '#000' }}
                     controls={false}
                     playsInline
                     muted={false}
@@ -2573,31 +2574,32 @@ if (!session) {
               onClick={(e) => e.stopPropagation()}
               style={{
                 position: 'absolute',
-                bottom: '18px',
+                bottom: '12px',
                 left: '50%',
                 transform: 'translateX(-50%)',
                 zIndex: 30,
-                border: '1px solid rgba(255, 255, 255, 0.2)',
+                border: '1px solid rgba(255, 255, 255, 0.15)',
                 borderRadius: '999px',
                 backgroundColor: 'rgba(0, 0, 0, 0.85)',
-                backdropFilter: 'blur(10px)',
-                WebkitBackdropFilter: 'blur(10px)',
-                padding: '8px 24px',
+                backdropFilter: 'blur(12px)',
+                WebkitBackdropFilter: 'blur(12px)',
+                padding: '5px 14px',
                 display: 'flex',
                 alignItems: 'center',
-                gap: '20px',
+                gap: '12px',
+                boxShadow: '0 4px 16px rgba(0, 0, 0, 0.5)',
                 transition: 'opacity 0.3s ease',
                 opacity: (showPlaybackControls || !isPlaying) ? 1 : 0,
                 pointerEvents: (showPlaybackControls || !isPlaying) ? 'auto' : 'none'
               }}
             >
-              <span style={{ color: '#737373', fontSize: '0.75rem', fontFamily: 'monospace' }}>00:00:00</span>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '18px' }}>
-                <button onClick={(e) => { e.stopPropagation(); seekBy(-10); }} style={{ background: 'none', border: 'none', color: '#ffffff', fontSize: '1.15rem', cursor: 'pointer', outline: 'none' }}>↺10</button>
-                <button onClick={(e) => { e.stopPropagation(); togglePlay(); }} style={{ background: 'none', border: 'none', color: '#ffffff', fontSize: '1.5rem', cursor: 'pointer', outline: 'none' }}>{isPlaying ? '⏸' : '▶'}</button>
-                <button onClick={(e) => { e.stopPropagation(); seekBy(10); }} style={{ background: 'none', border: 'none', color: '#ffffff', fontSize: '1.15rem', cursor: 'pointer', outline: 'none' }}>10↻</button>
+              <span style={{ color: '#888', fontSize: '0.65rem', fontFamily: 'monospace' }}>00:00:00</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <button onClick={(e) => { e.stopPropagation(); seekBy(-10); }} style={{ background: 'none', border: 'none', color: '#ffffff', fontSize: '0.9rem', cursor: 'pointer', outline: 'none' }}>↺10</button>
+                <button onClick={(e) => { e.stopPropagation(); togglePlay(); }} style={{ background: 'none', border: 'none', color: '#ffffff', fontSize: '1.2rem', cursor: 'pointer', outline: 'none' }}>{isPlaying ? '⏸' : '▶'}</button>
+                <button onClick={(e) => { e.stopPropagation(); seekBy(10); }} style={{ background: 'none', border: 'none', color: '#ffffff', fontSize: '0.9rem', cursor: 'pointer', outline: 'none' }}>10↻</button>
               </div>
-              <span style={{ color: '#737373', fontSize: '0.75rem', fontFamily: 'monospace' }}>00:00:00</span>
+              <span style={{ color: '#888', fontSize: '0.65rem', fontFamily: 'monospace' }}>00:00:00</span>
             </div>
           </div>
         </div>
