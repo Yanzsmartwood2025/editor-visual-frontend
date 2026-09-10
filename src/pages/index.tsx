@@ -126,16 +126,18 @@ export default function NaylaCore() {
     .neon-btn { background: #0a0a0a; border: 1px solid #262626; color: #a3a3a3; transition: all 0.2s ease; display: flex; justify-content: center; align-items: center; gap: 8px; }
     .neon-btn:active, .neon-btn.active { background: #ffffff; color: #000000; border-color: #ffffff; box-shadow: 0 0 15px rgba(255,255,255,0.5); }
     .nav-btn { font-size: 0.7rem; font-weight: bold; padding: 0.8rem 1.2rem; border-radius: 100px; cursor: pointer; text-transform: uppercase; white-space: nowrap; }
-    .timeline-track { display: flex; height: 70px; overflow-x: auto; align-items: center; gap: 0; -webkit-overflow-scrolling: touch; }
+    .timeline-track { display: flex; height: 44px; overflow-x: auto; align-items: center; gap: 0; -webkit-overflow-scrolling: touch; }
     .timeline-track::-webkit-scrollbar { height: 0; }
-    .clip-block { height: 70px; position: relative; cursor: pointer; flex-shrink: 0; border-top: 2px solid transparent; border-bottom: 2px solid transparent; border-right: 1px solid #000; transition: 0.2s; }
-    .clip-block:first-child { border-top-left-radius: 10px; border-bottom-left-radius: 10px; }
-    .clip-block:last-child { border-top-right-radius: 10px; border-bottom-right-radius: 10px; border-right: none; }
-    .clip-block.selected { border: 2px solid #ffffff; box-sizing: border-box; z-index: 10; box-shadow: 0 0 15px rgba(255,255,255,0.4); border-radius: 10px; }
-    .audio-block { height: 35px; border-radius: 8px; flex-shrink: 0; min-width: 120px; display: flex; align-items: center; justify-content: center; color: #fff; font-size: 0.65rem; cursor: pointer; margin-right: 2px; border: 1px solid #404040; }
+    .clip-block { height: 44px; position: relative; cursor: pointer; flex-shrink: 0; border-top: 2px solid transparent; border-bottom: 2px solid transparent; border-right: 1px solid #000; transition: 0.2s; }
+    .clip-block:first-child { border-top-left-radius: 8px; border-bottom-left-radius: 8px; }
+    .clip-block:last-child { border-top-right-radius: 8px; border-bottom-right-radius: 8px; border-right: none; }
+    .clip-block.selected { border: 2px solid #ffffff; box-sizing: border-box; z-index: 10; box-shadow: 0 0 15px rgba(255,255,255,0.4); border-radius: 8px; }
+    .audio-block { height: 22px; border-radius: 6px; flex-shrink: 0; min-width: 90px; display: flex; align-items: center; justify-content: center; color: #fff; font-size: 0.6rem; cursor: pointer; margin-right: 2px; border: 1px solid #404040; }
 
     html, body, #__next { height: 100%; min-height: 100vh; margin: 0; padding: 0; background-color: #000; color: #fff; }
-    .editor-shell { height: 100%; min-height: 100vh; min-height: 100dvh; width: 100%; overflow: hidden; display: flex; flex-direction: column; background-color: #000; color: #e5e5e5; }
+    .editor-shell { height: 100vh; height: 100dvh; width: 100%; overflow: hidden; display: flex; flex-direction: column; background-color: #000; color: #e5e5e5; }
+    .flex-col { flex-direction: column !important; }
+    .flex-1 { flex: 1 1 0% !important; display: flex !important; }
     .marco-pos-btn { background: #0a0a0a; border: 1px solid #262626; color: #a3a3a3; border-radius: 10px; padding: 8px 6px; font-size: 0.7rem; cursor: pointer; transition: 0.2s; text-align: center; font-weight: bold; }
     .marco-pos-btn.selected { background: #ffffff; color: #000000; border-color: #ffffff; box-shadow: 0 0 10px rgba(255,255,255,0.5); }
   `;
@@ -2606,14 +2608,15 @@ if (!session) {
 
         {/* SECCIÓN INFERIOR: LÍNEA DE TIEMPO Y TRACKS */}
         <div style={{
-          height: '135px',
+          height: '76px',
           flexShrink: 0,
           backgroundColor: '#050505',
           borderTop: '1px solid #1a1a1a',
           display: 'flex',
           flexDirection: 'column',
+          justifyContent: 'center',
           position: 'relative',
-          padding: '8px 0',
+          padding: '4px 0',
           overflow: 'hidden'
         }} onClick={() => setClipSeleccionado(null)}>
           <div style={{ position: 'absolute', left: '50%', top: 0, bottom: 0, width: '2px', backgroundColor: '#fff', zIndex: 50, pointerEvents: 'none', boxShadow: '0 0 10px rgba(255,255,255,0.8)' }} />
@@ -2633,7 +2636,7 @@ if (!session) {
             onClick={(e) => e.stopPropagation()}>
             <div className="neon-btn"
               onClick={(e) => { e.stopPropagation(); setMainNav('boveda'); setIsSubPanelOpen(true); }}
-              style={{ width: '40px', height: '60px', minWidth: '40px', borderRadius: '10px', flexShrink: 0, marginRight: hayClips ? '6px' : '0', borderStyle: 'dashed', cursor: 'pointer', fontSize: '1.4rem' }}>+</div>
+              style={{ width: '36px', height: '44px', minWidth: '36px', borderRadius: '8px', flexShrink: 0, marginRight: hayClips ? '6px' : '0', borderStyle: 'dashed', cursor: 'pointer', fontSize: '1.2rem' }}>+</div>
 
             <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
               <SortableContext items={pistaVideo.map(c => c.id)} strategy={horizontalListSortingStrategy}>
@@ -2663,10 +2666,10 @@ if (!session) {
             </DndContext>
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', height: '32px', overflowX: 'auto', padding: '0 50%', gap: '2px', marginTop: '6px' }} onClick={(e) => e.stopPropagation()}>
+          <div style={{ display: 'flex', alignItems: 'center', height: '22px', overflowX: 'auto', padding: '0 50%', gap: '2px', marginTop: '4px' }} onClick={(e) => e.stopPropagation()}>
             {pistaAudio.map((clip) => (
               <div key={clip.id} onClick={() => setClipSeleccionado(clip.id)} className="audio-block neon-btn" style={{ borderColor: clipSeleccionado === clip.id ? '#fff' : '#404040' }}>
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ marginRight: '5px' }}><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ marginRight: '4px' }}><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
                 {clip.etiqueta}
               </div>
             ))}
