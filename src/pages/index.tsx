@@ -49,7 +49,8 @@ const MAIN_TOOLS = [
   { id: 'boveda', nombre: 'BÓVEDA', icon: <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg> },
   { id: 'buscar', nombre: 'BUSCAR', icon: <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg> },
   { id: 'herramientas', nombre: 'HERRAMIENTAS', icon: <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.4a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg> },
-  { id: 'nube', nombre: 'NUBE', icon: <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"/></svg> }
+  { id: 'nube', nombre: 'NUBE', icon: <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"/></svg> },
+  { id: 'ajustes', nombre: 'AJUSTES', icon: <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg> }
 ];
 
 const SUB_TOOLS: Record<string, any[]> = {
@@ -85,18 +86,21 @@ const SUB_TOOLS: Record<string, any[]> = {
   herramientas: [
     { id: 'idiomas', nombre: 'Idiomas', icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg> },
     { id: 'brillo', nombre: 'Brillo', icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg> },
-    { id: 'ajustes', nombre: 'Ajustes', icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg> },
     { id: 'supervisor', nombre: 'Supervisor', icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="11" width="18" height="10" rx="2"/><circle cx="12" cy="5" r="2"/><path d="M12 7v4"/><line x1="8" y1="16" x2="8" y2="16"/><line x1="16" y1="16" x2="16" y2="16"/></svg> },
     { id: 'delogo', nombre: 'Delogo', icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg> },
     { id: 'script', nombre: 'Script', icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg> },
     { id: 'render', nombre: 'Render', icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="5 3 19 12 5 21 5 3"/></svg> },
+  ],
+  ajustes: [
+    { id: 'tema', nombre: 'Tema', icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg> },
+    { id: 'vista', nombre: 'Vista', icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="5" y="2" width="14" height="20" rx="2" ry="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg> },
   ]
 };
 
 
 export default function NaylaCore() {
   const globalStyles = `
-    .main-btn { width: 100%; border: 1px solid transparent; color: #a3a3a3; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; font-size: 8.5px; font-weight: bold; cursor: pointer; transition: all 0.2s ease; border-radius: 10px; padding: 6px 2px; min-height: 50px; background: #0a0a0a; border-color: #262626; }
+    .main-btn { width: 44px; height: 44px; border: 1px solid #262626; color: #a3a3a3; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: all 0.2s ease; border-radius: 12px; background: #0a0a0a; }
     .main-btn:hover { color: #ffffff; border-color: #404040; }
     .main-btn.active { background: #ffffff; color: #000000; border-color: #ffffff; box-shadow: 0 0 12px rgba(255,255,255,0.5); }
 
@@ -196,6 +200,8 @@ export default function NaylaCore() {
   const [clipSeleccionado, setClipSeleccionado] = useState<string | null>(null);
   const [canvasRatio, setCanvasRatio] = useState<'9/16' | '16/9' | '1/1' | '4/5'>('9/16');
   const [calidadExportacion, setCalidadExportacion] = useState('1080p');
+  const [isDownloadMenuOpen, setIsDownloadMenuOpen] = useState(false);
+  const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
   const [showIntro, setShowIntro] = useState(true);
   const [videoFile, setVideoFile] = useState<File | null>(null);
     const [isProcessing, setIsProcessing] = useState(false);
@@ -1360,10 +1366,12 @@ export default function NaylaCore() {
     }
   };
 
-  const handleDescargar = () => {
+  const handleDescargar = (calidad?: string) => {
+    const exportQuality = calidad || calidadExportacion;
+    if (calidad) setCalidadExportacion(calidad);
     const url = videoResultadoUrl || mediaActivaUrl;
     if (!url) return showAlert('No hay ningún video cargado para descargar.');
-    const a = document.createElement('a'); a.href = url; a.download = `Nayla_Export_${calidadExportacion}_${Date.now()}.mp4`; a.click();
+    const a = document.createElement('a'); a.href = url; a.download = `Nayla_Export_${exportQuality}_${Date.now()}.mp4`; a.click();
   };
 
 
@@ -2110,92 +2118,164 @@ if (!session) {
         width: '100%',
         maxWidth: '100vw',
         boxSizing: 'border-box',
-        overflowX: 'auto',
-        gap: '0.5rem'
+        zIndex: 100,
+        position: 'relative'
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexShrink: 0 }}>
-          <img src="/assets/imagenes/Icono-intro.jpeg" alt="NAYLA" style={{ width: '32px', height: '32px', borderRadius: '8px', objectFit: 'cover' }} />
-          <span style={{ fontSize: '0.65rem', padding: '3px 8px', border: '1px solid #fff', borderRadius: '100px', letterSpacing: '1px', fontWeight: 'bold' }}>LOGIC</span>
-          <button onClick={() => setDarkMode(!darkMode)} className="neon-btn nav-btn" style={{ padding: '5px', color: darkMode ? '#fff' : '#000' }} title={darkMode ? 'Modo Claro' : 'Modo Oscuro'}>
-            {darkMode ? (
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
-            ) : (
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
-            )}
-          </button>
-
-          {/* BOTÓN MODO COMPUTADORA / MODO TELÉFONO */}
-          <button
-            onClick={() => {
-              if (viewportOverride === 'auto') setViewportOverride('phone');
-              else if (viewportOverride === 'phone') setViewportOverride('pc');
-              else setViewportOverride('auto');
-            }}
-            className="neon-btn nav-btn"
-            style={{
-              padding: '5px',
-              color: viewportOverride !== 'auto' ? '#00ffcc' : (darkMode ? '#fff' : '#000'),
-              borderColor: viewportOverride !== 'auto' ? '#00ffcc' : undefined
-            }}
-            title={
-              viewportOverride === 'pc'
-                ? 'Modo Computadora Forzado (Clic para Auto)'
-                : viewportOverride === 'phone'
-                ? 'Modo Celular Forzado (Clic para Modo PC)'
-                : 'Vista Automática (Clic para Modo Celular)'
-            }
-          >
-            {isPhoneViewport ? (
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="5" y="2" width="14" height="20" rx="2" ry="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg>
-            ) : (
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
-            )}
-          </button>
-          <select value={calidadExportacion} onChange={(e) => setCalidadExportacion(e.target.value)} style={{ backgroundColor: '#000', color: darkMode ? '#fff' : '#000', border: '1px solid #404040', borderRadius: '8px', padding: '4px 6px', fontSize: '0.65rem', outline: 'none' }}>
-            <option value="480p">480p</option>
-            <option value="720p">720p</option>
-            <option value="1080p">1080p</option>
-            <option value="4k">4K</option>
-          </select>
-          <button onClick={handleDescargar} className="neon-btn nav-btn" style={{ padding: '6px 10px', fontSize: '0.65rem' }}>
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: '4px' }}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-            DESCARGAR
-          </button>
+        {/* LADO IZQUIERDO: LOGO NAYLA */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          <img src="/assets/imagenes/Icono-intro.jpeg" alt="NAYLA" style={{ width: '36px', height: '36px', borderRadius: '10px', objectFit: 'cover' }} />
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexShrink: 0 }}>
-          <button
-            onClick={() => {
-              if (process.env.NEXT_PUBLIC_MAIN_SITE_URL) {
-                window.location.href = process.env.NEXT_PUBLIC_MAIN_SITE_URL;
-              }
-            }}
-            className="neon-btn nav-btn"
-            style={{ padding: '4px 8px', fontSize: '0.6rem' }}
-          >
-            FUEGO
-          </button>
-          {session && (
-            <span style={{
-              fontSize: '0.6rem',
-              color: '#00ffcc',
-              letterSpacing: '1px',
-              maxWidth: '120px',
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap'
-            }}>
-              ● {session.user.email}
-            </span>
-          )}
-          {session && (
+
+        {/* LADO DERECHO: DESCARGAR Y PERFIL DE USUARIO */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', position: 'relative' }}>
+          {/* BOTÓN Y TRAY DE DESCARGA */}
+          <div style={{ position: 'relative' }}>
             <button
-              onClick={() => signOutFirebase().then(() => setSession(null))}
+              onClick={() => {
+                setIsDownloadMenuOpen(!isDownloadMenuOpen);
+                setIsUserMenuOpen(false);
+              }}
               className="neon-btn nav-btn"
-              style={{ padding: '4px 8px', fontSize: '0.6rem', color: '#ff4444' }}
+              style={{ padding: '6px 12px', fontSize: '0.65rem', display: 'flex', alignItems: 'center', gap: '6px', backgroundColor: '#111' }}
             >
-              SALIR
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+              DESCARGAR
             </button>
-          )}
+
+            {/* BANDEJA DESPLEGABLE DE DESCARGA */}
+            {isDownloadMenuOpen && (
+              <div style={{
+                position: 'absolute',
+                top: 'calc(100% + 8px)',
+                right: 0,
+                backgroundColor: '#0a0a0a',
+                border: '1px solid #262626',
+                borderRadius: '12px',
+                padding: '8px',
+                minWidth: '160px',
+                zIndex: 200,
+                boxShadow: '0 10px 30px rgba(0,0,0,0.8)',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '4px'
+              }}>
+                <span style={{ fontSize: '0.6rem', color: '#737373', fontWeight: 'bold', padding: '4px 8px', letterSpacing: '1px' }}>
+                  CALIDAD DE EXPORTACIÓN
+                </span>
+                {['480p', '720p', '1080p', '4K'].map((res) => (
+                  <button
+                    key={res}
+                    onClick={() => {
+                      setIsDownloadMenuOpen(false);
+                      handleDescargar(res.toLowerCase());
+                    }}
+                    style={{
+                      padding: '8px 12px',
+                      backgroundColor: calidadExportacion === res.toLowerCase() ? '#ffffff' : '#111111',
+                      color: calidadExportacion === res.toLowerCase() ? '#000000' : '#ffffff',
+                      border: '1px solid #262626',
+                      borderRadius: '8px',
+                      fontSize: '0.7rem',
+                      fontWeight: 'bold',
+                      cursor: 'pointer',
+                      textAlign: 'left',
+                      transition: 'all 0.15s ease'
+                    }}
+                  >
+                    {res}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* BOTÓN Y PANEL DE PERFIL DE USUARIO / LOGIN */}
+          <div style={{ position: 'relative' }}>
+            <button
+              onClick={() => {
+                setIsUserMenuOpen(!isUserMenuOpen);
+                setIsDownloadMenuOpen(false);
+              }}
+              style={{
+                width: '36px',
+                height: '36px',
+                borderRadius: '50%',
+                border: '1px solid #333',
+                backgroundColor: '#111',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                cursor: 'pointer',
+                overflow: 'hidden',
+                padding: 0
+              }}
+              title={session?.user?.email || 'Usuario'}
+            >
+              {session?.user?.photoURL ? (
+                <img src={session.user.photoURL} alt="Usuario" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+              ) : (
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#ffffff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+              )}
+            </button>
+
+            {/* BANDEJA DESPLEGABLE DE PERFIL */}
+            {isUserMenuOpen && (
+              <div style={{
+                position: 'absolute',
+                top: 'calc(100% + 8px)',
+                right: 0,
+                backgroundColor: '#0a0a0a',
+                border: '1px solid #262626',
+                borderRadius: '12px',
+                padding: '12px',
+                minWidth: '200px',
+                zIndex: 200,
+                boxShadow: '0 10px 30px rgba(0,0,0,0.8)',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '10px'
+              }}>
+                {session?.user?.email && (
+                  <div style={{
+                    fontSize: '0.65rem',
+                    color: '#00ffcc',
+                    padding: '4px 6px',
+                    backgroundColor: '#111',
+                    borderRadius: '6px',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap'
+                  }}>
+                    ● {session.user.email}
+                  </div>
+                )}
+                <button
+                  onClick={() => {
+                    setIsUserMenuOpen(false);
+                    if (process.env.NEXT_PUBLIC_MAIN_SITE_URL) {
+                      window.location.href = process.env.NEXT_PUBLIC_MAIN_SITE_URL;
+                    }
+                  }}
+                  className="neon-btn nav-btn"
+                  style={{ width: '100%', padding: '8px', fontSize: '0.7rem', fontWeight: 'bold' }}
+                >
+                  FUEGO 🔥
+                </button>
+                {session && (
+                  <button
+                    onClick={() => {
+                      setIsUserMenuOpen(false);
+                      signOutFirebase().then(() => setSession(null));
+                    }}
+                    className="neon-btn nav-btn"
+                    style={{ width: '100%', padding: '8px', fontSize: '0.7rem', color: '#ff4444', borderColor: '#331111' }}
+                  >
+                    SALIR
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
         </div>
       </header>
 
@@ -2226,6 +2306,7 @@ if (!session) {
                   <button
                     key={tool.id}
                     className={`main-btn ${isActive ? 'active' : ''}`}
+                    title={tool.nombre}
                     onClick={() => {
                       if (mainNav === tool.id && isSubPanelOpen) {
                         setIsSubPanelOpen(false);
@@ -2237,7 +2318,6 @@ if (!session) {
                     }}
                   >
                     <div>{tool.icon}</div>
-                    <span>{tool.nombre}</span>
                   </button>
                 );
               })}
@@ -2356,8 +2436,57 @@ if (!session) {
                       })
                     )}
                   </div>
-                ) : subTool && ['marco', 'delogo', 'script', 'supervisor', 'render'].includes(subTool) ? (
+                ) : subTool && ['marco', 'delogo', 'script', 'supervisor', 'render', 'tema', 'vista'].includes(subTool) ? (
                   <div>
+                    {subTool === 'tema' && (
+                      <div>
+                        <p style={{ fontSize: '0.75rem', color: '#fff', fontWeight: 'bold', marginBottom: '1rem' }}>TEMA Y APARIENCIA</p>
+                        <div style={{ display: 'flex', gap: '8px' }}>
+                          <button
+                            onClick={() => setDarkMode(true)}
+                            className="neon-btn nav-btn"
+                            style={{ flex: 1, padding: '10px', backgroundColor: darkMode ? '#ffffff' : '#111', color: darkMode ? '#000' : '#fff' }}
+                          >
+                            Modo Oscuro
+                          </button>
+                          <button
+                            onClick={() => setDarkMode(false)}
+                            className="neon-btn nav-btn"
+                            style={{ flex: 1, padding: '10px', backgroundColor: !darkMode ? '#ffffff' : '#111', color: !darkMode ? '#000' : '#fff' }}
+                          >
+                            Modo Claro
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                    {subTool === 'vista' && (
+                      <div>
+                        <p style={{ fontSize: '0.75rem', color: '#fff', fontWeight: 'bold', marginBottom: '1rem' }}>MODO DE VISTA / DISPOSITIVO</p>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                          <button
+                            onClick={() => setViewportOverride('auto')}
+                            className="neon-btn nav-btn"
+                            style={{ padding: '10px', backgroundColor: viewportOverride === 'auto' ? '#ffffff' : '#111', color: viewportOverride === 'auto' ? '#000' : '#fff' }}
+                          >
+                            Automático (Detectar pantalla)
+                          </button>
+                          <button
+                            onClick={() => setViewportOverride('phone')}
+                            className="neon-btn nav-btn"
+                            style={{ padding: '10px', backgroundColor: viewportOverride === 'phone' ? '#ffffff' : '#111', color: viewportOverride === 'phone' ? '#000' : '#fff' }}
+                          >
+                            Modo Celular Forzado
+                          </button>
+                          <button
+                            onClick={() => setViewportOverride('pc')}
+                            className="neon-btn nav-btn"
+                            style={{ padding: '10px', backgroundColor: viewportOverride === 'pc' ? '#ffffff' : '#111', color: viewportOverride === 'pc' ? '#000' : '#fff' }}
+                          >
+                            Modo Computadora Forzado
+                          </button>
+                        </div>
+                      </div>
+                    )}
                     {subTool === 'marco' && (
                       <div>
                         <p style={{ fontSize: '0.75rem', color: '#fff', fontWeight: 'bold', marginBottom: '1rem' }}>MARCO — CUBRIR MARCA DE AGUA</p>
