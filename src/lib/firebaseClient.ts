@@ -1,5 +1,5 @@
 export type FirebaseSession = {
-  user: { id: string; email: string | null };
+  user: { id: string; email: string | null; photoURL?: string | null };
   accessToken: string;
 };
 
@@ -34,13 +34,13 @@ export const getFirebaseSession = async (): Promise<FirebaseSession | null> => {
   const { auth } = await firebase();
   const user = auth.currentUser;
   if (!user) return null;
-  return { user: { id: user.uid, email: user.email }, accessToken: await user.getIdToken() };
+  return { user: { id: user.uid, email: user.email, photoURL: user.photoURL }, accessToken: await user.getIdToken() };
 };
 
 export const observeFirebaseSession = async (callback: (session: FirebaseSession | null) => void) => {
   const { auth, sdk } = await firebase();
   return sdk.onIdTokenChanged(auth, async (user: any) => {
-    callback(user ? { user: { id: user.uid, email: user.email }, accessToken: await user.getIdToken() } : null);
+    callback(user ? { user: { id: user.uid, email: user.email, photoURL: user.photoURL }, accessToken: await user.getIdToken() } : null);
   });
 };
 
@@ -63,7 +63,7 @@ export const completeFirebaseEmailLink = async (emailOverride?: string): Promise
   const credential = await sdk.signInWithEmailLink(auth, email, window.location.href);
   window.localStorage.removeItem('nayla.firebase.emailForSignIn');
   window.history.replaceState({}, document.title, '/');
-  return { user: { id: credential.user.uid, email: credential.user.email }, accessToken: await credential.user.getIdToken() };
+  return { user: { id: credential.user.uid, email: credential.user.email, photoURL: credential.user.photoURL }, accessToken: await credential.user.getIdToken() };
 };
 
 export const signInWithGoogle = async (): Promise<FirebaseSession | null> => {
@@ -71,7 +71,7 @@ export const signInWithGoogle = async (): Promise<FirebaseSession | null> => {
   const provider = new sdk.GoogleAuthProvider();
   try {
     const credential = await sdk.signInWithPopup(auth, provider);
-    return { user: { id: credential.user.uid, email: credential.user.email }, accessToken: await credential.user.getIdToken() };
+    return { user: { id: credential.user.uid, email: credential.user.email, photoURL: credential.user.photoURL }, accessToken: await credential.user.getIdToken() };
   } catch (error: any) {
     if (error.code === 'auth/popup-blocked' || error.code === 'auth/popup-closed-by-user' || error.code === 'auth/cancelled-popup-request') {
       console.warn('Popup bloqueado o falló, intentando con redirect...');
@@ -87,7 +87,7 @@ export const checkGoogleRedirectResult = async (): Promise<FirebaseSession | nul
   try {
     const credential = await sdk.getRedirectResult(auth);
     if (credential && credential.user) {
-      return { user: { id: credential.user.uid, email: credential.user.email }, accessToken: await credential.user.getIdToken() };
+      return { user: { id: credential.user.uid, email: credential.user.email, photoURL: credential.user.photoURL }, accessToken: await credential.user.getIdToken() };
     }
     return null;
   } catch (error) {
@@ -107,5 +107,5 @@ export const signOutFirebase = async () => {
 export const signInWithCustomTokenValue = async (token: string): Promise<FirebaseSession | null> => {
   const { auth, sdk } = await firebase();
   const credential = await sdk.signInWithCustomToken(auth, token);
-  return { user: { id: credential.user.uid, email: credential.user.email }, accessToken: await credential.user.getIdToken() };
+  return { user: { id: credential.user.uid, email: credential.user.email, photoURL: credential.user.photoURL }, accessToken: await credential.user.getIdToken() };
 };
