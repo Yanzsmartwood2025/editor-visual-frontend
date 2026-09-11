@@ -85,6 +85,7 @@ const SUB_TOOLS: Record<string, any[]> = {
     { id: 'stockvideo', nombre: 'Stock Video', icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"/><line x1="7" y1="2" x2="7" y2="22"/><line x1="17" y1="2" x2="17" y2="22"/><line x1="2" y1="12" x2="22" y2="12"/><line x1="2" y1="7" x2="7" y2="7"/><line x1="2" y1="17" x2="7" y2="17"/><line x1="17" y1="17" x2="22" y2="17"/><line x1="17" y1="7" x2="22" y2="7"/></svg> },
   ],
   herramientas: [
+    { id: 'cristal', nombre: 'Cristal & Luz', icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg> },
     { id: 'idiomas', nombre: 'Idiomas', icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg> },
     { id: 'brillo', nombre: 'Brillo', icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg> },
     { id: 'supervisor', nombre: 'Supervisor', icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="11" width="18" height="10" rx="2"/><circle cx="12" cy="5" r="2"/><path d="M12 7v4"/><line x1="8" y1="16" x2="8" y2="16"/><line x1="16" y1="16" x2="16" y2="16"/></svg> },
@@ -93,6 +94,7 @@ const SUB_TOOLS: Record<string, any[]> = {
     { id: 'render', nombre: 'Render', icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="5 3 19 12 5 21 5 3"/></svg> },
   ],
   ajustes: [
+    { id: 'cristal', nombre: 'Cristal & Luz', icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg> },
     { id: 'tema', nombre: 'Tema', icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg> },
     { id: 'vista', nombre: 'Vista', icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="5" y="2" width="14" height="20" rx="2" ry="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg> },
   ]
@@ -101,17 +103,65 @@ const SUB_TOOLS: Record<string, any[]> = {
 
 export default function NaylaCore() {
   const globalStyles = `
-    .main-btn { width: 44px; height: 44px; border: 1px solid #262626; color: #a3a3a3; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: all 0.2s ease; border-radius: 12px; background: #0a0a0a; }
-    .main-btn:hover { color: #ffffff; border-color: #404040; }
-    .main-btn.active { background: #ffffff; color: #000000; border-color: #ffffff; box-shadow: 0 0 12px rgba(255,255,255,0.5); }
+    .main-btn {
+      width: 44px;
+      height: 44px;
+      border: 1px solid rgba(var(--glow-color-rgb), calc(var(--glow-intensity) * 0.35));
+      color: #a3a3a3;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+      border-radius: 12px;
+      background: var(--glass-bg);
+      backdrop-filter: blur(calc(var(--glass-blur) * 0.5));
+      -webkit-backdrop-filter: blur(calc(var(--glass-blur) * 0.5));
+      box-shadow: 0 0 calc(var(--glow-spread) * 0.3) rgba(var(--glow-color-rgb), calc(var(--glow-intensity) * 0.15));
+    }
+    .main-btn:hover {
+      color: #ffffff;
+      border-color: rgba(var(--glow-color-rgb), var(--glow-intensity));
+      background: rgba(255, 255, 255, 0.12);
+      box-shadow: 0 0 var(--glow-spread) rgba(var(--glow-color-rgb), var(--glow-intensity));
+      transform: translateY(-1px);
+    }
+    .main-btn.active {
+      background: rgba(255, 255, 255, 0.95);
+      color: #000000;
+      border-color: #ffffff;
+      box-shadow: 0 0 calc(var(--glow-spread) * 1.5) rgba(var(--glow-color-rgb), calc(var(--glow-intensity) * 0.9));
+    }
 
     .sub-btn { background: transparent; border: none; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; font-size: 10px; cursor: pointer; transition: 0.2s; padding: 6px; min-width: 60px; color: #a3a3a3; }
     .sub-btn:hover { color: #ffffff; }
     .sub-btn.active { color: #ffffff; font-weight: bold; }
 
-    .sub-btn .icon-container { width: 44px; height: 44px; display: flex; justify-content: center; align-items: center; border-radius: 12px; transition: all 0.2s ease; border: 1px solid transparent; background: #111; }
-    .sub-btn:hover .icon-container { background: #222; }
-    .sub-btn.active .icon-container { background: #ffffff; color: #000000; border-color: #ffffff; box-shadow: 0 0 10px rgba(255,255,255,0.4); }
+    .sub-btn .icon-container {
+      width: 44px;
+      height: 44px;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      border-radius: 12px;
+      transition: all 0.25s ease;
+      border: 1px solid rgba(var(--glow-color-rgb), calc(var(--glow-intensity) * 0.3));
+      background: rgba(255, 255, 255, 0.05);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      box-shadow: 0 0 calc(var(--glow-spread) * 0.3) rgba(var(--glow-color-rgb), calc(var(--glow-intensity) * 0.15));
+    }
+    .sub-btn:hover .icon-container {
+      background: rgba(255, 255, 255, 0.15);
+      border-color: rgba(var(--glow-color-rgb), var(--glow-intensity));
+      box-shadow: 0 0 var(--glow-spread) rgba(var(--glow-color-rgb), var(--glow-intensity));
+    }
+    .sub-btn.active .icon-container {
+      background: #ffffff;
+      color: #000000;
+      border-color: #ffffff;
+      box-shadow: 0 0 calc(var(--glow-spread) * 1.2) rgba(var(--glow-color-rgb), 0.8);
+    }
     .sub-btn svg { width: 22px; height: 22px; }
     .main-btn svg { width: 19px; height: 19px; }
 
@@ -129,8 +179,30 @@ export default function NaylaCore() {
     ::-webkit-scrollbar-thumb { background: #404040; border-radius: 10px; }
     * { -webkit-tap-highlight-color: transparent; }
     button:focus, button:active { outline: none; background-color: inherit; }
-    .neon-btn { background: #0a0a0a; border: 1px solid #262626; color: #a3a3a3; transition: all 0.2s ease; display: flex; justify-content: center; align-items: center; gap: 8px; }
-    .neon-btn:active, .neon-btn.active { background: #ffffff; color: #000000; border-color: #ffffff; box-shadow: 0 0 15px rgba(255,255,255,0.5); }
+    .neon-btn {
+      background: var(--glass-bg);
+      backdrop-filter: blur(calc(var(--glass-blur) * 0.75));
+      -webkit-backdrop-filter: blur(calc(var(--glass-blur) * 0.75));
+      border: 1px solid rgba(var(--glow-color-rgb), calc(var(--glow-intensity) * 0.4));
+      color: #a3a3a3;
+      transition: all 0.2s ease;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      gap: 8px;
+      box-shadow: 0 0 calc(var(--glow-spread) * 0.4) rgba(var(--glow-color-rgb), calc(var(--glow-intensity) * 0.2));
+    }
+    .neon-btn:hover {
+      color: #ffffff;
+      border-color: rgba(var(--glow-color-rgb), var(--glow-intensity));
+      box-shadow: 0 0 var(--glow-spread) rgba(var(--glow-color-rgb), var(--glow-intensity));
+    }
+    .neon-btn:active, .neon-btn.active {
+      background: #ffffff;
+      color: #000000;
+      border-color: #ffffff;
+      box-shadow: 0 0 calc(var(--glow-spread) * 1.5) rgba(var(--glow-color-rgb), 0.9);
+    }
     .nav-btn { font-size: 0.7rem; font-weight: bold; padding: 0.8rem 1.2rem; border-radius: 100px; cursor: pointer; text-transform: uppercase; white-space: nowrap; }
     .timeline-track { display: flex; height: 44px; overflow-x: auto; align-items: center; gap: 0; -webkit-overflow-scrolling: touch; }
     .timeline-track::-webkit-scrollbar { height: 0; }
@@ -155,6 +227,30 @@ export default function NaylaCore() {
   const [iaPrompt, setIaPrompt] = useState('Haz un video con 3 clips y ponles subtítulos');
   const [iaLoading, setIaLoading] = useState(false);
   const [selectedAiProvider, setSelectedAiProvider] = useState<'groq' | 'mistral'>('groq');
+  // Configuración de Cristal y Luz (Glassmorphism & Border Glow)
+  const [glowColor, setGlowColor] = useState('#ffffff');
+  const [glowSpread, setGlowSpread] = useState(12);
+  const [glowIntensity, setGlowIntensity] = useState(0.4);
+  const [glassBlur, setGlassBlur] = useState(16);
+  const [glassOpacity, setGlassOpacity] = useState(0.65);
+
+  useEffect(() => {
+    if (typeof document !== 'undefined') {
+      const root = document.documentElement;
+      root.style.setProperty('--glow-color', glowColor);
+      let hex = glowColor.replace('#', '');
+      if (hex.length === 3) hex = hex.split('').map(c => c + c).join('');
+      const r = parseInt(hex.substring(0, 2) || 'ff', 16);
+      const g = parseInt(hex.substring(2, 4) || 'ff', 16);
+      const b = parseInt(hex.substring(4, 6) || 'ff', 16);
+      root.style.setProperty('--glow-color-rgb', `${r}, ${g}, ${b}`);
+      root.style.setProperty('--glow-spread', `${glowSpread}px`);
+      root.style.setProperty('--glow-intensity', `${glowIntensity}`);
+      root.style.setProperty('--glass-blur', `${glassBlur}px`);
+      root.style.setProperty('--glass-bg', `rgba(15, 15, 18, ${glassOpacity})`);
+    }
+  }, [glowColor, glowSpread, glowIntensity, glassBlur, glassOpacity]);
+
   const [iaBandejasAbiertas, setIaBandejasAbiertas] = useState(false);
   const [iaBandejaActiva, setIaBandejaActiva] = useState('audio'); // 'audio', 'fotos', 'videos'
   const [iaAudioTexto, setIaAudioTexto] = useState('');
@@ -2125,12 +2221,14 @@ if (!session) {
       <style>{globalStyles}</style>
 
       <header style={{
-        borderBottom: '1px solid #1a1a1a',
+        borderBottom: '1px solid rgba(var(--glow-color-rgb), calc(var(--glow-intensity) * 0.35))',
         padding: '0.5rem 0.75rem',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-between',
-        backgroundColor: '#050505',
+        backgroundColor: 'var(--glass-bg)',
+        backdropFilter: 'blur(var(--glass-blur))',
+        WebkitBackdropFilter: 'blur(var(--glass-blur))',
         width: '100%',
         maxWidth: '100vw',
         boxSizing: 'border-box',
@@ -2164,13 +2262,15 @@ if (!session) {
                 position: 'absolute',
                 top: 'calc(100% + 8px)',
                 right: 0,
-                backgroundColor: '#0a0a0a',
-                border: '1px solid #262626',
+                backgroundColor: 'var(--glass-bg)',
+                backdropFilter: 'blur(var(--glass-blur))',
+                WebkitBackdropFilter: 'blur(var(--glass-blur))',
+                border: '1px solid rgba(var(--glow-color-rgb), calc(var(--glow-intensity) * 0.6))',
                 borderRadius: '12px',
                 padding: '8px',
                 minWidth: '160px',
                 zIndex: 200,
-                boxShadow: '0 10px 30px rgba(0,0,0,0.8)',
+                boxShadow: '0 10px 30px rgba(0,0,0,0.8), 0 0 var(--glow-spread) rgba(var(--glow-color-rgb), var(--glow-intensity))',
                 display: 'flex',
                 flexDirection: 'column',
                 gap: '4px'
@@ -2240,13 +2340,15 @@ if (!session) {
                 position: 'absolute',
                 top: 'calc(100% + 8px)',
                 right: 0,
-                backgroundColor: '#0a0a0a',
-                border: '1px solid #262626',
+                backgroundColor: 'var(--glass-bg)',
+                backdropFilter: 'blur(var(--glass-blur))',
+                WebkitBackdropFilter: 'blur(var(--glass-blur))',
+                border: '1px solid rgba(var(--glow-color-rgb), calc(var(--glow-intensity) * 0.6))',
                 borderRadius: '12px',
                 padding: '12px',
                 minWidth: '200px',
                 zIndex: 200,
-                boxShadow: '0 10px 30px rgba(0,0,0,0.8)',
+                boxShadow: '0 10px 30px rgba(0,0,0,0.8), 0 0 var(--glow-spread) rgba(var(--glow-color-rgb), var(--glow-intensity))',
                 display: 'flex',
                 flexDirection: 'column',
                 gap: '10px'
@@ -2348,16 +2450,16 @@ if (!session) {
               top: '12px',
               bottom: '12px',
               width: 'min(360px, calc(100vw - 100px))',
-              backgroundColor: 'rgba(10, 10, 10, 0.95)',
-              backdropFilter: 'blur(16px)',
-              WebkitBackdropFilter: 'blur(16px)',
-              border: '1px solid #262626',
+              backgroundColor: 'var(--glass-bg)',
+              backdropFilter: 'blur(var(--glass-blur))',
+              WebkitBackdropFilter: 'blur(var(--glass-blur))',
+              border: '1px solid rgba(var(--glow-color-rgb), calc(var(--glow-intensity) * 0.6))',
               borderRadius: '16px',
               zIndex: 50,
               display: 'flex',
               flexDirection: 'column',
               overflow: 'hidden',
-              boxShadow: '0 12px 40px rgba(0,0,0,0.8)'
+              boxShadow: '0 12px 40px rgba(0,0,0,0.8), 0 0 var(--glow-spread) rgba(var(--glow-color-rgb), var(--glow-intensity))'
             }}>
               {/* Header del Panel Flotante */}
               <div style={{
@@ -2452,8 +2554,142 @@ if (!session) {
                       })
                     )}
                   </div>
-                ) : subTool && ['marco', 'delogo', 'script', 'supervisor', 'render', 'tema', 'vista'].includes(subTool) ? (
+                ) : subTool && ['cristal', 'marco', 'delogo', 'script', 'supervisor', 'render', 'tema', 'vista'].includes(subTool) ? (
                   <div>
+                    {subTool === 'cristal' && (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                        <p style={{ fontSize: '0.75rem', color: '#fff', fontWeight: 'bold', margin: 0, letterSpacing: '0.5px' }}>
+                          CRISTAL & LUZ (BORDER GLOW)
+                        </p>
+
+                        <div>
+                          <label style={{ fontSize: '0.65rem', color: '#a3a3a3', fontWeight: 'bold', display: 'block', marginBottom: '6px' }}>
+                            COLOR DE LA LUZ DE BORDES
+                          </label>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', marginBottom: '8px' }}>
+                            {[
+                              { name: 'Blanco Puro', hex: '#ffffff' },
+                              { name: 'Cian Neón', hex: '#00f0ff' },
+                              { name: 'Verde Esmeralda', hex: '#00ff66' },
+                              { name: 'Púrpura Eléctrico', hex: '#b026ff' },
+                              { name: 'Dorado Ámbar', hex: '#ffaa00' },
+                              { name: 'Magenta Fuego', hex: '#ff007f' },
+                              { name: 'Azul Real', hex: '#3b82f6' },
+                            ].map((c) => (
+                              <button
+                                key={c.hex}
+                                onClick={() => setGlowColor(c.hex)}
+                                title={c.name}
+                                style={{
+                                  width: '28px',
+                                  height: '28px',
+                                  borderRadius: '50%',
+                                  backgroundColor: c.hex,
+                                  border: glowColor.toLowerCase() === c.hex.toLowerCase() ? '2px solid #ffffff' : '1px solid rgba(255,255,255,0.2)',
+                                  boxShadow: glowColor.toLowerCase() === c.hex.toLowerCase() ? `0 0 10px ${c.hex}` : 'none',
+                                  cursor: 'pointer',
+                                  transition: 'all 0.2s ease'
+                                }}
+                              />
+                            ))}
+                            <div style={{ position: 'relative', width: '28px', height: '28px', borderRadius: '50%', overflow: 'hidden', border: '1px solid #555', cursor: 'pointer' }}>
+                              <input
+                                type="color"
+                                value={glowColor}
+                                onChange={(e) => setGlowColor(e.target.value)}
+                                style={{
+                                  position: 'absolute',
+                                  top: '-50%',
+                                  left: '-50%',
+                                  width: '200%',
+                                  height: '200%',
+                                  cursor: 'pointer',
+                                  border: 'none',
+                                  padding: 0
+                                }}
+                                title="Seleccionar color personalizado"
+                              />
+                            </div>
+                          </div>
+                        </div>
+
+                        <div>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+                            <span style={{ fontSize: '0.65rem', color: '#a3a3a3', fontWeight: 'bold' }}>AMPLITUD DE LUZ</span>
+                            <span style={{ fontSize: '0.65rem', color: '#fff', fontFamily: 'monospace' }}>{glowSpread}px</span>
+                          </div>
+                          <input
+                            type="range"
+                            min="4"
+                            max="35"
+                            value={glowSpread}
+                            onChange={(e) => setGlowSpread(parseInt(e.target.value))}
+                            style={{ width: '100%', accentColor: '#ffffff' }}
+                          />
+                        </div>
+
+                        <div>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+                            <span style={{ fontSize: '0.65rem', color: '#a3a3a3', fontWeight: 'bold' }}>INTENSIDAD DE LUZ</span>
+                            <span style={{ fontSize: '0.65rem', color: '#fff', fontFamily: 'monospace' }}>{Math.round(glowIntensity * 100)}%</span>
+                          </div>
+                          <input
+                            type="range"
+                            min="0.1"
+                            max="1.0"
+                            step="0.05"
+                            value={glowIntensity}
+                            onChange={(e) => setGlowIntensity(parseFloat(e.target.value))}
+                            style={{ width: '100%', accentColor: '#ffffff' }}
+                          />
+                        </div>
+
+                        <div>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+                            <span style={{ fontSize: '0.65rem', color: '#a3a3a3', fontWeight: 'bold' }}>DESENFOQUE DE CRISTAL</span>
+                            <span style={{ fontSize: '0.65rem', color: '#fff', fontFamily: 'monospace' }}>{glassBlur}px</span>
+                          </div>
+                          <input
+                            type="range"
+                            min="4"
+                            max="30"
+                            value={glassBlur}
+                            onChange={(e) => setGlassBlur(parseInt(e.target.value))}
+                            style={{ width: '100%', accentColor: '#ffffff' }}
+                          />
+                        </div>
+
+                        <div>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+                            <span style={{ fontSize: '0.65rem', color: '#a3a3a3', fontWeight: 'bold' }}>OPACIDAD DE CRISTAL</span>
+                            <span style={{ fontSize: '0.65rem', color: '#fff', fontFamily: 'monospace' }}>{Math.round(glassOpacity * 100)}%</span>
+                          </div>
+                          <input
+                            type="range"
+                            min="0.2"
+                            max="0.95"
+                            step="0.05"
+                            value={glassOpacity}
+                            onChange={(e) => setGlassOpacity(parseFloat(e.target.value))}
+                            style={{ width: '100%', accentColor: '#ffffff' }}
+                          />
+                        </div>
+
+                        <button
+                          onClick={() => {
+                            setGlowColor('#ffffff');
+                            setGlowSpread(12);
+                            setGlowIntensity(0.4);
+                            setGlassBlur(16);
+                            setGlassOpacity(0.65);
+                          }}
+                          className="neon-btn nav-btn"
+                          style={{ padding: '8px', fontSize: '0.65rem', marginTop: '4px' }}
+                        >
+                          Restablecer Cristal Predeterminado
+                        </button>
+                      </div>
+                    )}
                     {subTool === 'tema' && (
                       <div>
                         <p style={{ fontSize: '0.75rem', color: '#fff', fontWeight: 'bold', marginBottom: '1rem' }}>TEMA Y APARIENCIA</p>
@@ -2658,17 +2894,17 @@ if (!session) {
                   right: '12px',
                   zIndex: 35,
                   borderRadius: '12px',
-                  border: '1px solid rgba(0, 255, 204, 0.5)',
-                  backgroundColor: 'rgba(5, 5, 5, 0.85)',
-                  backdropFilter: 'blur(10px)',
-                  WebkitBackdropFilter: 'blur(10px)',
+                  border: '1px solid rgba(var(--glow-color-rgb), calc(var(--glow-intensity) * 0.6))',
+                  backgroundColor: 'var(--glass-bg)',
+                  backdropFilter: 'blur(var(--glass-blur))',
+                  WebkitBackdropFilter: 'blur(var(--glass-blur))',
                   padding: '5px 10px',
                   display: 'flex',
                   alignItems: 'center',
                   gap: '6px',
                   cursor: 'pointer',
                   color: '#fff',
-                  boxShadow: '0 4px 20px rgba(0,0,0,0.6)',
+                  boxShadow: '0 4px 20px rgba(0,0,0,0.6), 0 0 var(--glow-spread) rgba(var(--glow-color-rgb), var(--glow-intensity))',
                   transition: 'all 0.2s ease'
                 }}
               >
@@ -2725,17 +2961,17 @@ if (!session) {
                 left: '50%',
                 transform: 'translateX(-50%)',
                 zIndex: 30,
-                border: '1px solid rgba(255, 255, 255, 0.15)',
+                border: '1px solid rgba(var(--glow-color-rgb), calc(var(--glow-intensity) * 0.6))',
                 borderRadius: '999px',
-                backgroundColor: 'rgba(0, 0, 0, 0.85)',
-                backdropFilter: 'blur(12px)',
-                WebkitBackdropFilter: 'blur(12px)',
+                backgroundColor: 'var(--glass-bg)',
+                backdropFilter: 'blur(var(--glass-blur))',
+                WebkitBackdropFilter: 'blur(var(--glass-blur))',
                 padding: '5px 14px',
                 display: 'flex',
                 alignItems: 'center',
                 gap: '12px',
-                boxShadow: '0 4px 16px rgba(0, 0, 0, 0.5)',
-                transition: 'opacity 0.3s ease',
+                boxShadow: '0 4px 16px rgba(0, 0, 0, 0.5), 0 0 var(--glow-spread) rgba(var(--glow-color-rgb), var(--glow-intensity))',
+                transition: 'opacity 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease',
                 opacity: (showPlaybackControls || !isPlaying) ? 1 : 0,
                 pointerEvents: (showPlaybackControls || !isPlaying) ? 'auto' : 'none'
               }}
@@ -2829,7 +3065,11 @@ if (!session) {
           position: 'fixed',
           inset: 0,
           zIndex: 9900,
-          backgroundColor: '#050505',
+          backgroundColor: 'var(--glass-bg)',
+          backdropFilter: 'blur(var(--glass-blur))',
+          WebkitBackdropFilter: 'blur(var(--glass-blur))',
+          border: '1px solid rgba(var(--glow-color-rgb), calc(var(--glow-intensity) * 0.5))',
+          boxShadow: '0 0 var(--glow-spread) rgba(var(--glow-color-rgb), var(--glow-intensity))',
           display: 'flex',
           flexDirection: 'column',
           overflow: 'hidden'
