@@ -1,4 +1,4 @@
-const dynamicImport = (moduleName: string) => Function('name', 'return import(name)')(moduleName) as Promise<any>;
+import { DeleteObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 
 const r2Config = () => {
   const accountId = process.env.CLOUDFLARE_R2_ACCOUNT_ID;
@@ -12,19 +12,16 @@ const r2Config = () => {
 
 async function client() {
   const config = r2Config();
-  const { S3Client } = await dynamicImport('@aws-sdk/client-s3');
   return { config, s3: new S3Client({ region: 'auto', endpoint: `https://${config.accountId}.r2.cloudflarestorage.com`, credentials: { accessKeyId: config.accessKeyId, secretAccessKey: config.secretAccessKey } }) };
 }
 
 export async function uploadR2Object(key: string, body: Uint8Array, contentType: string) {
   const { config, s3 } = await client();
-  const { PutObjectCommand } = await dynamicImport('@aws-sdk/client-s3');
   await s3.send(new PutObjectCommand({ Bucket: config.bucket, Key: key, Body: body, ContentType: contentType }));
   return { key, url: `${config.publicBaseUrl}/${key}` };
 }
 
 export async function deleteR2Object(key: string) {
   const { config, s3 } = await client();
-  const { DeleteObjectCommand } = await dynamicImport('@aws-sdk/client-s3');
   await s3.send(new DeleteObjectCommand({ Bucket: config.bucket, Key: key }));
 }

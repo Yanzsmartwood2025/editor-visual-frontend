@@ -9,6 +9,7 @@ import { getVideoMetadata, getAudioDurationInSeconds } from '@remotion/media-uti
 import { createClient } from '@supabase/supabase-js';
 import { uploadMediaFilesToBodega } from '../lib/mediaUpload';
 import { getFirebaseSession, observeFirebaseSession, signOutFirebase, signInWithCustomTokenValue, type FirebaseSession } from '../lib/firebaseClient';
+import { firebaseHeaders } from '../lib/apiClient';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://dummy.supabase.co';
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'dummy_key';
@@ -1214,7 +1215,8 @@ export default function NaylaCore() {
       setMediaActivaUrl(null);
     }
 
-    // 2. Borrar archivos físicos del Storage si están hospedados en Supabase
+    // 2. Borrar archivos físicos. Los objetos nuevos viven en R2; los enlaces
+    // antiguos de Supabase se conservan para que la migración no deje residuos.
     for (const item of itemsToDelete) {
       if (item.url && item.url.includes('.supabase.co/storage/v1/object/public/')) {
         try {
@@ -1233,6 +1235,20 @@ export default function NaylaCore() {
           }
         } catch (e) {
           console.error("Error parseando URL para borrar de Storage", e);
+        }
+      } else if (item.url) {
+        try {
+          const key = decodeURIComponent(new URL(item.url).pathname.replace(/^\/+/, ''));
+          if (key.startsWith(`${session.user.id}/`)) {
+            const response = await fetch('/api/r2/delete', {
+              method: 'DELETE',
+              headers: firebaseHeaders(session, { 'Content-Type': 'application/json' }),
+              body: JSON.stringify({ key })
+            });
+            if (!response.ok) throw new Error((await response.json()).error || 'No se pudo borrar el objeto de R2.');
+          }
+        } catch (e) {
+          console.error('Error borrando archivo de R2', e);
         }
       }
     }
