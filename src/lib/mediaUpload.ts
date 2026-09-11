@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { FirebaseSession } from './firebaseClient';
+import { firebaseHeaders } from './apiClient';
 
 export type MediaKind = 'foto' | 'video' | 'audio';
 
@@ -57,6 +58,34 @@ const getExtension = (file: Pick<File, 'name' | 'type'>, tipo: MediaKind): strin
 
 const buildMediaId = (index: number): string => `${Date.now()}-${index}-${globalThis.crypto?.randomUUID?.() || Math.random().toString(36).slice(2)}`;
 
+type R2UploadResponse = { key: string; url: string };
+
+const uploadFileToR2 = async (file: UploadableMediaFile, session: FirebaseSession, mediaId: string, extension: string): Promise<R2UploadResponse> => {
+  const formData = new FormData();
+  formData.append('file', file, file.name);
+  formData.append('mediaId', mediaId);
+  formData.append('extension', extension);
+
+  const response = await fetch('/api/r2/upload', {
+    method: 'POST',
+    headers: firebaseHeaders(session),
+    body: formData,
+  });
+  const data = await response.json() as R2UploadResponse & { error?: string };
+  if (!response.ok) throw new Error(data.error || `Error subiendo ${file.name} a R2.`);
+  return data;
+};
+
+const deleteR2Files = async (keys: string[], session: FirebaseSession) => {
+  await Promise.allSettled(keys.map(async (key) => {
+    await fetch('/api/r2/delete', {
+      method: 'DELETE',
+      headers: firebaseHeaders(session, { 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ key }),
+    });
+  }));
+};
+
 export const uploadMediaFilesToBodega = async ({
   supabase,
   session,
@@ -68,36 +97,35 @@ export const uploadMediaFilesToBodega = async ({
   if (!session?.user?.id) throw new Error('Debes iniciar sesión para guardar archivos en la Bóveda.');
 
   const nuevosItems: MediaItem[] = [];
+  const uploadedKeys: string[] = [];
 
-  for (let i = 0; i < files.length; i++) {
-    const file = files[i];
-    const tipo = forcedTipo || resolveMediaKind(file);
-    if (!tipo) throw new Error(`Tipo de archivo no soportado: ${file.name}`);
+  try {
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      const tipo = forcedTipo || resolveMediaKind(file);
+      if (!tipo) throw new Error(`Tipo de archivo no soportado: ${file.name}`);
 
-    const countTipo = existingItems.filter(item => item.tipo === tipo).length + nuevosItems.filter(item => item.tipo === tipo).length + 1;
-    const inicial = tipo === 'video' ? 'V' : tipo === 'foto' ? 'F' : 'A';
-    const id = buildMediaId(i);
-    const fileName = `${session.user.id}/${id}.${getExtension(file, tipo)}`;
+      const countTipo = existingItems.filter(item => item.tipo === tipo).length + nuevosItems.filter(item => item.tipo === tipo).length + 1;
+      const inicial = tipo === 'video' ? 'V' : tipo === 'foto' ? 'F' : 'A';
+      const id = buildMediaId(i);
+      const extension = getExtension(file, tipo);
+      const { key, url } = await uploadFileToR2(file, session, id, extension);
+      uploadedKeys.push(key);
 
-    const { error: uploadError } = await supabase.storage.from('media_bodega').upload(fileName, file, {
-      contentType: file.type || undefined,
-      upsert: false
-    });
-
-    if (uploadError) throw new Error(`Error subiendo ${file.name}: ${uploadError.message}`);
-
-    const { data: { publicUrl } } = supabase.storage.from('media_bodega').getPublicUrl(fileName);
-
-    nuevosItems.push({
-      id,
-      url: publicUrl,
-      tipo,
-      nombre: file.name || `${inicial}${countTipo}.${getExtension(file, tipo)}`,
-      creado_en: new Date().toISOString(),
-      esOverlay: false,
-      etiqueta: `${inicial}${countTipo}`,
-      fuente
-    });
+      nuevosItems.push({
+        id,
+        url,
+        tipo,
+        nombre: file.name || `${inicial}${countTipo}.${extension}`,
+        creado_en: new Date().toISOString(),
+        esOverlay: false,
+        etiqueta: `${inicial}${countTipo}`,
+        fuente
+      });
+    }
+  } catch (error) {
+    await deleteR2Files(uploadedKeys, session);
+    throw error;
   }
 
   const { error: insertError } = await supabase
@@ -105,8 +133,7 @@ export const uploadMediaFilesToBodega = async ({
     .insert(nuevosItems.map(item => ({ ...item, user_id: session.user.id })));
 
   if (insertError) {
-    const uploadedPaths = nuevosItems.map(item => decodeURIComponent(item.url.split('/storage/v1/object/public/media_bodega/')[1] || '')).filter(Boolean);
-    if (uploadedPaths.length > 0) await supabase.storage.from('media_bodega').remove(uploadedPaths);
+    await deleteR2Files(uploadedKeys, session);
     throw new Error(`Error registrando archivos en la Bóveda: ${insertError.message}`);
   }
 
