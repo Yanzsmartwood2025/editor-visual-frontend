@@ -133,7 +133,7 @@ export default function NaylaCore() {
       box-shadow: 0 0 calc(var(--glow-spread) * 1.5) rgba(var(--glow-color-rgb), calc(var(--glow-intensity) * 0.9));
     }
 
-    .sub-btn { background: transparent; border: none; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; font-size: 10px; cursor: pointer; transition: 0.2s; padding: 6px; min-width: 60px; color: #a3a3a3; }
+    .sub-btn { background: transparent; border: none; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; font-size: 10px; cursor: pointer; transition: 0.2s; padding: 6px; width: 100%; min-width: 0; color: #a3a3a3; }
     .sub-btn:hover { color: #ffffff; }
     .sub-btn.active { color: #ffffff; font-weight: bold; }
 
@@ -2474,14 +2474,16 @@ if (!session) {
                 </span>
               </div>
 
-              {/* Sub-herramientas (Iconos Horizontales) */}
+              {/* Sub-herramientas (Cuadrícula Tipo App) */}
               <div style={{
-                display: 'flex',
-                gap: '6px',
-                overflowX: 'auto',
-                padding: '10px 12px',
+                display: 'grid',
+                gridTemplateColumns: 'repeat(4, 1fr)',
+                gap: '12px 8px',
+                padding: '16px 12px',
                 borderBottom: '1px solid #1a1a1a',
-                backgroundColor: '#0a0a0a'
+                backgroundColor: '#0a0a0a',
+                maxHeight: '280px',
+                overflowY: 'auto'
               }}>
                 {SUB_TOOLS[mainNav]?.map((tool) => {
                   if (tool.id === 'subir-vf') {
