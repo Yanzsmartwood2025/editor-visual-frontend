@@ -1,30 +1,76 @@
+import { bundle } from '@remotion/bundler';
+import { randomUUID } from 'node:crypto';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 import { uploadR2Object } from './r2';
 
-const dynamicImport = (moduleName: string) => Function('name', 'return import(name)')(moduleName) as Promise<any>;
+const COMPOSITION_ID = 'MainComposition';
+const BUNDLE_DIR = path.join(tmpdir(), 'nayla-remotion-bundle');
 
-/**
- * Adapter isolated from the Pages API contract. The deployment must provide the
- * official @remotion/vercel package and VERCEL_SANDBOX_* credentials.
- */
-export async function startVercelSandboxRender(inputProps: unknown) {
-  const renderer = await dynamicImport('@remotion/vercel').catch(() => {
-    throw new Error('El adaptador @remotion/vercel no está instalado en este entorno. Instálalo durante el despliegue de Vercel Sandbox.');
-  });
-  if (typeof renderer.renderMediaOnVercel !== 'function') {
-    throw new Error('@remotion/vercel no expone renderMediaOnVercel; revisa la versión instalada del SDK.');
+// A Vercel function can serve multiple requests while its module stays warm. Reuse
+// its immutable bundle, but create a new sandbox for every render because its
+// filesystem and lifecycle belong to that single render job.
+let bundlePromise: Promise<string> | undefined;
+
+const inputPropsToRecord = (inputProps: unknown): Record<string, unknown> => {
+  if (typeof inputProps !== 'object' || inputProps === null || Array.isArray(inputProps)) {
+    throw new Error('inputProps debe ser un objeto para renderizar la composición.');
   }
 
-  const result = await renderer.renderMediaOnVercel({
-    entryPoint: 'src/remotion/index.ts',
-    composition: 'MainComposition',
-    inputProps,
-    sandbox: { token: process.env.VERCEL_SANDBOX_TOKEN, projectId: process.env.VERCEL_PROJECT_ID },
+  return inputProps as Record<string, unknown>;
+};
+
+const getBundle = async () => {
+  bundlePromise ??= bundle({
+    entryPoint: path.join(process.cwd(), 'src/remotion/index.ts'),
+    outDir: BUNDLE_DIR,
+    enableCaching: true,
+  }).catch((error: unknown) => {
+    bundlePromise = undefined;
+    throw error;
   });
 
-  if (!result?.outputUrl) return { jobId: result?.jobId, status: result?.status || 'queued' };
-  const response = await fetch(result.outputUrl);
-  if (!response.ok) throw new Error(`No se pudo descargar el resultado del Sandbox: ${response.status}`);
-  const key = `renders/${result.jobId || crypto.randomUUID()}.mp4`;
-  const stored = await uploadR2Object(key, new Uint8Array(await response.arrayBuffer()), 'video/mp4');
-  return { jobId: result.jobId, status: 'completed', output: stored };
+  return bundlePromise;
+};
+
+/**
+ * Bundles the Remotion entry point, renders it in an isolated Vercel Sandbox,
+ * then copies the resulting media file to Cloudflare R2.
+ */
+export async function startVercelSandboxRender(inputProps: unknown) {
+  const props = inputPropsToRecord(inputProps);
+  const { addBundleToSandbox, createSandbox, renderMediaOnVercel } = await import('@remotion/vercel').catch(() => {
+    throw new Error('El adaptador @remotion/vercel no está instalado en este entorno. Instálalo durante el despliegue de Vercel Sandbox.');
+  });
+
+  const bundleDir = await getBundle();
+  const sandbox = await createSandbox();
+
+  try {
+    await addBundleToSandbox({ sandbox, bundleDir });
+
+    const { sandboxFilePath, contentType } = await renderMediaOnVercel({
+      sandbox,
+      compositionId: COMPOSITION_ID,
+      inputProps: props,
+      codec: 'h264',
+      outputFile: '/tmp/render.mp4',
+    });
+
+    const file = await sandbox.readFileToBuffer({ path: sandboxFilePath });
+    if (!file) {
+      throw new Error(`Vercel Sandbox no produjo el archivo de render: ${sandboxFilePath}`);
+    }
+
+    const key = `renders/${randomUUID()}.mp4`;
+    const stored = await uploadR2Object(key, new Uint8Array(file), contentType);
+
+    return {
+      status: 'completed' as const,
+      output: stored,
+      contentType,
+    };
+  } finally {
+    await sandbox[Symbol.asyncDispose]();
+  }
 }
