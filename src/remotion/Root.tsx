@@ -32,6 +32,26 @@ const defaultProps = {
   logos: []
 };
 
+const getDurationInFrames = (timeline: unknown) => {
+  if (!Array.isArray(timeline)) return 1;
+
+  const totalSeconds = timeline.reduce((total, clip, index) => {
+    if (typeof clip !== 'object' || clip === null) return total;
+
+    const item = clip as Record<string, unknown>;
+    if (item.tipo !== 'video' && item.tipo !== 'foto') return total;
+
+    const duration = typeof item.durationInSeconds === 'number' ? item.durationInSeconds : 5;
+    const transitionDuration = index > 0 && item.transitionType !== 'none' && typeof item.transitionDuration === 'number'
+      ? item.transitionDuration
+      : 0;
+
+    return total + Math.max(0, duration - transitionDuration);
+  }, 0);
+
+  return Math.max(1, Math.round(totalSeconds * 30));
+};
+
 export const RemotionRoot: React.FC = () => {
   // Calculamos la duración total en base a los visuales para la preview
   const fps = 30;
@@ -44,13 +64,16 @@ export const RemotionRoot: React.FC = () => {
   return (
     <>
       <Composition
-        id="MainVideo"
+        id="MainComposition"
         component={MainComposition as React.FC<any>}
         durationInFrames={durationInFrames}
         fps={fps}
         width={1080}
         height={1920}
         defaultProps={defaultProps}
+        calculateMetadata={({ props }) => ({
+          durationInFrames: getDurationInFrames(props.timeline),
+        })}
       />
     </>
   );
