@@ -2,14 +2,10 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import Head from 'next/head';
 import { useRouter } from 'next/router';
-import { createClient } from '@supabase/supabase-js';
 import { cleanupExpiredPendingShares, deletePendingShare, getPendingShare, isPendingShareExpired, PendingShare } from '../lib/shareTargetQueue';
 import { uploadMediaFilesToBodega } from '../lib/mediaUpload';
 import { getFirebaseSession, sendFirebaseEmailLink } from '../lib/firebaseClient';
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://dummy.supabase.co';
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'dummy_key';
-const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 type ShareTargetStatus = 'loading' | 'needs-auth' | 'uploading' | 'success' | 'error' | 'expired' | 'empty';
 
@@ -46,7 +42,6 @@ export default function ShareTargetPage() {
     setMessage(`Subiendo ${share.files.length} archivo(s) a tu Bóveda...`);
 
     await uploadMediaFilesToBodega({
-      supabase,
       session,
       files: share.files.map(item => item.file),
       fuente: 'share-target'

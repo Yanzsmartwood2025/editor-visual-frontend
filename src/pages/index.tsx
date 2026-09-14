@@ -1139,13 +1139,14 @@ export default function NaylaCore() {
   const cargarDatosUsuario = async (userId: string) => {
     try {
       // Cargar Bodega
-      const { data: galeriaData, error: galeriaError } = await supabase
-        .from('galeria_multimedia')
-        .select('*')
-        .eq('user_id', userId)
-        .order('creado_en', { ascending: true });
+      const currentSession = session || await getFirebaseSession();
+      const galeriaResponse = currentSession ? await fetch('/api/galeria', {
+        headers: firebaseHeaders(currentSession),
+      }) : null;
+      const galeriaPayload = galeriaResponse ? await galeriaResponse.json() as { data?: any[]; error?: string } : null;
+      const galeriaData = galeriaPayload?.data;
 
-      if (!galeriaError && galeriaData) {
+      if (galeriaResponse?.ok && galeriaData) {
         // Adaptar si es necesario, o setear directo si coinciden los campos
         const galeria = galeriaData.map(item => ({
           id: item.id,
@@ -1175,13 +1176,13 @@ export default function NaylaCore() {
       }
 
       // Cargar Línea de Tiempo
-      const { data: proyectoData, error: proyectoError } = await supabase
-        .from('proyectos_usuario')
-        .select('linea_de_tiempo')
-        .eq('user_id', userId)
-        .single();
+      const proyectoResponse = currentSession ? await fetch('/api/proyectos', {
+        headers: firebaseHeaders(currentSession),
+      }) : null;
+      const proyectoPayload = proyectoResponse ? await proyectoResponse.json() as { data?: { linea_de_tiempo?: any[] } | null; error?: string } : null;
+      const proyectoData = proyectoPayload?.data;
 
-      if (!proyectoError && proyectoData && proyectoData.linea_de_tiempo) {
+      if (proyectoResponse?.ok && proyectoData && proyectoData.linea_de_tiempo) {
         setLineaDeTiempo(proyectoData.linea_de_tiempo);
         // Si hay clips, establecer el primero que sea video/foto como mediaActivaUrl
         const clipsVisuales = proyectoData.linea_de_tiempo.filter((c: any) => c.tipo === 'video' || c.tipo === 'foto');
@@ -1266,7 +1267,6 @@ export default function NaylaCore() {
 
     try {
       const nuevosItems = await uploadMediaFilesToBodega({
-        supabase,
         session: currentSession,
         files,
         existingItems: galeriaMultimedia,
@@ -1350,15 +1350,16 @@ export default function NaylaCore() {
     }
 
     // 3. Borrar registros de la base de datos
-    const { error } = await supabase
-      .from('galeria_multimedia')
-      .delete()
-      .in('id', ids)
-      .eq('user_id', session.user.id);
+    const response = await fetch('/api/galeria', {
+      method: 'DELETE',
+      headers: firebaseHeaders(session, { 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ ids }),
+    });
+    const payload = await response.json() as { error?: string };
 
-    if (error) {
-      console.error('Error eliminando de Supabase BD:', error);
-      showAlert('Error al eliminar de la base de datos: ' + error.message);
+    if (!response.ok) {
+      console.error('Error eliminando de Supabase BD:', payload.error);
+      showAlert('Error al eliminar de la base de datos: ' + (payload.error || 'Error desconocido.'));
     }
   };
 
@@ -1368,18 +1369,17 @@ export default function NaylaCore() {
 
   const sincronizarLineaDeTiempo = async (nuevaLinea: TimelineItem[]) => {
     if (session) {
-      const { error } = await supabase
-        .from('proyectos_usuario')
-        .upsert(
-          {
-            user_id: session.user.id,
-            linea_de_tiempo: nuevaLinea,
-            actualizado_en: new Date().toISOString()
-          },
-          { onConflict: 'user_id' }
-        );
-      if (error) {
-        console.error('Error sincronizando línea de tiempo:', error);
+      const response = await fetch('/api/proyectos', {
+        method: 'PUT',
+        headers: firebaseHeaders(session, { 'Content-Type': 'application/json' }),
+        body: JSON.stringify({
+          linea_de_tiempo: nuevaLinea,
+          actualizado_en: new Date().toISOString()
+        }),
+      });
+      if (!response.ok) {
+        const payload = await response.json() as { error?: string };
+        console.error('Error sincronizando línea de tiempo:', payload.error);
       }
     }
   };
@@ -1428,14 +1428,15 @@ export default function NaylaCore() {
     setLineaDeTiempo(nuevaLinea);
 
     if (session) {
-      const { error } = await supabase
-        .from('galeria_multimedia')
-        .update({ nombre: nuevoNombre })
-        .eq('id', id)
-        .eq('user_id', session.user.id);
+      const response = await fetch('/api/galeria', {
+        method: 'PATCH',
+        headers: firebaseHeaders(session, { 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ id, nombre: nuevoNombre }),
+      });
 
-      if (error) {
-        console.error('Error renombrando en Supabase:', error);
+      if (!response.ok) {
+        const payload = await response.json() as { error?: string };
+        console.error('Error renombrando en Supabase:', payload.error);
       }
 
       sincronizarLineaDeTiempo(nuevaLinea);
@@ -1583,12 +1584,16 @@ export default function NaylaCore() {
       }
 
       if (session) {
-         supabase
-             .from('galeria_multimedia')
-             .insert([{ ...nuevoItem, user_id: session.user.id }])
-             .then(({ error }) => {
-                 if (error) console.error('Error insertando en Supabase:', error);
-             });
+         fetch('/api/galeria', {
+           method: 'POST',
+           headers: firebaseHeaders(session, { 'Content-Type': 'application/json' }),
+           body: JSON.stringify({ items: [nuevoItem] }),
+         }).then(async (response) => {
+           if (!response.ok) {
+             const payload = await response.json() as { error?: string };
+             console.error('Error insertando en Supabase:', payload.error);
+           }
+         });
       }
 
       // Actualizar estado de descarga a listo
