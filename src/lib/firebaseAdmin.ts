@@ -2,11 +2,9 @@ import type { NextApiRequest } from 'next';
 
 export type FirebaseIdentity = { uid: string; email?: string };
 
-const dynamicImport = (moduleName: string) => Function('name', 'return import(name)')(moduleName) as Promise<any>;
-
 async function getFirebaseAdminAuth() {
-  const app = await dynamicImport('firebase-admin/app');
-  const auth = await dynamicImport('firebase-admin/auth');
+  const app = await import('firebase-admin/app');
+  const auth = await import('firebase-admin/auth');
   if (!app.getApps().length) {
     const projectId = process.env.FIREBASE_PROJECT_ID;
     const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
