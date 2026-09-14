@@ -1,4 +1,3 @@
-import type { SupabaseClient } from '@supabase/supabase-js';
 import type { FirebaseSession } from './firebaseClient';
 import { firebaseHeaders } from './apiClient';
 
@@ -18,7 +17,6 @@ export type MediaItem = {
 export type UploadableMediaFile = Pick<File, 'name' | 'type'> & Blob;
 
 type UploadMediaToBodegaParams = {
-  supabase: SupabaseClient;
   session: FirebaseSession;
   files: UploadableMediaFile[];
   existingItems?: MediaItem[];
@@ -87,7 +85,6 @@ const deleteR2Files = async (keys: string[], session: FirebaseSession) => {
 };
 
 export const uploadMediaFilesToBodega = async ({
-  supabase,
   session,
   files,
   existingItems = [],
@@ -128,13 +125,16 @@ export const uploadMediaFilesToBodega = async ({
     throw error;
   }
 
-  const { error: insertError } = await supabase
-    .from('galeria_multimedia')
-    .insert(nuevosItems.map(item => ({ ...item, user_id: session.user.id })));
+  const response = await fetch('/api/galeria', {
+    method: 'POST',
+    headers: firebaseHeaders(session, { 'Content-Type': 'application/json' }),
+    body: JSON.stringify({ items: nuevosItems }),
+  });
+  const data = await response.json() as { error?: string };
 
-  if (insertError) {
+  if (!response.ok) {
     await deleteR2Files(uploadedKeys, session);
-    throw new Error(`Error registrando archivos en la Bóveda: ${insertError.message}`);
+    throw new Error(`Error registrando archivos en la Bóveda: ${data.error || 'Error desconocido.'}`);
   }
 
   return nuevosItems;
