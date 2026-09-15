@@ -65,8 +65,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     return res.status(405).json({ error: 'Método no permitido.' });
   } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : 'Error interno del servidor.';
+    const message = error instanceof Error
+      ? error.message
+      : (typeof error === 'object' && error && 'message' in error ? String((error as { message: unknown }).message) : 'Error interno del servidor.');
     const status = message.includes('token') || message.includes('Bearer') || message.includes('Firebase') ? 401 : 500;
+    console.error('Error en /api/galeria:', error);
     return res.status(status).json({ error: message });
   }
 }
