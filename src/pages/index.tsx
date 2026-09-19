@@ -1105,7 +1105,7 @@ export default function NaylaCore() {
           setMediaActivaUrl(clipsVisuales[0].url);
           setClipSeleccionado(clipsVisuales[0].id);
           let persistedMetadata = clipsVisuales[0].metadata ||
-            galeriaMultimedia.find(item => item.url === clipsVisuales[0].url)?.metadata;
+            galeriaData?.find((item: any) => item.url === clipsVisuales[0].url)?.metadata;
 
           if (!persistedMetadata?.aspectRatioLabel) {
             try {
