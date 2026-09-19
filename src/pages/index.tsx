@@ -9,7 +9,7 @@ import { RenderQueuePanel, type RenderJob } from '../components/RenderQueuePanel
 import { getVideoMetadata, getAudioDurationInSeconds } from '@remotion/media-utils';
 import { createClient } from '@supabase/supabase-js';
 import { createMediaId, uploadMediaFilesToBodega } from '../lib/mediaUpload';
-import { buildMediaMetadata, getAspectRatioLabel, getCanvasDimensionsFromRatio, probeMediaUrl, type MediaMetadata } from '../lib/mediaMetadata';
+import { buildMediaMetadata, getCanvasDimensionsFromRatio, probeMediaUrl, type MediaMetadata } from '../lib/mediaMetadata';
 import { getCompositionDurationInFrames } from '../lib/timelineMetrics';
 import { getFirebaseSession, observeFirebaseSession, signOutFirebase, signInWithCustomTokenValue, type FirebaseSession } from '../lib/firebaseClient';
 import { firebaseHeaders } from '../lib/apiClient';
@@ -1263,8 +1263,17 @@ export default function NaylaCore() {
         if (clipsVisuales.length > 0 && !mediaActivaUrl) {
           setMediaActivaUrl(clipsVisuales[0].url);
           setClipSeleccionado(clipsVisuales[0].id);
-          const persistedMetadata = clipsVisuales[0].metadata ||
+          let persistedMetadata = clipsVisuales[0].metadata ||
             galeriaMultimedia.find(item => item.url === clipsVisuales[0].url)?.metadata;
+
+          if (!persistedMetadata?.aspectRatioLabel) {
+            try {
+              persistedMetadata = await probeMediaUrl(clipsVisuales[0].url, clipsVisuales[0].tipo);
+            } catch (error) {
+              console.warn('No se pudo recuperar el formato del primer clip del proyecto.', error);
+            }
+          }
+
           adoptarFormatoVisual(persistedMetadata);
         }
       }
