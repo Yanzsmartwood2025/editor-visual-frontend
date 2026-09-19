@@ -2,8 +2,13 @@ export type TimelineMetricItem = {
   id?: string;
   tipo: 'foto' | 'video' | 'audio';
   durationInSeconds?: number;
+  originalDurationInSeconds?: number;
   playbackRate?: number;
   delay?: number;
+  startFrom?: number;
+  trimBefore?: number;
+  trimAfter?: number;
+  loop?: boolean;
   transitionDuration?: number;
   transitionType?: string;
 };
@@ -30,11 +35,49 @@ const safeNumber = (value: unknown, fallback = 0): number => {
   return Number.isFinite(number) ? number : fallback;
 };
 
-export const getItemDurationInFrames = (item: TimelineMetricItem, fps: number): number => {
+export const getPlayableDurationInSeconds = (item: TimelineMetricItem): number => {
   const defaultDuration = item.tipo === 'foto' ? 5 : 0;
-  const durationSeconds = Math.max(0, safeNumber(item.durationInSeconds, defaultDuration));
+  const declaredDuration = Math.max(0, safeNumber(item.durationInSeconds, defaultDuration));
+
+  if (item.tipo === 'foto' || item.loop) {
+    return declaredDuration;
+  }
+
+  const sourceDuration = Math.max(
+    0,
+    safeNumber(item.originalDurationInSeconds, declaredDuration)
+  );
+
+  const hasTrim =
+    item.trimBefore !== undefined ||
+    item.startFrom !== undefined ||
+    item.trimAfter !== undefined;
+
+  if (!hasTrim) {
+    return declaredDuration;
+  }
+
+  const trimStart = Math.min(
+    sourceDuration,
+    Math.max(0, safeNumber(item.trimBefore ?? item.startFrom, 0))
+  );
+
+  const requestedEnd = item.trimAfter === undefined
+    ? sourceDuration
+    : safeNumber(item.trimAfter, sourceDuration);
+
+  const trimEnd = Math.min(
+    sourceDuration,
+    Math.max(trimStart, requestedEnd)
+  );
+
+  return Math.max(0, trimEnd - trimStart);
+};
+
+export const getItemDurationInFrames = (item: TimelineMetricItem, fps: number): number => {
+  const playableSeconds = getPlayableDurationInSeconds(item);
   const playbackRate = Math.max(0.01, safeNumber(item.playbackRate, 1));
-  return Math.max(1, Math.round((durationSeconds / playbackRate) * fps));
+  return Math.max(1, Math.round((playableSeconds / playbackRate) * fps));
 };
 
 export const getItemDelayInFrames = (item: TimelineMetricItem, fps: number): number =>
