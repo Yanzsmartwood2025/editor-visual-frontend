@@ -76,7 +76,7 @@ export const createR2PresignedPutUrl = ({
   expiresIn?: number;
   now?: Date;
 }): R2PresignedUpload => {
-  if (!key || key.startsWith('/') || key.includes('..')) {
+  if (!key || key.startsWith('/')) {
     throw new Error('Clave R2 inválida.');
   }
   if (!contentType || /[\r\n]/.test(contentType)) {
@@ -139,7 +139,7 @@ export const createR2PresignedPutUrl = ({
 
   return {
     key,
-    url: `${config.publicBaseUrl}/${key}`,
+    url: `${config.publicBaseUrl}${encodeObjectPath(key)}`,
     uploadUrl: `https://${host}${path}?${canonicalQuery}&X-Amz-Signature=${signature}`,
     contentType: normalizedContentType,
     expiresIn,
@@ -156,7 +156,7 @@ export async function uploadR2Object(key: string, body: Uint8Array, contentType:
       ContentType: contentType,
     })
   );
-  return { key, url: `${config.publicBaseUrl}/${key}` };
+  return { key, url: `${config.publicBaseUrl}${encodeObjectPath(key)}` };
 }
 
 export async function deleteR2Object(key: string) {
