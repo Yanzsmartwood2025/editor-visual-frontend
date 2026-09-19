@@ -425,6 +425,8 @@ export default function NaylaCore() {
   const handleVideoSurfaceTap = (e: React.PointerEvent<HTMLElement>) => {
     e.stopPropagation();
     resetPlaybackControlsTimer();
+    const target = e.target as HTMLElement | null;
+    if (target?.closest('button, input, textarea, select, a')) return;
     if (subTool === 'delogo') return;
 
     // Mouse/trackpad uses onDoubleClick. Touch/pen gets an explicit double-tap
@@ -2544,7 +2546,7 @@ if (!session) {
             {/* REPRODUCTOR FLOTANTE AUTO-OCULTABLE (5 SEGUNDOS) */}
             {!isCleanMode && (
             <div
-              onClick={(e) => e.stopPropagation()
+              onClick={(e) => e.stopPropagation()}
               style={{
                 position: 'absolute',
                 bottom: '12px',
