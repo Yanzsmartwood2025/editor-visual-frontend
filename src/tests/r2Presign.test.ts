@@ -1,0 +1,40 @@
+import { afterEach, describe, expect, it } from 'vitest';
+import { createR2PresignedPutUrl } from '../lib/r2';
+
+const originalEnv = { ...process.env };
+
+afterEach(() => {
+  process.env = { ...originalEnv };
+});
+
+describe('createR2PresignedPutUrl', () => {
+  it('matches an AWS Signature V4 presigned PUT for R2 path-style S3', () => {
+    process.env.CLOUDFLARE_R2_ACCOUNT_ID = 'abc123';
+    process.env.CLOUDFLARE_R2_ACCESS_KEY_ID = 'AKIDEXAMPLE';
+    process.env.CLOUDFLARE_R2_SECRET_ACCESS_KEY = 'SECRETEXAMPLE';
+    process.env.CLOUDFLARE_R2_BUCKET = 'mybucket';
+    process.env.CLOUDFLARE_R2_PUBLIC_BASE_URL = 'https://cdn.example.com';
+
+    const result = createR2PresignedPutUrl({
+      key: 'uid/123.mp4',
+      contentType: 'video/mp4',
+      expiresIn: 900,
+      now: new Date('2026-09-19T17:12:23.000Z'),
+    });
+
+    expect(result).toEqual({
+      key: 'uid/123.mp4',
+      url: 'https://cdn.example.com/uid/123.mp4',
+      contentType: 'video/mp4',
+      expiresIn: 900,
+      uploadUrl:
+        'https://abc123.r2.cloudflarestorage.com/mybucket/uid/123.mp4?' +
+        'X-Amz-Algorithm=AWS4-HMAC-SHA256&' +
+        'X-Amz-Credential=AKIDEXAMPLE%2F20260919%2Fauto%2Fs3%2Faws4_request&' +
+        'X-Amz-Date=20260919T171223Z&' +
+        'X-Amz-Expires=900&' +
+        'X-Amz-SignedHeaders=content-type%3Bhost&' +
+        'X-Amz-Signature=e17c57a79979c2ecb975210a5110abcb6a18a4872dfb0894f42017aa782896a4',
+    });
+  });
+});
