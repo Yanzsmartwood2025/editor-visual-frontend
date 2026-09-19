@@ -124,6 +124,7 @@ export default function NaylaCore() {
   const [clipSeleccionado, setClipSeleccionado] = useState<string | null>(null);
   const [canvasRatio, setCanvasRatio] = useState<string>('9/16');
   const [calidadExportacion, setCalidadExportacion] = useState('1080p');
+  const canvasPreviewDimensions = getCanvasDimensionsFromRatio(canvasRatio, '1080p');
   const [isDownloadMenuOpen, setIsDownloadMenuOpen] = useState(false);
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
   const [showIntro, setShowIntro] = useState(true);
@@ -2691,6 +2692,29 @@ if (!session) {
               cursor: 'pointer'
             }}
           >
+            {!isCleanMode && (
+              <div
+                style={{
+                  position: 'absolute',
+                  top: '12px',
+                  left: '12px',
+                  zIndex: 35,
+                  borderRadius: '10px',
+                  border: '1px solid rgba(255,255,255,0.18)',
+                  backgroundColor: 'rgba(0,0,0,0.62)',
+                  backdropFilter: 'blur(8px)',
+                  padding: '5px 9px',
+                  color: '#e5e5e5',
+                  fontSize: '0.62rem',
+                  fontWeight: 700,
+                  letterSpacing: '0.06em',
+                  pointerEvents: 'none'
+                }}
+              >
+                FORMATO {canvasRatio.replace('/', ':')} · {canvasPreviewDimensions.width}×{canvasPreviewDimensions.height}
+              </div>
+            )}
+
             {/* CUADRO / BOTÓN FLOTANTE SUPERIOR DERECHO DE NAYLA IA */}
             {!isCleanMode && (
               <button
