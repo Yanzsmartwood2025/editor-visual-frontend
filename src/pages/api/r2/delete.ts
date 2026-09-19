@@ -7,7 +7,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   try {
     const user = await requireFirebaseUser(req);
     const { key } = req.body as { key?: string };
-    if (!key || key.includes('..') || !key.startsWith(`${user.uid}/`)) return res.status(400).json({ error: 'Se requiere una clave R2 válida.' });
+    if (!key || !key.startsWith(`${user.uid}/`)) return res.status(400).json({ error: 'Se requiere una clave R2 válida del usuario autenticado.' });
     await deleteR2Object(key);
     return res.status(200).json({ deleted: true });
   } catch (error: unknown) {

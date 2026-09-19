@@ -62,8 +62,8 @@ export async function startVercelSandboxRender(inputProps: unknown, ownerId?: st
       throw new Error(`Vercel Sandbox no produjo el archivo de render: ${sandboxFilePath}`);
     }
 
-    const safeOwnerId = ownerId?.replace(/[^a-zA-Z0-9_-]/g, '_') || 'anonymous';
-    const key = `${safeOwnerId}/renders/${randomUUID()}.mp4`;
+    const ownerPrefix = ownerId || 'anonymous';
+    const key = `${ownerPrefix}/renders/${randomUUID()}.mp4`;
     const stored = await uploadR2Object(key, new Uint8Array(file), contentType);
 
     return {
