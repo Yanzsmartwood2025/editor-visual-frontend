@@ -5,7 +5,6 @@ import Head from 'next/head';
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
 import { arrayMove, SortableContext, horizontalListSortingStrategy } from '@dnd-kit/sortable';
 import { SortableTimelineItem } from '../components/SortableTimelineItem';
-import { RenderQueuePanel, type RenderJob } from '../components/RenderQueuePanel';
 import { MAIN_TOOLS, SUB_TOOLS } from '../config/editorTools';
 import { editorGlobalStyles } from '../styles/editorGlobalStyles';
 import { getVideoMetadata, getAudioDurationInSeconds } from '@remotion/media-utils';
@@ -107,8 +106,6 @@ export default function NaylaCore() {
   const [isMultiSelectMode, setIsMultiSelectMode] = useState(false);
   const longPressTimerRef = useRef<NodeJS.Timeout | null>(null);
   const [selectedMediaIds, setSelectedMediaIds] = useState<string[]>([]);
-  const [isMultiSelectStorageMode, setIsMultiSelectStorageMode] = useState(false);
-  const [selectedStorageFiles, setSelectedStorageFiles] = useState<string[]>([]);
   const [codigoJsInput, setCodigoJsInput] = useState('// Inyecta comandos JS aquí\n// Ej: NaylaEngine.agregar(["V1", "V2", "A1"]);\n// NaylaEngine.agregarSubtitulos([{ texto: "Hola", inicioSec: 0, finSec: 5 }]);');
   const [moldesScripts, setMoldesScripts] = useState<{ id?: string, nombre: string; codigo: string }[]>([]);
   const [moldeActivo, setMoldeActivo] = useState<string>('');
@@ -128,18 +125,12 @@ export default function NaylaCore() {
   const [isDownloadMenuOpen, setIsDownloadMenuOpen] = useState(false);
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
   const [showIntro, setShowIntro] = useState(true);
-  const [videoFile, setVideoFile] = useState<File | null>(null);
     const [isProcessing, setIsProcessing] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
   const [mediaActivaUrl, setMediaActivaUrl] = useState<string | null>(null);
   const [videoResultadoUrl, setVideoResultadoUrl] = useState<string | null>(null);
   const [videoMetadata, setVideoMetadata] = useState({ width: 1080, height: 1920 });
   const [isScriptRunning, setIsScriptRunning] = useState(false);
-  const [activeRenderJobs, setActiveRenderJobs] = useState<Record<string, RenderJob>>({});
-  const [isRenderQueueVisible, setIsRenderQueueVisible] = useState(false);
-  const [renderLogs, setRenderLogs] = useState<string[]>([]);
-  const [storageFiles, setStorageFiles] = useState<any[]>([]);
-  const [isLoadingStorage, setIsLoadingStorage] = useState<boolean>(false);
 
   // Floating & overlay UI states
   const [isSubPanelOpen, setIsSubPanelOpen] = useState(false);
@@ -192,7 +183,6 @@ export default function NaylaCore() {
 
   // Render Jobs State
 
-    const logsEndRef = useRef<HTMLDivElement | null>(null);
 
   // Storage Viewer States
 
@@ -220,109 +210,6 @@ export default function NaylaCore() {
         return renumerado;
       });
     }
-  };
-
-
-  // Load active jobs from localStorage on mount
-  useEffect(() => {
-    try {
-      const storedJobs = localStorage.getItem('activeRenderJobs');
-      if (storedJobs) {
-        setActiveRenderJobs(JSON.parse(storedJobs));
-      }
-    } catch (e) {
-      console.error('Error loading jobs from localStorage', e);
-    }
-  }, []);
-
-  // Poll for job updates
-  useEffect(() => {
-    const jobIds = Object.keys(activeRenderJobs).filter(id => {
-      const status = activeRenderJobs[id].status;
-      return status === 'queued' || status === 'processing';
-    });
-
-    if (jobIds.length === 0) return;
-
-    const interval = setInterval(async () => {
-      let updatedJobs = { ...activeRenderJobs };
-      let hasChanges = false;
-
-      for (const jobId of jobIds) {
-        try {
-          const res = await fetch(`/api/render-status?jobId=${jobId}`);
-          if (res.ok) {
-            const statusData = await res.json();
-
-            if (
-              updatedJobs[jobId].status !== statusData.status ||
-              (updatedJobs[jobId].logs?.length || 0) !== (statusData.logs?.length || 0)
-            ) {
-               updatedJobs[jobId] = { ...updatedJobs[jobId], ...statusData };
-               hasChanges = true;
-
-               if (statusData.status === 'completed' && statusData.url) {
-                  setGaleriaMultimedia(prev => {
-                    if (prev.some(item => item.url === statusData.url)) return prev;
-
-                    const renderCount = prev.filter(item => item.etiqueta.startsWith('R')).length + 1;
-                    const renderItem: MediaItem = {
-                      id: createMediaId(),
-                      url: statusData.url,
-                      tipo: 'video',
-                      nombre: `Render ${renderCount}`,
-                      creado_en: new Date().toLocaleTimeString(),
-                      esOverlay: false,
-                      etiqueta: `R${renderCount}`,
-                      fuente: 'render'
-                    };
-                    return [...prev, renderItem];
-                  });
-                  showAlert('Renderizado completado exitosamente.');
-               } else if (statusData.status === 'error' || statusData.status === 'failed') {
-                  showAlert('Fallo en la nube: ' + (statusData.error || 'Desconocido'));
-               }
-            }
-          }
-        } catch (e) {
-          console.error(`Error polling job ${jobId}`, e);
-        }
-      }
-
-      if (hasChanges) {
-        setActiveRenderJobs(updatedJobs);
-        localStorage.setItem('activeRenderJobs', JSON.stringify(updatedJobs));
-      }
-
-    }, 3000);
-
-    return () => clearInterval(interval);
-  }, [activeRenderJobs]);
-
-  const cancelRenderJob = async (jobId: string) => {
-    try {
-      // Force clear polling locally immediately
-      let updatedJobs = { ...activeRenderJobs, [jobId]: { ...activeRenderJobs[jobId], status: 'cancelled' as any } };
-      setActiveRenderJobs(updatedJobs as any);
-      localStorage.setItem('activeRenderJobs', JSON.stringify(updatedJobs));
-
-      const res = await fetch(`/api/render-cancel?jobId=${jobId}`, { method: 'DELETE' });
-      if (res.ok) {
-         showAlert('Render cancelado correctamente.');
-      } else {
-         const data = await res.json();
-         showAlert('Render cancelado localmente. Error en la nube: ' + (data.error || 'Desconocido'));
-      }
-    } catch (e: any) {
-      showAlert('Render cancelado localmente. Error de red: ' + e.message);
-    }
-  };
-
-  const removeRenderJob = (jobId: string) => {
-      const updatedJobs = { ...activeRenderJobs };
-      delete updatedJobs[jobId];
-      setActiveRenderJobs(updatedJobs);
-      localStorage.setItem('activeRenderJobs', JSON.stringify(updatedJobs));
   };
 
 
@@ -683,13 +570,7 @@ export default function NaylaCore() {
       return data;
     }
 
-    if (data.jobId) {
-      const newJob = { jobId: data.jobId, status: 'queued', url: null, error: null, logs: ['Job añadido a la cola desde Nayla...'] };
-      const updatedJobs = { ...activeRenderJobs, [data.jobId]: newJob };
-      setActiveRenderJobs(updatedJobs as any);
-      localStorage.setItem('activeRenderJobs', JSON.stringify(updatedJobs));
-      setIsRenderQueueVisible(true);
-    }
+
 
     return data;
   };
@@ -804,37 +685,6 @@ export default function NaylaCore() {
 
       if (data.action === 'BUILD_TIMELINE') {
         await ejecutarBuildTimeline(data);
-      } else if (data.action === 'CLIP_VIDEO' && data.payload) {
-        // Enviar a procesar el clip con el Oráculo
-        setExtrayendoVideo(true);
-
-        try {
-          const resApi = await fetch('/api/process-clip', {
-             method: 'POST',
-             headers: { 'Content-Type': 'application/json' },
-             body: JSON.stringify({
-               videoUrl: data.payload.url,
-               startTime: data.payload.start,
-               endTime: data.payload.end,
-               clipName: data.payload.title
-             })
-          });
-
-          if(resApi.status === 202) {
-             console.log("Nayla clip curado enviado a cola exitosamente");
-          } else {
-             console.error("Error al enviar clip a procesar:", await resApi.json());
-          }
-          // No seteamos extrayendoVideo a false inmediatamente porque el proceso es en background
-          // Podemos dejar la barra por unos segundos para indicar feedback.
-          setTimeout(() => {
-            setExtrayendoVideo(false);
-          }, 3000);
-
-        } catch (e) {
-          console.error("Error procesando clip de Nayla:", e);
-          setExtrayendoVideo(false);
-        }
       }
     } catch (error: any) {
       console.error(error);
@@ -987,67 +837,6 @@ export default function NaylaCore() {
     }, authError ? 8000 : 300);
     return () => clearTimeout(timer);
   }, [showIntro, session, authChecked, authError]);
-
-  useEffect(() => {
-    if (mainNav === 'nube') {
-      fetchStorageFiles();
-    }
-  }, [mainNav]);
-
-  useEffect(() => {
-    if (logsEndRef.current) {
-      logsEndRef.current.scrollIntoView({ behavior: 'smooth' });
-    }
-  }, [renderLogs]);
-
-
-
-
-
-
-  const fetchStorageFiles = async () => {
-    setIsLoadingStorage(true);
-    try {
-      const { data, error } = await supabase.storage.from('media_bodega').list();
-      if (error) {
-        console.error('Error fetching storage files:', error);
-        showAlert('Error cargando archivos de la nube: ' + error.message);
-      } else {
-        setStorageFiles(data || []);
-      }
-    } catch (err: any) {
-      console.error('Exception fetching storage files:', err);
-      showAlert('Error: ' + err.message);
-    } finally {
-      setIsLoadingStorage(false);
-    }
-  };
-
-  const deleteStorageFile = async (filename: string) => {
-    if (!confirm(`¿Estás seguro de que quieres borrar el archivo ${filename}?`)) return;
-    try {
-      const { error } = await supabase.storage.from('media_bodega').remove([filename]);
-      if (error) throw error;
-      await fetchStorageFiles();
-    } catch (err: any) {
-      console.error('Error deleting file:', err);
-      showAlert('Error al borrar: ' + err.message);
-    }
-  };
-
-  const deleteStorageFiles = async (filenames: string[]) => {
-    if (!confirm(`¿Estás seguro de que quieres borrar ${filenames.length} archivo(s)?`)) return;
-    try {
-      const { error } = await supabase.storage.from('media_bodega').remove(filenames);
-      if (error) throw error;
-      await fetchStorageFiles();
-      setSelectedStorageFiles([]);
-      setIsMultiSelectStorageMode(false);
-    } catch (err: any) {
-      console.error('Error deleting files:', err);
-      showAlert('Error al borrar múltiples archivos: ' + err.message);
-    }
-  };
 
   const cargarDatosUsuario = async (userId: string) => {
     try {
@@ -1204,9 +993,6 @@ export default function NaylaCore() {
       const primerVisual = primerVisualIndex >= 0 ? nuevosItems[primerVisualIndex] : null;
 
       if (primerVisual && pistaVideo.length === 0 && !mediaActivaUrl) {
-        if (primerVisual.tipo === 'video') {
-          setVideoFile(files[primerVisualIndex] || files[0]);
-        }
         setMediaActivaUrl(primerVisual.url);
         setClipSeleccionado(primerVisual.id);
         setVideoResultadoUrl(null);
@@ -1241,41 +1027,23 @@ export default function NaylaCore() {
       setMediaActivaUrl(null);
     }
 
-    // 2. Borrar archivos físicos. Los objetos nuevos viven en R2; los enlaces
-    // antiguos de Supabase se conservan para que la migración no deje residuos.
+    // 2. Borrar archivos físicos en Cloudflare R2.
     for (const item of itemsToDelete) {
-      if (item.url && item.url.includes('.supabase.co/storage/v1/object/public/')) {
-        try {
-          const parts = item.url.split('.supabase.co/storage/v1/object/public/');
-          if (parts.length === 2) {
-            const pathParts = parts[1].split('/');
-            const bucketName = pathParts[0];
-            const fileName = pathParts.slice(1).join('/');
-
-            if (bucketName && fileName) {
-              const { error: storageError } = await supabase.storage.from(bucketName).remove([fileName]);
-              if (storageError) {
-                console.error(`Error borrando ${fileName} del bucket ${bucketName}:`, storageError);
-              }
-            }
-          }
-        } catch (e) {
-          console.error("Error parseando URL para borrar de Storage", e);
+      if (!item.url) continue;
+      try {
+        const key = decodeURIComponent(new URL(item.url).pathname.replace(/^\/+/, ''));
+        if (!key.startsWith(`${session.user.id}/`)) {
+          console.warn('Archivo heredado fuera del espacio R2 actual; se eliminará solo su registro:', item.url);
+          continue;
         }
-      } else if (item.url) {
-        try {
-          const key = decodeURIComponent(new URL(item.url).pathname.replace(/^\/+/, ''));
-          if (key.startsWith(`${session.user.id}/`)) {
-            const response = await fetch('/api/r2/delete', {
-              method: 'DELETE',
-              headers: firebaseHeaders(session, { 'Content-Type': 'application/json' }),
-              body: JSON.stringify({ key })
-            });
-            if (!response.ok) throw new Error((await response.json()).error || 'No se pudo borrar el objeto de R2.');
-          }
-        } catch (e) {
-          console.error('Error borrando archivo de R2', e);
-        }
+        const response = await fetch('/api/r2/delete', {
+          method: 'DELETE',
+          headers: firebaseHeaders(session, { 'Content-Type': 'application/json' }),
+          body: JSON.stringify({ key })
+        });
+        if (!response.ok) throw new Error((await response.json()).error || 'No se pudo borrar el objeto de R2.');
+      } catch (e) {
+        console.error('Error borrando archivo de R2', e);
       }
     }
 
@@ -1847,19 +1615,33 @@ export default function NaylaCore() {
     }, 3000);
   };
 
-  const processVideo = async (motorElegido: 'nube' | 'local') => {
-    if (!videoFile) return showAlert('Por favor, sube un video primero.');
+  const processVideo = async () => {
+    const videoUrl = visualActivo?.tipo === 'video' ? visualActivo.url : mediaActivaUrl;
+    if (!videoUrl) return showAlert('Selecciona un video de la Bóveda primero.');
     if (rects.length === 0) return showAlert('Dibuja al menos un recuadro sobre la marca de agua.');
+    const currentSession = session || await getFirebaseSession();
+    if (!currentSession) return showAlert('Debes iniciar sesión para procesar el video.');
+
     setIsProcessing(true);
     try {
-      const formData = new FormData();
-      formData.append('video', videoFile); formData.append('coordenadas', JSON.stringify(rects)); formData.append('motor', motorElegido);
-      const res = await fetch('/api/clean-video', { method: 'POST', body: formData });
+      const res = await fetch('/api/clean-video', {
+        method: 'POST',
+        headers: firebaseHeaders(currentSession, { 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ videoUrl, coordenadas: rects })
+      });
       const data = await res.json();
-      if (res.ok && data.success) { setVideoResultadoUrl(data.url); setRects([]); showAlert(`Supresión completada: ${motorElegido.toUpperCase()}`); }
-      else throw new Error(data.error || 'Fallo en el servidor');
-    } catch (err: any) { showAlert('Error: ' + err.message); }
-    finally { setIsProcessing(false); }
+      if (res.ok && data.success) {
+        setVideoResultadoUrl(data.url);
+        setRects([]);
+        showAlert('Supresión enviada al motor de nube.');
+      } else {
+        throw new Error(data.error || 'Fallo en el servidor');
+      }
+    } catch (err: any) {
+      showAlert('Error: ' + err.message);
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
@@ -1948,83 +1730,7 @@ if (!session) {
   return (
     <div className={`editor-shell h-full min-h-screen w-full flex flex-col overflow-x-hidden select-none ${darkMode ? 'bg-black text-gray-200' : 'bg-white text-gray-800'}`} style={{ fontFamily: 'system-ui, sans-serif' }}>
 
-  <RenderQueuePanel
-    jobs={activeRenderJobs}
-    visible={isRenderQueueVisible}
-    onOpen={() => setIsRenderQueueVisible(true)}
-    onClose={() => setIsRenderQueueVisible(false)}
-    onCancel={cancelRenderJob}
-    onRemove={removeRenderJob}
-  />
 
-      {/* Modal para Consola Visual */}
-      {isProcessing && (
-        <div style={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          backgroundColor: 'rgba(0, 0, 0, 0.8)',
-          zIndex: 9999,
-          display: 'flex',
-          justifyContent: 'center',
-          alignItems: 'center',
-          padding: '20px'
-        }}>
-          <div style={{
-            backgroundColor: '#0a0a0a',
-            border: '1px solid #333',
-            borderRadius: '12px',
-            width: '100%',
-            maxWidth: '600px',
-            maxHeight: '80vh',
-            display: 'flex',
-            flexDirection: 'column',
-            boxShadow: '0 0 20px rgba(0,0,0,0.5)',
-            overflow: 'hidden'
-          }}>
-            <div style={{
-              backgroundColor: '#1a1a1a',
-              padding: '10px 15px',
-              borderBottom: '1px solid #333',
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center'
-            }}>
-              <span style={{ color: '#fff', fontSize: '0.8rem', fontWeight: 'bold', fontFamily: 'monospace' }}>
-                Terminal Remotion Render
-              </span>
-              <div style={{ display: 'flex', gap: '5px' }}>
-                <div style={{ width: '10px', height: '10px', borderRadius: '50%', backgroundColor: '#ff5f56' }}></div>
-                <div style={{ width: '10px', height: '10px', borderRadius: '50%', backgroundColor: '#ffbd2e' }}></div>
-                <div style={{ width: '10px', height: '10px', borderRadius: '50%', backgroundColor: '#27c93f' }}></div>
-              </div>
-            </div>
-
-            <div style={{
-              flex: 1,
-              padding: '15px',
-              overflowY: 'auto',
-              fontFamily: 'monospace',
-              fontSize: '0.75rem',
-              color: '#00ffcc',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: '4px'
-            }}>
-              {renderLogs.length === 0 ? (
-                <div style={{ color: '#888' }}>Esperando logs del servidor...</div>
-              ) : (
-                renderLogs.map((log, index) => (
-                  <div key={index} style={{ wordBreak: 'break-all' }}>{log}</div>
-                ))
-              )}
-              <div ref={logsEndRef} />
-            </div>
-          </div>
-        </div>
-      )}
 
       <Head><title>NAYLA CORE</title></Head>
       <style>{editorGlobalStyles}</style>
@@ -2336,35 +2042,6 @@ if (!session) {
               <div style={{ flex: 1, overflowY: 'auto', padding: '12px' }}>
                 {toolMessage ? (
                   <div style={{ textAlign: 'center', padding: '2rem', color: '#a3a3a3', fontSize: '0.9rem', letterSpacing: '1px' }}>{toolMessage}</div>
-                ) : mainNav === 'nube' ? (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <p style={{ fontSize: '0.75rem', color: '#fff', fontWeight: 'bold', margin: 0 }}>EXPLORADOR DE STORAGE</p>
-                      <button className="neon-btn nav-btn" onClick={fetchStorageFiles} style={{ padding: '4px 8px', fontSize: '0.65rem' }}>
-                        {isLoadingStorage ? '...' : 'Actualizar'}
-                      </button>
-                    </div>
-                    {isLoadingStorage ? (
-                      <div style={{ textAlign: 'center', padding: '1rem', color: '#737373', fontSize: '0.8rem' }}>Cargando archivos...</div>
-                    ) : storageFiles.length === 0 ? (
-                      <div style={{ textAlign: 'center', padding: '1rem', color: '#737373', fontSize: '0.8rem' }}>No hay archivos en la bodega.</div>
-                    ) : (
-                      storageFiles.map((file, i) => {
-                        if (file.id === null && !file.name.includes('.')) return null;
-                        if (file.name === '.emptyFolderPlaceholder') return null;
-                        return (
-                          <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#111', border: '1px solid #222', padding: '8px 10px', borderRadius: '8px' }}>
-                            <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
-                              <p style={{ fontSize: '0.75rem', color: '#fff', margin: 0, fontWeight: '500', overflow: 'hidden', textOverflow: 'ellipsis' }}>{file.name}</p>
-                            </div>
-                            <button onClick={() => deleteStorageFile(file.name)} style={{ background: 'none', border: 'none', color: '#ff4444', cursor: 'pointer', padding: '4px' }}>
-                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
-                            </button>
-                          </div>
-                        );
-                      })
-                    )}
-                  </div>
                 ) : subTool && ['cristal', 'marco', 'delogo', 'script', 'supervisor', 'render', 'tema', 'vista'].includes(subTool) ? (
                   <div>
                     {subTool === 'cristal' && (
@@ -2570,11 +2247,10 @@ if (!session) {
                     {subTool === 'delogo' && (
                       <div>
                         <p style={{ fontSize: '0.75rem', color: '#fff', fontWeight: 'bold', marginBottom: '1rem' }}>SUPRESIÓN DE MARCA DE AGUA (DELOGO)</p>
-                        <p style={{ fontSize: '0.7rem', color: '#a3a3a3', marginBottom: '1rem' }}>1. Selecciona un video.<br />2. Dibuja un rectángulo blanco sobre el logo.<br />3. Elige el motor.</p>
-                        <div style={{ display: 'flex', gap: '8px' }}>
-                          <button onClick={() => processVideo('local')} disabled={isProcessing} className="neon-btn nav-btn" style={{ flex: 1 }}>LOCAL</button>
-                          <button onClick={() => processVideo('nube')} disabled={isProcessing} className="neon-btn nav-btn" style={{ flex: 1 }}>NUBE</button>
-                        </div>
+                        <p style={{ fontSize: '0.7rem', color: '#a3a3a3', marginBottom: '1rem' }}>1. Selecciona un video de la Bóveda (R2).<br />2. Dibuja un rectángulo blanco sobre el logo.<br />3. Procesa en la nube.</p>
+                        <button onClick={processVideo} disabled={isProcessing} className="neon-btn nav-btn" style={{ width: '100%' }}>
+                          {isProcessing ? 'PROCESANDO...' : 'PROCESAR EN NUBE'}
+                        </button>
                       </div>
                     )}
                     {subTool === 'script' && (
