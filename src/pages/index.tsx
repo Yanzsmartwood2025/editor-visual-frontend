@@ -221,6 +221,7 @@ export default function NaylaCore() {
     return () => window.removeEventListener('pointerup', handleUp);
   }, []);
   const containerRef = useRef<HTMLDivElement>(null);
+  const previewFullscreenRef = useRef<HTMLDivElement>(null);
   const playerRef = useRef<HTMLVideoElement>(null);
   const timelineRef = useRef<HTMLDivElement>(null);
   const mainToolsCarouselRef = useRef<HTMLDivElement>(null);
@@ -393,18 +394,63 @@ export default function NaylaCore() {
     });
   };
 
+  const setPreviewFullscreen = async (next: boolean) => {
+    setIsCleanMode(next);
+    setIsSubPanelOpen(false);
+    setExpandedSurface(null);
+    setIsAiModalOpen(false);
+
+    if (typeof document === 'undefined') return;
+
+    try {
+      if (next) {
+        const element = previewFullscreenRef.current;
+        if (element && !document.fullscreenElement && element.requestFullscreen) {
+          await element.requestFullscreen({ navigationUI: 'hide' });
+        }
+      } else if (document.fullscreenElement && document.exitFullscreen) {
+        await document.exitFullscreen();
+      }
+    } catch (error) {
+      // Fullscreen API can be denied by some mobile browsers. The fixed-position
+      // clean mode below remains the visual fallback and still fills the viewport.
+      console.warn('Fullscreen API no disponible; usando modo pantalla completa CSS.', error);
+    }
+  };
+
+  const togglePreviewFullscreen = () => {
+    void setPreviewFullscreen(!isCleanMode);
+  };
+
   const handleVideoSurfaceTap = (e: React.PointerEvent<HTMLElement>) => {
     e.stopPropagation();
-    if (!isPhoneViewport || subTool === 'delogo') return;
+    resetPlaybackControlsTimer();
+    const target = e.target as HTMLElement | null;
+    if (target?.closest('button, input, textarea, select, a')) return;
+    if (subTool === 'delogo') return;
+
+    // Mouse/trackpad uses onDoubleClick. Touch/pen gets an explicit double-tap
+    // detector because mobile browsers do not consistently dispatch dblclick.
+    if (e.pointerType === 'mouse') return;
 
     const now = Date.now();
-    if (now - lastVideoSurfaceTapRef.current <= 320) {
-      setMobileOverlaysVisible(prev => !prev);
+    if (now - lastVideoSurfaceTapRef.current <= 340) {
       lastVideoSurfaceTapRef.current = 0;
+      togglePreviewFullscreen();
       return;
     }
     lastVideoSurfaceTapRef.current = now;
   };
+
+  useEffect(() => {
+    const syncFullscreenState = () => {
+      if (!document.fullscreenElement && isCleanMode) {
+        setIsCleanMode(false);
+      }
+    };
+    document.addEventListener('fullscreenchange', syncFullscreenState);
+    return () => document.removeEventListener('fullscreenchange', syncFullscreenState);
+  }, [isCleanMode]);
 
   const handleMainCarouselToolPress = (tool: any) => {
     if (isPhoneViewport && centeredMainToolId !== tool.id) {
@@ -1736,9 +1782,9 @@ if (!session) {
       <style>{editorGlobalStyles}</style>
 
       <header style={{
+        display: isCleanMode ? 'none' : 'flex',
         borderBottom: '1px solid rgba(var(--glow-color-rgb), calc(var(--glow-intensity) * 0.35))',
         padding: '0.5rem 0.75rem',
-        display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-between',
         backgroundColor: 'var(--glass-bg)',
@@ -1913,7 +1959,10 @@ if (!session) {
       </header>
 
       {/* CONTENEDOR PRINCIPAL DEL EDITOR */}
-      <div className="flex-1 flex flex-col min-h-0 w-full relative overflow-hidden bg-black text-gray-200">
+      <div
+        className="flex-1 flex flex-col min-h-0 w-full relative overflow-hidden bg-black text-gray-200"
+        style={isCleanMode ? { minHeight: '100dvh', height: '100dvh' } : undefined}
+      >
 
         {/* SECCIÓN SUPERIOR: BARRA IZQUIERDA + PANEL FLOTANTE + PREVIEW DE VIDEO */}
         <div className="flex-1 min-h-0 flex w-full relative overflow-hidden">
@@ -2347,25 +2396,28 @@ if (!session) {
 
           {/* 3. VISOR DE VIDEO PRINCIPAL (OCUPA TODO EL ESPACIO RESTANTE PEUADO A LOS ICONOS) */}
           <div
+            ref={previewFullscreenRef}
             onPointerMove={resetPlaybackControlsTimer}
-            onPointerUp={(e) => {
-              resetPlaybackControlsTimer();
-            }}
+            onPointerUp={handleVideoSurfaceTap}
             onDoubleClick={(e) => {
               e.stopPropagation();
-              setIsCleanMode(prev => !prev);
+              if (subTool !== 'delogo') togglePreviewFullscreen();
             }}
             data-testid="video-preview-container"
             style={{
-              flex: 1,
-              height: '100%',
-              position: 'relative',
+              flex: isCleanMode ? 'none' : 1,
+              width: isCleanMode ? '100dvw' : undefined,
+              height: isCleanMode ? '100dvh' : '100%',
+              position: isCleanMode ? 'fixed' : 'relative',
+              inset: isCleanMode ? 0 : undefined,
+              zIndex: isCleanMode ? 100000 : undefined,
               backgroundColor: '#000',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
               overflow: 'hidden',
-              cursor: 'pointer'
+              cursor: 'pointer',
+              touchAction: 'manipulation'
             }}
           >
             {!isCleanMode && (
@@ -2438,7 +2490,7 @@ if (!session) {
                       key={visualActivo.url}
                       src={visualActivo.url}
                       alt={visualActivo.nombre || 'Imagen activa'}
-                      style={{ width: '100%', height: '100%', objectFit: 'contain', backgroundColor: '#000' }}
+                      style={{ width: '100%', height: '100%', objectFit: 'contain', backgroundColor: '#000', maxWidth: '100dvw', maxHeight: '100dvh' }}
                       onLoad={(e) => {
                         const image = e.currentTarget;
                         if (image.naturalWidth && image.naturalHeight) {
@@ -2455,7 +2507,7 @@ if (!session) {
                     <video
                       key={videoResultadoUrl || visualActivo?.url || mediaActivaUrl || 'video-preview'}
                       src={videoResultadoUrl || visualActivo?.url || mediaActivaUrl || ''}
-                      style={{ width: '100%', height: '100%', objectFit: 'contain', backgroundColor: '#000' }}
+                      style={{ width: '100%', height: '100%', objectFit: 'contain', backgroundColor: '#000', maxWidth: '100dvw', maxHeight: '100dvh' }}
                       controls={false}
                       playsInline
                       muted={false}
@@ -2487,12 +2539,12 @@ if (!session) {
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', height: '100%', justifyContent: 'center', alignItems: 'center', gap: '12px' }}>
                   <img src="/assets/imagenes/Icono-intro.jpeg" alt="NAYLA" style={{ width: '80px', height: '80px', borderRadius: '16px', opacity: 0.4, filter: 'grayscale(100%)' }} />
-                  <span style={{ fontSize: '0.8rem', color: '#555', letterSpacing: '1px' }}>NAYLA EDITOR</span>
                 </div>
               )}
             </div>
 
             {/* REPRODUCTOR FLOTANTE AUTO-OCULTABLE (5 SEGUNDOS) */}
+            {!isCleanMode && (
             <div
               onClick={(e) => e.stopPropagation()}
               style={{
@@ -2524,16 +2576,17 @@ if (!session) {
               </div>
               <span style={{ color: '#888', fontSize: '0.65rem', fontFamily: 'monospace' }}>00:00:00</span>
             </div>
+            )}
           </div>
         </div>
 
         {/* SECCIÓN INFERIOR: LÍNEA DE TIEMPO Y TRACKS */}
         <div style={{
+          display: isCleanMode ? 'none' : 'flex',
           height: '76px',
           flexShrink: 0,
           backgroundColor: '#050505',
           borderTop: '1px solid #1a1a1a',
-          display: 'flex',
           flexDirection: 'column',
           justifyContent: 'center',
           position: 'relative',
