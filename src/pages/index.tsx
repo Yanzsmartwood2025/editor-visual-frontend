@@ -7,7 +7,9 @@ import { arrayMove, SortableContext, horizontalListSortingStrategy } from '@dnd-
 import { SortableTimelineItem } from '../components/SortableTimelineItem';
 import { getVideoMetadata, getAudioDurationInSeconds } from '@remotion/media-utils';
 import { createClient } from '@supabase/supabase-js';
-import { uploadMediaFilesToBodega } from '../lib/mediaUpload';
+import { createMediaId, uploadMediaFilesToBodega } from '../lib/mediaUpload';
+import { buildMediaMetadata, getAspectRatioLabel, getCanvasDimensionsFromRatio, probeMediaUrl, type MediaMetadata } from '../lib/mediaMetadata';
+import { getCompositionDurationInFrames } from '../lib/timelineMetrics';
 import { getFirebaseSession, observeFirebaseSession, signOutFirebase, signInWithCustomTokenValue, type FirebaseSession } from '../lib/firebaseClient';
 import { firebaseHeaders } from '../lib/apiClient';
 
@@ -20,8 +22,8 @@ if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_A
 const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 type Rect = { id: string; x: number; y: number; width: number; height: number };
-type MediaItem = { id: string; url: string; tipo: 'foto' | 'video' | 'audio'; nombre: string; creado_en: string; esOverlay: boolean; etiqueta: string; fuente?: string };
-type TimelineItem = { id: string; mediaId: string; tipo: 'foto' | 'video' | 'audio'; nombre: string; etiqueta: string; url: string; durationInSeconds?: number; originalDurationInSeconds?: number; volume?: number; fadeIn?: number; fadeOut?: number; scale?: number; delay?: number; startFrom?: number; trimBefore?: number; trimAfter?: number; loop?: boolean; playbackRate?: number; transitionDuration?: number; transitionType?: 'fade' | 'none' | 'wipe' | 'slide' | 'zoom'; efecto?: string; overlay?: string; overlayIntensity?: number; };
+type MediaItem = { id: string; url: string; tipo: 'foto' | 'video' | 'audio'; nombre: string; creado_en: string; esOverlay: boolean; etiqueta: string; fuente?: string; metadata?: MediaMetadata };
+type TimelineItem = { id: string; mediaId: string; tipo: 'foto' | 'video' | 'audio'; nombre: string; etiqueta: string; url: string; durationInSeconds?: number; originalDurationInSeconds?: number; volume?: number; fadeIn?: number; fadeOut?: number; scale?: number; delay?: number; startFrom?: number; trimBefore?: number; trimAfter?: number; loop?: boolean; playbackRate?: number; transitionDuration?: number; transitionType?: 'fade' | 'none' | 'wipe' | 'slide' | 'zoom'; efecto?: string; overlay?: string; overlayIntensity?: number; metadata?: MediaMetadata; };
 type SubtitleItem = { id: string; texto: string; inicioSec: number; finSec: number; };
 type LogoItem = { id: string; url: string; x: number; y: number; scale: number; opacity: number; inicioSec?: number; finSec?: number; fadeIn?: number; fadeOut?: number; };
 type ExpandedSurface = 'tools' | 'chat' | null;
@@ -295,7 +297,7 @@ export default function NaylaCore() {
   const [logos, setLogos] = useState<LogoItem[]>([]);
   const [globalSettings, setGlobalSettings] = useState<{ fadeOutFinal?: number }>({});
   const [clipSeleccionado, setClipSeleccionado] = useState<string | null>(null);
-  const [canvasRatio, setCanvasRatio] = useState<'9/16' | '16/9' | '1/1' | '4/5'>('9/16');
+  const [canvasRatio, setCanvasRatio] = useState<string>('9/16');
   const [calidadExportacion, setCalidadExportacion] = useState('1080p');
   const [isDownloadMenuOpen, setIsDownloadMenuOpen] = useState(false);
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
@@ -323,6 +325,24 @@ export default function NaylaCore() {
   const pistaVideo = lineaDeTiempo.filter(t => t.tipo === 'video' || t.tipo === 'foto');
   const pistaAudio = lineaDeTiempo.filter(t => t.tipo === 'audio');
   const hayClips = pistaVideo.length > 0;
+
+  const visualActivo =
+    lineaDeTiempo.find(item => item.id === clipSeleccionado && (item.tipo === 'video' || item.tipo === 'foto')) ||
+    galeriaMultimedia.find(item => item.id === clipSeleccionado && (item.tipo === 'video' || item.tipo === 'foto')) ||
+    lineaDeTiempo.find(item => item.url === mediaActivaUrl && (item.tipo === 'video' || item.tipo === 'foto')) ||
+    galeriaMultimedia.find(item => item.url === mediaActivaUrl && (item.tipo === 'video' || item.tipo === 'foto')) ||
+    pistaVideo[0] ||
+    null;
+
+  const adoptarFormatoVisual = (metadata?: MediaMetadata) => {
+    if (metadata?.aspectRatioLabel) {
+      setCanvasRatio(metadata.aspectRatioLabel);
+      if (metadata.width && metadata.height) {
+        setVideoMetadata({ width: metadata.width, height: metadata.height });
+        setSourceVideoRatio(metadata.width / metadata.height);
+      }
+    }
+  };
 
   const resetPlaybackControlsTimer = () => {
     setShowPlaybackControls(true);
@@ -421,7 +441,7 @@ export default function NaylaCore() {
 
                     const renderCount = prev.filter(item => item.etiqueta.startsWith('R')).length + 1;
                     const renderItem: MediaItem = {
-                      id: `render-${Date.now()}-${Math.random().toString(36).substring(7)}`,
+                      id: createMediaId(),
                       url: statusData.url,
                       tipo: 'video',
                       nombre: `Render ${renderCount}`,
@@ -726,39 +746,115 @@ export default function NaylaCore() {
   const phoneVideoObjectFit = isPortraitSourceVideo && deviceOrientation === 'portrait' ? 'cover' : 'contain';
 
   const validarTimelineParaRender = async (timeline: TimelineItem[]) => {
-    const lineaValidada = [...timeline];
-    for (let i = 0; i < lineaValidada.length; i++) {
-      const item = lineaValidada[i];
-      if (item.tipo === 'audio' && item.durationInSeconds === undefined) {
-        const duration = await getAudioDurationInSeconds(item.url);
-        lineaValidada[i] = { ...item, durationInSeconds: duration, originalDurationInSeconds: item.originalDurationInSeconds || duration };
-      } else if (item.tipo === 'video' && item.durationInSeconds === undefined) {
-        const metadata = await getVideoMetadata(item.url);
-        lineaValidada[i] = { ...item, durationInSeconds: metadata.durationInSeconds, originalDurationInSeconds: item.originalDurationInSeconds || metadata.durationInSeconds };
-      } else if (item.tipo === 'foto' && item.durationInSeconds === undefined) {
-        lineaValidada[i] = { ...item, durationInSeconds: 5, originalDurationInSeconds: item.originalDurationInSeconds || 5 };
+    const lineaValidada: TimelineItem[] = [];
+
+    for (const item of timeline) {
+      let metadata: MediaMetadata = { ...(item.metadata || {}) };
+
+      const needsProbe =
+        (item.tipo === 'video' && (!metadata.width || !metadata.height || !metadata.durationInSeconds)) ||
+        (item.tipo === 'foto' && (!metadata.width || !metadata.height)) ||
+        (item.tipo === 'audio' && !metadata.durationInSeconds);
+
+      if (needsProbe) {
+        try {
+          metadata = { ...metadata, ...(await probeMediaUrl(item.url, item.tipo)) };
+        } catch (error) {
+          console.warn('No se pudo detectar toda la metadata de', item.url, error);
+        }
       }
+
+      let durationInSeconds = item.durationInSeconds ?? metadata.durationInSeconds;
+
+      if (durationInSeconds === undefined && item.tipo === 'audio') {
+        durationInSeconds = await getAudioDurationInSeconds(item.url);
+      } else if (durationInSeconds === undefined && item.tipo === 'video') {
+        const remotionMetadata = await getVideoMetadata(item.url);
+        durationInSeconds = remotionMetadata.durationInSeconds;
+      } else if (durationInSeconds === undefined && item.tipo === 'foto') {
+        durationInSeconds = 5;
+      }
+
+      if ((item.tipo === 'video' || item.tipo === 'audio') && (!durationInSeconds || durationInSeconds <= 0)) {
+        throw new Error(`No se pudo determinar la duración de ${item.nombre || item.etiqueta}.`);
+      }
+
+      if (durationInSeconds) {
+        metadata.durationInSeconds = metadata.durationInSeconds || durationInSeconds;
+      }
+
+      lineaValidada.push({
+        ...item,
+        metadata,
+        durationInSeconds,
+        originalDurationInSeconds: item.originalDurationInSeconds || durationInSeconds
+      });
     }
+
     return lineaValidada;
   };
 
-  const solicitarRenderTimeline = async (timeline: TimelineItem[]) => {
+  const solicitarRenderTimeline = async (timeline: TimelineItem[], qualityOverride?: string) => {
+    const currentSession = session || await getFirebaseSession();
+    if (!currentSession) throw new Error('Debes iniciar sesión para renderizar.');
+
     const lineaValidada = await validarTimelineParaRender(timeline);
+    const exportQuality = qualityOverride || calidadExportacion;
+    const canvas = getCanvasDimensionsFromRatio(canvasRatio, exportQuality);
+    const durationInFrames = getCompositionDurationInFrames(lineaValidada, 30, subtitulos, logos);
+
     const inputProps = {
       timeline: lineaValidada,
       subtitles: subtitulos,
       logos: logos,
       canvasRatio,
+      canvasWidth: canvas.width,
+      canvasHeight: canvas.height,
+      exportQuality,
       settings: globalSettings
     };
 
     const res = await fetch('/api/render', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: firebaseHeaders(currentSession, { 'Content-Type': 'application/json' }),
       body: JSON.stringify({ inputProps })
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Error al solicitar renderizado');
+
+    if (data.status === 'completed' && data.output?.url) {
+      const outputUrl = data.output.url as string;
+      setVideoResultadoUrl(outputUrl);
+
+      const renderCount = galeriaMultimedia.filter(item => item.fuente === 'render').length + 1;
+      const renderItem: MediaItem = {
+        id: createMediaId(),
+        url: outputUrl,
+        tipo: 'video',
+        nombre: `Render ${renderCount}`,
+        creado_en: new Date().toISOString(),
+        esOverlay: false,
+        etiqueta: `R${renderCount}`,
+        fuente: 'render',
+        metadata: buildMediaMetadata(canvas.width, canvas.height, durationInFrames / 30)
+      };
+
+      setGaleriaMultimedia(prev => prev.some(item => item.url === outputUrl) ? prev : [...prev, renderItem]);
+
+      const galleryResponse = await fetch('/api/galeria', {
+        method: 'POST',
+        headers: firebaseHeaders(currentSession, { 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ items: [renderItem] })
+      });
+
+      if (!galleryResponse.ok) {
+        const payload = await galleryResponse.json().catch(() => ({}));
+        console.warn('El render terminó, pero no se pudo registrar en la Bóveda:', payload);
+      }
+
+      showAlert(`Render completado: ${canvas.width}×${canvas.height} (${canvasRatio}).`);
+      return data;
+    }
 
     if (data.jobId) {
       const newJob = { jobId: data.jobId, status: 'queued', url: null, error: null, logs: ['Job añadido a la cola desde Nayla...'] };
@@ -795,6 +891,7 @@ export default function NaylaCore() {
         url,
         durationInSeconds: tipo === 'foto' ? 5 : mediaExistente?.durationInSeconds,
         originalDurationInSeconds: tipo === 'foto' ? 5 : mediaExistente?.originalDurationInSeconds,
+        metadata: mediaExistente?.metadata,
         ...(typeof asset.efecto === 'string' ? { efecto: asset.efecto } : {}),
         ...(typeof asset.transitionType === 'string' ? { transitionType: asset.transitionType } : {}),
         ...(Number.isFinite(Number(asset.transitionDuration)) ? { transitionDuration: Number(asset.transitionDuration) } : {}),
@@ -845,7 +942,8 @@ export default function NaylaCore() {
              url: item.url,
              nombre: item.nombre,
              etiqueta: item.etiqueta,
-             fuente: item.fuente
+             fuente: item.fuente,
+             metadata: item.metadata
            })),
            currentTimeline: lineaDeTiempo.map(item => ({
              id: item.id,
@@ -1071,25 +1169,6 @@ export default function NaylaCore() {
 
 
 
-  useEffect(() => {
-    const handleResize = () => {
-      // In mobile/tablet landscape (width > height and width < 1024), we expand the aspect ratio
-      if (window.innerWidth <= 1024 && window.innerWidth > window.innerHeight) {
-        setCanvasRatio('16/9');
-      } else {
-        setCanvasRatio('9/16');
-      }
-    };
-
-    window.addEventListener('resize', handleResize);
-    window.addEventListener('orientationchange', handleResize);
-    handleResize(); // Initial check
-
-    return () => {
-      window.removeEventListener('resize', handleResize);
-      window.removeEventListener('orientationchange', handleResize);
-    };
-  }, []);
 
 
   const fetchStorageFiles = async () => {
@@ -1155,7 +1234,9 @@ export default function NaylaCore() {
           nombre: item.nombre,
           creado_en: item.creado_en,
           esOverlay: item.esOverlay,
-          etiqueta: item.etiqueta
+          etiqueta: item.etiqueta,
+          fuente: item.fuente,
+          metadata: item.metadata || {}
         }));
         setGaleriaMultimedia(galeria);
       }
@@ -1189,6 +1270,9 @@ export default function NaylaCore() {
         if (clipsVisuales.length > 0 && !mediaActivaUrl) {
           setMediaActivaUrl(clipsVisuales[0].url);
           setClipSeleccionado(clipsVisuales[0].id);
+          const persistedMetadata = clipsVisuales[0].metadata ||
+            galeriaMultimedia.find(item => item.url === clipsVisuales[0].url)?.metadata;
+          adoptarFormatoVisual(persistedMetadata);
         }
       }
     } catch (err) {
@@ -1203,10 +1287,7 @@ export default function NaylaCore() {
         const canvas = document.createElement('canvas');
         const ctx = canvas.getContext('2d');
         if (!ctx) return resolve(imagenUrl);
-        let targetW = 1080, targetH = 1920;
-        if (canvasRatio === '16/9') { targetW = 1920; targetH = 1080; }
-        if (canvasRatio === '1/1') { targetW = 1080; targetH = 1080; }
-        if (canvasRatio === '4/5') { targetW = 1080; targetH = 1350; }
+        const { width: targetW, height: targetH } = getCanvasDimensionsFromRatio(canvasRatio, '1080p');
         canvas.width = targetW; canvas.height = targetH;
         ctx.fillStyle = config.color;
         ctx.fillRect(0, 0, targetW, targetH);
@@ -1276,11 +1357,17 @@ export default function NaylaCore() {
 
       setGaleriaMultimedia(prev => [...prev, ...nuevosItems]);
 
-      if (tipo === 'video' && !mediaActivaUrl) {
-        setVideoFile(files[0]);
-        setMediaActivaUrl(nuevosItems[0].url);
-        setClipSeleccionado(nuevosItems[0].id); // Marcar como seleccionado
+      const primerVisualIndex = nuevosItems.findIndex(item => item.tipo === 'video' || item.tipo === 'foto');
+      const primerVisual = primerVisualIndex >= 0 ? nuevosItems[primerVisualIndex] : null;
+
+      if (primerVisual && pistaVideo.length === 0 && !mediaActivaUrl) {
+        if (primerVisual.tipo === 'video') {
+          setVideoFile(files[primerVisualIndex] || files[0]);
+        }
+        setMediaActivaUrl(primerVisual.url);
+        setClipSeleccionado(primerVisual.id);
         setVideoResultadoUrl(null);
+        adoptarFormatoVisual(primerVisual.metadata);
       }
     } catch (err: any) {
       console.error('Error procesando subida:', err);
@@ -1385,17 +1472,26 @@ export default function NaylaCore() {
   };
 
   const agregarAlTimeline = async (item: MediaItem) => {
-    let durationInSeconds: number | undefined = undefined;
-    if (item.tipo === 'audio') {
+    let metadata: MediaMetadata = { ...(item.metadata || {}) };
+
+    try {
+      const probed = await probeMediaUrl(item.url, item.tipo);
+      metadata = { ...metadata, ...probed };
+    } catch (error) {
+      console.warn('Could not load complete media metadata for', item.url, error);
+    }
+
+    let durationInSeconds = metadata.durationInSeconds;
+    if (item.tipo === 'audio' && durationInSeconds === undefined) {
       try {
         durationInSeconds = await getAudioDurationInSeconds(item.url);
       } catch (e) {
         console.warn('Could not load audio duration for', item.url);
       }
-    } else if (item.tipo === 'video') {
+    } else if (item.tipo === 'video' && durationInSeconds === undefined) {
       try {
-        const metadata = await getVideoMetadata(item.url);
-        durationInSeconds = metadata.durationInSeconds;
+        const remotionMetadata = await getVideoMetadata(item.url);
+        durationInSeconds = remotionMetadata.durationInSeconds;
       } catch (e) {
         console.warn('Could not load metadata for', item.url);
       }
@@ -1403,7 +1499,19 @@ export default function NaylaCore() {
       durationInSeconds = 5;
     }
 
-    const nuevo: TimelineItem = { id: Date.now().toString(), mediaId: item.id, tipo: item.tipo, nombre: item.nombre, etiqueta: item.etiqueta, url: item.url, durationInSeconds, originalDurationInSeconds: durationInSeconds };
+    if (durationInSeconds) metadata.durationInSeconds = metadata.durationInSeconds || durationInSeconds;
+
+    const nuevo: TimelineItem = {
+      id: createMediaId(),
+      mediaId: item.id,
+      tipo: item.tipo,
+      nombre: item.nombre,
+      etiqueta: item.etiqueta,
+      url: item.url,
+      durationInSeconds,
+      originalDurationInSeconds: durationInSeconds,
+      metadata
+    };
     const nuevaLinea = [...lineaDeTiempo, nuevo];
     setLineaDeTiempo(nuevaLinea);
 
@@ -1411,6 +1519,10 @@ export default function NaylaCore() {
     setMediaActivaUrl(nuevo.url);
     setVideoResultadoUrl(null);
     setRects([]);
+
+    if ((nuevo.tipo === 'foto' || nuevo.tipo === 'video') && pistaVideo.length === 0) {
+      adoptarFormatoVisual(metadata);
+    }
 
     sincronizarLineaDeTiempo(nuevaLinea);
   };
@@ -1519,22 +1631,30 @@ export default function NaylaCore() {
         // fallback a video
       }
 
+      let mediaMetadata: MediaMetadata = {};
       let durationInSeconds: number | undefined = undefined;
       try {
-        if (resolvedTipo === 'audio') {
-          durationInSeconds = await getAudioDurationInSeconds(finalMediaUrl);
-        } else if (resolvedTipo === 'video') {
-          const metadata = await getVideoMetadata(finalMediaUrl);
-          durationInSeconds = metadata.durationInSeconds;
-        } else if (resolvedTipo === 'foto') {
-          durationInSeconds = 5;
-        }
+        mediaMetadata = await probeMediaUrl(finalMediaUrl, resolvedTipo);
+        durationInSeconds = resolvedTipo === 'foto' ? 5 : mediaMetadata.durationInSeconds;
+        if (durationInSeconds) mediaMetadata.durationInSeconds = mediaMetadata.durationInSeconds || durationInSeconds;
       } catch (e) {
-        console.warn('No se pudo cargar la metadata para', finalMediaUrl);
+        console.warn('No se pudo cargar la metadata completa para', finalMediaUrl);
+        try {
+          if (resolvedTipo === 'audio') {
+            durationInSeconds = await getAudioDurationInSeconds(finalMediaUrl);
+          } else if (resolvedTipo === 'video') {
+            const remotionMetadata = await getVideoMetadata(finalMediaUrl);
+            durationInSeconds = remotionMetadata.durationInSeconds;
+          } else if (resolvedTipo === 'foto') {
+            durationInSeconds = 5;
+          }
+        } catch (fallbackError) {
+          console.warn('Tampoco se pudo determinar la duración para', finalMediaUrl, fallbackError);
+        }
       }
 
-      // Calcular id base
-      const id = Date.now().toString() + index + Math.random().toString().slice(2, 6);
+      // La tabla usa UUID; el ID debe ser compatible con Supabase.
+      const id = createMediaId();
 
       // Para resolver el race condition en el que `galeriaMultimedia` está obsoleto
       // cuando se añaden varios enlaces o después de un limpiar(), no podemos depender
@@ -1565,7 +1685,8 @@ export default function NaylaCore() {
         nombre: nombreBase,
         creado_en: new Date().toLocaleTimeString(),
         esOverlay: false,
-        etiqueta: etiquetaBase
+        etiqueta: etiquetaBase,
+        metadata: mediaMetadata
       };
 
       const esPrimerVideo = galeriaMultimedia.length === 0 || !galeriaMultimedia.find(i => i.tipo === 'video');
@@ -1577,10 +1698,11 @@ export default function NaylaCore() {
          return [...prev, nuevoItem];
       });
 
-      if (esPrimerVideo && index === 0) {
+      if (esPrimerVideo && index === 0 && (nuevoItem.tipo === 'video' || nuevoItem.tipo === 'foto')) {
          setMediaActivaUrl(nuevoItem.url);
          setClipSeleccionado(nuevoItem.id);
          setVideoResultadoUrl(null);
+         adoptarFormatoVisual(nuevoItem.metadata);
       }
 
       if (session) {
@@ -1743,7 +1865,8 @@ export default function NaylaCore() {
                     etiqueta: item.etiqueta,
                     url: item.url,
                     durationInSeconds: (item as any).durationInSeconds !== undefined ? (item as any).durationInSeconds : (item.tipo === 'foto' ? 5 : undefined),
-                    originalDurationInSeconds: (item as any).originalDurationInSeconds !== undefined ? (item as any).originalDurationInSeconds : ((item as any).durationInSeconds !== undefined ? (item as any).durationInSeconds : (item.tipo === 'foto' ? 5 : undefined))
+                    originalDurationInSeconds: (item as any).originalDurationInSeconds !== undefined ? (item as any).originalDurationInSeconds : ((item as any).durationInSeconds !== undefined ? (item as any).durationInSeconds : (item.tipo === 'foto' ? 5 : undefined)),
+                    metadata: (item as any).metadata
                   });
                   agregados++;
                 }
@@ -2928,19 +3051,49 @@ if (!session) {
             {/* VIDEO O CANVAS PRINCIPAL */}
             <div ref={containerRef} onPointerDown={handlePointerDown} onPointerMove={handlePointerMove} onPointerUp={handlePointerUp} onPointerLeave={handlePointerUp}
               style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative' }}>
-              {(lineaDeTiempo.filter(t => t.tipo === 'video' || t.tipo === 'foto').length > 0 || videoResultadoUrl || mediaActivaUrl) ? (
+              {(visualActivo || videoResultadoUrl || mediaActivaUrl) ? (
                 <>
-                  <video
-                    key={lineaDeTiempo[0]?.url || mediaActivaUrl}
-                    src={lineaDeTiempo.filter(t => t.tipo === 'video').at(clipSeleccionado ? lineaDeTiempo.findIndex(t => t.id === clipSeleccionado) : 0)?.url || mediaActivaUrl || ''}
-                    style={{ width: '100%', height: '100%', objectFit: 'contain', backgroundColor: '#000' }}
-                    controls={false}
-                    playsInline
-                    muted={false}
-                    ref={playerRef as any}
-                    onEnded={handleVideoEnded}
-                    onLoadedMetadata={(e) => { const video = e.currentTarget; if (video.videoWidth && video.videoHeight) setSourceVideoRatio(video.videoWidth / video.videoHeight); }}
-                  />
+                  {visualActivo?.tipo === 'foto' && !videoResultadoUrl ? (
+                    <img
+                      key={visualActivo.url}
+                      src={visualActivo.url}
+                      alt={visualActivo.nombre || 'Imagen activa'}
+                      style={{ width: '100%', height: '100%', objectFit: 'contain', backgroundColor: '#000' }}
+                      onLoad={(e) => {
+                        const image = e.currentTarget;
+                        if (image.naturalWidth && image.naturalHeight) {
+                          const detected = buildMediaMetadata(image.naturalWidth, image.naturalHeight);
+                          setSourceVideoRatio(image.naturalWidth / image.naturalHeight);
+                          setVideoMetadata({ width: image.naturalWidth, height: image.naturalHeight });
+                          if (!visualActivo.metadata?.aspectRatioLabel && pistaVideo.length <= 1) {
+                            adoptarFormatoVisual(detected);
+                          }
+                        }
+                      }}
+                    />
+                  ) : (
+                    <video
+                      key={videoResultadoUrl || visualActivo?.url || mediaActivaUrl || 'video-preview'}
+                      src={videoResultadoUrl || visualActivo?.url || mediaActivaUrl || ''}
+                      style={{ width: '100%', height: '100%', objectFit: 'contain', backgroundColor: '#000' }}
+                      controls={false}
+                      playsInline
+                      muted={false}
+                      ref={playerRef as any}
+                      onEnded={handleVideoEnded}
+                      onLoadedMetadata={(e) => {
+                        const video = e.currentTarget;
+                        if (video.videoWidth && video.videoHeight) {
+                          const detected = buildMediaMetadata(video.videoWidth, video.videoHeight, Number.isFinite(video.duration) ? video.duration : undefined);
+                          setSourceVideoRatio(video.videoWidth / video.videoHeight);
+                          setVideoMetadata({ width: video.videoWidth, height: video.videoHeight });
+                          if (!visualActivo?.metadata?.aspectRatioLabel && pistaVideo.length <= 1 && !videoResultadoUrl) {
+                            adoptarFormatoVisual(detected);
+                          }
+                        }
+                      }}
+                    />
+                  )}
 
                   {!videoResultadoUrl && rects.map((r) => (
                     <div key={r.id} onPointerDown={(e) => { e.stopPropagation(); if (!containerRef.current) return; const c = containerRef.current.getBoundingClientRect(); setDraggingInfo({ id: r.id, offsetX: (e.clientX - c.left) - r.x, offsetY: (e.clientY - c.top) - r.y }); }}
