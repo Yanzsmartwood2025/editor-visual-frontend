@@ -58,7 +58,7 @@ export default function RemotionPreview() {
         </div>
 
         {/* Player Container */}
-        <div className="relative w-full" style={{ aspectRatio: '9/16' }}>
+        <div className="relative w-full" style={{ aspectRatio: `${width} / ${height}` }}>
             <Player
             component={MainComposition as any}
             inputProps={defaultProps}
