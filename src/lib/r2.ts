@@ -87,8 +87,8 @@ export const createR2PresignedPutUrl = ({
   }
 
   const config = r2Config();
-  const host = `${config.bucket}.${config.accountId}.r2.cloudflarestorage.com`;
-  const path = encodeObjectPath(key);
+  const host = `${config.accountId}.r2.cloudflarestorage.com`;
+  const path = encodeObjectPath(`${config.bucket}/${key}`);
   const amzDate = amzTimestamp(now);
   const dateStamp = amzDate.slice(0, 8);
   const scope = `${dateStamp}/auto/s3/aws4_request`;
@@ -96,7 +96,6 @@ export const createR2PresignedPutUrl = ({
 
   const queryParams: Record<string, string> = {
     'X-Amz-Algorithm': 'AWS4-HMAC-SHA256',
-    'X-Amz-Content-Sha256': 'UNSIGNED-PAYLOAD',
     'X-Amz-Credential': `${config.accessKeyId}/${scope}`,
     'X-Amz-Date': amzDate,
     'X-Amz-Expires': String(expiresIn),
