@@ -619,20 +619,21 @@ export default function NaylaCore() {
     return lineaValidada;
   };
 
-  const solicitarRenderTimeline = async (timeline: TimelineItem[], qualityOverride?: string) => {
+  const solicitarRenderTimeline = async (timeline: TimelineItem[], qualityOverride?: string, ratioOverride?: string) => {
     const currentSession = session || await getFirebaseSession();
     if (!currentSession) throw new Error('Debes iniciar sesión para renderizar.');
 
     const lineaValidada = await validarTimelineParaRender(timeline);
     const exportQuality = qualityOverride || calidadExportacion;
-    const canvas = getCanvasDimensionsFromRatio(canvasRatio, exportQuality);
+    const renderRatio = ratioOverride || canvasRatio;
+    const canvas = getCanvasDimensionsFromRatio(renderRatio, exportQuality);
     const durationInFrames = getCompositionDurationInFrames(lineaValidada, 30, subtitulos, logos);
 
     const inputProps = {
       timeline: lineaValidada,
       subtitles: subtitulos,
       logos: logos,
-      canvasRatio,
+      canvasRatio: renderRatio,
       canvasWidth: canvas.width,
       canvasHeight: canvas.height,
       exportQuality,
@@ -677,7 +678,7 @@ export default function NaylaCore() {
         console.warn('El render terminó, pero no se pudo registrar en la Bóveda:', payload);
       }
 
-      showAlert(`Render completado: ${canvas.width}×${canvas.height} (${canvasRatio}).`);
+      showAlert(`Render completado: ${canvas.width}×${canvas.height} (${renderRatio}).`);
       return data;
     }
 
@@ -737,9 +738,16 @@ export default function NaylaCore() {
     setVideoResultadoUrl(null);
     setRects([]);
 
+    const primerVisual = timelineValidado.find(item => item.tipo === 'video' || item.tipo === 'foto');
+    const formatoDetectado = primerVisual?.metadata?.aspectRatioLabel;
+
+    if (primerVisual?.metadata) {
+      adoptarFormatoVisual(primerVisual.metadata);
+    }
+
     if (actionData.render === true) {
-      await solicitarRenderTimeline(timelineValidado);
-      showAlert('Nayla armó el timeline y envió el render a la cola.');
+      await solicitarRenderTimeline(timelineValidado, undefined, formatoDetectado);
+      showAlert('Nayla armó el timeline y envió el render con el formato detectado.');
     } else {
       showAlert('Nayla armó el timeline con los medios existentes.');
     }
