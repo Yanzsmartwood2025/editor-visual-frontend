@@ -8,7 +8,7 @@ const MAX_TIMELINE_ITEMS = 250;
 const MAX_RENDER_SECONDS = 20 * 60;
 const MAX_LONG_EDGE = 4096;
 const RATE_LIMIT_WINDOW_MS = 10 * 60 * 1000;
-const MAX_RENDERS_PER_WINDOW = 3;
+const MAX_RENDERS_PER_WINDOW = 6;
 
 const renderAttempts = new Map<string, number[]>();
 
@@ -96,6 +96,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   try {
     const user = await requireFirebaseUser(req);
+    const inputProps = validateInputProps(req.body?.inputProps);
     const limit = rateLimit(user.uid);
 
     if (!limit.allowed) {
@@ -106,7 +107,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       });
     }
 
-    const inputProps = validateInputProps(req.body?.inputProps);
     const data = await startVercelSandboxRender(inputProps, user.uid);
     return res.status(data.status === 'completed' ? 200 : 202).json(data);
   } catch (error: unknown) {
