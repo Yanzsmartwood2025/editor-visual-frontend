@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildVisualTimelineMetrics, getCompositionDurationInFrames } from '../lib/timelineMetrics';
+import { buildVisualTimelineMetrics, getCompositionDurationInFrames, getItemDurationInFrames, getPlayableDurationInSeconds } from '../lib/timelineMetrics';
 
 describe('timeline metrics', () => {
   it('accounts for playback rate, delay and transitions consistently', () => {
@@ -38,4 +38,45 @@ describe('timeline metrics', () => {
     expect(metrics[0].transitionAfterFrames).toBe(29);
     expect(getCompositionDurationInFrames(timeline, 30)).toBe(31);
   });
+  it('uses the trimmed source span as the effective duration', () => {
+    const clip = {
+      tipo: 'video' as const,
+      durationInSeconds: 10,
+      originalDurationInSeconds: 10,
+      trimBefore: 2,
+      trimAfter: 7,
+    };
+
+    expect(getPlayableDurationInSeconds(clip)).toBe(5);
+    expect(getItemDurationInFrames(clip, 30)).toBe(150);
+  });
+
+  it('combines source trims with playback rate', () => {
+    const clip = {
+      tipo: 'video' as const,
+      durationInSeconds: 10,
+      originalDurationInSeconds: 10,
+      startFrom: 2,
+      trimAfter: 8,
+      playbackRate: 2,
+    };
+
+    expect(getPlayableDurationInSeconds(clip)).toBe(6);
+    expect(getItemDurationInFrames(clip, 30)).toBe(90);
+  });
+
+  it('keeps an explicit loop timeline duration instead of shortening it to the source trim', () => {
+    const clip = {
+      tipo: 'audio' as const,
+      durationInSeconds: 20,
+      originalDurationInSeconds: 8,
+      trimBefore: 2,
+      trimAfter: 6,
+      loop: true,
+    };
+
+    expect(getPlayableDurationInSeconds(clip)).toBe(20);
+    expect(getItemDurationInFrames(clip, 30)).toBe(600);
+  });
+
 });
