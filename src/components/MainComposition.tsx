@@ -5,6 +5,7 @@ import { fade } from '@remotion/transitions/fade';
 import { wipe } from '@remotion/transitions/wipe';
 import { slide } from '@remotion/transitions/slide';
 import { zoomInOut } from '@remotion/transitions/zoom-in-out';
+import { buildVisualTimelineMetrics, getCompositionDurationInFrames, getItemDelayInFrames, getItemDurationInFrames } from '../lib/timelineMetrics';
 
 // Interfaces based on main file
 type TimelineItem = { id: string; mediaId: string; tipo: 'foto' | 'video' | 'audio'; nombre: string; etiqueta: string; url: string; durationInSeconds?: number; originalDurationInSeconds?: number; volume?: number; fadeIn?: number; fadeOut?: number; scale?: number; delay?: number; startFrom?: number; trimBefore?: number; trimAfter?: number; loop?: boolean; playbackRate?: number; transitionDuration?: number; transitionType?: 'fade' | 'none' | 'wipe' | 'slide' | 'zoom'; efecto?: string; brightness?: number; contrast?: number; saturation?: number; overlay?: string; overlayIntensity?: number; };
@@ -13,7 +14,7 @@ type LogoItem = { id: string; url: string; x: number; y: number; scale: number; 
 
 interface MainCompositionProps {
   timeline: TimelineItem[];
-  canvasRatio: '9/16' | '16/9' | '1/1' | '4/5';
+  canvasRatio: string;
   logos?: LogoItem[];
   subtitles?: SubtitleItem[];
   settings?: {
@@ -262,34 +263,23 @@ export const MainComposition: React.FC<MainCompositionProps> = ({ timeline, subt
   const visualClips = useMemo(() => timeline.filter(t => t.tipo === 'video' || t.tipo === 'foto'), [timeline]);
   const audioClips = useMemo(() => timeline.filter(t => t.tipo === 'audio'), [timeline]);
 
-  const visualSequences = useMemo(() => {
-    let currentAbsoluteFrame = 0;
-    return visualClips.map((clip, index) => {
-      if (clip.tipo === 'video' && clip.durationInSeconds === undefined) {
-        throw new Error(`Critical Error: Clip '${clip.nombre || clip.etiqueta}' (URL: ${clip.url}) was passed to Remotion Composition without a valid durationInSeconds.`);
-      }
-      const baseDurationSec = clip.durationInSeconds !== undefined ? clip.durationInSeconds : (clip.tipo === 'foto' ? 5 : 5);
-      const durationInFrames = Math.round((baseDurationSec / (clip.playbackRate || 1)) * fps);
+  visualClips.forEach((clip) => {
+    if (clip.tipo === 'video' && clip.durationInSeconds === undefined) {
+      throw new Error(`Critical Error: Clip '${clip.nombre || clip.etiqueta}' (URL: ${clip.url}) was passed to Remotion Composition without a valid durationInSeconds.`);
+    }
+  });
 
-      const absoluteStartFrame = currentAbsoluteFrame;
-      currentAbsoluteFrame += durationInFrames;
+  const visualSequences = useMemo(
+    () => buildVisualTimelineMetrics(visualClips, fps),
+    [visualClips, fps]
+  );
 
-      // If there is a transition from this clip to the next, we subtract the transition duration
-      // from the absolute progression so the next clip starts earlier.
-      if (index < visualClips.length - 1) {
-         const nextClip = visualClips[index + 1];
-         if (nextClip.transitionType && nextClip.transitionType !== 'none' && nextClip.transitionDuration) {
-             currentAbsoluteFrame -= Math.round(nextClip.transitionDuration * fps);
-         }
-      }
-
-      return { ...clip, durationInFrames, absoluteStartFrame };
-    });
-  }, [visualClips, fps]);
-
-  const totalCompositionFrames = visualSequences.length > 0
-    ? visualSequences[visualSequences.length - 1].absoluteStartFrame + visualSequences[visualSequences.length - 1].durationInFrames
-    : 0;
+  const totalCompositionFrames = getCompositionDurationInFrames(
+    timeline,
+    fps,
+    subtitles,
+    logos
+  );
 
   // Verify Audio Clips as well
   audioClips.forEach(clip => {
@@ -306,10 +296,9 @@ export const MainComposition: React.FC<MainCompositionProps> = ({ timeline, subt
         {visualSequences.map((clip, index) => {
           const elements = [];
 
-          if (clip.delay && clip.delay > 0) {
-            const delayFrames = Math.round(clip.delay * fps);
+          if (clip.delayInFrames > 0) {
             elements.push(
-              <TransitionSeries.Sequence key={`spacer-${clip.id}`} durationInFrames={delayFrames}>
+              <TransitionSeries.Sequence key={`spacer-${clip.id}`} durationInFrames={clip.delayInFrames}>
                  <AbsoluteFill style={{ backgroundColor: 'transparent' }} />
               </TransitionSeries.Sequence>
             );
@@ -365,25 +354,22 @@ export const MainComposition: React.FC<MainCompositionProps> = ({ timeline, subt
             </TransitionSeries.Sequence>
           );
 
-          if (index < visualSequences.length - 1) {
+          if (index < visualSequences.length - 1 && clip.transitionAfterFrames > 0) {
              const nextClip = visualSequences[index + 1];
-             if (nextClip.transitionType && nextClip.transitionType !== 'none' && nextClip.transitionDuration) {
-                const transDurationFrames = Math.round(nextClip.transitionDuration * fps);
 
-                /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
-                let presentation: any = fade();
-                if (nextClip.transitionType === 'wipe') presentation = wipe();
-                else if (nextClip.transitionType === 'slide') presentation = slide();
-                else if (nextClip.transitionType === 'zoom') presentation = zoomInOut({});
+             /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
+             let presentation: any = fade();
+             if (nextClip.transitionType === 'wipe') presentation = wipe();
+             else if (nextClip.transitionType === 'slide') presentation = slide();
+             else if (nextClip.transitionType === 'zoom') presentation = zoomInOut({});
 
-                elements.push(
-                  <TransitionSeries.Transition
-                    key={`transition-${clip.id}-${nextClip.id}`}
-                    presentation={presentation}
-                    timing={linearTiming({ durationInFrames: transDurationFrames })}
-                  />
-                );
-             }
+             elements.push(
+               <TransitionSeries.Transition
+                 key={`transition-${clip.id}-${nextClip.id}`}
+                 presentation={presentation}
+                 timing={linearTiming({ durationInFrames: clip.transitionAfterFrames })}
+               />
+             );
           }
 
           return elements;
@@ -392,8 +378,8 @@ export const MainComposition: React.FC<MainCompositionProps> = ({ timeline, subt
 
       {/* For simplicity, audio clips start at frame 0 and loop/play their duration. We can improve this later to position them. */}
       {audioClips.map((clip) => {
-        const audioDurationInFrames = Math.round((clip.durationInSeconds || 5) / (clip.playbackRate || 1) * fps);
-        const startFrame = clip.delay ? Math.round(clip.delay * fps) : 0;
+        const audioDurationInFrames = getItemDurationInFrames(clip, fps);
+        const startFrame = getItemDelayInFrames(clip, fps);
         return (
           <Sequence key={clip.id} from={startFrame} durationInFrames={audioDurationInFrames}>
             <AnimatedVolume clip={clip} durationInFrames={audioDurationInFrames} absoluteStartFrame={startFrame} totalCompositionFrames={totalCompositionFrames} globalFadeOutFrames={globalFadeOutFrames} render={(volume) => (

@@ -1,5 +1,6 @@
 import type { FirebaseSession } from './firebaseClient';
 import { firebaseHeaders } from './apiClient';
+import { probeMediaFile, type MediaMetadata } from './mediaMetadata';
 
 export type MediaKind = 'foto' | 'video' | 'audio';
 
@@ -12,6 +13,7 @@ export type MediaItem = {
   esOverlay: boolean;
   etiqueta: string;
   fuente?: string;
+  metadata?: MediaMetadata;
 };
 
 export type UploadableMediaFile = Pick<File, 'name' | 'type'> & Blob;
@@ -54,7 +56,14 @@ const getExtension = (file: Pick<File, 'name' | 'type'>, tipo: MediaKind): strin
   return defaultExtensionForKind(tipo);
 };
 
-const buildMediaId = (index: number): string => `${Date.now()}-${index}-${globalThis.crypto?.randomUUID?.() || Math.random().toString(36).slice(2)}`;
+const fallbackUuid = (): string =>
+  'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (char) => {
+    const random = Math.floor(Math.random() * 16);
+    const value = char === 'x' ? random : (random & 0x3) | 0x8;
+    return value.toString(16);
+  });
+
+export const createMediaId = (): string => globalThis.crypto?.randomUUID?.() || fallbackUuid();
 
 type R2UploadResponse = { key: string; url: string };
 
@@ -99,13 +108,21 @@ export const uploadMediaFilesToBodega = async ({
   try {
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
-      const tipo = forcedTipo || resolveMediaKind(file);
+      const tipo = resolveMediaKind(file, forcedTipo) || forcedTipo;
       if (!tipo) throw new Error(`Tipo de archivo no soportado: ${file.name}`);
 
       const countTipo = existingItems.filter(item => item.tipo === tipo).length + nuevosItems.filter(item => item.tipo === tipo).length + 1;
       const inicial = tipo === 'video' ? 'V' : tipo === 'foto' ? 'F' : 'A';
-      const id = buildMediaId(i);
+      const id = createMediaId();
       const extension = getExtension(file, tipo);
+
+      let metadata: MediaMetadata = {};
+      try {
+        metadata = await probeMediaFile(file, tipo);
+      } catch (error) {
+        console.warn(`No se pudo detectar metadata local de ${file.name}; la subida continuará.`, error);
+      }
+
       const { key, url } = await uploadFileToR2(file, session, id, extension);
       uploadedKeys.push(key);
 
@@ -117,7 +134,8 @@ export const uploadMediaFilesToBodega = async ({
         creado_en: new Date().toISOString(),
         esOverlay: false,
         etiqueta: `${inicial}${countTipo}`,
-        fuente
+        fuente,
+        metadata,
       });
     }
   } catch (error) {

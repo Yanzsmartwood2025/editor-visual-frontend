@@ -1,6 +1,8 @@
 import React from 'react';
 import { Composition } from 'remotion';
 import { MainComposition } from '../components/MainComposition';
+import { getCanvasDimensionsFromRatio } from '../lib/mediaMetadata';
+import { getCompositionDurationInFrames } from '../lib/timelineMetrics';
 
 // Props por defecto para la previsualización / dev
 const defaultProps = {
@@ -24,7 +26,10 @@ const defaultProps = {
       durationInSeconds: 5,
     }
   ],
-  canvasRatio: '9/16' as const,
+  canvasRatio: '9/16',
+  canvasWidth: 1080,
+  canvasHeight: 1920,
+  exportQuality: '1080p',
   subtitles: [
     { id: 's1', texto: 'Existe un lugar al pie del monte Fuji...', inicioSec: 0, finSec: 5 },
     { id: 's2', texto: 'Donde el silencio parece tener vida propia.', inicioSec: 5, finSec: 10 }
@@ -32,34 +37,31 @@ const defaultProps = {
   logos: []
 };
 
-const getDurationInFrames = (timeline: unknown) => {
-  if (!Array.isArray(timeline)) return 1;
+const isValidDimension = (value: unknown): value is number =>
+  typeof value === 'number' && Number.isFinite(value) && value >= 2;
 
-  const totalSeconds = timeline.reduce((total, clip, index) => {
-    if (typeof clip !== 'object' || clip === null) return total;
+const resolveCanvas = (props: Record<string, unknown>) => {
+  if (isValidDimension(props.canvasWidth) && isValidDimension(props.canvasHeight)) {
+    return {
+      width: Math.round(props.canvasWidth),
+      height: Math.round(props.canvasHeight),
+    };
+  }
 
-    const item = clip as Record<string, unknown>;
-    if (item.tipo !== 'video' && item.tipo !== 'foto') return total;
-
-    const duration = typeof item.durationInSeconds === 'number' ? item.durationInSeconds : 5;
-    const transitionDuration = index > 0 && item.transitionType !== 'none' && typeof item.transitionDuration === 'number'
-      ? item.transitionDuration
-      : 0;
-
-    return total + Math.max(0, duration - transitionDuration);
-  }, 0);
-
-  return Math.max(1, Math.round(totalSeconds * 30));
+  return getCanvasDimensionsFromRatio(
+    typeof props.canvasRatio === 'string' ? props.canvasRatio : '9/16',
+    typeof props.exportQuality === 'string' ? props.exportQuality : '1080p'
+  );
 };
 
 export const RemotionRoot: React.FC = () => {
-  // Calculamos la duración total en base a los visuales para la preview
   const fps = 30;
-  const totalDurationSeconds = defaultProps.timeline
-    .filter(c => c.tipo === 'video' || c.tipo === 'foto')
-    .reduce((acc, curr) => acc + (curr.durationInSeconds || 5), 0);
-
-  const durationInFrames = Math.max(1, Math.round(totalDurationSeconds * fps));
+  const durationInFrames = getCompositionDurationInFrames(
+    defaultProps.timeline,
+    fps,
+    defaultProps.subtitles,
+    defaultProps.logos
+  );
 
   return (
     <>
@@ -68,12 +70,27 @@ export const RemotionRoot: React.FC = () => {
         component={MainComposition as React.FC<any>}
         durationInFrames={durationInFrames}
         fps={fps}
-        width={1080}
-        height={1920}
+        width={defaultProps.canvasWidth}
+        height={defaultProps.canvasHeight}
         defaultProps={defaultProps}
-        calculateMetadata={({ props }) => ({
-          durationInFrames: getDurationInFrames(props.timeline),
-        })}
+        calculateMetadata={({ props }) => {
+          const typedProps = props as Record<string, unknown>;
+          const { width, height } = resolveCanvas(typedProps);
+          const timeline = Array.isArray(typedProps.timeline) ? typedProps.timeline : [];
+          const subtitles = Array.isArray(typedProps.subtitles) ? typedProps.subtitles : [];
+          const logos = Array.isArray(typedProps.logos) ? typedProps.logos : [];
+
+          return {
+            durationInFrames: getCompositionDurationInFrames(
+              timeline as any[],
+              fps,
+              subtitles as any[],
+              logos as any[]
+            ),
+            width,
+            height,
+          };
+        }}
       />
     </>
   );

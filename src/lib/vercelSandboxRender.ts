@@ -37,7 +37,7 @@ const getBundle = async () => {
  * Bundles the Remotion entry point, renders it in an isolated Vercel Sandbox,
  * then copies the resulting media file to Cloudflare R2.
  */
-export async function startVercelSandboxRender(inputProps: unknown) {
+export async function startVercelSandboxRender(inputProps: unknown, ownerId?: string) {
   const props = inputPropsToRecord(inputProps);
   const { addBundleToSandbox, createSandbox, renderMediaOnVercel } = await import('@remotion/vercel').catch(() => {
     throw new Error('El adaptador @remotion/vercel no está instalado en este entorno. Instálalo durante el despliegue de Vercel Sandbox.');
@@ -62,7 +62,8 @@ export async function startVercelSandboxRender(inputProps: unknown) {
       throw new Error(`Vercel Sandbox no produjo el archivo de render: ${sandboxFilePath}`);
     }
 
-    const key = `renders/${randomUUID()}.mp4`;
+    const safeOwnerId = ownerId?.replace(/[^a-zA-Z0-9_-]/g, '_') || 'anonymous';
+    const key = `${safeOwnerId}/renders/${randomUUID()}.mp4`;
     const stored = await uploadR2Object(key, new Uint8Array(file), contentType);
 
     return {
