@@ -2543,13 +2543,12 @@ if (!session) {
               )}
             </div>
 
-            {/* REPRODUCTOR FLOTANTE AUTO-OCULTABLE (5 SEGUNDOS) */}
-            {!isCleanMode && (
+            {/* REPRODUCTOR FLOTANTE. En pantalla completa queda solo el control básico abajo. */}
             <div
               onClick={(e) => e.stopPropagation()}
               style={{
                 position: 'absolute',
-                bottom: '12px',
+                bottom: isCleanMode ? 'max(12px, env(safe-area-inset-bottom))' : '12px',
                 left: '50%',
                 transform: 'translateX(-50%)',
                 zIndex: 30,
@@ -2564,19 +2563,18 @@ if (!session) {
                 gap: '12px',
                 boxShadow: '0 4px 16px rgba(0, 0, 0, 0.5), 0 0 var(--glow-spread) rgba(var(--glow-color-rgb), var(--glow-intensity))',
                 transition: 'opacity 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease',
-                opacity: (showPlaybackControls || !isPlaying) ? 1 : 0,
-                pointerEvents: (showPlaybackControls || !isPlaying) ? 'auto' : 'none'
+                opacity: isCleanMode ? 1 : ((showPlaybackControls || !isPlaying) ? 1 : 0),
+                pointerEvents: isCleanMode ? 'auto' : ((showPlaybackControls || !isPlaying) ? 'auto' : 'none')
               }}
             >
-              <span style={{ color: '#888', fontSize: '0.65rem', fontFamily: 'monospace' }}>00:00:00</span>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              {!isCleanMode && <span style={{ color: '#888', fontSize: '0.65rem', fontFamily: 'monospace' }}>00:00:00</span>}
+              <div style={{ display: 'flex', alignItems: 'center', gap: isCleanMode ? '18px' : '12px' }}>
                 <button onClick={(e) => { e.stopPropagation(); seekBy(-10); }} style={{ background: 'none', border: 'none', color: '#ffffff', fontSize: '0.9rem', cursor: 'pointer', outline: 'none' }}>↺10</button>
                 <button onClick={(e) => { e.stopPropagation(); togglePlay(); }} style={{ background: 'none', border: 'none', color: '#ffffff', fontSize: '1.2rem', cursor: 'pointer', outline: 'none' }}>{isPlaying ? '⏸' : '▶'}</button>
                 <button onClick={(e) => { e.stopPropagation(); seekBy(10); }} style={{ background: 'none', border: 'none', color: '#ffffff', fontSize: '0.9rem', cursor: 'pointer', outline: 'none' }}>10↻</button>
               </div>
-              <span style={{ color: '#888', fontSize: '0.65rem', fontFamily: 'monospace' }}>00:00:00</span>
+              {!isCleanMode && <span style={{ color: '#888', fontSize: '0.65rem', fontFamily: 'monospace' }}>00:00:00</span>}
             </div>
-            )}
           </div>
         </div>
 
