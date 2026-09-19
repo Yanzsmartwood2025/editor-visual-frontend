@@ -37,4 +37,9 @@ next-env.d.ts
 out/
 .env
 
-oracle-service/node_modules
+# generated diagnostics and local artifacts
+/test-results/
+/verification/
+*.log
+*.orig
+/header_screenshot.png

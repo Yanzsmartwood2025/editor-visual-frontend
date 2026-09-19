@@ -1,95 +1,46 @@
-<img src="https://github.com/remotion-dev/template-next/assets/1629785/9092db5f-7c0c-4d38-97c4-5f5a61f5cc098" />
-<br/>
-<br/>
+# NaylaCore Video Editor
 
-This is a Next.js template for building programmatic video apps, with [`@remotion/player`](https://remotion.dev/player) and [`@remotion/lambda`](https://remotion.dev/lambda) built in.
+Editor web basado en Next.js + Remotion.
 
-This template uses the Next.js Pages directory. There is a [App directory version](https://github.com/remotion-dev/template-next-app-dir) of this template available.
+## Arquitectura actual
 
-<img src="https://github.com/remotion-dev/template-next/assets/1629785/c9c2e5ca-2637-4ec8-8e40-a8feb5740d88" />
+- **Firebase Auth**: identidad de usuario y verificación de sesión.
+- **Supabase**: base de datos para galería, proyectos, memoria, plantillas, configuración y registros del sistema.
+- **Cloudflare R2**: Bóveda física para fotos, videos, audios y renders.
+- **Remotion + Vercel Sandbox**: composición y render final.
+- **Groq / Mistral**: asistencia de Nayla para construir y modificar timelines.
 
+Oracle Cloud PC y Supabase Storage ya no forman parte del flujo activo.
 
-## Nayla / Oracle Cloud PC notes
+## Flujo de medios
 
-This application sends render and media-processing work to an Oracle Cloud PC worker. Configure `ORACLE_SERVER_URL` and `ORACLE_SECRET` from `.env.example` for that flow.
+1. El usuario sube un archivo.
+2. El archivo físico se guarda en Cloudflare R2 bajo el espacio del usuario.
+3. Supabase registra URL, tipo, nombre, metadata, duración y proporción.
+4. El editor usa esos registros para construir el timeline.
+5. Remotion renderiza en Vercel Sandbox.
+6. El MP4 final vuelve a Cloudflare R2 y se registra en la Bóveda.
 
-AI providers should be configured directly in Vercel/Coolify with `GROQ_API_KEY` and `MISTRAL_API_KEY`. The old database key pool remains only as a temporary fallback while the rest of the tools are stabilized. See `docs/ORACLE_CLOUD_PC.md` before removing compatibility variables.
+## Desarrollo
 
-## Getting Started
-
-[Use this template](https://github.com/new?template_name=template-next-pages-dir&template_owner=remotion-dev) to clone it into your GitHub account. Run
-
-```
-npm i
-```
-
-afterwards. Alternatively, use this command to scaffold a project:
-
-```
-npx create-video@latest --next-pages-dir
-```
-
-## Commands
-
-Start the Next.js dev server:
-
-```
+```bash
+npm ci
 npm run dev
 ```
 
-Open the Remotion Studio:
+Remotion Studio:
 
-```
+```bash
 npx remotion studio
 ```
 
-Render a video locally:
+Pruebas y build:
 
-```
-npx remotion render
-```
-
-Upgrade Remotion:
-
-```
-npx remotion upgrade
+```bash
+npm test
+npm run build
 ```
 
-The following script will set up your Remotion Bundle and Lambda function on AWS:
+## Variables principales
 
-```
-node deploy.mjs
-```
-
-You should run this script after:
-
-- changing the video template
-- changing `config.mjs`
-- upgrading Remotion to a newer version
-
-## Set up rendering on AWS Lambda
-
-This template supports rendering the videos via [Remotion Lambda](https://remotion.dev/lambda).
-
-1. Copy the `.env.example` file to `.env` and fill in the values.
-   Complete the [Lambda setup guide](https://www.remotion.dev/docs/lambda/setup) to get your AWS credentials.
-
-1. Edit the `config.mjs` file to your desired Lambda settings.
-
-1. Run `node deploy.mjs` to deploy your Lambda function and Remotion Bundle.
-
-## Docs
-
-Get started with Remotion by reading the [fundamentals page](https://www.remotion.dev/docs/the-fundamentals).
-
-## Help
-
-We provide help on our [Discord server](https://remotion.dev/discord).
-
-## Issues
-
-Found an issue with Remotion? [File an issue here](https://remotion.dev/issue).
-
-## License
-
-Note that for some entities a company license is needed. [Read the terms here](https://github.com/remotion-dev/remotion/blob/main/LICENSE.md).
+Consulta `.env.example`. No guardes secretos en el repositorio.

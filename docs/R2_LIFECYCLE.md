@@ -1,5 +1,25 @@
-# Cloudflare R2 lifecycle safety net
+# Cloudflare R2 media lifecycle
 
-Final renders are stored under the `renders/` prefix of `CLOUDFLARE_R2_BUCKET`. Configure this manually in Cloudflare Dashboard: **R2 → bucket → Settings → Lifecycle rules → Add rule**, select prefix `renders/`, then choose **Delete objects after 1 day**. This is intentionally a dashboard setting: the application never receives Cloudflare account-wide lifecycle permissions.
+Cloudflare R2 is the persistent Bóveda for NaylaCore.
 
-The application deletes an object through `DELETE /api/r2/delete` when an external publisher confirms delivery. Metricool is deliberately not integrated yet, so that publisher must call this endpoint later with a Firebase Bearer token and the stored R2 object key.
+## Persistent objects
+
+User uploads and completed renders live under the authenticated Firebase UID:
+
+- `<firebase-uid>/<media-id>.<ext>`
+- `<firebase-uid>/renders/<render-id>.mp4`
+
+These objects are persistent and should **not** have a short automatic deletion rule.
+
+## Deletion
+
+When a user deletes an item from the Bóveda, the application calls
+`DELETE /api/r2/delete` with Firebase authentication. The API only accepts an
+R2 key under the exact authenticated UID prefix.
+
+## Temporary objects
+
+The current architecture does not require temporary R2 uploads for rendering or
+delogo input. If a future feature introduces temporary files, store them under a
+dedicated prefix such as `temp/` and apply any short lifecycle rule only to that
+prefix.
