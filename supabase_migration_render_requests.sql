@@ -17,3 +17,22 @@ ALTER TABLE public.render_requests ENABLE ROW LEVEL SECURITY;
 
 COMMENT ON TABLE public.render_requests IS
   'Server-side render request ledger used for durable per-user rate limiting and render audit status.';
+
+
+-- Explicitly deny client access. The server service-role client bypasses RLS.
+DROP POLICY IF EXISTS render_requests_deny_anon ON public.render_requests;
+DROP POLICY IF EXISTS render_requests_deny_authenticated ON public.render_requests;
+
+CREATE POLICY render_requests_deny_anon
+  ON public.render_requests
+  FOR ALL
+  TO anon
+  USING (false)
+  WITH CHECK (false);
+
+CREATE POLICY render_requests_deny_authenticated
+  ON public.render_requests
+  FOR ALL
+  TO authenticated
+  USING (false)
+  WITH CHECK (false);
