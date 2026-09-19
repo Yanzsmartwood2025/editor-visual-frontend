@@ -5,7 +5,7 @@ import { fade } from '@remotion/transitions/fade';
 import { wipe } from '@remotion/transitions/wipe';
 import { slide } from '@remotion/transitions/slide';
 import { zoomInOut } from '@remotion/transitions/zoom-in-out';
-import { buildVisualTimelineMetrics, getCompositionDurationInFrames } from '../lib/timelineMetrics';
+import { buildVisualTimelineMetrics, getCompositionDurationInFrames, getItemDelayInFrames, getItemDurationInFrames } from '../lib/timelineMetrics';
 
 // Interfaces based on main file
 type TimelineItem = { id: string; mediaId: string; tipo: 'foto' | 'video' | 'audio'; nombre: string; etiqueta: string; url: string; durationInSeconds?: number; originalDurationInSeconds?: number; volume?: number; fadeIn?: number; fadeOut?: number; scale?: number; delay?: number; startFrom?: number; trimBefore?: number; trimAfter?: number; loop?: boolean; playbackRate?: number; transitionDuration?: number; transitionType?: 'fade' | 'none' | 'wipe' | 'slide' | 'zoom'; efecto?: string; brightness?: number; contrast?: number; saturation?: number; overlay?: string; overlayIntensity?: number; };
@@ -378,8 +378,8 @@ export const MainComposition: React.FC<MainCompositionProps> = ({ timeline, subt
 
       {/* For simplicity, audio clips start at frame 0 and loop/play their duration. We can improve this later to position them. */}
       {audioClips.map((clip) => {
-        const audioDurationInFrames = Math.round((clip.durationInSeconds || 5) / (clip.playbackRate || 1) * fps);
-        const startFrame = clip.delay ? Math.round(clip.delay * fps) : 0;
+        const audioDurationInFrames = getItemDurationInFrames(clip, fps);
+        const startFrame = getItemDelayInFrames(clip, fps);
         return (
           <Sequence key={clip.id} from={startFrame} durationInFrames={audioDurationInFrames}>
             <AnimatedVolume clip={clip} durationInFrames={audioDurationInFrames} absoluteStartFrame={startFrame} totalCompositionFrames={totalCompositionFrames} globalFadeOutFrames={globalFadeOutFrames} render={(volume) => (
