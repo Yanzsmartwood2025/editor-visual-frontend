@@ -1,6 +1,8 @@
 import Head from 'next/head';
 import dynamic from 'next/dynamic';
 import { MainComposition } from '../components/MainComposition';
+import { getCanvasDimensionsFromRatio } from '../lib/mediaMetadata';
+import { getCompositionDurationInFrames } from '../lib/timelineMetrics';
 
 const Player = dynamic(() => import('@remotion/player').then(m => m.Player), {
   ssr: false,
@@ -37,17 +39,13 @@ const defaultProps = {
 
 export default function RemotionPreview() {
   const fps = 30;
-  const visualClips = defaultProps.timeline.filter(c => c.tipo === 'video' || c.tipo === 'foto');
-  const totalDurationSeconds = visualClips.reduce((acc, curr, index) => {
-      let duration = curr.durationInSeconds !== undefined ? curr.durationInSeconds : 5;
-
-      if (index > 0 && (curr as any).transitionType && (curr as any).transitionType !== 'none' && (curr as any).transitionDuration) {
-         duration -= (curr as any).transitionDuration;
-      }
-      return acc + duration;
-  }, 0);
-
-  const durationInFrames = Math.max(1, Math.round(totalDurationSeconds * fps));
+  const { width, height } = getCanvasDimensionsFromRatio(defaultProps.canvasRatio, '1080p');
+  const durationInFrames = getCompositionDurationInFrames(
+    defaultProps.timeline,
+    fps,
+    defaultProps.subtitles,
+    defaultProps.logos
+  );
 
   return (
     <div className="min-h-screen bg-gray-900 flex flex-col items-center justify-center p-4">
@@ -66,8 +64,8 @@ export default function RemotionPreview() {
             inputProps={defaultProps}
             durationInFrames={durationInFrames}
             fps={fps}
-            compositionWidth={1080}
-            compositionHeight={1920}
+            compositionWidth={width}
+            compositionHeight={height}
             style={{
                 width: '100%',
                 height: '100%',
