@@ -398,7 +398,6 @@ export default function NaylaCore() {
     setIsCleanMode(next);
     setIsSubPanelOpen(false);
     setExpandedSurface(null);
-    setIsAiModalOpen(false);
 
     if (typeof document === 'undefined') return;
 
@@ -2420,31 +2419,28 @@ if (!session) {
               touchAction: 'manipulation'
             }}
           >
-            {!isCleanMode && (
-              <div
-                style={{
-                  position: 'absolute',
-                  top: '12px',
-                  left: '12px',
-                  zIndex: 35,
-                  borderRadius: '10px',
-                  border: '1px solid rgba(255,255,255,0.18)',
-                  backgroundColor: 'rgba(0,0,0,0.62)',
-                  backdropFilter: 'blur(8px)',
-                  padding: '5px 9px',
-                  color: '#e5e5e5',
-                  fontSize: '0.62rem',
-                  fontWeight: 700,
-                  letterSpacing: '0.06em',
-                  pointerEvents: 'none'
-                }}
-              >
-                FORMATO {canvasRatio.replace('/', ':')} · {canvasPreviewDimensions.width}×{canvasPreviewDimensions.height}
-              </div>
-            )}
+            <div
+              style={{
+                position: 'absolute',
+                top: '12px',
+                left: '12px',
+                zIndex: 35,
+                borderRadius: '10px',
+                border: '1px solid rgba(255,255,255,0.18)',
+                backgroundColor: 'rgba(0,0,0,0.62)',
+                backdropFilter: 'blur(8px)',
+                padding: '5px 9px',
+                color: '#e5e5e5',
+                fontSize: '0.62rem',
+                fontWeight: 700,
+                letterSpacing: '0.06em',
+                pointerEvents: 'none'
+              }}
+            >
+              FORMATO {canvasRatio.replace('/', ':')} · {canvasPreviewDimensions.width}×{canvasPreviewDimensions.height}
+            </div>
 
             {/* CUADRO / BOTÓN FLOTANTE SUPERIOR DERECHO DE NAYLA IA */}
-            {!isCleanMode && (
               <button
                 onClick={(e) => {
                   e.stopPropagation();
@@ -2478,7 +2474,6 @@ if (!session) {
                 <span style={{ fontSize: '0.7rem', fontWeight: 'bold', letterSpacing: '1px', color: '#00ffcc' }}>NAYLA IA</span>
                 <div style={{ width: '6px', height: '6px', backgroundColor: '#00cc66', borderRadius: '50%', boxShadow: '0 0 6px #00cc66' }} />
               </button>
-            )}
 
             {/* VIDEO O CANVAS PRINCIPAL */}
             <div ref={containerRef} onPointerDown={handlePointerDown} onPointerMove={handlePointerMove} onPointerUp={handlePointerUp} onPointerLeave={handlePointerUp}
@@ -2544,7 +2539,6 @@ if (!session) {
             </div>
 
             {/* REPRODUCTOR FLOTANTE AUTO-OCULTABLE (5 SEGUNDOS) */}
-            {!isCleanMode && (
             <div
               onClick={(e) => e.stopPropagation()}
               style={{
@@ -2576,7 +2570,6 @@ if (!session) {
               </div>
               <span style={{ color: '#888', fontSize: '0.65rem', fontFamily: 'monospace' }}>00:00:00</span>
             </div>
-            )}
           </div>
         </div>
 
