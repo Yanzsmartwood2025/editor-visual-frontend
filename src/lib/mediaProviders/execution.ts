@@ -143,10 +143,10 @@ const findOutputUrl = (
   domain: 'image' | 'video' | 'audio' | '3d'
 ): string | null => {
   const preferredKeys: Record<typeof domain, string[]> = {
-    image: ['image', 'images', 'url', 'output', 'image_url', 'generated_image'],
+    image: ['rendered_image', 'image', 'images', 'url', 'output', 'image_url', 'generated_image'],
     video: ['video', 'url', 'output', 'video_url'],
     audio: ['audio', 'url', 'output', 'audio_url'],
-    '3d': ['model_url', 'glb', 'model', 'url', 'output', 'model_urls'],
+    '3d': ['rigged_character_glb_url', 'model_url', 'glb', 'pbr_model', 'base_model', 'model', 'url', 'output', 'model_urls'],
   };
 
   const walk = (node: unknown, keyHint = ''): string | null => {
@@ -649,72 +649,93 @@ const startElevenLabs = async (action: NaylaAction): Promise<CloudProviderStart>
   throw new UnsupportedCloudExecutionError('Este modo de audio requiere un adaptador especializado adicional.');
 };
 
-const tripoTaskEndpointForAction = (action: NaylaAction) => {
-  if (action.action === 'GENERATE_IMAGE') {
-    return action.sourceImageUrl ? '/generation/image-to-image' : '/generation/text-to-image';
+const imageFileType = (url: string) => {
+  try {
+    const pathname = new URL(url).pathname.toLowerCase();
+    if (pathname.endsWith('.png')) return 'png';
+    if (pathname.endsWith('.webp')) return 'webp';
+  } catch {
+    // Use the most widely accepted type when the signed URL has no suffix.
   }
-  if (action.action !== 'GENERATE_3D') {
-    throw new UnsupportedCloudExecutionError('Este motor se usa para imagen y 3D.');
-  }
-  const map: Record<string, string> = {
-    text_to_3d: '/generation/text-to-model',
-    image_to_3d: '/generation/image-to-model',
-    multiview_to_3d: '/generation/multiview-to-model',
-    texture: '/models/texture',
-    optimize: '/mesh/decimate',
-    rig: '/animations/rig',
-    retarget: '/animations/retarget',
-  };
-  const endpoint = map[action.mode];
-  if (!endpoint) throw new UnsupportedCloudExecutionError('Este modo 3D no está disponible en esta ruta.');
-  return endpoint;
+  return 'jpg';
 };
 
 const tripoPayloadForAction = (action: NaylaAction) => {
   if (action.action === 'GENERATE_IMAGE') {
-    return action.sourceImageUrl
-      ? { input: action.sourceImageUrl, prompt: action.prompt }
-      : { prompt: action.prompt, model: process.env.TRIPO_IMAGE_MODEL?.trim() || 'seedream_v4' };
+    if (action.sourceImageUrl) {
+      return {
+        type: 'generate_image',
+        model_version:
+          process.env.TRIPO_IMAGE_MODEL?.trim() ||
+          'flux.1_kontext_pro',
+        prompt: action.prompt,
+        file: {
+          type: imageFileType(action.sourceImageUrl),
+          url: action.sourceImageUrl,
+        },
+      };
+    }
+    return {
+      type: 'text_to_image',
+      prompt: action.prompt,
+    };
   }
-  if (action.action !== 'GENERATE_3D') throw new UnsupportedCloudExecutionError('Acción 3D inválida.');
+
+  if (action.action !== 'GENERATE_3D') {
+    throw new UnsupportedCloudExecutionError('Este motor se usa para imagen y 3D.');
+  }
+
+  const modelVersion = process.env.TRIPO_3D_MODEL?.trim() || 'v3.1-20260211';
 
   if (action.mode === 'text_to_3d') {
     return {
+      type: 'text_to_model',
+      model_version: modelVersion,
       prompt: action.prompt || '',
-      model: process.env.TRIPO_3D_MODEL?.trim() || 'v3.1-20260211',
-      texture: true,
-      pbr: true,
-      texture_quality: 'detailed',
-    };
-  }
-  if (action.mode === 'image_to_3d') {
-    if (!action.inputUrl) throw new Error('Imagen → 3D necesita una imagen.');
-    return {
-      input: action.inputUrl,
-      model: process.env.TRIPO_3D_MODEL?.trim() || 'v3.1-20260211',
-      texture: true,
-      pbr: true,
-      texture_quality: 'detailed',
-    };
-  }
-  if (action.mode === 'multiview_to_3d') {
-    if (!action.inputUrls?.length) throw new Error('Multivista → 3D necesita imágenes.');
-    return {
-      inputs: action.inputUrls,
-      model: process.env.TRIPO_MULTIVIEW_MODEL?.trim() || 'P2-20260801',
       texture: true,
       pbr: true,
     };
   }
 
-  if (!action.inputUrl) throw new Error('Esta operación 3D necesita un modelo de entrada.');
-  return { input: action.inputUrl, ...(action.prompt ? { prompt: action.prompt } : {}) };
+  if (action.mode === 'image_to_3d') {
+    if (!action.inputUrl) throw new Error('Imagen → 3D necesita una imagen.');
+    return {
+      type: 'image_to_model',
+      model_version: modelVersion,
+      file: {
+        type: imageFileType(action.inputUrl),
+        url: action.inputUrl,
+      },
+      texture: true,
+      pbr: true,
+    };
+  }
+
+  if (action.mode === 'multiview_to_3d') {
+    const urls = (action.inputUrls || []).slice(0, 4);
+    if (urls.length < 2) throw new Error('Multivista → 3D necesita al menos dos imágenes.');
+    const files: Array<Record<string, string>> = urls.map((url) => ({
+      type: imageFileType(url),
+      url,
+    }));
+    while (files.length < 4) files.push({});
+    return {
+      type: 'multiview_to_model',
+      model_version: process.env.TRIPO_MULTIVIEW_MODEL?.trim() || modelVersion,
+      files,
+      texture: true,
+      pbr: true,
+    };
+  }
+
+  throw new UnsupportedCloudExecutionError(
+    'Esta operación sobre un modelo existente se ejecuta por otra ruta de Nayla Cloud.'
+  );
 };
 
 const startTripo = async (action: NaylaAction): Promise<CloudProviderStart> => {
   const key = requiredEnv('TRIPO_API_KEY');
-  const endpoint = tripoTaskEndpointForAction(action);
-  const payload = await jsonRequest(`https://openapi.tripo3d.ai/v3${endpoint}`, {
+  const payload = await jsonRequest('https://api.tripo3d.ai/v2/openapi/task', {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${key}`,
@@ -728,7 +749,7 @@ const startTripo = async (action: NaylaAction): Promise<CloudProviderStart> => {
   }
   const taskId = String(payload?.data?.task_id || '');
   if (!taskId) throw new Error('El motor 3D no devolvió un identificador de trabajo.');
-  return { state: 'queued', providerJobId: taskId, metadata: { endpoint } };
+  return { state: 'queued', providerJobId: taskId, metadata: { apiVersion: 'v2' } };
 };
 
 const pollTripo = async (
@@ -736,19 +757,27 @@ const pollTripo = async (
   providerJobId: string
 ): Promise<CloudProviderPoll> => {
   const key = requiredEnv('TRIPO_API_KEY');
-  const payload = await jsonRequest(`https://openapi.tripo3d.ai/v3/tasks/${encodeURIComponent(providerJobId)}`, {
-    method: 'GET',
-    headers: { Authorization: `Bearer ${key}` },
-  });
+  const payload = await jsonRequest(
+    `https://api.tripo3d.ai/v2/openapi/task/${encodeURIComponent(providerJobId)}`,
+    {
+      method: 'GET',
+      headers: { Authorization: `Bearer ${key}` },
+    }
+  );
   if (Number(payload.code) !== 0) {
     return { state: 'failed', error: String(payload.message || 'La generación falló.') };
   }
   const data = payload.data || {};
   const status = String(data.status || '').toLowerCase();
-  if (['failed', 'cancelled'].includes(status)) {
+  if (['failed', 'cancelled', 'canceled'].includes(status)) {
     return { state: 'failed', error: String(data.error || data.message || 'La generación falló.') };
   }
-  if (status !== 'success') return { state: status === 'running' ? 'running' : 'queued' };
+  if (!['success', 'succeeded', 'completed'].includes(status)) {
+    return {
+      state: ['running', 'processing'].includes(status) ? 'running' : 'queued',
+      metadata: { progress: data.progress ?? null },
+    };
+  }
 
   const domain = domainForAction(action);
   const outputUrl = findOutputUrl(data.output || data, domain);
@@ -790,8 +819,48 @@ const startMeshy = async (action: NaylaAction): Promise<CloudProviderStart> => {
       should_texture: true,
       enable_pbr: true,
     };
+  } else if (action.mode === 'multiview_to_3d') {
+    const imageUrls = (action.inputUrls || []).slice(0, 4);
+    if (imageUrls.length < 2) throw new Error('Multivista → 3D necesita al menos dos imágenes.');
+    endpoint = '/openapi/v1/multi-image-to-3d';
+    body = {
+      image_urls: imageUrls,
+      ai_model: process.env.MESHY_3D_MODEL?.trim() || 'latest',
+      target_formats: ['glb'],
+      should_texture: true,
+      enable_pbr: true,
+    };
+  } else if (action.mode === 'texture') {
+    if (!action.inputUrl) throw new Error('Texturizar necesita un modelo 3D de entrada.');
+    endpoint = '/openapi/v1/retexture';
+    body = {
+      model_url: action.inputUrl,
+      text_style_prompt: action.prompt || 'preserve the original visual identity',
+      ai_model: process.env.MESHY_3D_MODEL?.trim() || 'latest',
+      enable_pbr: true,
+      enable_original_uv: true,
+      target_formats: ['glb'],
+    };
+  } else if (action.mode === 'optimize') {
+    if (!action.inputUrl) throw new Error('Optimizar necesita un modelo 3D de entrada.');
+    endpoint = '/openapi/v1/remesh';
+    body = {
+      model_url: action.inputUrl,
+      target_formats: ['glb'],
+      topology: 'triangle',
+      target_polycount: 30000,
+    };
+  } else if (action.mode === 'rig') {
+    if (!action.inputUrl) throw new Error('Rigging necesita un GLB de entrada.');
+    endpoint = '/openapi/v1/rigging';
+    body = {
+      model_url: action.inputUrl,
+      height_meters: 1.8,
+    };
   } else {
-    throw new UnsupportedCloudExecutionError('Este modo 3D se ejecutará por otra ruta disponible.');
+    throw new UnsupportedCloudExecutionError(
+      'Esta operación 3D necesita información adicional antes de ejecutarse.'
+    );
   }
 
   const payload = await jsonRequest(`https://api.meshy.ai${endpoint}`, {
@@ -834,10 +903,16 @@ const pollMeshy = async (
     };
   }
   if (status !== 'SUCCEEDED') {
-    return { state: status === 'IN_PROGRESS' ? 'running' : 'queued' };
+    return {
+      state: status === 'IN_PROGRESS' ? 'running' : 'queued',
+      metadata: { progress: payload.progress ?? null },
+    };
   }
-  const outputUrl = safeHttpsUrl(payload?.model_urls?.glb) || findOutputUrl(payload, '3d');
-  if (!outputUrl) throw new Error('La generación 3D terminó sin GLB.');
+  const outputUrl =
+    safeHttpsUrl(payload?.model_urls?.glb) ||
+    safeHttpsUrl(payload?.result?.rigged_character_glb_url) ||
+    findOutputUrl(payload, '3d');
+  if (!outputUrl) throw new Error('La generación 3D terminó sin un GLB utilizable.');
   return {
     state: 'completed',
     output: { kind: 'url', url: outputUrl, extension: 'glb' },
@@ -873,10 +948,17 @@ export const providerCanExecuteAction = (
     );
   }
   if (provider === 'tripo') {
-    return action.action === 'GENERATE_IMAGE' || action.action === 'GENERATE_3D';
+    return (
+      action.action === 'GENERATE_IMAGE' ||
+      (action.action === 'GENERATE_3D' &&
+        ['text_to_3d', 'image_to_3d', 'multiview_to_3d'].includes(action.mode))
+    );
   }
   if (provider === 'meshy') {
-    return action.action === 'GENERATE_3D' && ['text_to_3d', 'image_to_3d'].includes(action.mode);
+    return (
+      action.action === 'GENERATE_3D' &&
+      ['text_to_3d', 'image_to_3d', 'multiview_to_3d', 'texture', 'optimize', 'rig'].includes(action.mode)
+    );
   }
   return false;
 };
