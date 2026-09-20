@@ -638,9 +638,22 @@ export const getGpuJobStatusForUser = async ({
 
     if (hasStartupError(statusMessage) || stopped) {
       const now = new Date();
+      const instanceId = job.instance_id;
+      if (!instanceId) {
+        job = await updateGpuJob(job.id, {
+          status: 'failed',
+          error_message: statusMessage || 'La instancia Vast desapareció durante el arranque.',
+          completed_at: now.toISOString(),
+          destroyed_at: now.toISOString(),
+          runtime_cost_estimate: computeRuntimeCost(job, now),
+          metadata: runtimeMetadata,
+        });
+        return publicJob(job);
+      }
+
       let destroyedAt: string | null = null;
       try {
-        await destroyVastInstance(job.instance_id);
+        await destroyVastInstance(instanceId);
         destroyedAt = new Date().toISOString();
       } catch (destroyError) {
         console.error('[gpu] No se pudo destruir la instancia tras fallo de arranque:', destroyError);
