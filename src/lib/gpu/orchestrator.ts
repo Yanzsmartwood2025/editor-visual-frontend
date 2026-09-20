@@ -945,9 +945,9 @@ export const finishGpuJob = async ({
     },
   });
 
-  if (job.instance_id) {
+  if (hasComputeInstance(job)) {
     try {
-      await destroyVastInstance(job.instance_id);
+      await destroyComputeInstance(job);
       job = await updateGpuJob(job.id, {
         destroyed_at: new Date().toISOString(),
       });
@@ -996,12 +996,91 @@ export const getGpuJobStatusForUser = async ({
   if (!job) return null;
 
   const terminal = ['completed', 'failed', 'expired'];
-  if (!job.instance_id || terminal.includes(job.status)) {
+  if (terminal.includes(job.status) || !hasComputeInstance(job)) {
+    return publicJob(job);
+  }
+
+  if (job.provider === 'runpod') {
+    const podId = getRunpodPodId(job);
+    if (!podId) return publicJob(job);
+
+    try {
+      const pod = await getRunpodPod(podId);
+      const latest = await getGpuJobForUser(jobId, userId);
+      if (!latest) return null;
+      job = latest;
+
+      if (terminal.includes(job.status)) {
+        return publicJob(job);
+      }
+
+      if (!pod) {
+        const now = new Date();
+        job = await updateGpuJob(job.id, {
+          status: 'failed',
+          error_message:
+            'Nayla Compute dejó de reportar la instancia antes de completar el trabajo.',
+          completed_at: now.toISOString(),
+          destroyed_at: now.toISOString(),
+          runtime_cost_estimate: computeRuntimeCost(job, now),
+        });
+        return publicJob(job);
+      }
+
+      const desiredStatus = String(pod.desiredStatus || 'unknown').toUpperCase();
+      const runtimeMetadata = {
+        ...job.metadata,
+        runpodRuntime: {
+          desiredStatus,
+          lastStatusChange: pod.lastStatusChange || null,
+          checkedAt: new Date().toISOString(),
+        },
+      };
+
+      const stopped = ['EXITED', 'DEAD', 'TERMINATED', 'STOPPED'].includes(
+        desiredStatus
+      );
+
+      if (stopped) {
+        const now = new Date();
+        job = await updateGpuJob(job.id, {
+          status: 'failed',
+          error_message:
+            'La GPU terminó antes de que el worker confirmara el resultado. Nayla activó la limpieza.',
+          completed_at: now.toISOString(),
+          destroyed_at: now.toISOString(),
+          runtime_cost_estimate: computeRuntimeCost(job, now),
+          metadata: runtimeMetadata,
+        });
+        return publicJob(job);
+      }
+
+      if (
+        desiredStatus === 'RUNNING' &&
+        (job.status === 'renting' || job.status === 'booting')
+      ) {
+        const updated = await updateGpuJobIfStatus(job.id, job.status, {
+          status: 'running',
+          metadata: runtimeMetadata,
+        });
+        if (updated) job = updated;
+        return publicJob(job);
+      }
+
+      job = await updateGpuJob(job.id, {
+        metadata: runtimeMetadata,
+      });
+    } catch (error) {
+      console.warn('[gpu] No se pudo reconciliar una instancia Nayla Compute:', error);
+    }
+
     return publicJob(job);
   }
 
   try {
-    const instance = await getVastInstance(job.instance_id);
+    const instance = job.instance_id
+      ? await getVastInstance(job.instance_id)
+      : null;
     const latest = await getGpuJobForUser(jobId, userId);
     if (!latest) return null;
     job = latest;
@@ -1014,7 +1093,8 @@ export const getGpuJobStatusForUser = async ({
       const now = new Date();
       job = await updateGpuJob(job.id, {
         status: 'failed',
-        error_message: 'Vast.ai dejó de reportar la instancia antes de completar el trabajo.',
+        error_message:
+          'Nayla Compute dejó de reportar la instancia antes de completar el trabajo.',
         completed_at: now.toISOString(),
         destroyed_at: now.toISOString(),
         runtime_cost_estimate: computeRuntimeCost(job, now),
@@ -1023,11 +1103,17 @@ export const getGpuJobStatusForUser = async ({
     }
 
     const actualStatus =
-      typeof instance.actual_status === 'string' ? instance.actual_status : 'unknown';
+      typeof instance.actual_status === 'string'
+        ? instance.actual_status
+        : 'unknown';
     const intendedStatus =
-      typeof instance.intended_status === 'string' ? instance.intended_status : 'unknown';
+      typeof instance.intended_status === 'string'
+        ? instance.intended_status
+        : 'unknown';
     const statusMessage =
-      typeof instance.status_msg === 'string' ? instance.status_msg.trim().slice(0, 1000) : '';
+      typeof instance.status_msg === 'string'
+        ? instance.status_msg.trim().slice(0, 1000)
+        : '';
 
     const runtimeMetadata = {
       ...job.metadata,
@@ -1045,36 +1131,28 @@ export const getGpuJobStatusForUser = async ({
 
     if (hasStartupError(statusMessage) || stopped) {
       const now = new Date();
-      const instanceId = job.instance_id;
-      if (!instanceId) {
-        job = await updateGpuJob(job.id, {
-          status: 'failed',
-          error_message: statusMessage || 'La instancia Vast desapareció durante el arranque.',
-          completed_at: now.toISOString(),
-          destroyed_at: now.toISOString(),
-          runtime_cost_estimate: computeRuntimeCost(job, now),
-          metadata: runtimeMetadata,
-        });
-        return publicJob(job);
-      }
-
       let destroyedAt: string | null = null;
       try {
-        await destroyVastInstance(instanceId);
+        await destroyComputeInstance(job);
         destroyedAt = new Date().toISOString();
       } catch (destroyError) {
-        console.error('[gpu] No se pudo destruir la instancia tras fallo de arranque:', destroyError);
+        console.error(
+          '[gpu] No se pudo destruir la instancia tras fallo de arranque:',
+          destroyError
+        );
       }
 
       job = await updateGpuJob(job.id, {
         status: destroyedAt ? 'failed' : 'cleanup_pending',
         error_message:
           statusMessage ||
-          'La instancia Vast no alcanzó un estado ejecutable y Nayla activó la limpieza.',
+          'La instancia no alcanzó un estado ejecutable y Nayla activó la limpieza.',
         completed_at: now.toISOString(),
         destroyed_at: destroyedAt,
         runtime_cost_estimate: computeRuntimeCost(job, now),
-        lease_expires_at: destroyedAt ? job.lease_expires_at : new Date(Date.now() - 1000).toISOString(),
+        lease_expires_at: destroyedAt
+          ? job.lease_expires_at
+          : new Date(Date.now() - 1000).toISOString(),
         metadata: {
           ...runtimeMetadata,
           terminalStatus: 'failed',
@@ -1100,8 +1178,9 @@ export const getGpuJobStatusForUser = async ({
       metadata: runtimeMetadata,
     });
   } catch (error) {
-    console.warn('[gpu] No se pudo reconciliar el estado de Vast:', error);
+    console.warn('[gpu] No se pudo reconciliar el estado de Nayla Compute:', error);
   }
 
   return publicJob(job);
 };
+
