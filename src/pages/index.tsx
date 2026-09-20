@@ -291,6 +291,15 @@ export default function NaylaCore() {
   const [chatProcessing, setChatProcessing] = useState(false);
   const [stockImportingId, setStockImportingId] = useState<string | null>(null);
 
+  const gpuPollKey = chatMessages
+    .map((message) =>
+      message.actionPlan?.gpuJobId
+        ? message.actionPlan.gpuJobId + ':' + (message.actionPlan.status || 'queued')
+        : ''
+    )
+    .filter(Boolean)
+    .join('|');
+
   useEffect(() => {
     const activeJobIds = Array.from(new Set(
       chatMessages
@@ -391,7 +400,7 @@ export default function NaylaCore() {
       cancelled = true;
       window.clearInterval(timer);
     };
-  }, [chatMessages, session]);
+  }, [gpuPollKey, session]);
 
   const toolsOverlayRef = useRef<HTMLDivElement>(null);
   const chatOverlayRef = useRef<HTMLDivElement>(null);
