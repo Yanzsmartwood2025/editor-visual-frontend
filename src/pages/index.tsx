@@ -64,6 +64,7 @@ type NaylaChatMessage = {
     status?: string;
     providers?: { id: string; label: string }[];
     gpuJobId?: string;
+    mediaJobId?: string;
     gpuName?: string | null;
     hourlyPrice?: number | null;
     estimatedMaxCost?: number | null;
@@ -1038,14 +1039,18 @@ export default function NaylaCore() {
         ? 'Voy a armar el timeline con los medios existentes.'
         : 'Acción preparada.');
 
-      const actionPlan = (data.status === 'planned' || data.status === 'awaiting_confirmation' || data.gpuJobId)
+      const isGpuAction = data.action === 'RUN_GPU_JOB';
+      const actionPlan = (data.status === 'planned' || data.status === 'awaiting_confirmation' || data.gpuJobId || data.mediaJobId)
         ? {
             action: data.action,
             status: data.status,
-            providers: (data.gpuJobId || data.status === 'awaiting_confirmation')
+            providers: isGpuAction && (data.gpuJobId || data.quote)
               ? [{ id: 'vast', label: 'Vast.ai' }]
-              : (Array.isArray(data.availableProviders) ? data.availableProviders : []),
+              : data.selectedProvider
+                ? [data.selectedProvider]
+                : (Array.isArray(data.availableProviders) ? data.availableProviders : []),
             gpuJobId: data.gpuJobId,
+            mediaJobId: data.mediaJobId,
             gpuName: data.job?.gpuName ?? data.quote?.gpuName ?? null,
             hourlyPrice: data.job?.hourlyPrice ?? data.quote?.hourlyPrice ?? null,
             estimatedMaxCost: data.job?.estimatedMaxCost ?? data.quote?.estimatedMaxCost ?? null,
