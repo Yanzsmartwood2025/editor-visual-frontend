@@ -12,6 +12,9 @@ import {
   parseNaylaAction,
   type NaylaAction,
 } from '../../lib/naylaActions';
+import { startVastGpuJob } from '../../lib/gpu/orchestrator';
+import { resolveRequestPublicBaseUrl } from '../../lib/gpu/requestUrl';
+import type { GpuWorkload } from '../../lib/gpu/profiles';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
 const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
