@@ -219,7 +219,7 @@ export const startVastGpuJob = async ({
 
   const [account, offers] = await Promise.all([
     getVastAccountSummary(),
-    searchVastOffers(profile),
+    searchVastOffers(profile, policy.offerReliabilityMin),
   ]);
 
   const offer = offers[0];
