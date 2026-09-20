@@ -4,6 +4,7 @@ import {
   getGpuRecipePlan,
   validateRecipeInputs,
 } from '../lib/gpu/recipes';
+import { resolveGpuExecutionPlan } from '../lib/gpu/planner';
 
 describe('GPU recipes', () => {
   it('enables TripoSR only for the explicit image-to-3D recipe', () => {
@@ -17,6 +18,25 @@ describe('GPU recipes', () => {
 
     expect(getGpuRecipePlan('3d', 'unknown-recipe')).toBeNull();
     expect(getGpuRecipePlan('video', 'triposr-image-to-3d')).toBeNull();
+  });
+
+  it('never lets a recipe relax the global hourly price cap', () => {
+    const original = process.env.VAST_MAX_HOURLY_USD;
+    process.env.VAST_MAX_HOURLY_USD = '0.20';
+
+    try {
+      const plan = resolveGpuExecutionPlan({
+        workload: '3d',
+        recipe: 'triposr-image-to-3d',
+        inputUrls: ['https://cdn.example/model-input.png'],
+      });
+
+      expect(plan.profile.maxHourlyUsd).toBe(0.20);
+      expect(plan.workerImage).toContain('pytorch/pytorch');
+    } finally {
+      if (original === undefined) delete process.env.VAST_MAX_HOURLY_USD;
+      else process.env.VAST_MAX_HOURLY_USD = original;
+    }
   });
 
   it('requires exactly one public HTTPS input for TripoSR', () => {
