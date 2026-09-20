@@ -99,8 +99,8 @@ const buildProbeOnstart = () => [
   'except Exception as exc:',
   '    status = "failed"',
   '    error = str(exc)[:1000]',
-  'body = json.dumps({"jobId": os.environ["NAYLA_GPU_JOB_ID"], "token": os.environ["NAYLA_GPU_CALLBACK_TOKEN"], "status": status, "error": error, "metadata": metadata}).encode("utf-8")',
-  'req = urllib.request.Request(os.environ["NAYLA_GPU_CALLBACK_URL"], data=body, headers={"Content-Type": "application/json"}, method="POST")',
+  'body = json.dumps({"jobId": os.environ["NAYLA_GPU_JOB_ID"], "status": status, "error": error, "metadata": metadata}).encode("utf-8")',
+  'req = urllib.request.Request(os.environ["NAYLA_GPU_CALLBACK_URL"], data=body, headers={"Content-Type": "application/json", "Authorization": "Bearer " + os.environ["NAYLA_GPU_CALLBACK_TOKEN"]}, method="POST")',
   'urllib.request.urlopen(req, timeout=30).read()',
   'PY',
 ].join('\n');
@@ -120,8 +120,8 @@ const buildWorkerOnstart = () => [
   'fi',
   'NAYLA_GPU_FINAL_STATUS="$status" NAYLA_GPU_FINAL_ERROR="$error" python - <<\'PY\'',
   'import json, os, urllib.request',
-  'body = json.dumps({"jobId": os.environ["NAYLA_GPU_JOB_ID"], "token": os.environ["NAYLA_GPU_CALLBACK_TOKEN"], "status": os.environ.get("NAYLA_GPU_FINAL_STATUS", "failed"), "error": os.environ.get("NAYLA_GPU_FINAL_ERROR") or None}).encode("utf-8")',
-  'req = urllib.request.Request(os.environ["NAYLA_GPU_CALLBACK_URL"], data=body, headers={"Content-Type": "application/json"}, method="POST")',
+  'body = json.dumps({"jobId": os.environ["NAYLA_GPU_JOB_ID"], "status": os.environ.get("NAYLA_GPU_FINAL_STATUS", "failed"), "error": os.environ.get("NAYLA_GPU_FINAL_ERROR") or None}).encode("utf-8")',
+  'req = urllib.request.Request(os.environ["NAYLA_GPU_CALLBACK_URL"], data=body, headers={"Content-Type": "application/json", "Authorization": "Bearer " + os.environ["NAYLA_GPU_CALLBACK_TOKEN"]}, method="POST")',
   'urllib.request.urlopen(req, timeout=30).read()',
   'PY',
 ].join('\n');
@@ -302,8 +302,7 @@ export const startVastGpuJob = async ({
   });
 
   const manifestUrl =
-    baseUrl + '/api/gpu/manifest?jobId=' + encodeURIComponent(job.id) +
-    '&token=' + encodeURIComponent(callbackToken);
+    baseUrl + '/api/gpu/manifest?jobId=' + encodeURIComponent(job.id);
   const callbackUrl = baseUrl + '/api/gpu/callback';
   const label =
     'nayla-gpu-' + input.workload + '-' + job.id.slice(0, 8);
