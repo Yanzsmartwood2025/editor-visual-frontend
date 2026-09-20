@@ -358,6 +358,7 @@ export default function NaylaCore() {
   // Nayla Chat States
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [chatInput, setChatInput] = useState('');
+  const chatInputRef = useRef<HTMLTextAreaElement | null>(null);
   const [chatMessages, setChatMessages] = useState<NaylaChatMessage[]>([]);
   const [chatProcessing, setChatProcessing] = useState(false);
   const [cloudExecutingIds, setCloudExecutingIds] = useState<string[]>([]);
@@ -369,6 +370,19 @@ export default function NaylaCore() {
   const [projectMenuOpen, setProjectMenuOpen] = useState(false);
   const [chatAttachmentIds, setChatAttachmentIds] = useState<string[]>([]);
   const [channelUploadingKind, setChannelUploadingKind] = useState<NaylaChannelKind | null>(null);
+
+  useEffect(() => {
+    const textarea = chatInputRef.current;
+    if (!textarea) return;
+
+    const minHeight = 46;
+    const maxHeight = 190;
+    textarea.style.height = '0px';
+
+    const nextHeight = Math.max(minHeight, Math.min(textarea.scrollHeight, maxHeight));
+    textarea.style.height = `${nextHeight}px`;
+    textarea.style.overflowY = textarea.scrollHeight > maxHeight ? 'auto' : 'hidden';
+  }, [chatInput, isAiModalOpen, isChatOpen]);
 
   const updateRenderTask = (
     requestId: string | undefined,
@@ -4728,6 +4742,7 @@ if (!session) {
             maxWidth: '100vw'
           }}>
             <textarea
+              ref={chatInputRef}
               value={chatInput}
               onChange={(e) => setChatInput(e.target.value)}
               onKeyDown={(e) => {
@@ -4741,22 +4756,23 @@ if (!session) {
               style={{
                 flex: 1,
                 minWidth: 0,
-                minHeight: 42,
-                maxHeight: 132,
-                padding: '10px 12px',
+                minHeight: 46,
+                maxHeight: 190,
+                padding: '11px 13px',
                 backgroundColor: '#111',
                 border: '1px solid #333',
-                borderRadius: '16px',
+                borderRadius: '18px',
                 color: '#fff',
                 outline: 'none',
                 fontSize: '16px',
-                lineHeight: 1.4,
+                lineHeight: 1.42,
                 boxSizing: 'border-box',
                 resize: 'none',
-                overflowY: 'auto',
+                overflowY: 'hidden',
                 fontFamily: 'inherit',
                 userSelect: 'text',
                 WebkitUserSelect: 'text',
+                transition: 'height 90ms ease-out',
               }}
             />
             <button
