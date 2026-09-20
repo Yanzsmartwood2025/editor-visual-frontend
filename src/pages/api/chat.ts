@@ -1,14 +1,22 @@
-import { NextApiRequest, NextApiResponse } from 'next';
+import type { NextApiRequest, NextApiResponse } from 'next';
 import { createClient } from '@supabase/supabase-js';
+import { z } from 'zod';
 import { executeWithApiKey } from '../../utils/apiKeyManager';
 import { GroqProvider, MistralProvider } from '../../utils/llmProvider';
-import { z } from 'zod';
+import { requireFirebaseUser } from '../../lib/firebaseAdmin';
+import { MEDIA_CAPABILITY_CATALOG } from '../../lib/mediaProviders/capabilities';
+import { getConfiguredProviderSummary } from '../../lib/mediaProviders/registry';
+import { searchStockMedia } from '../../lib/mediaProviders/stock';
+import {
+  getAvailableProvidersForAction,
+  parseNaylaAction,
+  type NaylaAction,
+} from '../../lib/naylaActions';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
 const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
 const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY || supabaseKey;
 
-// Avoid throwing error on module load if env vars are missing
 const supabaseAdmin = supabaseUrl && supabaseServiceRoleKey
   ? createClient(supabaseUrl, supabaseServiceRoleKey)
   : null;
@@ -16,16 +24,16 @@ const supabaseAdmin = supabaseUrl && supabaseServiceRoleKey
 const availableEffectsCatalog = {
   transiciones: {
     campo: 'transitionType',
-    valores: ['fade', 'wipe', 'slide', 'zoom']
+    valores: ['fade', 'wipe', 'slide', 'zoom'],
   },
   filtros: {
     campo: 'efecto',
-    valores: ['grayscale', 'sepia', 'vintage', 'blur', 'ken-burns', 'pan', 'rotate']
+    valores: ['grayscale', 'sepia', 'vintage', 'blur', 'ken-burns', 'pan', 'rotate'],
   },
   overlays: {
     campo: 'overlay',
-    valores: ['vignette', 'film-grain', 'light-leak']
-  }
+    valores: ['vignette', 'film-grain', 'light-leak'],
+  },
 };
 
 export const config = {
@@ -36,21 +44,85 @@ export const config = {
   },
 };
 
+const historyItemSchema = z.object({
+  role: z.enum(['user', 'assistant']),
+  content: z.string().max(12000),
+});
+
 const requestSchema = z.object({
-  message: z.string().min(1, 'Falta el parámetro requerido o está vacío: message'),
-  images: z.array(z.string()).optional(),
-  history: z.array(z.any()).optional(),
+  message: z.string().trim().min(1, 'Falta el parámetro requerido o está vacío: message').max(12000),
+  images: z.array(z.string().max(4_000_000)).max(4).optional(),
+  history: z.array(historyItemSchema).max(30).optional(),
   provider: z.enum(['groq', 'mistral']).optional().default('groq'),
   mediaLibrary: z.array(z.object({
     id: z.string().optional(),
     tipo: z.enum(['foto', 'video', 'audio']),
     url: z.string().url(),
-    nombre: z.string().optional(),
-    etiqueta: z.string().optional(),
-    fuente: z.string().optional()
-  })).optional(),
-  currentTimeline: z.array(z.any()).optional()
+    nombre: z.string().max(500).optional(),
+    etiqueta: z.string().max(100).optional(),
+    fuente: z.string().max(100).optional(),
+    metadata: z.record(z.string(), z.unknown()).optional(),
+  })).max(500).optional(),
+  currentTimeline: z.array(z.object({
+    id: z.string().optional(),
+    tipo: z.enum(['foto', 'video', 'audio']),
+    url: z.string().url(),
+    nombre: z.string().max(500).optional(),
+    etiqueta: z.string().max(100).optional(),
+  })).max(250).optional(),
 });
+
+const generationActionNames = new Set([
+  'GENERATE_IMAGE',
+  'GENERATE_VIDEO',
+  'GENERATE_AUDIO',
+  'GENERATE_3D',
+  'RUN_GPU_JOB',
+]);
+
+const describeActionPlan = (action: NaylaAction) => {
+  const providers = getAvailableProvidersForAction(action).map((provider) => ({
+    id: provider.id,
+    label: provider.label,
+  }));
+
+  return {
+    ...action,
+    status: 'planned' as const,
+    executionReady: false,
+    requiresConfirmation: generationActionNames.has(action.action),
+    availableProviders: providers,
+    text: providers.length
+      ? `Preparé la tarea. Puedo enrutarla por: ${providers.map((item) => item.label).join(', ')}. La ejecución de esta capacidad se habilitará en el adaptador correspondiente sin exponer la API key.`
+      : 'Preparé la tarea, pero no hay un proveedor configurado para esa capacidad todavía.',
+  };
+};
+
+const executeValidatedAction = async (action: NaylaAction) => {
+  if (action.action === 'SEARCH_MEDIA') {
+    const search = await searchStockMedia({
+      query: action.query,
+      kind: action.kind,
+      limit: action.limit,
+      providers: action.providers,
+    });
+
+    return {
+      ...action,
+      status: 'completed' as const,
+      ...search,
+      text: search.results.length
+        ? `Encontré ${search.results.length} resultado${search.results.length === 1 ? '' : 's'} para “${action.query}”.`
+        : `No encontré resultados utilizables para “${action.query}”.`,
+    };
+  }
+
+  if (action.action === 'BUILD_TIMELINE') {
+    return action;
+  }
+
+  return describeActionPlan(action);
+};
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== 'POST') {
@@ -58,74 +130,161 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
 
   try {
-    const parsedBody = requestSchema.safeParse(req.body);
+    await requireFirebaseUser(req);
+  } catch {
+    return res.status(401).json({ error: 'Token Firebase inválido.' });
+  }
 
+  try {
+    const parsedBody = requestSchema.safeParse(req.body);
     if (!parsedBody.success) {
-      return res.status(400).json({ error: parsedBody.error.issues?.[0]?.message || 'Invalid parameters' });
+      return res.status(400).json({
+        error: parsedBody.error.issues?.[0]?.message || 'Invalid parameters',
+      });
     }
 
     const { message, images, history, provider, mediaLibrary, currentTimeline } = parsedBody.data;
 
+    const providerSummary = getConfiguredProviderSummary();
+    const capabilitySummary = MEDIA_CAPABILITY_CATALOG.map((item) => ({
+      id: item.id,
+      label: item.label,
+      group: item.group,
+      requiresConsent: Boolean(item.requiresConsent),
+    }));
+
     const systemPrompt = `
-Eres Nayla, asistente de IA para un editor de video basado en Remotion.
-Debes ser conciso, amable y experto.
+Eres Nayla, orquestadora de IA para un editor multimedia basado en Remotion.
 
-PRIORIDAD ACTUAL:
-- NO generes imagen, video, audio ni búsquedas multimedia nuevas.
-- Solo puedes usar medios existentes que el frontend te entrega en mediaLibrary/currentTimeline.
-- Si el usuario pide "arma el video", "crea el video con esto", "usa estos medios" o algo equivalente, responde ÚNICAMENTE con JSON válido, sin markdown ni bloques de código.
-- Respeta el orden exacto en que aparecen los medios disponibles, salvo que el usuario pida otro orden explícito.
-- Copia las URLs exactamente como llegan. No inventes URLs.
+REGLAS DE SEGURIDAD Y EJECUCIÓN:
+- Nunca pidas, muestres, inventes ni repitas API keys, tokens o secretos.
+- Solo puedes usar proveedores y capacidades que aparecen en el catálogo seguro de este prompt.
+- Si el usuario no elige proveedor, omite "provider": el servidor elegirá uno configurado.
+- No afirmes que una generación pagada terminó. Tu trabajo es devolver una acción validada; el servidor decide si la ejecuta.
+- Clonación/cambio de voz debe tratarse como una función que requiere una muestra autorizada y consentimiento del titular.
+- No inventes URLs. Para BUILD_TIMELINE copia solo URLs presentes en mediaLibrary/currentTimeline.
+- Para una petición ejecutable responde ÚNICAMENTE JSON válido, sin markdown ni texto adicional.
+- Para conversación normal responde texto normal.
 
-Contrato único ejecutable:
+ACCIONES EJECUTABLES:
+
+1) Buscar stock:
+{
+  "action": "SEARCH_MEDIA",
+  "query": "ciudad de noche",
+  "kind": "image",
+  "limit": 6
+}
+kind: "image" | "video" | "audio".
+providers opcional: ["pexels","pixabay","openverse"].
+
+2) Generar/editar imagen:
+{
+  "action": "GENERATE_IMAGE",
+  "prompt": "descripción",
+  "sourceImageUrl": "https://..." 
+}
+sourceImageUrl es opcional.
+
+3) Generar video:
+{
+  "action": "GENERATE_VIDEO",
+  "prompt": "descripción",
+  "sourceImageUrl": "https://..."
+}
+sourceImageUrl es opcional.
+
+4) Audio/voz:
+{
+  "action": "GENERATE_AUDIO",
+  "mode": "tts",
+  "text": "texto",
+  "prompt": "descripción opcional",
+  "inputUrl": "https://...",
+  "voiceId": "opcional",
+  "targetLanguage": "opcional"
+}
+mode puede ser: tts, music, sound_effects, speech_to_text, voice_clone, voice_design,
+voice_change, voice_isolation, dubbing, text_to_dialogue, forced_alignment.
+Incluye solo los campos necesarios.
+
+5) 3D:
+{
+  "action": "GENERATE_3D",
+  "mode": "image_to_3d",
+  "prompt": "opcional",
+  "inputUrl": "https://...",
+  "inputUrls": ["https://..."]
+}
+mode: text_to_3d, image_to_3d, multiview_to_3d, texture, optimize, rig, animate, retarget.
+
+6) GPU:
+{
+  "action": "RUN_GPU_JOB",
+  "jobType": "nombre corto del proceso",
+  "prompt": "opcional",
+  "inputUrls": ["https://..."]
+}
+
+7) Construir timeline con medios existentes:
 {
   "action": "BUILD_TIMELINE",
   "assets": [
-    { "type": "foto", "source": "url", "url": "https://...", "efecto": "vintage", "transitionType": "fade", "transitionDuration": 0.5, "fadeIn": 0.5, "fadeOut": 0.5 },
-    { "type": "video", "source": "url", "url": "https://...", "efecto": "grayscale", "transitionType": "slide", "transitionDuration": 0.5, "fadeIn": 0.5, "fadeOut": 0.5 },
-    { "type": "audio", "source": "url", "url": "https://...", "fadeIn": 1, "fadeOut": 1 }
+    {
+      "type": "foto",
+      "source": "url",
+      "url": "https://...",
+      "efecto": "vintage",
+      "transitionType": "fade",
+      "transitionDuration": 0.5,
+      "fadeIn": 0.5,
+      "fadeOut": 0.5
+    }
   ],
   "render": true
 }
 
-Usa type únicamente como "foto", "video" o "audio". Usa source únicamente como "url".
-Campos opcionales por asset si el usuario pide efectos: "efecto", "transitionType", "transitionDuration", "fadeIn", "fadeOut", "overlay", "overlayIntensity". Usa "efecto" exactamente en español.
+Usa type únicamente "foto", "video" o "audio". source únicamente "url".
+Efectos disponibles:
+${JSON.stringify(availableEffectsCatalog)}
 
-Catálogo real disponible hoy (usa solo estos nombres; el campo efecto incluye filtros de color y movimientos para fotos):
-${JSON.stringify(availableEffectsCatalog, null, 2)}
+CATÁLOGO DE CAPACIDADES:
+${JSON.stringify(capabilitySummary)}
 
-Reglas para usar el catálogo:
-- Para filtros visuales por foto/video y movimientos para fotos, escribe el valor directamente en el campo "efecto". En esta fase, "efecto" acepta un solo valor: no combines un filtro de color con un movimiento en el mismo asset.
-- Para transiciones entre clips, escribe el valor en "transitionType" y acompáñalo con "transitionDuration" en segundos.
-- Para overlays visuales, escribe el valor en el campo "overlay".
-- Si el usuario pide efectos pero no especifica cuál, elige únicamente de este catálogo real.
-Si no hay medios suficientes para armar el timeline, responde texto normal explicando qué falta.
-Para todo lo que no sea construir el timeline con medios existentes, responde normalmente en texto.
+PROVEEDORES DISPONIBLES (sin secretos):
+${JSON.stringify(providerSummary)}
+
+Si una petición combina pasos, elige la PRIMERA acción necesaria. El resultado volverá al chat y el siguiente turno puede continuar el flujo.
 `;
 
-  // Construir historial para mandar al prompt si es necesario,
-  // aunque nuestro provider actual toma un string, podemos concatenar el historial de forma básica
-  // o pasarlo como parte del system prompt/context.
-  let fullPrompt = message;
-  const executionContext = [
-    mediaLibrary?.length ? `Medios disponibles en orden de entrega:\n${mediaLibrary.map((item, index) => `${index + 1}. tipo=${item.tipo}; url=${item.url}; nombre=${item.nombre || ''}; etiqueta=${item.etiqueta || ''}; fuente=${item.fuente || ''}`).join('\n')}` : 'Medios disponibles en orden de entrega: ninguno.',
-    currentTimeline?.length ? `Timeline actual en orden:\n${currentTimeline.map((item: any, index: number) => `${index + 1}. tipo=${item.tipo}; url=${item.url}; nombre=${item.nombre || ''}; etiqueta=${item.etiqueta || ''}`).join('\n')}` : 'Timeline actual: vacío.'
-  ].join('\n\n');
+    const executionContext = [
+      mediaLibrary?.length
+        ? `Medios disponibles en orden:\n${mediaLibrary.map((item, index) =>
+            `${index + 1}. tipo=${item.tipo}; url=${item.url}; nombre=${item.nombre || ''}; etiqueta=${item.etiqueta || ''}; fuente=${item.fuente || ''}`
+          ).join('\n')}`
+        : 'Medios disponibles: ninguno.',
+      currentTimeline?.length
+        ? `Timeline actual:\n${currentTimeline.map((item, index) =>
+            `${index + 1}. tipo=${item.tipo}; url=${item.url}; nombre=${item.nombre || ''}; etiqueta=${item.etiqueta || ''}`
+          ).join('\n')}`
+        : 'Timeline actual: vacío.',
+    ].join('\n\n');
 
-  if (history && Array.isArray(history) && history.length > 0) {
-    const historyText = history.map((msg: any) => `${msg.role}: ${msg.content}`).join('\n');
-    fullPrompt = `${executionContext}\n\nHistorial de la conversación:\n${historyText}\n\nUsuario: ${message}`;
-  } else {
-    fullPrompt = `${executionContext}\n\nUsuario: ${message}`;
-  }
+    const historyText = history?.length
+      ? history.map((msg) => `${msg.role}: ${msg.content}`).join('\n')
+      : '';
 
-    // Definimos cómo ejecutar con Groq
+    const fullPrompt = [
+      executionContext,
+      historyText ? `Historial:\n${historyText}` : '',
+      `Usuario: ${message}`,
+    ].filter(Boolean).join('\n\n');
+
     const executeGroq = async (apiKey: string) => {
       const groqProvider = new GroqProvider(apiKey, 'dialog');
       return await groqProvider.generateText(fullPrompt, images, systemPrompt);
     };
 
-    // Definimos cómo ejecutar con Mistral (como fallback o primario si se elige)
     const executeMistral = async (apiKey: string) => {
       const mistralProvider = new MistralProvider(apiKey, 'dialog');
       return await mistralProvider.generateText(fullPrompt, images, systemPrompt);
@@ -147,38 +306,35 @@ Para todo lo que no sea construir el timeline con medios existentes, responde no
       return await executeWithApiKey(supabaseAdmin, providerName, executor);
     };
 
-    const executeGroqDirectOrPool = () => executeDirectOrPool('groq', process.env.GROQ_API_KEY, executeGroq);
-    const executeMistralDirectOrPool = () => executeDirectOrPool('mistral', process.env.MISTRAL_API_KEY, executeMistral);
+    const executeGroqDirectOrPool = () =>
+      executeDirectOrPool('groq', process.env.GROQ_API_KEY, executeGroq);
+    const executeMistralDirectOrPool = () =>
+      executeDirectOrPool('mistral', process.env.MISTRAL_API_KEY, executeMistral);
 
     let responseText = '';
-
     try {
-      if (provider === 'mistral') {
-        responseText = await executeMistralDirectOrPool().catch(async () => executeGroqDirectOrPool());
-      } else {
-        responseText = await executeGroqDirectOrPool().catch(async () => executeMistralDirectOrPool());
-      }
+      responseText = provider === 'mistral'
+        ? await executeMistralDirectOrPool().catch(async () => executeGroqDirectOrPool())
+        : await executeGroqDirectOrPool().catch(async () => executeMistralDirectOrPool());
     } catch (error: any) {
       console.error('[chat.ts] Todos los proveedores fallaron:', error);
-      return res.status(500).json({ error: error.message || 'Error al generar la respuesta. Ambos proveedores fallaron o están al límite.' });
+      return res.status(500).json({
+        error: error.message || 'Error al generar la respuesta. Ambos proveedores fallaron o están al límite.',
+      });
     }
 
-    // Intentamos parsear por si devolvió el JSON para acciones multimedia
-    try {
-       const cleanedText = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
-       if (cleanedText.startsWith('{') && cleanedText.endsWith('}')) {
-          const parsed = JSON.parse(cleanedText);
-          if (parsed.action === 'BUILD_TIMELINE' && Array.isArray(parsed.assets)) {
-              return res.status(200).json(parsed);
-          }
-       }
-    } catch {
-        // No es JSON, seguimos normal
+    const action = parseNaylaAction(responseText);
+    if (action) {
+      try {
+        const executed = await executeValidatedAction(action);
+        return res.status(200).json(executed);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'La acción de Nayla no pudo ejecutarse.';
+        return res.status(502).json({ error: message, action: action.action });
+      }
     }
 
-    // Respuesta de texto normal
     return res.status(200).json({ text: responseText });
-
   } catch (error: any) {
     console.error('[chat.ts] Error general:', error);
     return res.status(500).json({ error: error.message || 'Internal server error' });
