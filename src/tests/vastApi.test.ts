@@ -3,6 +3,7 @@ import {
   createVastInstance,
   destroyVastInstance,
   getVastAccountSummary,
+  getVastInstance,
   searchVastOffers,
 } from '../lib/gpu/vastApi';
 import { getGpuProfile } from '../lib/gpu/profiles';
@@ -85,6 +86,28 @@ describe('Vast API adapter', () => {
     expect(receivedBody.dph_total).toEqual({ lte: profile.maxHourlyUsd });
     expect(receivedBody.reliability).toEqual({ gte: 0.96 });
     expect(offers.map((offer) => offer.id)).toEqual([1, 2]);
+  });
+
+  it('reads Vast runtime status for startup diagnostics', async () => {
+    process.env.VAST_API_KEY = 'vast-secret';
+
+    vi.stubGlobal('fetch', vi.fn(async (url: string | URL | Request) => {
+      expect(String(url)).toContain('/instances/12345/');
+      return new Response(JSON.stringify({
+        instances: {
+          id: 12345,
+          actual_status: 'running',
+          intended_status: 'running',
+          status_msg: '',
+        },
+      }), { status: 200 });
+    }));
+
+    const instance = await getVastInstance(12345);
+    expect(instance).toMatchObject({
+      actual_status: 'running',
+      intended_status: 'running',
+    });
   });
 
   it('creates and destroys an instance through the current Vast endpoints', async () => {
