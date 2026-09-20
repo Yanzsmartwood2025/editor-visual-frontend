@@ -1,6 +1,6 @@
 
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
-import { createR2PresignedPutUrl, headR2Object } from '../r2';
+import { createR2PresignedGetUrl, createR2PresignedPutUrl, createR2StorageUrl, headR2Object } from '../r2';
 import {
   countActiveGpuJobs,
   getGalleryItemById,
@@ -61,12 +61,22 @@ const computeRuntimeCost = (job: GpuJobRow, end = new Date()) => {
 };
 
 const publicJob = async (job: GpuJobRow) => {
-  const galleryItem = job.gallery_item_id
+  const rawGalleryItem = job.gallery_item_id
     ? await getGalleryItemById(job.gallery_item_id)
     : null;
+  const galleryItem =
+    rawGalleryItem?.r2_key
+      ? {
+          ...rawGalleryItem,
+          url: createR2PresignedGetUrl({ key: rawGalleryItem.r2_key, expiresIn: 900 }).url,
+        }
+      : rawGalleryItem;
+  const outputKey = job.metadata?.outputKey as string | null | undefined;
 
   return {
     id: job.id,
+    projectId: job.project_id,
+    threadId: job.thread_id,
     provider: job.provider,
     workload: job.workload,
     status: job.status,
@@ -78,7 +88,9 @@ const publicJob = async (job: GpuJobRow) => {
       job.runtime_cost_estimate === null ? null : Number(job.runtime_cost_estimate),
     balanceBefore: job.balance_before === null ? null : Number(job.balance_before),
     leaseExpiresAt: job.lease_expires_at,
-    outputUrl: job.output_url,
+    outputUrl: outputKey
+      ? createR2PresignedGetUrl({ key: outputKey, expiresIn: 900 }).url
+      : job.output_url,
     outputContentType: job.output_content_type,
     error: job.error_message,
     galleryItem,
@@ -190,10 +202,14 @@ export const cleanupExpiredVastJobs = async () => {
 
 export const startVastGpuJob = async ({
   userId,
+  projectId,
+  threadId,
   input,
   appBaseUrl,
 }: {
   userId: string;
+  projectId?: string;
+  threadId?: string;
   input: GpuJobInput;
   appBaseUrl: string;
 }) => {
@@ -263,6 +279,8 @@ export const startVastGpuJob = async ({
 
   let job = await insertGpuJob({
     user_id: userId,
+    project_id: projectId || null,
+    thread_id: threadId || null,
     provider: 'vast',
     workload: input.workload,
     status: 'renting',
@@ -297,17 +315,14 @@ export const startVastGpuJob = async ({
 
   const outputKey =
     profile.outputExtension
-      ? userId + '/gpu/' + job.id + '.' + profile.outputExtension
+      ? userId +
+        '/projects/' + (projectId || 'unfiled') +
+        '/' + (threadId ? 'threads/' + threadId : 'shared') +
+        '/gpu/' + input.workload + '/' +
+        job.id + '.' + profile.outputExtension
       : null;
 
-  const outputUrl =
-    outputKey && profile.outputContentType
-      ? createR2PresignedPutUrl({
-          key: outputKey,
-          contentType: profile.outputContentType,
-          expiresIn: 3600,
-        }).url
-      : null;
+  const outputUrl = outputKey ? createR2StorageUrl(outputKey) : null;
 
   job = await updateGpuJob(job.id, {
     output_url: outputUrl,
@@ -434,7 +449,10 @@ export const getGpuManifest = async ({
     output: outputUpload
       ? {
           uploadUrl: outputUpload.uploadUrl,
-          publicUrl: outputUpload.url,
+          publicUrl: createR2PresignedGetUrl({
+            key: outputUpload.key,
+            expiresIn: 3600,
+          }).url,
           contentType: outputUpload.contentType,
           key: outputUpload.key,
         }
@@ -491,17 +509,23 @@ export const finishGpuJob = async ({
 
       const supabase = getGpuSupabaseAdmin();
       const prefix = workloadLabelPrefix(workload);
-      const { count, error: countError } = await supabase
+      let countQuery = supabase
         .from('galeria_multimedia')
         .select('id', { count: 'exact', head: true })
         .eq('user_id', job.user_id)
         .eq('tipo', galleryType);
+      if (job.project_id) countQuery = countQuery.eq('project_id', job.project_id);
+      const { count, error: countError } = await countQuery;
       if (countError) throw countError;
 
       const galleryItem = {
         id: randomUUID(),
         user_id: job.user_id,
-        url: job.output_url,
+        project_id: job.project_id,
+        thread_id: job.thread_id,
+        url: createR2StorageUrl(outputKey),
+        r2_key: outputKey,
+        privacy: 'private',
         tipo: galleryType,
         nombre:
           'Nayla GPU ' + workload + ' ' + job.id.slice(0, 8) + '.' +

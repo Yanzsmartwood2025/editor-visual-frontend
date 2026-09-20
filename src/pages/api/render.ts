@@ -1,9 +1,9 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
-import { createClient } from '@supabase/supabase-js';
 import { requireFirebaseUser } from '../../lib/firebaseAdmin';
 import { startVercelSandboxRender } from '../../lib/vercelSandboxRender';
 import { getCanvasDimensionsFromRatio } from '../../lib/mediaMetadata';
 import { getCompositionDurationInFrames } from '../../lib/timelineMetrics';
+import { getWorkspaceSupabaseAdmin, resolveOwnedWorkspaceScope } from '../../lib/workspaceStore';
 
 const MAX_TIMELINE_ITEMS = 250;
 const MAX_RENDER_SECONDS = 20 * 60;
@@ -12,17 +12,6 @@ const RATE_LIMIT_WINDOW_MS = 10 * 60 * 1000;
 const MAX_RENDERS_PER_WINDOW = 6;
 
 class RenderValidationError extends Error {}
-
-const getSupabaseAdmin = () => {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!url || !serviceRoleKey) {
-    throw new Error('Supabase no está configurado para controlar los renders.');
-  }
-  return createClient(url, serviceRoleKey, {
-    auth: { persistSession: false, autoRefreshToken: false },
-  });
-};
 
 const validateInputProps = (inputProps: unknown) => {
   if (!inputProps || typeof inputProps !== 'object' || Array.isArray(inputProps)) {
@@ -81,8 +70,16 @@ const validateInputProps = (inputProps: unknown) => {
   };
 };
 
-const reserveRenderSlot = async (userId: string) => {
-  const supabase = getSupabaseAdmin();
+const reserveRenderSlot = async ({
+  userId,
+  projectId,
+  threadId,
+}: {
+  userId: string;
+  projectId: string;
+  threadId?: string;
+}) => {
+  const supabase = getWorkspaceSupabaseAdmin();
   const windowStartMs = Date.now() - RATE_LIMIT_WINDOW_MS;
   const windowStart = new Date(windowStartMs).toISOString();
 
@@ -121,7 +118,12 @@ const reserveRenderSlot = async (userId: string) => {
 
   const { data: request, error: insertError } = await supabase
     .from('render_requests')
-    .insert({ user_id: userId, status: 'started' })
+    .insert({
+      user_id: userId,
+      project_id: projectId,
+      thread_id: threadId || null,
+      status: 'started',
+    })
     .select('id')
     .single();
 
@@ -146,12 +148,21 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   if (req.method !== 'POST') return res.status(405).json({ error: 'Usa POST.' });
 
   let renderRequestId: string | null = null;
-  let renderLedger: ReturnType<typeof getSupabaseAdmin> | null = null;
+  let renderLedger: ReturnType<typeof getWorkspaceSupabaseAdmin> | null = null;
 
   try {
     const user = await requireFirebaseUser(req);
     const inputProps = validateInputProps(req.body?.inputProps);
-    const slot = await reserveRenderSlot(user.uid);
+    const scope = await resolveOwnedWorkspaceScope({
+      userId: user.uid,
+      projectId: typeof req.body?.projectId === 'string' ? req.body.projectId : undefined,
+      threadId: typeof req.body?.threadId === 'string' ? req.body.threadId : undefined,
+    });
+    const slot = await reserveRenderSlot({
+      userId: user.uid,
+      projectId: scope.projectId,
+      threadId: scope.threadId,
+    });
     renderLedger = slot.supabase;
 
     if (!slot.allowed) {
@@ -163,13 +174,18 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
 
     renderRequestId = slot.requestId;
-    const data = await startVercelSandboxRender(inputProps, user.uid);
+    const data = await startVercelSandboxRender(inputProps, {
+      ownerId: user.uid,
+      projectId: scope.projectId,
+      threadId: scope.threadId,
+    });
 
     await renderLedger
       .from('render_requests')
       .update({
         status: 'completed',
-        output_url: data.output?.url || null,
+        output_url: data.output?.storageUrl || null,
+        r2_key: data.output?.r2Key || null,
         completed_at: new Date().toISOString(),
       })
       .eq('id', renderRequestId);

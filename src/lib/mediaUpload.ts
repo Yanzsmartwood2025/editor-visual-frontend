@@ -14,6 +14,10 @@ export type MediaItem = {
   etiqueta: string;
   fuente?: string;
   metadata?: MediaMetadata;
+  r2_key?: string | null;
+  project_id?: string | null;
+  thread_id?: string | null;
+  privacy?: 'private' | 'public';
 };
 
 export type UploadableMediaFile = Pick<File, 'name' | 'type'> & Blob;
@@ -25,6 +29,8 @@ type UploadMediaToBodegaParams = {
   forcedTipo?: MediaKind;
   fuente?: string;
   metadataExtra?: Partial<MediaMetadata>;
+  projectId?: string;
+  threadId?: string;
 };
 
 export const SHARED_MEDIA_PENDING_TTL_MS = 24 * 60 * 60 * 1000;
@@ -52,8 +58,12 @@ const defaultExtensionForKind = (tipo: MediaKind): string => {
 
 const getExtension = (file: Pick<File, 'name' | 'type'>, tipo: MediaKind): string => {
   const extension = file.name.split('.').pop()?.toLowerCase();
-  if (extension && extension !== file.name.toLowerCase()) return extension.replace(/[^a-z0-9]/g, '') || defaultExtensionForKind(tipo);
-  if (file.type.includes('/')) return file.type.split('/')[1].split(';')[0].replace(/[^a-z0-9]/g, '') || defaultExtensionForKind(tipo);
+  if (extension && extension !== file.name.toLowerCase()) {
+    return extension.replace(/[^a-z0-9]/g, '') || defaultExtensionForKind(tipo);
+  }
+  if (file.type.includes('/')) {
+    return file.type.split('/')[1].split(';')[0].replace(/[^a-z0-9]/g, '') || defaultExtensionForKind(tipo);
+  }
   return defaultExtensionForKind(tipo);
 };
 
@@ -66,12 +76,18 @@ const fallbackUuid = (): string =>
 
 export const createMediaId = (): string => globalThis.crypto?.randomUUID?.() || fallbackUuid();
 
-type R2UploadResponse = { key: string; url: string };
+type R2UploadResponse = {
+  key: string;
+  url: string;
+  projectId?: string;
+  threadId?: string | null;
+};
 
 type R2PresignResponse = R2UploadResponse & {
   uploadUrl: string;
   contentType: string;
   expiresIn: number;
+  privacy?: 'private';
   error?: string;
 };
 
@@ -95,7 +111,12 @@ export const uploadFileToR2 = async (
   file: UploadableMediaFile,
   session: FirebaseSession,
   mediaId: string,
-  extension: string
+  extension: string,
+  scope?: {
+    kind?: MediaKind | 'modelo3d';
+    projectId?: string;
+    threadId?: string;
+  }
 ): Promise<R2UploadResponse> => {
   const contentType = (file.type || 'application/octet-stream').toLowerCase();
 
@@ -107,6 +128,9 @@ export const uploadFileToR2 = async (
       extension,
       contentType,
       size: file.size,
+      kind: scope?.kind || 'foto',
+      projectId: scope?.projectId,
+      threadId: scope?.threadId,
     }),
   });
 
@@ -124,9 +148,9 @@ export const uploadFileToR2 = async (
       },
       body: file,
     });
-  } catch (error) {
+  } catch {
     throw new Error(
-      'No se pudo enviar el archivo directamente a Cloudflare R2. Revisa la política CORS del bucket para permitir PUT desde el dominio de Nayla.'
+      'No se pudo enviar el archivo directamente a Cloudflare R2. Revisa CORS del bucket para permitir PUT desde el dominio de Nayla.'
     );
   }
 
@@ -137,7 +161,12 @@ export const uploadFileToR2 = async (
     );
   }
 
-  return { key: signed.key, url: signed.url };
+  return {
+    key: signed.key,
+    url: signed.url,
+    projectId: signed.projectId,
+    threadId: signed.threadId,
+  };
 };
 
 export const deleteR2Files = async (keys: string[], session: FirebaseSession) => {
@@ -156,12 +185,16 @@ export const uploadMediaFilesToBodega = async ({
   existingItems = [],
   forcedTipo,
   fuente = 'manual',
-  metadataExtra = {}
+  metadataExtra = {},
+  projectId,
+  threadId,
 }: UploadMediaToBodegaParams): Promise<MediaItem[]> => {
   if (!session?.user?.id) throw new Error('Debes iniciar sesión para guardar archivos en la Bóveda.');
 
   const nuevosItems: MediaItem[] = [];
   const uploadedKeys: string[] = [];
+  let resolvedProjectId = projectId;
+  let resolvedThreadId = threadId;
 
   try {
     for (let i = 0; i < files.length; i++) {
@@ -169,7 +202,10 @@ export const uploadMediaFilesToBodega = async ({
       const tipo = resolveMediaKind(file, forcedTipo) || forcedTipo;
       if (!tipo) throw new Error(`Tipo de archivo no soportado: ${file.name}`);
 
-      const countTipo = existingItems.filter(item => item.tipo === tipo).length + nuevosItems.filter(item => item.tipo === tipo).length + 1;
+      const countTipo =
+        existingItems.filter((item) => item.tipo === tipo).length +
+        nuevosItems.filter((item) => item.tipo === tipo).length +
+        1;
       const inicial = tipo === 'video' ? 'V' : tipo === 'foto' ? 'F' : 'A';
       const id = createMediaId();
       const extension = getExtension(file, tipo);
@@ -181,12 +217,22 @@ export const uploadMediaFilesToBodega = async ({
         console.warn(`No se pudo detectar metadata local de ${file.name}; la subida continuará.`, error);
       }
 
-      const { key, url } = await uploadFileToR2(file, session, id, extension);
-      uploadedKeys.push(key);
+      const uploaded = await uploadFileToR2(file, session, id, extension, {
+        kind: tipo,
+        projectId: resolvedProjectId,
+        threadId: resolvedThreadId,
+      });
+      uploadedKeys.push(uploaded.key);
+      resolvedProjectId = uploaded.projectId || resolvedProjectId;
+      resolvedThreadId = uploaded.threadId || resolvedThreadId;
 
       nuevosItems.push({
         id,
-        url,
+        url: uploaded.url,
+        r2_key: uploaded.key,
+        project_id: resolvedProjectId || null,
+        thread_id: resolvedThreadId || null,
+        privacy: 'private',
         tipo,
         nombre: file.name || `${inicial}${countTipo}.${extension}`,
         creado_en: new Date().toISOString(),
@@ -204,14 +250,18 @@ export const uploadMediaFilesToBodega = async ({
   const response = await fetch('/api/galeria', {
     method: 'POST',
     headers: firebaseHeaders(session, { 'Content-Type': 'application/json' }),
-    body: JSON.stringify({ items: nuevosItems }),
+    body: JSON.stringify({
+      items: nuevosItems,
+      projectId: resolvedProjectId,
+      threadId: resolvedThreadId,
+    }),
   });
-  const data = await response.json() as { error?: string };
+  const payload = await response.json() as { error?: string; data?: MediaItem[] };
 
   if (!response.ok) {
     await deleteR2Files(uploadedKeys, session);
-    throw new Error(`Error registrando archivos en la Bóveda: ${data.error || 'Error desconocido.'}`);
+    throw new Error(`Error registrando archivos en la Bóveda: ${payload.error || 'Error desconocido.'}`);
   }
 
-  return nuevosItems;
+  return payload.data || nuevosItems;
 };

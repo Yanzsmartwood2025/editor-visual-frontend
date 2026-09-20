@@ -1,59 +1,125 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
-import { createClient } from '@supabase/supabase-js';
 import { requireFirebaseUser } from '../../lib/firebaseAdmin';
+import { createR2PresignedGetUrl, createR2StorageUrl } from '../../lib/r2';
+import {
+  getWorkspaceSupabaseAdmin,
+  resolveOwnedWorkspaceScope,
+} from '../../lib/workspaceStore';
 
-const getSupabase = () => {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!url || !serviceRoleKey) throw new Error('Supabase no está configurado para acceso de servidor.');
-  return createClient(url, serviceRoleKey);
+const hydratePrivateUrl = (item: Record<string, any>) => {
+  if (!item?.r2_key) return item;
+  return {
+    ...item,
+    url: createR2PresignedGetUrl({ key: item.r2_key, expiresIn: 3600 }).url,
+  };
 };
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   try {
     const user = await requireFirebaseUser(req);
-    const supabase = getSupabase();
+    const supabase = getWorkspaceSupabaseAdmin();
 
     if (req.method === 'GET') {
-      const { data, error } = await supabase
+      const projectId = Array.isArray(req.query.projectId) ? req.query.projectId[0] : req.query.projectId;
+      const threadId = Array.isArray(req.query.threadId) ? req.query.threadId[0] : req.query.threadId;
+      const scope = await resolveOwnedWorkspaceScope({
+        userId: user.uid,
+        projectId: typeof projectId === 'string' ? projectId : undefined,
+        threadId: typeof threadId === 'string' ? threadId : undefined,
+      });
+
+      let query = supabase
         .from('galeria_multimedia')
         .select('*')
         .eq('user_id', user.uid)
+        .eq('project_id', scope.projectId)
         .order('creado_en', { ascending: true });
+
+      if (scope.threadId) query = query.eq('thread_id', scope.threadId);
+
+      const { data, error } = await query;
       if (error) throw error;
-      return res.status(200).json({ data });
+
+      return res.status(200).json({
+        projectId: scope.projectId,
+        threadId: scope.threadId || null,
+        data: (data || []).map(hydratePrivateUrl),
+      });
     }
 
     if (req.method === 'POST') {
       const items = Array.isArray(req.body?.items) ? req.body.items : [];
       if (!items.length) return res.status(400).json({ error: 'Se requiere al menos un elemento de galería.' });
+
+      const first = items[0] || {};
+      const scope = await resolveOwnedWorkspaceScope({
+        userId: user.uid,
+        projectId: req.body?.projectId || first.project_id,
+        threadId: req.body?.threadId || first.thread_id,
+      });
+
+      const rows = items.map((item: Record<string, any>) => {
+        const r2Key = typeof item.r2_key === 'string' ? item.r2_key : null;
+        if (r2Key && !r2Key.startsWith(`${user.uid}/`)) {
+          throw new Error('La clave R2 no pertenece al usuario autenticado.');
+        }
+
+        return {
+          id: item.id,
+          user_id: user.uid,
+          project_id: scope.projectId,
+          thread_id: scope.threadId || null,
+          url: r2Key ? createR2StorageUrl(r2Key) : item.url,
+          r2_key: r2Key,
+          privacy: r2Key ? 'private' : (item.privacy || 'private'),
+          tipo: item.tipo,
+          nombre: item.nombre,
+          creado_en: item.creado_en || new Date().toISOString(),
+          esOverlay: Boolean(item.esOverlay),
+          etiqueta: item.etiqueta || null,
+          fuente: item.fuente || null,
+          memoria_id: item.memoria_id || null,
+          metadata: item.metadata || {},
+        };
+      });
+
       const { data, error } = await supabase
         .from('galeria_multimedia')
-        .insert(items.map((item: Record<string, unknown>) => {
-          const itemForUser = { ...item };
-          delete itemForUser.user_id;
-          return { ...itemForUser, user_id: user.uid };
-        }))
+        .insert(rows)
         .select();
       if (error) throw error;
-      return res.status(201).json({ data });
+
+      return res.status(201).json({
+        projectId: scope.projectId,
+        threadId: scope.threadId || null,
+        data: (data || []).map(hydratePrivateUrl),
+      });
     }
 
     if (req.method === 'PATCH') {
       const { id, nombre } = req.body || {};
-      if (typeof id !== 'string' || typeof nombre !== 'string') return res.status(400).json({ error: 'Se requieren id y nombre.' });
-      const { error } = await supabase
+      if (typeof id !== 'string' || typeof nombre !== 'string') {
+        return res.status(400).json({ error: 'Se requieren id y nombre.' });
+      }
+
+      const { data, error } = await supabase
         .from('galeria_multimedia')
         .update({ nombre })
         .eq('id', id)
-        .eq('user_id', user.uid);
+        .eq('user_id', user.uid)
+        .select('id')
+        .maybeSingle();
       if (error) throw error;
+      if (!data) return res.status(404).json({ error: 'Archivo no encontrado.' });
       return res.status(200).json({ success: true });
     }
 
     if (req.method === 'DELETE') {
-      const ids = Array.isArray(req.body?.ids) ? req.body.ids.filter((id: unknown): id is string => typeof id === 'string') : [];
+      const ids = Array.isArray(req.body?.ids)
+        ? req.body.ids.filter((id: unknown): id is string => typeof id === 'string')
+        : [];
       if (!ids.length) return res.status(400).json({ error: 'Se requiere al menos un id.' });
+
       const { error } = await supabase
         .from('galeria_multimedia')
         .delete()
@@ -67,8 +133,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   } catch (error: unknown) {
     const message = error instanceof Error
       ? error.message
-      : (typeof error === 'object' && error && 'message' in error ? String((error as { message: unknown }).message) : 'Error interno del servidor.');
-    const status = message.includes('token') || message.includes('Bearer') || message.includes('Firebase') ? 401 : 500;
+      : (typeof error === 'object' && error && 'message' in error
+          ? String((error as { message: unknown }).message)
+          : 'Error interno del servidor.');
+    const status = message.includes('token') || message.includes('Bearer') || message.includes('Firebase')
+      ? 401
+      : message.includes('no pertenece') || message.includes('no existe')
+        ? 403
+        : 500;
     console.error('Error en /api/galeria:', error);
     return res.status(status).json({ error: message });
   }

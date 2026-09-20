@@ -31,7 +31,7 @@ if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_A
 const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 type Rect = { id: string; x: number; y: number; width: number; height: number };
-type MediaItem = { id: string; url: string; tipo: 'foto' | 'video' | 'audio'; nombre: string; creado_en: string; esOverlay: boolean; etiqueta: string; fuente?: string; metadata?: MediaMetadata };
+type MediaItem = { id: string; url: string; tipo: 'foto' | 'video' | 'audio'; nombre: string; creado_en: string; esOverlay: boolean; etiqueta: string; fuente?: string; metadata?: MediaMetadata; r2_key?: string | null; project_id?: string | null; thread_id?: string | null; privacy?: 'private' | 'public' };
 type TimelineItem = { id: string; mediaId: string; tipo: 'foto' | 'video' | 'audio'; nombre: string; etiqueta: string; url: string; durationInSeconds?: number; originalDurationInSeconds?: number; volume?: number; fadeIn?: number; fadeOut?: number; scale?: number; delay?: number; startFrom?: number; trimBefore?: number; trimAfter?: number; loop?: boolean; playbackRate?: number; transitionDuration?: number; transitionType?: 'fade' | 'none' | 'wipe' | 'slide' | 'zoom'; efecto?: string; overlay?: string; overlayIntensity?: number; metadata?: MediaMetadata; };
 type SubtitleItem = { id: string; texto: string; inicioSec: number; finSec: number; };
 type LogoItem = { id: string; url: string; x: number; y: number; scale: number; opacity: number; inicioSec?: number; finSec?: number; fadeIn?: number; fadeOut?: number; };
@@ -64,6 +64,7 @@ type NaylaChatMessage = {
     status?: string;
     providers?: { id: string; label: string }[];
     gpuJobId?: string;
+    mediaJobId?: string;
     gpuName?: string | null;
     hourlyPrice?: number | null;
     estimatedMaxCost?: number | null;
@@ -792,7 +793,9 @@ export default function NaylaCore() {
         esOverlay: false,
         etiqueta: `R${renderCount}`,
         fuente: 'render',
-        metadata: buildMediaMetadata(canvas.width, canvas.height, durationInFrames / 30)
+        metadata: buildMediaMetadata(canvas.width, canvas.height, durationInFrames / 30),
+        r2_key: data.output.r2Key || data.output.key || null,
+        privacy: 'private'
       };
 
       setGaleriaMultimedia(prev => prev.some(item => item.url === outputUrl) ? prev : [...prev, renderItem]);
@@ -1036,14 +1039,18 @@ export default function NaylaCore() {
         ? 'Voy a armar el timeline con los medios existentes.'
         : 'Acción preparada.');
 
-      const actionPlan = (data.status === 'planned' || data.status === 'awaiting_confirmation' || data.gpuJobId)
+      const isGpuAction = data.action === 'RUN_GPU_JOB';
+      const actionPlan = (data.status === 'planned' || data.status === 'awaiting_confirmation' || data.gpuJobId || data.mediaJobId)
         ? {
             action: data.action,
             status: data.status,
-            providers: (data.gpuJobId || data.status === 'awaiting_confirmation')
+            providers: isGpuAction && (data.gpuJobId || data.quote)
               ? [{ id: 'vast', label: 'Vast.ai' }]
-              : (Array.isArray(data.availableProviders) ? data.availableProviders : []),
+              : data.selectedProvider
+                ? [data.selectedProvider]
+                : (Array.isArray(data.availableProviders) ? data.availableProviders : []),
             gpuJobId: data.gpuJobId,
+            mediaJobId: data.mediaJobId,
             gpuName: data.job?.gpuName ?? data.quote?.gpuName ?? null,
             hourlyPrice: data.job?.hourlyPrice ?? data.quote?.hourlyPrice ?? null,
             estimatedMaxCost: data.job?.estimatedMaxCost ?? data.quote?.estimatedMaxCost ?? null,
@@ -1500,7 +1507,11 @@ export default function NaylaCore() {
             esOverlay: false as const,
             etiqueta: item.etiqueta || 'M',
             fuente: item.fuente,
-            metadata: item.metadata || {}
+            metadata: item.metadata || {},
+            r2_key: item.r2_key || null,
+            project_id: item.project_id || null,
+            thread_id: item.thread_id || null,
+            privacy: item.privacy || 'private'
           }));
 
         const galeria = galeriaData
@@ -1514,7 +1525,11 @@ export default function NaylaCore() {
             esOverlay: item.esOverlay,
             etiqueta: item.etiqueta,
             fuente: item.fuente,
-            metadata: item.metadata || {}
+            metadata: item.metadata || {},
+            r2_key: item.r2_key || null,
+            project_id: item.project_id || null,
+            thread_id: item.thread_id || null,
+            privacy: item.privacy || 'private'
           }));
 
         setModelos3d(modelos);
@@ -1689,13 +1704,14 @@ export default function NaylaCore() {
       setMediaActivaUrl(null);
     }
 
-    // 2. Borrar archivos físicos en Cloudflare R2.
+    // 2. Borrar archivos físicos en Cloudflare R2 usando la clave canónica,
+    // nunca reconstruyéndola desde una URL firmada temporal.
     for (const item of itemsToDelete) {
-      if (!item.url) continue;
+      const key = item.r2_key;
+      if (!key) continue;
       try {
-        const key = decodeURIComponent(new URL(item.url).pathname.replace(/^\/+/, ''));
         if (!key.startsWith(`${session.user.id}/`)) {
-          console.warn('Archivo heredado fuera del espacio R2 actual; se eliminará solo su registro:', item.url);
+          console.warn('Clave R2 fuera del espacio del usuario; se eliminará solo el registro:', key);
           continue;
         }
         const response = await fetch('/api/r2/delete', {

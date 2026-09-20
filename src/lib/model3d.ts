@@ -16,6 +16,10 @@ export type Model3DAsset = {
   esOverlay: false;
   etiqueta: string;
   fuente?: string;
+  r2_key?: string | null;
+  project_id?: string | null;
+  thread_id?: string | null;
+  privacy?: 'private' | 'public';
   metadata?: {
     format?: 'glb';
     sourceProvider?: string;
@@ -38,12 +42,16 @@ export const uploadModel3DToBoveda = async ({
   existingItems = [],
   fuente = 'manual-3d',
   metadata = {},
+  projectId,
+  threadId,
 }: {
   session: FirebaseSession;
   file: UploadableMediaFile;
   existingItems?: Model3DAsset[];
   fuente?: string;
   metadata?: NonNullable<Model3DAsset['metadata']>;
+  projectId?: string;
+  threadId?: string;
 }): Promise<Model3DAsset> => {
   if (!session?.user?.id) throw new Error('Debes iniciar sesión para guardar modelos 3D.');
   if (!isSupportedModel3DFile(file)) throw new Error('Por ahora la Bóveda 3D acepta archivos GLB.');
@@ -58,11 +66,19 @@ export const uploadModel3DToBoveda = async ({
       ? file
       : new File([file], file.name, { type: 'model/gltf-binary' });
 
-  const uploaded = await uploadFileToR2(uploadable, session, id, 'glb');
+  const uploaded = await uploadFileToR2(uploadable, session, id, 'glb', {
+    kind: 'modelo3d',
+    projectId,
+    threadId,
+  });
 
   const item: Model3DAsset = {
     id,
     url: uploaded.url,
+    r2_key: uploaded.key,
+    project_id: uploaded.projectId || projectId || null,
+    thread_id: uploaded.threadId || threadId || null,
+    privacy: 'private',
     tipo: 'modelo3d',
     nombre: file.name || `Modelo 3D ${labelNumber}.glb`,
     creado_en: new Date().toISOString(),
@@ -78,16 +94,23 @@ export const uploadModel3DToBoveda = async ({
   const response = await fetch('/api/galeria', {
     method: 'POST',
     headers: firebaseHeaders(session, { 'Content-Type': 'application/json' }),
-    body: JSON.stringify({ items: [item] }),
+    body: JSON.stringify({
+      items: [item],
+      projectId: item.project_id,
+      threadId: item.thread_id,
+    }),
   });
-  const payload = await response.json().catch(() => ({})) as { error?: string };
+  const payload = await response.json().catch(() => ({})) as {
+    error?: string;
+    data?: Model3DAsset[];
+  };
 
   if (!response.ok) {
     await deleteR2Files([uploaded.key], session);
     throw new Error(`No se pudo registrar el modelo 3D en la Bóveda: ${payload.error || 'Error desconocido.'}`);
   }
 
-  return item;
+  return payload.data?.[0] || item;
 };
 
 export const deleteModel3DFromBoveda = async ({
@@ -99,13 +122,9 @@ export const deleteModel3DFromBoveda = async ({
 }) => {
   if (!session?.user?.id) throw new Error('Debes iniciar sesión para eliminar modelos 3D.');
 
-  try {
-    const key = decodeURIComponent(new URL(item.url).pathname.replace(/^\/+/, ''));
-    if (key.startsWith(`${session.user.id}/`)) {
-      await deleteR2Files([key], session);
-    }
-  } catch (error) {
-    console.warn('No se pudo eliminar el objeto 3D físico; se quitará el registro.', error);
+  const key = item.r2_key;
+  if (key?.startsWith(`${session.user.id}/`)) {
+    await deleteR2Files([key], session);
   }
 
   const response = await fetch('/api/galeria', {
