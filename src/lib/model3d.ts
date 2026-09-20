@@ -31,6 +31,14 @@ export type Model3DAsset = {
   };
 };
 
+const nextModelLabelNumber = (items: Model3DAsset[]) =>
+  items.reduce((current, item) => {
+    const match = typeof item.etiqueta === 'string'
+      ? item.etiqueta.trim().toUpperCase().match(/^M(\d+)$/)
+      : null;
+    return match ? Math.max(current, Number(match[1]) || 0) : current;
+  }, 0) + 1;
+
 export const isSupportedModel3DFile = (file: Pick<File, 'name' | 'type'>) => {
   const extension = file.name.split('.').pop()?.toLowerCase();
   return extension === 'glb' || file.type === 'model/gltf-binary';
@@ -60,7 +68,7 @@ export const uploadModel3DToBoveda = async ({
   }
 
   const id = createMediaId();
-  const labelNumber = existingItems.length + 1;
+  const labelNumber = nextModelLabelNumber(existingItems);
   const uploadable =
     file.type === 'model/gltf-binary'
       ? file
