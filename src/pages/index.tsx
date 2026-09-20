@@ -17,6 +17,12 @@ import { firebaseHeaders } from '../lib/apiClient';
 import { Model3DWorkspace } from '../components/Model3DWorkspace';
 import { GpuQuoteModal, type GpuQuoteView } from '../components/GpuQuoteModal';
 import {
+  NaylaProjectMenu,
+  type NaylaProject,
+  type NaylaChannelAsset,
+  type NaylaChannelKind,
+} from '../components/NaylaProjectMenu';
+import {
   deleteModel3DFromBoveda,
   uploadModel3DToBoveda,
   type Model3DAsset,
@@ -304,6 +310,32 @@ export default function NaylaCore() {
   const [chatMessages, setChatMessages] = useState<NaylaChatMessage[]>([]);
   const [chatProcessing, setChatProcessing] = useState(false);
   const [stockImportingId, setStockImportingId] = useState<string | null>(null);
+  const [projects, setProjects] = useState<NaylaProject[]>([]);
+  const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
+  const [chatThreads, setChatThreads] = useState<any[]>([]);
+  const [activeThreadId, setActiveThreadId] = useState<string | null>(null);
+  const [projectMenuOpen, setProjectMenuOpen] = useState(false);
+  const [chatAttachmentIds, setChatAttachmentIds] = useState<string[]>([]);
+  const [channelUploadingKind, setChannelUploadingKind] = useState<NaylaChannelKind | null>(null);
+
+  const activeProject = projects.find((project) => project.id === activeProjectId) || null;
+  const chatChannelAssets: NaylaChannelAsset[] = [
+    ...galeriaMultimedia.map((item) => ({
+      id: item.id,
+      tipo: item.tipo as NaylaChannelKind,
+      nombre: item.nombre,
+      url: item.url,
+      etiqueta: item.etiqueta,
+    })),
+    ...modelos3d.map((item) => ({
+      id: item.id,
+      tipo: 'modelo3d' as NaylaChannelKind,
+      nombre: item.nombre,
+      url: item.url,
+      etiqueta: item.etiqueta,
+    })),
+  ];
+  const chatAttachedAssets = chatChannelAssets.filter((asset) => chatAttachmentIds.includes(asset.id));
 
   const gpuPollKey = chatMessages
     .map((message) =>
