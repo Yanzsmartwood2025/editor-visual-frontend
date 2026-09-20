@@ -357,3 +357,13 @@ update public.galeria_multimedia
 set r2_key = regexp_replace(url, '^https://[^/]+/', '')
 where r2_key is null
   and url ~ '^https://[^/]+\\.r2\\.dev/';
+
+
+-- Defense in depth for legacy editor tables: browser roles cannot access them directly.
+-- Authenticated access flows through Firebase-protected server APIs using service_role.
+revoke all on public.api_keys_pool from anon, authenticated;
+revoke all on public.galeria_multimedia from anon, authenticated;
+revoke all on public.memoria_nayla from anon, authenticated;
+revoke all on public.proyectos_usuario from anon, authenticated;
+revoke all on public.render_requests from anon, authenticated;
+revoke all on public.gpu_jobs from anon, authenticated;
