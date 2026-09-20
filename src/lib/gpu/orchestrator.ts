@@ -153,11 +153,19 @@ export const cleanupExpiredVastJobs = async () => {
     try {
       await destroyVastInstance(job.instance_id);
       const now = new Date();
+      const terminalStatus =
+        job.status === 'cleanup_pending' &&
+        (job.metadata?.terminalStatus === 'completed' || job.metadata?.terminalStatus === 'failed')
+          ? job.metadata.terminalStatus
+          : 'expired';
+
       await updateGpuJob(job.id, {
-        status: 'expired',
+        status: terminalStatus,
         error_message:
-          job.error_message ||
-          'La GPU superó el tiempo máximo asignado y Nayla la destruyó automáticamente.',
+          terminalStatus === 'completed'
+            ? null
+            : (job.error_message ||
+              'La GPU superó el tiempo máximo asignado y Nayla la destruyó automáticamente.'),
         completed_at: job.completed_at || now.toISOString(),
         destroyed_at: now.toISOString(),
         runtime_cost_estimate: computeRuntimeCost(job, now),
