@@ -113,6 +113,9 @@ export const getNaylaCloudCatalog = () =>
     };
   });
 
+const ceilUsdThousandth = (value: number): number =>
+  Math.ceil((value - Number.EPSILON * Math.max(1, Math.abs(value)) * 8) * 1000) / 1000;
+
 export const getNaylaComputePricingPolicy = () => ({
   // Hasta conectar pagos, esto es una capa comercial de presentación.
   // El costo real del proveedor nunca se devuelve al cliente.
@@ -123,7 +126,7 @@ export const getNaylaComputePricingPolicy = () => ({
 export const toNaylaComputeHourlyPrice = (internalHourlyUsd: number): number => {
   const { multiplier, fixedHourlyUsd } = getNaylaComputePricingPolicy();
   const raw = internalHourlyUsd * multiplier + fixedHourlyUsd;
-  return Math.ceil(raw * 1000) / 1000;
+  return ceilUsdThousandth(raw);
 };
 
 export const toNaylaComputeEstimatedPrice = (
@@ -132,7 +135,7 @@ export const toNaylaComputeEstimatedPrice = (
 ): number => {
   const { multiplier, fixedHourlyUsd } = getNaylaComputePricingPolicy();
   const fixedPart = fixedHourlyUsd * (Math.max(0, estimatedRuntimeMinutes) / 60);
-  return Math.ceil((internalEstimatedUsd * multiplier + fixedPart) * 1000) / 1000;
+  return ceilUsdThousandth(internalEstimatedUsd * multiplier + fixedPart);
 };
 
 export const getNaylaPublicSystemCatalog = () => ({
