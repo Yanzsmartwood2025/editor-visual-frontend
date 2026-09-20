@@ -11,6 +11,8 @@ export const ACTIVE_GPU_STATUSES = [
 export type GpuJobRow = {
   id: string;
   user_id: string;
+  project_id: string | null;
+  thread_id: string | null;
   provider: string;
   workload: string;
   status: string;
