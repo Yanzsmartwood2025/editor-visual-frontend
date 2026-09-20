@@ -79,6 +79,21 @@ const generationActionNames = new Set([
   'RUN_GPU_JOB',
 ]);
 
+const hasExplicitVisionIntent = (message: string) =>
+  /\b(analiza|analizar|analices|revisa|revisar|revises|mira|mirar|observa|observar|inspecciona|inspeccionar|describe|describir|compara|comparar|encuadre|composici[oó]n|colores?|rostro|ropa|fondo)\b/i.test(message) ||
+  /\bqu[eé]\s+(?:hay|aparece|ves)\b/i.test(message);
+
+const getRequestedPhotoLabels = (message: string) => {
+  const labels = new Set<string>();
+  for (const match of message.matchAll(/\bF\s*(\d+)\b/gi)) {
+    labels.add(`F${Number(match[1])}`);
+  }
+  for (const match of message.matchAll(/\b(?:foto|imagen)\s*(?:n(?:[uú]mero)?\s*)?(\d+)\b/gi)) {
+    labels.add(`F${Number(match[1])}`);
+  }
+  return labels;
+};
+
 const describeActionPlan = (action: NaylaAction) => {
   const routeCount = getAvailableProvidersForAction(action).length;
 
@@ -395,6 +410,10 @@ REGLAS DE SEGURIDAD Y EJECUCIÓN:
 - Todo trabajo pertenece al usuario y al proyecto activo. No mezcles archivos ni contexto entre proyectos/chats.
 - Los adjuntos ya fueron validados por el servidor. Usa solo sus URLs temporales exactas y nunca inventes URLs.
 - Clasifica adjuntos así: foto→imagen, video→video, audio→audio/voz/transcripción, modelo3d→3D.
+- La mera presencia o subida de fotos NO autoriza análisis visual. Subir F1/F2/F3... sirve para referenciarlas, ordenarlas, editarlas y renderizarlas sin enviar sus píxeles al LLM.
+- Activa visión únicamente cuando el usuario pida de forma explícita mirar, analizar, revisar, describir, inspeccionar o comparar el contenido visual de una foto concreta.
+- Para montar videos con muchas fotos (por ejemplo F1–F30), trabaja con etiquetas, URLs y parámetros del timeline; no necesitas ver las imágenes.
+- Videos, audios y modelos 3D se manejan por referencia y metadatos; no se envían como entrada visual al LLM.
 - Si el usuario pide analizar o transformar un adjunto, usa primero la acción correspondiente a su tipo.
 - Solo puedes usar capacidades que aparecen en el catálogo seguro de este prompt.
 - Nunca menciones marcas, empresas, proveedores externos, nombres internos de recetas ni infraestructura de terceros al usuario. Habla únicamente de Nayla Cloud, Nayla Compute y Nayla Energy.
@@ -551,6 +570,25 @@ Si una petición combina pasos, elige la PRIMERA acción necesaria. El resultado
       ),
     ];
 
+    const visualIntent = hasExplicitVisionIntent(message);
+    const requestedPhotoLabels = getRequestedPhotoLabels(message);
+    const referencedVisionCandidates = requestedPhotoLabels.size
+      ? mergedLibrary.filter((item) =>
+          item.tipo === 'foto' &&
+          typeof item.etiqueta === 'string' &&
+          requestedPhotoLabels.has(item.etiqueta.trim().toUpperCase())
+        )
+      : attachments.filter((item) => item.tipo === 'foto');
+
+    const visionCandidateUrls = visualIntent
+      ? Array.from(new Set([
+          ...referencedVisionCandidates.map((item) => item.url),
+          ...(images || []),
+        ]))
+      : [];
+    const visionImages = visionCandidateUrls.slice(0, 3);
+    const visionWasTruncated = visionCandidateUrls.length > visionImages.length;
+
     const executionContext = [
       `Proyecto activo: ${scope.projectId}.`,
       scope.threadId ? `Chat activo: ${scope.threadId}.` : 'Chat persistente: todavía no seleccionado.',
@@ -569,6 +607,13 @@ Si una petición combina pasos, elige la PRIMERA acción necesaria. El resultado
             `${index + 1}. tipo=${item.tipo}; url=${item.url}; nombre=${item.nombre || ''}; etiqueta=${item.etiqueta || ''}`
           ).join('\n')}`
         : 'Timeline actual: vacío.',
+      visualIntent
+        ? (
+            visionImages.length
+              ? `Visión solicitada explícitamente: se cargaron ${visionImages.length} foto(s) para análisis visual.${visionWasTruncated ? ' Hay más fotos referenciadas que el límite visual actual; no afirmes haber inspeccionado las que no fueron cargadas.' : ''}`
+              : 'Visión solicitada explícitamente, pero no se encontró una foto válida con esa referencia. No inventes contenido visual.'
+          )
+        : 'Visión NO solicitada. No inspecciones píxeles ni describas el contenido de fotos. Para editar, ordenar, cortar o renderizar usa únicamente etiquetas, URLs, tipos y las instrucciones del usuario.',
     ].join('\n\n');
 
     const effectiveHistory = scope.threadId ? persistedHistory : (history || []);
@@ -582,11 +627,6 @@ Si una petición combina pasos, elige la PRIMERA acción necesaria. El resultado
       `Usuario: ${message}`,
     ].filter(Boolean).join('\n\n');
 
-    const attachedImageUrls = attachments
-      .filter((item) => item.tipo === 'foto')
-      .map((item) => item.url);
-    const visionImages = [...(images || []), ...attachedImageUrls].slice(0, 4);
-
     let responseText = '';
     try {
       responseText = await executeDirectLlm({
@@ -598,7 +638,7 @@ Si una petición combina pasos, elige la PRIMERA acción necesaria. El resultado
     } catch (error: any) {
       console.error('[chat.ts] Todos los motores IA de Nayla fallaron:', error);
       return res.status(500).json({
-        error: error.message || 'Error al generar la respuesta. Los motores IA están temporalmente al límite.',
+        error: 'Nayla no pudo procesar esta solicitud en este momento. Inténtalo nuevamente.',
       });
     }
 
