@@ -330,8 +330,23 @@ export function NaylaProjectMenu({
                                 </div>
                               )}
                               <div style={{ minWidth: 0, flex: 1 }}>
-                                <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 13 }}>{asset.nombre}</div>
-                                <div style={{ color: '#777', fontSize: 11, marginTop: 2 }}>{selected ? 'Adjunto al próximo mensaje' : 'Toca para adjuntar al chat'}</div>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
+                                  <span style={{
+                                    flex: '0 0 auto',
+                                    border: '1px solid #555',
+                                    borderRadius: 6,
+                                    padding: '1px 5px',
+                                    fontSize: 11,
+                                    fontWeight: 800,
+                                    color: '#fff',
+                                  }}>
+                                    {asset.etiqueta || '—'}
+                                  </span>
+                                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 13 }}>
+                                    {asset.nombre}
+                                  </span>
+                                </div>
+                                <div style={{ color: '#777', fontSize: 11, marginTop: 3 }}>{selected ? 'Adjunto al próximo mensaje' : 'Toca para adjuntar al chat'}</div>
                               </div>
                               {selected && <span style={{ fontSize: 17 }}>✓</span>}
                             </button>
