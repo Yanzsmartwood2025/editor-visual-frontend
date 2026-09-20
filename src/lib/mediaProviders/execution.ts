@@ -501,7 +501,11 @@ const fetchedBlobForForm = async (url: string) => {
   if (bytes.byteLength > 80 * 1024 * 1024) {
     throw new Error('El archivo de entrada supera el límite de 80 MB para esta operación.');
   }
-  return new Blob([bytes], { type: contentType });
+  const arrayBuffer = bytes.buffer.slice(
+    bytes.byteOffset,
+    bytes.byteOffset + bytes.byteLength
+  ) as ArrayBuffer;
+  return new Blob([arrayBuffer], { type: contentType });
 };
 
 const elevenHeaders = (key: string) => ({ 'xi-api-key': key });
