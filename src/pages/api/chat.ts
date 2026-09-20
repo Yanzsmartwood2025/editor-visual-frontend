@@ -323,7 +323,7 @@ RECETAS GPU PROPIAS HABILITADAS:
     "instrumental": true
   }
 }
-La duración permitida es de 5 a 90 segundos. Si el usuario entrega letra autorizada, puedes usar "lyrics" y poner "instrumental": false.
+La duración permitida en Nayla es de 10 a 90 segundos. Si el usuario entrega letra autorizada, puedes usar "lyrics" y poner "instrumental": false.
 Esta acción SIEMPRE se cotiza primero y requiere confirmación humana antes de alquilar GPU.
 
 - Para convertir UNA imagen existente en un GLB con nuestra GPU usa exactamente:
