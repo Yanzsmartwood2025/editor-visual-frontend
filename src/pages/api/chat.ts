@@ -289,6 +289,17 @@ mode: text_to_3d, image_to_3d, multiview_to_3d, texture, optimize, rig, animate,
 workload debe ser: "probe" | "image" | "video" | "audio" | "3d".
 "probe" sirve únicamente para probar que la máquina GPU puede arrancar y apagarse correctamente.
 
+RECETAS GPU PROPIAS HABILITADAS:
+- Para convertir UNA imagen existente en un GLB con nuestra GPU usa exactamente:
+{
+  "action": "RUN_GPU_JOB",
+  "provider": "vast",
+  "workload": "3d",
+  "jobType": "triposr-image-to-3d",
+  "inputUrls": ["URL HTTPS exacta de la imagen existente"]
+}
+No uses esta receta para texto→3D ni multivista. No inventes la URL.
+
 7) Construir timeline con medios existentes:
 {
   "action": "BUILD_TIMELINE",
