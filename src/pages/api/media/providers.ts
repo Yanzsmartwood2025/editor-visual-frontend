@@ -1,7 +1,7 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { requireFirebaseUser } from '../../../lib/firebaseAdmin';
 import { MEDIA_CAPABILITY_CATALOG } from '../../../lib/mediaProviders/capabilities';
-import { getAllProviderRuntimeStatuses } from '../../../lib/mediaProviders/registry';
+import { getNaylaPublicSystemCatalog } from '../../../lib/naylaSystemCatalog';
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== 'GET') {
@@ -14,8 +14,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(401).json({ error: 'Token Firebase inválido.' });
   }
 
+  res.setHeader('Cache-Control', 'no-store, max-age=0');
   return res.status(200).json({
-    providers: getAllProviderRuntimeStatuses(),
-    capabilities: MEDIA_CAPABILITY_CATALOG,
+    system: getNaylaPublicSystemCatalog(),
+    capabilities: MEDIA_CAPABILITY_CATALOG.map((item) => ({
+      id: item.id,
+      label: item.label,
+      group: item.group,
+      requiresConsent: Boolean(item.requiresConsent),
+    })),
   });
 }
