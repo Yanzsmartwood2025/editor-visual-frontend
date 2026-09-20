@@ -178,7 +178,7 @@ const executeValidatedAction = async (
         ...base,
         projectId: context.projectId,
         threadId: context.threadId || null,
-        text: 'La tarea quedó clasificada, pero no hay un proveedor configurado para ejecutarla.',
+        text: 'La tarea quedó clasificada, pero esta capacidad de Nayla Cloud todavía no está habilitada.',
       };
     }
 
@@ -188,13 +188,12 @@ const executeValidatedAction = async (
       projectId: context.projectId,
       threadId: context.threadId || null,
       mediaJobId: mediaJob.id,
-      selectedProvider: mediaJob.provider,
-      availableProviders: mediaJob.providers,
+      engine: 'nayla-cloud' as const,
       requiresConfirmation: true,
       executionReady: false,
       text:
-        `La tarea quedó separada como ${mediaJob.domain} y registrada de forma privada en el proyecto. ` +
-        `Proveedor seleccionado: ${mediaJob.provider?.label}. El adaptador de ejecución se habilitará por separado antes de gastar créditos.`,
+        `Nayla Cloud clasificó la tarea como ${mediaJob.domain} y la registró de forma privada en este proyecto. ` +
+        'La ejecución se habilitará de forma independiente antes de usar créditos.',
     };
   }
 
@@ -213,10 +212,10 @@ const executeValidatedAction = async (
         projectId: context.projectId,
         threadId: context.threadId || null,
         mediaJobId: mediaJob?.id || null,
-        selectedProvider: mediaJob?.provider || null,
+        engine: 'nayla-compute' as const,
         status: mediaJob?.id ? 'awaiting_confirmation' as const : base.status,
         text: mediaJob?.id
-          ? 'RunPod quedó registrado como trabajo GPU privado. Su adaptador se activará por separado antes de ejecutar gasto.'
+          ? 'Nayla Compute registró el trabajo de forma privada. La ejecución se habilitará antes de usar créditos.'
           : base.text,
       };
     }
@@ -242,9 +241,9 @@ const executeValidatedAction = async (
     if (workload !== 'probe') {
       const quote = await quoteVastGpuJob(gpuInput);
       return {
-        ...action,
+        action: action.action,
         workload,
-        provider: 'vast' as const,
+        engine: 'nayla-compute' as const,
         projectId: context.projectId,
         threadId: context.threadId || null,
         status: 'awaiting_confirmation' as const,
@@ -257,8 +256,8 @@ const executeValidatedAction = async (
           threadId: context.threadId,
         },
         text: quote.available
-          ? 'Encontré una GPU Vast.ai dentro del presupuesto. Revisa el costo y confirma antes de alquilarla.'
-          : (quote.reason || 'No hay una GPU disponible dentro de los límites de seguridad.'),
+          ? 'Nayla Compute encontró una GPU compatible dentro del presupuesto. Revisa el precio Nayla y confirma antes de reservarla.'
+          : (quote.reason || 'No hay una GPU compatible disponible dentro de los límites de seguridad.'),
       };
     }
 
@@ -271,9 +270,9 @@ const executeValidatedAction = async (
     });
 
     return {
-      ...action,
+      action: action.action,
       workload,
-      provider: 'vast' as const,
+      engine: 'nayla-compute' as const,
       projectId: context.projectId,
       threadId: context.threadId || null,
       gpuJobId: job.id,
@@ -282,7 +281,7 @@ const executeValidatedAction = async (
       requiresConfirmation: false,
       job,
       text:
-        'GPU Vast.ai iniciada con límite de gasto y vencimiento automático. La salida quedará dentro de este proyecto/chat en R2 y la instancia se destruirá al terminar.',
+        'Nayla Compute inició la GPU con límite de gasto y vencimiento automático. La salida quedará dentro de este proyecto y la instancia se cerrará al terminar.',
     };
   }
 
