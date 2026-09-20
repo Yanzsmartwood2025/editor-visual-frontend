@@ -3,9 +3,14 @@ import { z } from 'zod';
 import { requireFirebaseUser } from '../../lib/firebaseAdmin';
 import {
   createProjectForUser,
+  deleteProjectForUser,
   listProjectsForUser,
   updateProjectForUser,
 } from '../../lib/workspaceStore';
+
+const deleteSchema = z.object({
+  id: z.string().uuid(),
+});
 
 const createSchema = z.object({
   name: z.string().trim().min(1).max(120).optional(),
@@ -52,7 +57,17 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       return res.status(200).json({ project });
     }
 
-    return res.status(405).json({ error: 'Usa GET, POST o PATCH.' });
+    if (req.method === 'DELETE') {
+      const parsed = deleteSchema.safeParse(req.body || {});
+      if (!parsed.success) return res.status(400).json({ error: 'Falta un proyecto válido.' });
+      const deleted = await deleteProjectForUser({
+        userId: user.uid,
+        projectId: parsed.data.id,
+      });
+      return res.status(200).json({ deleted });
+    }
+
+    return res.status(405).json({ error: 'Usa GET, POST, PATCH o DELETE.' });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'No se pudo gestionar el proyecto.';
     return res.status(500).json({ error: message });

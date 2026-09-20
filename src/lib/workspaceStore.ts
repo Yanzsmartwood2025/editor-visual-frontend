@@ -1,4 +1,5 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+import { deleteR2Object } from './r2';
 
 let cachedAdmin: SupabaseClient | null = null;
 
@@ -155,6 +156,99 @@ export const updateProjectForUser = async ({
   if (error) throw error;
   if (!data) throw new Error('Proyecto no encontrado.');
   return data;
+};
+
+export const deleteProjectForUser = async ({
+  userId,
+  projectId,
+}: {
+  userId: string;
+  projectId: string;
+}) => {
+  const supabase = getWorkspaceSupabaseAdmin();
+
+  const { data: project, error: projectError } = await supabase
+    .from('editor_projects')
+    .select('id, name')
+    .eq('id', projectId)
+    .eq('user_id', userId)
+    .maybeSingle();
+
+  if (projectError) throw projectError;
+  if (!project) throw new Error('Proyecto no encontrado.');
+
+  const [{ data: gpuJobs, error: gpuJobsError }, { data: renderJobs, error: renderJobsError }] = await Promise.all([
+    supabase
+      .from('gpu_jobs')
+      .select('id, status')
+      .eq('user_id', userId)
+      .eq('project_id', projectId),
+    supabase
+      .from('render_requests')
+      .select('id, status')
+      .eq('user_id', userId)
+      .eq('project_id', projectId),
+  ]);
+
+  if (gpuJobsError) throw gpuJobsError;
+  if (renderJobsError) throw renderJobsError;
+
+  const terminalGpuStates = new Set(['completed', 'failed', 'expired', 'cancelled']);
+  const activeGpuJobs = (gpuJobs || []).filter((job) => !terminalGpuStates.has(String(job.status || '').toLowerCase()));
+  const activeRenderJobs = (renderJobs || []).filter((job) =>
+    ['started', 'queued', 'running', 'processing'].includes(String(job.status || '').toLowerCase())
+  );
+
+  if (activeGpuJobs.length || activeRenderJobs.length) {
+    throw new Error('Este proyecto tiene un proceso activo. Espera a que termine o cancélalo antes de eliminar el proyecto.');
+  }
+
+  const { data: media, error: mediaError } = await supabase
+    .from('galeria_multimedia')
+    .select('id, r2_key')
+    .eq('user_id', userId)
+    .eq('project_id', projectId);
+
+  if (mediaError) throw mediaError;
+
+  const r2Keys = (media || [])
+    .map((item) => item.r2_key)
+    .filter((key): key is string => typeof key === 'string' && key.startsWith(`${userId}/`));
+
+  const r2Results = await Promise.allSettled(r2Keys.map((key) => deleteR2Object(key)));
+  const r2DeleteFailures = r2Results.filter((result) => result.status === 'rejected').length;
+
+  for (const table of ['media_jobs', 'gpu_jobs', 'render_requests', 'memoria_nayla']) {
+    const { error } = await supabase
+      .from(table)
+      .delete()
+      .eq('user_id', userId)
+      .eq('project_id', projectId);
+    if (error) throw error;
+  }
+
+  const { error: galleryDeleteError } = await supabase
+    .from('galeria_multimedia')
+    .delete()
+    .eq('user_id', userId)
+    .eq('project_id', projectId);
+
+  if (galleryDeleteError) throw galleryDeleteError;
+
+  const { error: deleteError } = await supabase
+    .from('editor_projects')
+    .delete()
+    .eq('id', projectId)
+    .eq('user_id', userId);
+
+  if (deleteError) throw deleteError;
+
+  return {
+    id: project.id as string,
+    name: project.name as string,
+    deletedMediaCount: (media || []).length,
+    r2DeleteFailures,
+  };
 };
 
 export const listThreadsForUser = async ({

@@ -17,6 +17,12 @@ import { firebaseHeaders } from '../lib/apiClient';
 import { Model3DWorkspace } from '../components/Model3DWorkspace';
 import { GpuQuoteModal, type GpuQuoteView } from '../components/GpuQuoteModal';
 import {
+  NaylaProjectMenu,
+  type NaylaProject,
+  type NaylaChannelAsset,
+  type NaylaChannelKind,
+} from '../components/NaylaProjectMenu';
+import {
   deleteModel3DFromBoveda,
   uploadModel3DToBoveda,
   type Model3DAsset,
@@ -304,6 +310,32 @@ export default function NaylaCore() {
   const [chatMessages, setChatMessages] = useState<NaylaChatMessage[]>([]);
   const [chatProcessing, setChatProcessing] = useState(false);
   const [stockImportingId, setStockImportingId] = useState<string | null>(null);
+  const [projects, setProjects] = useState<NaylaProject[]>([]);
+  const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
+  const [chatThreads, setChatThreads] = useState<any[]>([]);
+  const [activeThreadId, setActiveThreadId] = useState<string | null>(null);
+  const [projectMenuOpen, setProjectMenuOpen] = useState(false);
+  const [chatAttachmentIds, setChatAttachmentIds] = useState<string[]>([]);
+  const [channelUploadingKind, setChannelUploadingKind] = useState<NaylaChannelKind | null>(null);
+
+  const activeProject = projects.find((project) => project.id === activeProjectId) || null;
+  const chatChannelAssets: NaylaChannelAsset[] = [
+    ...galeriaMultimedia.map((item) => ({
+      id: item.id,
+      tipo: item.tipo as NaylaChannelKind,
+      nombre: item.nombre,
+      url: item.url,
+      etiqueta: item.etiqueta,
+    })),
+    ...modelos3d.map((item) => ({
+      id: item.id,
+      tipo: 'modelo3d' as NaylaChannelKind,
+      nombre: item.nombre,
+      url: item.url,
+      etiqueta: item.etiqueta,
+    })),
+  ];
+  const chatAttachedAssets = chatChannelAssets.filter((asset) => chatAttachmentIds.includes(asset.id));
 
   const gpuPollKey = chatMessages
     .map((message) =>
@@ -774,7 +806,11 @@ export default function NaylaCore() {
     const res = await fetch('/api/render', {
       method: 'POST',
       headers: firebaseHeaders(currentSession, { 'Content-Type': 'application/json' }),
-      body: JSON.stringify({ inputProps })
+      body: JSON.stringify({
+        inputProps,
+        projectId: activeProjectId || undefined,
+        threadId: activeThreadId || undefined,
+      })
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Error al solicitar renderizado');
@@ -795,6 +831,8 @@ export default function NaylaCore() {
         fuente: 'render',
         metadata: buildMediaMetadata(canvas.width, canvas.height, durationInFrames / 30),
         r2_key: data.output.r2Key || data.output.key || null,
+        project_id: activeProjectId || null,
+        thread_id: activeThreadId || null,
         privacy: 'private'
       };
 
@@ -803,7 +841,11 @@ export default function NaylaCore() {
       const galleryResponse = await fetch('/api/galeria', {
         method: 'POST',
         headers: firebaseHeaders(currentSession, { 'Content-Type': 'application/json' }),
-        body: JSON.stringify({ items: [renderItem] })
+        body: JSON.stringify({
+          items: [renderItem],
+          projectId: activeProjectId || undefined,
+          threadId: activeThreadId || undefined,
+        })
       });
 
       if (!galleryResponse.ok) {
@@ -937,6 +979,8 @@ export default function NaylaCore() {
           existingItems: galeriaMultimedia,
           forcedTipo: tipo,
           fuente: `stock:${card.provider}`,
+          projectId: activeProjectId || undefined,
+          threadId: activeThreadId || undefined,
           metadataExtra: {
             sourceProvider: card.provider,
             sourceUrl: card.sourceUrl,
@@ -985,6 +1029,170 @@ export default function NaylaCore() {
     }
   };
 
+  const seleccionarProyectoDesdeChat = async (projectId: string) => {
+    try {
+      const currentSession = session || await getFirebaseSession();
+      if (!currentSession) throw new Error('Debes iniciar sesión para cambiar de proyecto.');
+      await cargarProyectoActivo(projectId, currentSession);
+      setProjectMenuOpen(false);
+    } catch (error: any) {
+      showAlert(error?.message || 'No se pudo abrir el proyecto.');
+    }
+  };
+
+  const crearNuevoChat = async () => {
+    if (!activeProjectId) return showAlert('Primero selecciona un proyecto.');
+
+    try {
+      const currentSession = session || await getFirebaseSession();
+      if (!currentSession) throw new Error('Debes iniciar sesión para crear un chat.');
+
+      const response = await fetch('/api/chat/threads', {
+        method: 'POST',
+        headers: firebaseHeaders(currentSession, { 'Content-Type': 'application/json' }),
+        body: JSON.stringify({
+          projectId: activeProjectId,
+          title: `Chat ${chatThreads.length + 1}`,
+        }),
+      });
+      const payload = await response.json().catch(() => ({})) as { thread?: any; error?: string };
+      if (!response.ok || !payload.thread) {
+        throw new Error(payload.error || 'No se pudo crear el nuevo chat.');
+      }
+
+      setChatThreads((prev) => [payload.thread, ...prev]);
+      setActiveThreadId(payload.thread.id);
+      setChatMessages([]);
+      setChatAttachmentIds([]);
+      setProjectMenuOpen(false);
+    } catch (error: any) {
+      showAlert(error?.message || 'No se pudo crear el chat.');
+    }
+  };
+
+  const crearNuevoProyecto = async () => {
+    const requestedName = window.prompt('Nombre del nuevo proyecto:', 'Nuevo proyecto');
+    if (requestedName === null) return;
+    const name = requestedName.trim() || 'Nuevo proyecto';
+
+    try {
+      const currentSession = session || await getFirebaseSession();
+      if (!currentSession) throw new Error('Debes iniciar sesión para crear un proyecto.');
+
+      const response = await fetch('/api/projects', {
+        method: 'POST',
+        headers: firebaseHeaders(currentSession, { 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ name }),
+      });
+      const payload = await response.json().catch(() => ({})) as { project?: NaylaProject; error?: string };
+      if (!response.ok || !payload.project) {
+        throw new Error(payload.error || 'No se pudo crear el proyecto.');
+      }
+
+      setProjects((prev) => [payload.project!, ...prev.filter((project) => project.id !== payload.project!.id)]);
+      await cargarProyectoActivo(payload.project.id, currentSession);
+      setProjectMenuOpen(false);
+    } catch (error: any) {
+      showAlert(error?.message || 'No se pudo crear el proyecto.');
+    }
+  };
+
+  const eliminarProyectoActivo = async () => {
+    if (!activeProject) return;
+    const confirmed = window.confirm(
+      `¿Eliminar el proyecto “${activeProject.name}”?\n\nSe eliminarán sus chats y los archivos privados guardados para este proyecto.`
+    );
+    if (!confirmed) return;
+
+    try {
+      const currentSession = session || await getFirebaseSession();
+      if (!currentSession) throw new Error('Debes iniciar sesión para eliminar un proyecto.');
+
+      const response = await fetch('/api/projects', {
+        method: 'DELETE',
+        headers: firebaseHeaders(currentSession, { 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ id: activeProject.id }),
+      });
+      const payload = await response.json().catch(() => ({})) as {
+        deleted?: { name?: string; r2DeleteFailures?: number };
+        error?: string;
+      };
+      if (!response.ok) throw new Error(payload.error || 'No se pudo eliminar el proyecto.');
+
+      setProjectMenuOpen(false);
+      setChatMessages([]);
+      setChatAttachmentIds([]);
+      await cargarDatosUsuario(currentSession.user.id);
+
+      if (payload.deleted?.r2DeleteFailures) {
+        showAlert('El proyecto fue eliminado, pero algunos objetos de almacenamiento necesitarán limpieza posterior.');
+      }
+    } catch (error: any) {
+      showAlert(error?.message || 'No se pudo eliminar el proyecto.');
+    }
+  };
+
+  const toggleChatAttachment = (asset: NaylaChannelAsset) => {
+    setChatAttachmentIds((prev) =>
+      prev.includes(asset.id)
+        ? prev.filter((id) => id !== asset.id)
+        : [...prev, asset.id]
+    );
+  };
+
+  const subirArchivosDesdeCanal = async (kind: NaylaChannelKind, files: FileList) => {
+    if (!activeProjectId) return showAlert('Primero selecciona un proyecto.');
+
+    const currentSession = session || await getFirebaseSession();
+    if (!currentSession) return showAlert('Debes iniciar sesión para subir archivos.');
+
+    setChannelUploadingKind(kind);
+    try {
+      if (kind === 'modelo3d') {
+        const nextAssets = [...modelos3d];
+        const uploadedIds: string[] = [];
+
+        for (const file of Array.from(files)) {
+          const saved = await uploadModel3DToBoveda({
+            session: currentSession,
+            file,
+            existingItems: nextAssets,
+            fuente: 'chat:canal-3d',
+            projectId: activeProjectId,
+            threadId: activeThreadId || undefined,
+          });
+          nextAssets.push(saved);
+          uploadedIds.push(saved.id);
+        }
+
+        setModelos3d(nextAssets);
+        setModelo3dActivoId((current) => current || nextAssets[0]?.id || null);
+        setChatAttachmentIds((prev) => Array.from(new Set([...prev, ...uploadedIds])));
+      } else {
+        const saved = await uploadMediaFilesToBodega({
+          session: currentSession,
+          files: Array.from(files),
+          existingItems: galeriaMultimedia,
+          forcedTipo: kind,
+          fuente: `chat:canal-${kind}`,
+          projectId: activeProjectId,
+          threadId: activeThreadId || undefined,
+        });
+
+        setGaleriaMultimedia((prev) => {
+          const currentIds = new Set(prev.map((item) => item.id));
+          return [...prev, ...saved.filter((item) => !currentIds.has(item.id))];
+        });
+        setChatAttachmentIds((prev) => Array.from(new Set([...prev, ...saved.map((item) => item.id)])));
+      }
+    } catch (error: any) {
+      console.error('Error subiendo desde canal del chat:', error);
+      showAlert(error?.message || 'No se pudo subir el archivo.');
+    } finally {
+      setChannelUploadingKind(null);
+    }
+  };
+
   const sendNaylaMessage = async (messageOverride?: string) => {
     const message = (messageOverride ?? chatInput).trim();
     if (!message) return;
@@ -996,23 +1204,40 @@ export default function NaylaCore() {
     try {
       const currentSession = session || await getFirebaseSession();
       if (!currentSession) throw new Error('Debes iniciar sesión para hablar con Nayla.');
+      if (!activeProjectId) throw new Error('Selecciona un proyecto antes de escribir a Nayla.');
+      if (!activeThreadId) throw new Error('Crea o selecciona un chat antes de escribir a Nayla.');
+      const attachmentIdsForMessage = [...chatAttachmentIds];
 
       const res = await fetch('/api/chat', {
         method: 'POST',
         headers: firebaseHeaders(currentSession, { 'Content-Type': 'application/json' }),
         body: JSON.stringify({
            message,
+           projectId: activeProjectId,
+           threadId: activeThreadId,
+           attachmentIds: attachmentIdsForMessage,
            history: chatMessages.map(m => ({ role: m.role === 'user' ? 'user' : 'assistant', content: m.text })),
            provider: selectedAiProvider,
-           mediaLibrary: galeriaMultimedia.map(item => ({
-             id: item.id,
-             tipo: item.tipo,
-             url: item.url,
-             nombre: item.nombre,
-             etiqueta: item.etiqueta,
-             fuente: item.fuente,
-             metadata: item.metadata
-           })),
+           mediaLibrary: [
+             ...galeriaMultimedia.map(item => ({
+               id: item.id,
+               tipo: item.tipo,
+               url: item.url,
+               nombre: item.nombre,
+               etiqueta: item.etiqueta,
+               fuente: item.fuente,
+               metadata: item.metadata
+             })),
+             ...modelos3d.map(item => ({
+               id: item.id,
+               tipo: 'modelo3d',
+               url: item.url,
+               nombre: item.nombre,
+               etiqueta: item.etiqueta,
+               fuente: item.fuente,
+               metadata: item.metadata
+             }))
+           ],
            currentTimeline: lineaDeTiempo.map(item => ({
              id: item.id,
              tipo: item.tipo,
@@ -1085,6 +1310,8 @@ export default function NaylaCore() {
         actionPlan,
       }]);
 
+      setChatAttachmentIds([]);
+
       if (data.action === 'BUILD_TIMELINE') {
         await ejecutarBuildTimeline(data);
       }
@@ -1111,6 +1338,8 @@ export default function NaylaCore() {
           file,
           existingItems: nextAssets,
           fuente: 'manual-3d',
+          projectId: activeProjectId || undefined,
+          threadId: activeThreadId || undefined,
         });
         nextAssets.push(saved);
         if (!firstNew) firstNew = saved;
@@ -1205,6 +1434,8 @@ export default function NaylaCore() {
 
       setGpuQuoteSource(selectedPhoto);
       setGpuQuoteRequest({
+        projectId: activeProjectId || undefined,
+        threadId: activeThreadId || undefined,
         workload: '3d',
         recipe: 'triposr-image-to-3d',
         inputUrls: [selectedPhoto.url],
@@ -1485,63 +1716,201 @@ export default function NaylaCore() {
     return () => clearTimeout(timer);
   }, [showIntro, session, authChecked, authError]);
 
-  const cargarDatosUsuario = async (userId: string) => {
-    try {
-      // Cargar Bodega
-      const currentSession = session || await getFirebaseSession();
-      const galeriaResponse = currentSession ? await fetch('/api/galeria', {
+  const cargarMensajesDelChat = async (
+    currentSession: FirebaseSession,
+    threadId: string
+  ) => {
+    const response = await fetch('/api/chat/messages?threadId=' + encodeURIComponent(threadId) + '&limit=100', {
+      headers: firebaseHeaders(currentSession),
+    });
+    const payload = await response.json().catch(() => ({})) as { messages?: any[]; error?: string };
+
+    if (!response.ok) {
+      throw new Error(payload.error || 'No se pudo cargar el historial del chat.');
+    }
+
+    const loaded = (payload.messages || [])
+      .filter((message) => message.role === 'user' || message.role === 'assistant')
+      .map((message) => ({
+        role: message.role === 'user' ? 'user' as const : 'ai' as const,
+        text: String(message.content || ''),
+        actionPlan: message.action && typeof message.action === 'object'
+          ? {
+              action: String(message.action.action || 'ACTION'),
+              status: message.action.status,
+              providers: message.action.selectedProvider
+                ? [message.action.selectedProvider]
+                : (Array.isArray(message.action.availableProviders) ? message.action.availableProviders : []),
+              gpuJobId: message.action.gpuJobId,
+              mediaJobId: message.action.mediaJobId,
+              gpuName: message.action.job?.gpuName ?? message.action.quote?.gpuName ?? null,
+              hourlyPrice: message.action.job?.hourlyPrice ?? message.action.quote?.hourlyPrice ?? null,
+              estimatedMaxCost: message.action.job?.estimatedMaxCost ?? message.action.quote?.estimatedMaxCost ?? null,
+              runtimeCostEstimate: message.action.job?.runtimeCostEstimate ?? null,
+            }
+          : undefined,
+      }));
+
+    setChatMessages(loaded);
+  };
+
+  const cargarProyectoActivo = async (
+    projectId: string,
+    currentSession: FirebaseSession
+  ) => {
+    setActiveProjectId(projectId);
+    setChatAttachmentIds([]);
+    setVideoResultadoUrl(null);
+
+    const [galeriaResponse, proyectoResponse, threadsResponse] = await Promise.all([
+      fetch('/api/galeria?projectId=' + encodeURIComponent(projectId), {
         headers: firebaseHeaders(currentSession),
-      }) : null;
-      const galeriaPayload = galeriaResponse ? await galeriaResponse.json() as { data?: any[]; error?: string } : null;
-      const galeriaData = galeriaPayload?.data;
+      }),
+      fetch('/api/proyectos?projectId=' + encodeURIComponent(projectId), {
+        headers: firebaseHeaders(currentSession),
+      }),
+      fetch('/api/chat/threads?projectId=' + encodeURIComponent(projectId), {
+        headers: firebaseHeaders(currentSession),
+      }),
+    ]);
 
-      if (galeriaResponse?.ok && galeriaData) {
-        const modelos = galeriaData
-          .filter((item) => item.tipo === 'modelo3d')
-          .map((item) => ({
-            id: item.id,
-            url: item.url,
-            tipo: 'modelo3d' as const,
-            nombre: item.nombre,
-            creado_en: item.creado_en,
-            esOverlay: false as const,
-            etiqueta: item.etiqueta || 'M',
-            fuente: item.fuente,
-            metadata: item.metadata || {},
-            r2_key: item.r2_key || null,
-            project_id: item.project_id || null,
-            thread_id: item.thread_id || null,
-            privacy: item.privacy || 'private'
-          }));
+    const galeriaPayload = await galeriaResponse.json().catch(() => ({})) as { data?: any[]; error?: string };
+    if (!galeriaResponse.ok) throw new Error(galeriaPayload.error || 'No se pudo cargar la Bóveda del proyecto.');
+    const galeriaData = galeriaPayload.data || [];
 
-        const galeria = galeriaData
-          .filter((item) => ['foto', 'video', 'audio'].includes(item.tipo))
-          .map(item => ({
-            id: item.id,
-            url: item.url,
-            tipo: item.tipo,
-            nombre: item.nombre,
-            creado_en: item.creado_en,
-            esOverlay: item.esOverlay,
-            etiqueta: item.etiqueta,
-            fuente: item.fuente,
-            metadata: item.metadata || {},
-            r2_key: item.r2_key || null,
-            project_id: item.project_id || null,
-            thread_id: item.thread_id || null,
-            privacy: item.privacy || 'private'
-          }));
+    const modelos = galeriaData
+      .filter((item) => item.tipo === 'modelo3d')
+      .map((item) => ({
+        id: item.id,
+        url: item.url,
+        tipo: 'modelo3d' as const,
+        nombre: item.nombre,
+        creado_en: item.creado_en,
+        esOverlay: false as const,
+        etiqueta: item.etiqueta || 'M',
+        fuente: item.fuente,
+        metadata: item.metadata || {},
+        r2_key: item.r2_key || null,
+        project_id: item.project_id || null,
+        thread_id: item.thread_id || null,
+        privacy: item.privacy || 'private'
+      }));
 
-        setModelos3d(modelos);
-        setModelo3dActivoId((current) =>
-          current && modelos.some((item) => item.id === current)
-            ? current
-            : modelos[0]?.id || null
-        );
-        setGaleriaMultimedia(galeria);
+    const galeria = galeriaData
+      .filter((item) => ['foto', 'video', 'audio'].includes(item.tipo))
+      .map((item) => ({
+        id: item.id,
+        url: item.url,
+        tipo: item.tipo,
+        nombre: item.nombre,
+        creado_en: item.creado_en,
+        esOverlay: item.esOverlay,
+        etiqueta: item.etiqueta,
+        fuente: item.fuente,
+        metadata: item.metadata || {},
+        r2_key: item.r2_key || null,
+        project_id: item.project_id || null,
+        thread_id: item.thread_id || null,
+        privacy: item.privacy || 'private'
+      }));
+
+    setModelos3d(modelos);
+    setModelo3dActivoId(modelos[0]?.id || null);
+    setGaleriaMultimedia(galeria);
+
+    const proyectoPayload = await proyectoResponse.json().catch(() => ({})) as {
+      data?: { linea_de_tiempo?: any[] };
+      error?: string;
+    };
+    if (!proyectoResponse.ok) throw new Error(proyectoPayload.error || 'No se pudo cargar el timeline del proyecto.');
+
+    const timeline = Array.isArray(proyectoPayload.data?.linea_de_tiempo)
+      ? proyectoPayload.data!.linea_de_tiempo!
+      : [];
+    setLineaDeTiempo(timeline);
+
+    const firstVisual = timeline.find((item: any) => item.tipo === 'video' || item.tipo === 'foto');
+    if (firstVisual) {
+      setMediaActivaUrl(firstVisual.url);
+      setClipSeleccionado(firstVisual.id);
+      let persistedMetadata = firstVisual.metadata ||
+        galeriaData.find((item: any) => item.id === firstVisual.mediaId)?.metadata;
+
+      if (!persistedMetadata?.aspectRatioLabel) {
+        try {
+          persistedMetadata = await probeMediaUrl(firstVisual.url, firstVisual.tipo);
+        } catch (error) {
+          console.warn('No se pudo recuperar el formato del primer clip del proyecto.', error);
+        }
+      }
+      adoptarFormatoVisual(persistedMetadata);
+    } else {
+      setMediaActivaUrl(null);
+      setClipSeleccionado(null);
+    }
+
+    const threadsPayload = await threadsResponse.json().catch(() => ({})) as { threads?: any[]; error?: string };
+    if (!threadsResponse.ok) throw new Error(threadsPayload.error || 'No se pudieron cargar los chats del proyecto.');
+
+    let threadList = (threadsPayload.threads || []).filter((thread) => thread.status !== 'archived');
+    let selectedThread = threadList[0] || null;
+
+    if (!selectedThread) {
+      const createResponse = await fetch('/api/chat/threads', {
+        method: 'POST',
+        headers: firebaseHeaders(currentSession, { 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ projectId, title: 'Nuevo chat' }),
+      });
+      const createPayload = await createResponse.json().catch(() => ({})) as { thread?: any; error?: string };
+      if (!createResponse.ok || !createPayload.thread) {
+        throw new Error(createPayload.error || 'No se pudo crear el chat inicial del proyecto.');
+      }
+      selectedThread = createPayload.thread;
+      threadList = [selectedThread];
+    }
+
+    setChatThreads(threadList);
+    setActiveThreadId(selectedThread.id);
+    await cargarMensajesDelChat(currentSession, selectedThread.id);
+  };
+
+  const cargarDatosUsuario = async (userId: string, preferredProjectId?: string) => {
+    try {
+      const currentSession = session || await getFirebaseSession();
+      if (!currentSession) return;
+
+      const projectsResponse = await fetch('/api/projects', {
+        headers: firebaseHeaders(currentSession),
+      });
+      const projectsPayload = await projectsResponse.json().catch(() => ({})) as { projects?: NaylaProject[]; error?: string };
+      if (!projectsResponse.ok) throw new Error(projectsPayload.error || 'No se pudieron cargar los proyectos.');
+
+      let activeProjects = (projectsPayload.projects || []).filter((project) => project.status !== 'archived');
+
+      if (!activeProjects.length) {
+        const createResponse = await fetch('/api/projects', {
+          method: 'POST',
+          headers: firebaseHeaders(currentSession, { 'Content-Type': 'application/json' }),
+          body: JSON.stringify({ name: 'Proyecto principal' }),
+        });
+        const createPayload = await createResponse.json().catch(() => ({})) as { project?: NaylaProject; error?: string };
+        if (!createResponse.ok || !createPayload.project) {
+          throw new Error(createPayload.error || 'No se pudo crear el proyecto principal.');
+        }
+        activeProjects = [createPayload.project];
       }
 
-      // Cargar Plantillas (Moldes)
+      setProjects(activeProjects);
+
+      const requestedProject =
+        activeProjects.find((project) => project.id === preferredProjectId) ||
+        activeProjects.find((project) => project.id === activeProjectId) ||
+        activeProjects[0];
+
+      if (requestedProject) {
+        await cargarProyectoActivo(requestedProject.id, currentSession);
+      }
+
       const { data: plantillasData, error: plantillasError } = await supabase
         .from('plantillas_usuario')
         .select('*')
@@ -1549,40 +1918,11 @@ export default function NaylaCore() {
         .order('created_at', { ascending: true });
 
       if (!plantillasError && plantillasData) {
-        setMoldesScripts(plantillasData.map(p => ({
-          id: p.id,
-          nombre: p.nombre,
-          codigo: p.codigo_script
+        setMoldesScripts(plantillasData.map((projectTemplate) => ({
+          id: projectTemplate.id,
+          nombre: projectTemplate.nombre,
+          codigo: projectTemplate.codigo_script
         })));
-      }
-
-      // Cargar Línea de Tiempo
-      const proyectoResponse = currentSession ? await fetch('/api/proyectos', {
-        headers: firebaseHeaders(currentSession),
-      }) : null;
-      const proyectoPayload = proyectoResponse ? await proyectoResponse.json() as { data?: { linea_de_tiempo?: any[] } | null; error?: string } : null;
-      const proyectoData = proyectoPayload?.data;
-
-      if (proyectoResponse?.ok && proyectoData && proyectoData.linea_de_tiempo) {
-        setLineaDeTiempo(proyectoData.linea_de_tiempo);
-        // Si hay clips, establecer el primero que sea video/foto como mediaActivaUrl
-        const clipsVisuales = proyectoData.linea_de_tiempo.filter((c: any) => c.tipo === 'video' || c.tipo === 'foto');
-        if (clipsVisuales.length > 0 && !mediaActivaUrl) {
-          setMediaActivaUrl(clipsVisuales[0].url);
-          setClipSeleccionado(clipsVisuales[0].id);
-          let persistedMetadata = clipsVisuales[0].metadata ||
-            galeriaData?.find((item: any) => item.url === clipsVisuales[0].url)?.metadata;
-
-          if (!persistedMetadata?.aspectRatioLabel) {
-            try {
-              persistedMetadata = await probeMediaUrl(clipsVisuales[0].url, clipsVisuales[0].tipo);
-            } catch (error) {
-              console.warn('No se pudo recuperar el formato del primer clip del proyecto.', error);
-            }
-          }
-
-          adoptarFormatoVisual(persistedMetadata);
-        }
       }
     } catch (err) {
       console.error('Error al cargar los datos del usuario:', err);
@@ -1661,7 +2001,9 @@ export default function NaylaCore() {
         files,
         existingItems: galeriaMultimedia,
         forcedTipo: tipo,
-        fuente: 'manual'
+        fuente: 'manual',
+        projectId: activeProjectId || undefined,
+        threadId: activeThreadId || undefined,
       });
 
       setGaleriaMultimedia(prev => [...prev, ...nuevosItems]);
@@ -1749,6 +2091,7 @@ export default function NaylaCore() {
         method: 'PUT',
         headers: firebaseHeaders(session, { 'Content-Type': 'application/json' }),
         body: JSON.stringify({
+          projectId: activeProjectId || undefined,
           linea_de_tiempo: nuevaLinea,
           actualizado_en: new Date().toISOString()
         }),
@@ -1998,7 +2341,11 @@ export default function NaylaCore() {
          fetch('/api/galeria', {
            method: 'POST',
            headers: firebaseHeaders(session, { 'Content-Type': 'application/json' }),
-           body: JSON.stringify({ items: [nuevoItem] }),
+           body: JSON.stringify({
+             items: [nuevoItem],
+             projectId: activeProjectId || undefined,
+             threadId: activeThreadId || undefined,
+           }),
          }).then(async (response) => {
            if (!response.ok) {
              const payload = await response.json() as { error?: string };
@@ -3094,32 +3441,10 @@ if (!session) {
                 />
               </div>
             )}
-            {!isCleanMode && (
-              <div
-                style={{
-                  position: 'absolute',
-                  top: '12px',
-                  left: '12px',
-                  zIndex: 35,
-                  borderRadius: '10px',
-                  border: '1px solid rgba(255,255,255,0.18)',
-                  backgroundColor: 'rgba(0,0,0,0.62)',
-                  backdropFilter: 'blur(8px)',
-                  padding: '5px 9px',
-                  color: '#e5e5e5',
-                  fontSize: '0.62rem',
-                  fontWeight: 700,
-                  letterSpacing: '0.06em',
-                  pointerEvents: 'none'
-                }}
-              >
-                FORMATO {canvasRatio.replace('/', ':')} · {canvasPreviewDimensions.width}×{canvasPreviewDimensions.height}
-              </div>
-            )}
-
-            {/* CUADRO / BOTÓN FLOTANTE SUPERIOR DERECHO DE NAYLA IA */}
+            {/* BOTÓN FLOTANTE DE NAYLA */}
             {!isCleanMode && (
               <button
+                aria-label="Abrir Nayla"
                 onClick={(e) => {
                   e.stopPropagation();
                   setIsAiModalOpen(true);
@@ -3129,28 +3454,24 @@ if (!session) {
                   top: '12px',
                   right: '12px',
                   zIndex: 35,
-                  borderRadius: '12px',
-                  border: '1px solid rgba(var(--glow-color-rgb), calc(var(--glow-intensity) * 0.6))',
-                  backgroundColor: 'var(--glass-bg)',
-                  backdropFilter: 'blur(var(--glass-blur))',
-                  WebkitBackdropFilter: 'blur(var(--glass-blur))',
-                  padding: '5px 10px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '6px',
+                  width: '42px',
+                  height: '42px',
+                  borderRadius: '50%',
+                  border: '2px solid #f4f4f4',
+                  backgroundColor: '#050505',
+                  padding: 0,
+                  display: 'grid',
+                  placeItems: 'center',
                   cursor: 'pointer',
                   color: '#fff',
-                  boxShadow: '0 4px 20px rgba(0,0,0,0.6), 0 0 var(--glow-spread) rgba(var(--glow-color-rgb), var(--glow-intensity))',
-                  transition: 'all 0.2s ease'
+                  boxShadow: '0 4px 18px rgba(0,0,0,0.65)',
                 }}
               >
                 <img
                   src="/assets/imagenes/Icono-intro.jpeg"
                   alt="Nayla"
-                  style={{ width: '22px', height: '22px', borderRadius: '50%', objectFit: 'cover', border: '1px solid #00cc66' }}
+                  style={{ width: '34px', height: '34px', borderRadius: '50%', objectFit: 'cover', filter: 'grayscale(1)' }}
                 />
-                <span style={{ fontSize: '0.7rem', fontWeight: 'bold', letterSpacing: '1px', color: '#00ffcc' }}>NAYLA IA</span>
-                <div style={{ width: '6px', height: '6px', backgroundColor: '#00cc66', borderRadius: '50%', boxShadow: '0 0 6px #00cc66' }} />
               </button>
             )}
 
@@ -3333,59 +3654,90 @@ if (!session) {
           backgroundColor: 'var(--glass-bg)',
           backdropFilter: 'blur(var(--glass-blur))',
           WebkitBackdropFilter: 'blur(var(--glass-blur))',
-          border: '1px solid rgba(var(--glow-color-rgb), calc(var(--glow-intensity) * 0.5))',
-          boxShadow: '0 0 var(--glow-spread) rgba(var(--glow-color-rgb), var(--glow-intensity))',
+          border: '1px solid rgba(255,255,255,0.18)',
+          boxShadow: '0 0 18px rgba(255,255,255,0.06)',
           display: 'flex',
           flexDirection: 'column',
           overflow: 'hidden'
         }}>
           {/* Header Modal IA */}
           <div style={{
-            padding: '16px 20px',
-            borderBottom: '1px solid #1a1a1a',
-            backgroundColor: '#0a0a0a',
+            minHeight: '74px',
+            padding: '12px 18px',
+            borderBottom: '1px solid #1f1f1f',
+            backgroundColor: '#070707',
             display: 'flex',
             justifyContent: 'space-between',
-            alignItems: 'center'
+            alignItems: 'center',
+            position: 'relative',
+            zIndex: 45,
           }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+            <button
+              type="button"
+              aria-label="Abrir proyectos y canales de Nayla"
+              onClick={() => setProjectMenuOpen((value) => !value)}
+              style={{
+                width: '50px',
+                height: '50px',
+                borderRadius: '50%',
+                border: '2px solid #f4f4f4',
+                background: '#050505',
+                padding: 0,
+                cursor: 'pointer',
+                display: 'grid',
+                placeItems: 'center',
+                boxShadow: projectMenuOpen ? '0 0 0 1px rgba(255,255,255,0.18)' : 'none',
+              }}
+            >
               <img
                 src="/assets/imagenes/Icono-intro.jpeg"
                 alt="Nayla"
-                style={{ width: '42px', height: '42px', borderRadius: '50%', objectFit: 'cover', border: '2px solid #00cc66' }}
+                style={{ width: '40px', height: '40px', borderRadius: '50%', objectFit: 'cover', filter: 'grayscale(1)' }}
               />
-              <div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <h3 style={{ margin: 0, color: '#fff', fontSize: '1.1rem', fontWeight: 'bold' }}>Nayla IA</h3>
-                  <span style={{ backgroundColor: '#1a1a1a', color: '#00ffcc', fontSize: '0.75rem', fontWeight: 'bold', padding: '2px 8px', borderRadius: '12px' }}>
-                    {chatMessages.length}
-                  </span>
-                </div>
-                <p style={{ margin: '2px 0 0 0', color: '#888', fontSize: '0.75rem' }}>Asistente Curador de Contenido Inteligente</p>
-              </div>
-            </div>
+            </button>
 
-            {/* Botón de Cerrar X */}
             <button
-              onClick={() => setIsAiModalOpen(false)}
+              aria-label="Cerrar Nayla"
+              onClick={() => {
+                setProjectMenuOpen(false);
+                setIsAiModalOpen(false);
+              }}
               style={{
-                background: '#1a1a1a',
-                border: '1px solid #333',
+                background: '#171717',
+                border: '1px solid #3a3a3a',
                 color: '#fff',
-                width: '38px',
-                height: '38px',
+                width: '42px',
+                height: '42px',
                 borderRadius: '50%',
                 cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                fontSize: '18px',
-                fontWeight: 'bold'
+                display: 'grid',
+                placeItems: 'center',
+                fontSize: '22px',
+                lineHeight: 1,
               }}
             >
               ✕
             </button>
           </div>
+
+          <NaylaProjectMenu
+            open={projectMenuOpen}
+            projects={projects}
+            activeProjectId={activeProjectId}
+            assets={chatChannelAssets}
+            attachedIds={chatAttachmentIds}
+            uploadingKind={channelUploadingKind}
+            onSelectProject={(projectId) => void seleccionarProyectoDesdeChat(projectId)}
+            onNewChat={() => void crearNuevoChat()}
+            onNewProject={() => void crearNuevoProyecto()}
+            onUpload={(kind, files) => void subirArchivosDesdeCanal(kind, files)}
+            onToggleAttachment={toggleChatAttachment}
+            onViewProject={() => {
+              setProjectMenuOpen(false);
+              setIsAiModalOpen(false);
+            }}
+            onDeleteProject={() => void eliminarProyectoActivo()}
+          />
 
           {/* Toggle Fast / Pro */}
           <div style={{ padding: '10px 20px', backgroundColor: '#050505', borderBottom: '1px solid #1a1a1a', display: 'flex', gap: '10px' }}>
@@ -3397,7 +3749,7 @@ if (!session) {
                 borderRadius: '8px',
                 border: '1px solid #333',
                 backgroundColor: selectedAiProvider === 'groq' ? '#222' : 'transparent',
-                color: selectedAiProvider === 'groq' ? '#00ffcc' : '#888',
+                color: selectedAiProvider === 'groq' ? '#fff' : '#888',
                 fontWeight: 'bold',
                 fontSize: '0.85rem',
                 cursor: 'pointer'
@@ -3413,7 +3765,7 @@ if (!session) {
                 borderRadius: '8px',
                 border: '1px solid #333',
                 backgroundColor: selectedAiProvider === 'mistral' ? '#222' : 'transparent',
-                color: selectedAiProvider === 'mistral' ? '#00ffcc' : '#888',
+                color: selectedAiProvider === 'mistral' ? '#fff' : '#888',
                 fontWeight: 'bold',
                 fontSize: '0.85rem',
                 cursor: 'pointer'
@@ -3427,7 +3779,7 @@ if (!session) {
           <div style={{ flex: 1, padding: '20px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '14px' }}>
             {chatMessages.length === 0 ? (
               <div style={{ textAlign: 'center', color: '#666', marginTop: '40px', fontSize: '0.95rem' }}>
-                ¡Hola! Soy Nayla. Dime qué necesitas o pega un enlace para asistirte en la edición.
+                Hola, soy Nayla. ¿En qué puedo ayudarte hoy?
               </div>
             ) : (
               chatMessages.map((msg, i) => (
@@ -3445,7 +3797,7 @@ if (!session) {
                   <div>{msg.text}</div>
                   {msg.actionPlan && (
                     <div style={{ marginTop: '10px', padding: '10px', border: '1px solid #2b2b2b', borderRadius: '10px', backgroundColor: '#080808' }}>
-                      <div style={{ color: '#00ffcc', fontSize: '0.78rem', fontWeight: 700, letterSpacing: '0.04em' }}>
+                      <div style={{ color: '#f2f2f2', fontSize: '0.78rem', fontWeight: 700, letterSpacing: '0.04em' }}>
                         {msg.actionPlan.action.replaceAll('_', ' ')}
                       </div>
                       <div style={{ color: '#999', marginTop: '4px', fontSize: '0.78rem' }}>
@@ -3511,7 +3863,7 @@ if (!session) {
                               <button
                                 onClick={() => importStockCard(card, true).catch((error) => showAlert(error.message || 'No se pudo usar.'))}
                                 disabled={stockImportingId === card.id || !card.mediaUrl}
-                                style={{ padding: '6px 9px', borderRadius: '7px', border: 'none', background: '#00cc66', color: '#000', fontWeight: 700, fontSize: '0.7rem', cursor: stockImportingId === card.id ? 'wait' : 'pointer', opacity: !card.mediaUrl ? 0.45 : 1 }}
+                                style={{ padding: '6px 9px', borderRadius: '7px', border: 'none', background: '#f2f2f2', color: '#050505', fontWeight: 700, fontSize: '0.7rem', cursor: stockImportingId === card.id ? 'wait' : 'pointer', opacity: !card.mediaUrl ? 0.45 : 1 }}
                               >
                                 USAR
                               </button>
@@ -3525,11 +3877,57 @@ if (!session) {
               ))
             )}
             {chatProcessing && (
-              <div style={{ alignSelf: 'flex-start', color: '#00ffcc', padding: '10px', fontSize: '0.9rem', fontStyle: 'italic' }}>
+              <div style={{ alignSelf: 'flex-start', color: '#f2f2f2', padding: '10px', fontSize: '0.9rem', fontStyle: 'italic' }}>
                 Nayla está pensando...
               </div>
             )}
           </div>
+
+          {chatAttachedAssets.length > 0 && (
+            <div style={{
+              display: 'flex',
+              gap: 8,
+              overflowX: 'auto',
+              padding: '8px 12px',
+              borderTop: '1px solid #1f1f1f',
+              backgroundColor: '#080808',
+            }}>
+              {chatAttachedAssets.map((asset) => (
+                <div
+                  key={asset.id}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 7,
+                    flex: '0 0 auto',
+                    maxWidth: 190,
+                    border: '1px solid #333',
+                    borderRadius: 10,
+                    padding: '6px 8px',
+                    background: '#111',
+                    color: '#eee',
+                  }}
+                >
+                  {asset.tipo === 'foto' && asset.url ? (
+                    <img src={asset.url} alt="" style={{ width: 28, height: 28, borderRadius: 6, objectFit: 'cover' }} />
+                  ) : (
+                    <span style={{ width: 28, height: 28, borderRadius: 6, border: '1px solid #333', display: 'grid', placeItems: 'center', fontSize: 11 }}>
+                      {asset.tipo === 'video' ? 'VID' : asset.tipo === 'audio' ? 'AUD' : '3D'}
+                    </span>
+                  )}
+                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 12 }}>{asset.nombre}</span>
+                  <button
+                    type="button"
+                    aria-label={`Quitar ${asset.nombre}`}
+                    onClick={() => toggleChatAttachment(asset)}
+                    style={{ border: 'none', background: 'transparent', color: '#aaa', cursor: 'pointer', fontSize: 16, padding: 0 }}
+                  >
+                    ×
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
 
           {/* Chat Input */}
           <div style={{
@@ -3566,7 +3964,7 @@ if (!session) {
               disabled={chatProcessing}
               style={{
                 padding: '10px 16px',
-                backgroundColor: chatProcessing ? '#333' : '#00cc66',
+                backgroundColor: chatProcessing ? '#333' : '#f2f2f2',
                 color: '#000',
                 border: 'none',
                 borderRadius: '10px',
