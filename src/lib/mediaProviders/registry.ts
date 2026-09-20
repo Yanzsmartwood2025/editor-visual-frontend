@@ -173,8 +173,8 @@ export const MEDIA_PROVIDER_REGISTRY: ProviderDefinition[] = [
     requiredEnvKeys: ['MESHY_API_KEY'],
     priority: 20,
     billing: 'mixed',
-    enabledByDefault: false,
-    notes: 'Proveedor 3D premium/opcional; activar cuando se decida usar créditos/API.',
+    enabledByDefault: true,
+    notes: 'Proveedor 3D premium/opcional; queda disponible cuando MESHY_API_KEY esté configurada.',
   },
 ];
 
