@@ -1,0 +1,53 @@
+export const REMOTION_CPU_EFFECTS = {
+  transitions: ['fade', 'wipe', 'slide', 'zoom'] as const,
+  looks: [
+    'none',
+    'grayscale',
+    'sepia',
+    'vintage',
+    'cinematic',
+    'blur',
+    'glow',
+    'high-contrast',
+    'soft',
+  ] as const,
+  motion: [
+    'none',
+    'ken-burns',
+    'pan',
+    'rotate',
+    'push-in',
+    'pull-out',
+    'float',
+    'tilt-3d',
+    'parallax-3d',
+  ] as const,
+  overlays: [
+    'none',
+    'vignette',
+    'film-grain',
+    'light-leak',
+    'letterbox',
+  ] as const,
+};
+
+export const REMOTION_CPU_PUBLIC_CATALOG = {
+  engine: 'Nayla Render CPU',
+  purpose: 'Edición y composición con Remotion en Vercel Sandbox sin alquilar GPU.',
+  transitions: REMOTION_CPU_EFFECTS.transitions,
+  looks: REMOTION_CPU_EFFECTS.looks,
+  motion: REMOTION_CPU_EFFECTS.motion,
+  overlays: REMOTION_CPU_EFFECTS.overlays,
+  controls: [
+    'duración por clip',
+    'volumen',
+    'fade de audio/video',
+    'velocidad',
+    'recorte',
+    'retraso',
+    'escala',
+    'brillo',
+    'contraste',
+    'saturación',
+  ],
+};
