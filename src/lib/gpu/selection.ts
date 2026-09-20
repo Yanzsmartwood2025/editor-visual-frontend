@@ -1,25 +1,37 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import type { VastOffer } from './vastApi';
 
+export type ComputeSelectionTarget = {
+  backend: 'vast' | 'runpod';
+  backendId: string;
+  gpuName: string;
+  gpuRamGb?: number;
+  hourlyPrice: number;
+};
+
 const selectionSecret = () => {
   const value =
     process.env.NAYLA_COMPUTE_SELECTION_SECRET?.trim() ||
-    process.env.VAST_API_KEY?.trim();
+    process.env.VAST_API_KEY?.trim() ||
+    process.env.RUNPOD_API_KEY?.trim();
   if (!value) throw new Error('Nayla Compute no tiene configurado el secreto de selección.');
   return value;
 };
 
-const offerFingerprint = (offer: VastOffer) =>
+const targetFingerprint = (target: ComputeSelectionTarget) =>
   [
-    Number(offer.id),
-    String(offer.gpu_name || ''),
-    Number(offer.gpu_ram || 0),
-    Number(offer.dph_total || 0).toFixed(8),
+    target.backend,
+    target.backendId,
+    target.gpuName,
+    Number(target.gpuRamGb || 0).toFixed(3),
+    Number(target.hourlyPrice || 0).toFixed(8),
   ].join('|');
 
-export const createComputeSelectionId = (offer: VastOffer): string =>
+export const createComputeTargetSelectionId = (
+  target: ComputeSelectionTarget
+): string =>
   createHmac('sha256', selectionSecret())
-    .update(offerFingerprint(offer), 'utf8')
+    .update(targetFingerprint(target), 'utf8')
     .digest('base64url');
 
 const safeEqual = (a: string, b: string) => {
@@ -28,13 +40,40 @@ const safeEqual = (a: string, b: string) => {
   return left.length === right.length && timingSafeEqual(left, right);
 };
 
+export const findComputeTargetBySelectionId = <T extends ComputeSelectionTarget>(
+  targets: T[],
+  selectionId?: string | null
+): T | null => {
+  if (!selectionId) return targets[0] || null;
+  return (
+    targets.find((target) =>
+      safeEqual(createComputeTargetSelectionId(target), selectionId)
+    ) || null
+  );
+};
+
+// Compatibility wrappers for the existing Vast adapter/tests.
+const vastTarget = (offer: VastOffer): ComputeSelectionTarget => ({
+  backend: 'vast',
+  backendId: String(offer.id),
+  gpuName: String(offer.gpu_name || 'GPU'),
+  gpuRamGb: Number.isFinite(Number(offer.gpu_ram))
+    ? Number(offer.gpu_ram) / 1000
+    : undefined,
+  hourlyPrice: Number(offer.dph_total || 0),
+});
+
+export const createComputeSelectionId = (offer: VastOffer): string =>
+  createComputeTargetSelectionId(vastTarget(offer));
+
 export const findOfferByComputeSelectionId = (
   offers: VastOffer[],
   selectionId?: string | null
 ): VastOffer | null => {
   if (!selectionId) return offers[0] || null;
   return (
-    offers.find((offer) => safeEqual(createComputeSelectionId(offer), selectionId)) ||
-    null
+    offers.find((offer) =>
+      safeEqual(createComputeSelectionId(offer), selectionId)
+    ) || null
   );
 };
