@@ -13,6 +13,10 @@ import {
   toNaylaComputeEstimatedPrice,
   toNaylaComputeHourlyPrice,
 } from '../naylaSystemCatalog';
+import {
+  createComputeSelectionId,
+  findOfferByComputeSelectionId,
+} from './selection';
 
 export type VastGpuQuote = {
   provider: 'nayla-compute';
@@ -24,12 +28,15 @@ export type VastGpuQuote = {
   gpuRamGb?: number;
   hourlyPrice?: number;
   estimatedMaxCost?: number;
+  selectedSelectionId?: string;
   cards?: Array<{
-    id: string;
+    selectionId: string;
     gpuName: string;
     gpuRamGb?: number;
     hourlyPrice: number;
     estimatedMaxCost: number;
+    recommended: boolean;
+    selected: boolean;
   }>;
   maxRuntimeMinutes: number;
   bootGraceMinutes: number;
@@ -42,7 +49,8 @@ export type VastGpuQuote = {
 };
 
 export const quoteVastGpuJob = async (
-  input: GpuExecutionInput
+  input: GpuExecutionInput,
+  requestedSelectionId?: string
 ): Promise<VastGpuQuote> => {
   const { profile, recipePlan, workerImage } = resolveGpuExecutionPlan(input);
   const policy = getGpuBudgetPolicy();
@@ -85,41 +93,71 @@ export const quoteVastGpuJob = async (
   ]);
 
   const quoteRuntimeMinutes = profile.maxRuntimeMinutes + policy.bootGraceMinutes;
-  const seenCards = new Set<string>();
-  const cards = offers.flatMap((candidate, index) => {
-    const candidateHourly = Number(candidate.dph_total);
-    if (!Number.isFinite(candidateHourly)) return [];
-    const candidateName =
-      typeof candidate.gpu_name === 'string' && candidate.gpu_name.trim()
-        ? candidate.gpu_name.trim()
-        : 'GPU';
-    const candidateRamMb = Number(candidate.gpu_ram);
-    const candidateRamGb = Number.isFinite(candidateRamMb)
-      ? Math.round((candidateRamMb / 1000) * 10) / 10
-      : undefined;
-    const key = candidateName + ':' + String(candidateRamGb || '');
-    if (seenCards.has(key)) return [];
-    seenCards.add(key);
+  const selectedOffer = findOfferByComputeSelectionId(offers, requestedSelectionId);
+  if (requestedSelectionId && !selectedOffer) {
+    return {
+      ...base,
+      cards: offers.map((candidate, index) => {
+        const candidateHourly = Number(candidate.dph_total);
+        const candidateRamMb = Number(candidate.gpu_ram);
+        const internalCandidateMax = estimatedWorstCaseCost(
+          candidateHourly,
+          quoteRuntimeMinutes,
+          policy.safetyMultiplier
+        );
+        return {
+          selectionId: createComputeSelectionId(candidate),
+          gpuName:
+            typeof candidate.gpu_name === 'string' && candidate.gpu_name.trim()
+              ? candidate.gpu_name.trim()
+              : 'GPU',
+          gpuRamGb: Number.isFinite(candidateRamMb)
+            ? Math.round((candidateRamMb / 1000) * 10) / 10
+            : undefined,
+          hourlyPrice: toNaylaComputeHourlyPrice(candidateHourly),
+          estimatedMaxCost: toNaylaComputeEstimatedPrice(
+            internalCandidateMax,
+            quoteRuntimeMinutes
+          ),
+          recommended: index === 0,
+          selected: false,
+        };
+      }),
+      reason:
+        'La tarjeta seleccionada ya no está disponible. Elige otra de la lista actualizada.',
+    };
+  }
 
+  const offer = selectedOffer || offers[0] || null;
+  const selectedSelectionId = offer ? createComputeSelectionId(offer) : undefined;
+  const cards = offers.map((candidate, index) => {
+    const candidateHourly = Number(candidate.dph_total);
+    const candidateRamMb = Number(candidate.gpu_ram);
     const internalCandidateMax = estimatedWorstCaseCost(
       candidateHourly,
       quoteRuntimeMinutes,
       policy.safetyMultiplier
     );
-
-    return [{
-      id: 'compute-card-' + String(index + 1),
-      gpuName: candidateName,
-      gpuRamGb: candidateRamGb,
+    const selectionId = createComputeSelectionId(candidate);
+    return {
+      selectionId,
+      gpuName:
+        typeof candidate.gpu_name === 'string' && candidate.gpu_name.trim()
+          ? candidate.gpu_name.trim()
+          : 'GPU',
+      gpuRamGb: Number.isFinite(candidateRamMb)
+        ? Math.round((candidateRamMb / 1000) * 10) / 10
+        : undefined,
       hourlyPrice: toNaylaComputeHourlyPrice(candidateHourly),
       estimatedMaxCost: toNaylaComputeEstimatedPrice(
         internalCandidateMax,
         quoteRuntimeMinutes
       ),
-    }];
-  }).slice(0, 5);
+      recommended: index === 0,
+      selected: selectionId === selectedSelectionId,
+    };
+  });
 
-  const offer = offers[0];
   if (!offer) {
     return {
       ...base,
@@ -147,6 +185,7 @@ export const quoteVastGpuJob = async (
       gpuName:
         typeof offer.gpu_name === 'string' ? offer.gpu_name : undefined,
       gpuRamGb,
+      selectedSelectionId,
       cards,
       hourlyPrice: toNaylaComputeHourlyPrice(hourlyPrice),
       estimatedMaxCost: toNaylaComputeEstimatedPrice(estimatedMaxCost, quoteRuntimeMinutes),
@@ -161,6 +200,7 @@ export const quoteVastGpuJob = async (
       gpuName:
         typeof offer.gpu_name === 'string' ? offer.gpu_name : undefined,
       gpuRamGb,
+      selectedSelectionId,
       cards,
       hourlyPrice: toNaylaComputeHourlyPrice(hourlyPrice),
       estimatedMaxCost: toNaylaComputeEstimatedPrice(estimatedMaxCost, quoteRuntimeMinutes),
@@ -175,6 +215,7 @@ export const quoteVastGpuJob = async (
     gpuName:
       typeof offer.gpu_name === 'string' ? offer.gpu_name : undefined,
     gpuRamGb,
+    selectedSelectionId,
     cards,
     hourlyPrice: toNaylaComputeHourlyPrice(hourlyPrice),
     estimatedMaxCost: toNaylaComputeEstimatedPrice(estimatedMaxCost, quoteRuntimeMinutes),
