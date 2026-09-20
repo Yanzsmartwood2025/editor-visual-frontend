@@ -133,7 +133,7 @@ const searchPixabay = async (
   const params = new URLSearchParams({
     key: apiKey,
     q: query,
-    per_page: String(limit),
+    per_page: String(Math.max(limit, 3)),
     safesearch: 'true',
   });
   if (kind === 'image') params.set('image_type', 'photo');
