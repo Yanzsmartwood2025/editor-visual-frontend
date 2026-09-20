@@ -267,13 +267,25 @@ export const getRunpodPod = async (podId: string): Promise<RunpodPod | null> => 
 };
 
 export const terminateRunpodPod = async (podId: string): Promise<void> => {
-  await runpodGraphql<{ podTerminate?: null }>(
-    `
-      mutation NaylaTerminatePod($input: PodTerminateInput!) {
-        podTerminate(input: $input)
-      }
-    `,
-    { input: { podId } },
-    20_000
-  );
+  try {
+    await runpodGraphql<{ podTerminate?: null }>(
+      `
+        mutation NaylaTerminatePod($input: PodTerminateInput!) {
+          podTerminate(input: $input)
+        }
+      `,
+      { input: { podId } },
+      20_000
+    );
+  } catch (error) {
+    const message = error instanceof Error ? error.message.toLowerCase() : '';
+    if (
+      message.includes('not found') ||
+      message.includes('does not exist') ||
+      message.includes('no pod')
+    ) {
+      return;
+    }
+    throw error;
+  }
 };
