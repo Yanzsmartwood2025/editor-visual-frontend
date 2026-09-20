@@ -1,5 +1,5 @@
 import { createHmac, createHash } from 'crypto';
-import { DeleteObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import { DeleteObjectCommand, HeadObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 
 const r2Config = () => {
   const accountId = process.env.CLOUDFLARE_R2_ACCOUNT_ID;
@@ -161,4 +161,15 @@ export async function uploadR2Object(key: string, body: Uint8Array, contentType:
 export async function deleteR2Object(key: string) {
   const { config, s3 } = await client();
   await s3.send(new DeleteObjectCommand({ Bucket: config.bucket, Key: key }));
+}
+
+
+export async function headR2Object(key: string) {
+  const { s3, config } = await client();
+  const result = await s3.send(new HeadObjectCommand({ Bucket: config.bucket, Key: key }));
+  return {
+    contentType: result.ContentType,
+    contentLength: result.ContentLength,
+    etag: result.ETag,
+  };
 }
