@@ -24,6 +24,7 @@ type UploadMediaToBodegaParams = {
   existingItems?: MediaItem[];
   forcedTipo?: MediaKind;
   fuente?: string;
+  metadataExtra?: Partial<MediaMetadata>;
 };
 
 export const SHARED_MEDIA_PENDING_TTL_MS = 24 * 60 * 60 * 1000;
@@ -154,7 +155,8 @@ export const uploadMediaFilesToBodega = async ({
   files,
   existingItems = [],
   forcedTipo,
-  fuente = 'manual'
+  fuente = 'manual',
+  metadataExtra = {}
 }: UploadMediaToBodegaParams): Promise<MediaItem[]> => {
   if (!session?.user?.id) throw new Error('Debes iniciar sesión para guardar archivos en la Bóveda.');
 
@@ -191,7 +193,7 @@ export const uploadMediaFilesToBodega = async ({
         esOverlay: false,
         etiqueta: `${inicial}${countTipo}`,
         fuente,
-        metadata,
+        metadata: { ...metadata, ...metadataExtra },
       });
     }
   } catch (error) {
