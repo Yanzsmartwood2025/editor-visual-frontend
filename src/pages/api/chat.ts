@@ -3,7 +3,10 @@ import { z } from 'zod';
 import { GroqProvider, MistralProvider } from '../../utils/llmProvider';
 import { requireFirebaseUser } from '../../lib/firebaseAdmin';
 import { MEDIA_CAPABILITY_CATALOG } from '../../lib/mediaProviders/capabilities';
-import { getConfiguredProviderSummary } from '../../lib/mediaProviders/registry';
+import {
+  getNaylaPublicSystemCatalog,
+  sanitizeNaylaPublicText,
+} from '../../lib/naylaSystemCatalog';
 import { searchStockMedia } from '../../lib/mediaProviders/stock';
 import {
   getAvailableProvidersForAction,
@@ -66,6 +69,7 @@ const requestSchema = z.object({
   images: z.array(z.string().max(4_000_000)).max(4).optional(),
   history: z.array(historyItemSchema).max(30).optional(),
   provider: z.enum(['groq', 'mistral']).optional().default('groq'),
+  engineMode: z.enum(['auto', 'cloud', 'compute']).optional().default('auto'),
   projectId: z.string().uuid().optional(),
   threadId: z.string().uuid().optional(),
   attachmentIds: z.array(z.string().uuid()).max(12).optional(),
@@ -88,20 +92,18 @@ const generationActionNames = new Set([
 ]);
 
 const describeActionPlan = (action: NaylaAction) => {
-  const providers = getAvailableProvidersForAction(action).map((provider) => ({
-    id: provider.id,
-    label: provider.label,
-  }));
+  const routeCount = getAvailableProvidersForAction(action).length;
 
   return {
-    ...action,
+    action: action.action,
     status: 'planned' as const,
     executionReady: false,
     requiresConfirmation: generationActionNames.has(action.action),
-    availableProviders: providers,
-    text: providers.length
-      ? `Preparé la tarea y puedo enrutarla por: ${providers.map((item) => item.label).join(', ')}.`
-      : 'Preparé la tarea, pero no hay un proveedor configurado para esa capacidad todavía.',
+    engine: action.action === 'RUN_GPU_JOB' ? 'nayla-compute' : 'nayla-cloud',
+    availableRoutes: routeCount,
+    text: routeCount
+      ? `Nayla preparó la tarea y tiene ${routeCount} ruta${routeCount === 1 ? '' : 's'} interna${routeCount === 1 ? '' : 's'} disponible${routeCount === 1 ? '' : 's'}.`
+      : 'Nayla preparó la tarea, pero esta capacidad todavía no está habilitada.',
   };
 };
 
@@ -345,6 +347,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       images,
       history,
       provider,
+      engineMode,
       projectId,
       threadId,
       attachmentIds = [],
@@ -411,7 +414,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       });
     }
 
-    const providerSummary = getConfiguredProviderSummary();
+    const systemCatalog = getNaylaPublicSystemCatalog();
     const capabilitySummary = MEDIA_CAPABILITY_CATALOG.map((item) => ({
       id: item.id,
       label: item.label,
@@ -428,11 +431,13 @@ REGLAS DE SEGURIDAD Y EJECUCIÓN:
 - Los adjuntos ya fueron validados por el servidor. Usa solo sus URLs temporales exactas y nunca inventes URLs.
 - Clasifica adjuntos así: foto→imagen, video→video, audio→audio/voz/transcripción, modelo3d→3D.
 - Si el usuario pide analizar o transformar un adjunto, usa primero la acción correspondiente a su tipo.
-- Solo puedes usar proveedores y capacidades que aparecen en el catálogo seguro de este prompt.
-- Si el usuario no elige proveedor, omite "provider": el servidor seleccionará uno configurado.
-- Usa RUN_GPU_JOB solo si el usuario pide explícitamente Vast/GPU/modelo propio/proceso local pesado, o si la tarea requiere un worker GPU propio.
-- Para generación normal usa GENERATE_IMAGE / GENERATE_VIDEO / GENERATE_AUDIO / GENERATE_3D.
-- Los trabajos Vast tienen presupuesto, lease y destrucción automática. No inventes precios ni afirmes que se alquiló una GPU si el servidor no lo confirmó.
+- Solo puedes usar capacidades que aparecen en el catálogo seguro de este prompt.
+- Nunca menciones marcas, empresas, proveedores externos, nombres internos de recetas ni infraestructura de terceros al usuario. Habla únicamente de Nayla Cloud, Nayla Compute y Nayla Energy.
+- Nunca reveles precios internos, saldo de infraestructura, márgenes ni costos de origen. Solo usa precios Nayla devueltos por el servidor.
+- Si MODO_MOTOR=cloud, usa GENERATE_IMAGE / GENERATE_VIDEO / GENERATE_AUDIO / GENERATE_3D y no uses RUN_GPU_JOB.
+- Si MODO_MOTOR=compute, usa RUN_GPU_JOB para generación pesada, con workload acorde a image/video/audio/3d.
+- Si MODO_MOTOR=auto, usa Nayla Cloud por defecto y Nayla Compute solo cuando el usuario pida GPU/Compute/proceso local pesado o cuando una capacidad requiera worker propio.
+- Los trabajos de Nayla Compute tienen presupuesto, lease y cierre automático. No inventes precios ni afirmes que se reservó una GPU si el servidor no lo confirmó.
 - Ninguna generación externa pagada se considera ejecutada solo porque exista un proveedor: primero se registra el trabajo y el servidor controla su adaptador.
 - Clonación/cambio de voz requiere una muestra autorizada y consentimiento del titular.
 - Para BUILD_TIMELINE copia solo URLs presentes en adjuntos, mediaLibrary o currentTimeline.
@@ -488,10 +493,9 @@ voice_change, voice_isolation, dubbing, text_to_dialogue, forced_alignment.
 }
 mode: text_to_3d, image_to_3d, multiview_to_3d, texture, optimize, rig, animate, retarget.
 
-6) GPU propia:
+6) Nayla Compute:
 {
   "action": "RUN_GPU_JOB",
-  "provider": "vast",
   "workload": "video",
   "jobType": "nombre-corto-del-proceso",
   "prompt": "opcional",
@@ -499,11 +503,10 @@ mode: text_to_3d, image_to_3d, multiview_to_3d, texture, optimize, rig, animate,
 }
 workload: "probe" | "image" | "video" | "audio" | "3d".
 
-RECETAS GPU PROPIAS HABILITADAS:
-- Música ACE-Step:
+RECETAS INTERNAS DE NAYLA COMPUTE:
+- Música:
 {
   "action": "RUN_GPU_JOB",
-  "provider": "vast",
   "workload": "audio",
   "jobType": "ace-step-music",
   "prompt": "descripción musical",
@@ -515,10 +518,9 @@ RECETAS GPU PROPIAS HABILITADAS:
 Duración: 10–90 segundos. Con letra autorizada se puede usar "lyrics" e "instrumental": false.
 Siempre cotiza primero y requiere confirmación humana.
 
-- Una imagen existente a GLB con TripoSR:
+- Una imagen existente a GLB:
 {
   "action": "RUN_GPU_JOB",
-  "provider": "vast",
   "workload": "3d",
   "jobType": "triposr-image-to-3d",
   "inputUrls": ["URL HTTPS exacta de la imagen existente"]
@@ -550,8 +552,10 @@ ${JSON.stringify(availableEffectsCatalog)}
 CATÁLOGO DE CAPACIDADES:
 ${JSON.stringify(capabilitySummary)}
 
-PROVEEDORES DISPONIBLES (sin secretos):
-${JSON.stringify(providerSummary)}
+SISTEMA NAYLA DISPONIBLE:
+${JSON.stringify(systemCatalog)}
+
+MODO_MOTOR=${engineMode}
 
 Si una petición combina pasos, elige la PRIMERA acción necesaria. El resultado volverá al chat y el siguiente turno puede continuar el flujo.
 `;
@@ -608,9 +612,9 @@ Si una petición combina pasos, elige la PRIMERA acción necesaria. El resultado
         systemPrompt,
       });
     } catch (error: any) {
-      console.error('[chat.ts] Todos los proveedores LLM de Vercel fallaron:', error);
+      console.error('[chat.ts] Todos los motores IA de Nayla fallaron:', error);
       return res.status(500).json({
-        error: error.message || 'Error al generar la respuesta. Los proveedores LLM fallaron o están al límite.',
+        error: error.message || 'Error al generar la respuesta. Los motores IA están temporalmente al límite.',
       });
     }
 
@@ -653,19 +657,21 @@ Si una petición combina pasos, elige la PRIMERA acción necesaria. El resultado
       }
     }
 
+    const publicResponseText = sanitizeNaylaPublicText(responseText);
+
     if (scope.threadId) {
       await insertChatMessageForUser({
         userId: firebaseUser.uid,
         projectId: scope.projectId,
         threadId: scope.threadId,
         role: 'assistant',
-        content: responseText,
+        content: publicResponseText,
         metadata: { responseType: 'text' },
       });
     }
 
     return res.status(200).json({
-      text: responseText,
+      text: publicResponseText,
       projectId: scope.projectId,
       threadId: scope.threadId || null,
     });
