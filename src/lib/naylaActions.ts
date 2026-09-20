@@ -123,7 +123,7 @@ export const capabilityForNaylaAction = (action: NaylaAction): MediaCapability |
     case 'GENERATE_VIDEO':
       return action.sourceImageUrl ? 'image_to_video' : 'video_generation';
     case 'GENERATE_AUDIO': {
-      const map: Record<NaylaAction & { action: 'GENERATE_AUDIO' }['mode'], MediaCapability> = {
+      const map: Record<string, MediaCapability> = {
         tts: 'tts',
         music: 'music_generation',
         sound_effects: 'sound_effects',
@@ -135,7 +135,7 @@ export const capabilityForNaylaAction = (action: NaylaAction): MediaCapability |
         dubbing: 'dubbing',
         text_to_dialogue: 'text_to_dialogue',
         forced_alignment: 'forced_alignment',
-      } as any;
+      };
       return map[action.mode];
     }
     case 'GENERATE_3D': {
