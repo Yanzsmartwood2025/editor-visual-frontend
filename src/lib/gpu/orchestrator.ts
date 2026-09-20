@@ -28,6 +28,11 @@ import {
   getVastInstance,
   searchVastOffers,
 } from './vastApi';
+import {
+  sanitizeNaylaPublicText,
+  toNaylaComputeEstimatedPrice,
+  toNaylaComputeHourlyPrice,
+} from '../naylaSystemCatalog';
 
 export type GpuJobInput = {
   workload: GpuWorkload;
@@ -64,35 +69,55 @@ const publicJob = async (job: GpuJobRow) => {
   const rawGalleryItem = job.gallery_item_id
     ? await getGalleryItemById(job.gallery_item_id)
     : null;
+  const publicGalleryItem = rawGalleryItem
+    ? {
+        ...rawGalleryItem,
+        fuente: String(rawGalleryItem.fuente || '').startsWith('gpu:')
+          ? 'nayla-compute'
+          : rawGalleryItem.fuente,
+        metadata: {
+          ...(rawGalleryItem.metadata || {}),
+          ...(String(rawGalleryItem.fuente || '').startsWith('gpu:')
+            ? { sourceProvider: 'nayla-compute' }
+            : {}),
+        },
+      }
+    : null;
   const galleryItem =
-    rawGalleryItem?.r2_key
+    publicGalleryItem?.r2_key
       ? {
-          ...rawGalleryItem,
-          url: createR2PresignedGetUrl({ key: rawGalleryItem.r2_key, expiresIn: 900 }).url,
+          ...publicGalleryItem,
+          url: createR2PresignedGetUrl({ key: publicGalleryItem.r2_key, expiresIn: 900 }).url,
         }
-      : rawGalleryItem;
+      : publicGalleryItem;
   const outputKey = job.metadata?.outputKey as string | null | undefined;
+
+  const internalHourlyPrice = job.hourly_price === null ? null : Number(job.hourly_price);
+  const internalEstimatedMaxCost =
+    job.estimated_max_cost === null ? null : Number(job.estimated_max_cost);
+  const internalRuntimeCost =
+    job.runtime_cost_estimate === null ? null : Number(job.runtime_cost_estimate);
 
   return {
     id: job.id,
     projectId: job.project_id,
     threadId: job.thread_id,
-    provider: job.provider,
+    provider: 'nayla-compute',
     workload: job.workload,
     status: job.status,
     gpuName: job.gpu_name,
-    hourlyPrice: job.hourly_price === null ? null : Number(job.hourly_price),
+    hourlyPrice:
+      internalHourlyPrice === null ? null : toNaylaComputeHourlyPrice(internalHourlyPrice),
     estimatedMaxCost:
-      job.estimated_max_cost === null ? null : Number(job.estimated_max_cost),
+      internalEstimatedMaxCost === null ? null : toNaylaComputeEstimatedPrice(internalEstimatedMaxCost),
     runtimeCostEstimate:
-      job.runtime_cost_estimate === null ? null : Number(job.runtime_cost_estimate),
-    balanceBefore: job.balance_before === null ? null : Number(job.balance_before),
+      internalRuntimeCost === null ? null : toNaylaComputeEstimatedPrice(internalRuntimeCost),
     leaseExpiresAt: job.lease_expires_at,
     outputUrl: outputKey
       ? createR2PresignedGetUrl({ key: outputKey, expiresIn: 900 }).url
       : job.output_url,
     outputContentType: job.output_content_type,
-    error: job.error_message,
+    error: job.error_message ? sanitizeNaylaPublicText(job.error_message) : null,
     galleryItem,
     createdAt: job.created_at,
     startedAt: job.started_at,
@@ -533,9 +558,9 @@ export const finishGpuJob = async ({
         creado_en: now.toISOString(),
         esOverlay: false,
         etiqueta: prefix + ((count || 0) + 1),
-        fuente: 'gpu:vast',
+        fuente: 'nayla-compute',
         metadata: {
-          sourceProvider: 'vast',
+          sourceProvider: 'nayla-compute',
           gpuJobId: job.id,
           gpuName: job.gpu_name,
           recipe: job.metadata?.request?.recipe || 'default',
