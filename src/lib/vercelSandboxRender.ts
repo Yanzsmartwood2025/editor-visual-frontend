@@ -1,16 +1,9 @@
-import { bundle } from '@remotion/bundler';
 import { randomUUID } from 'node:crypto';
-import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { uploadR2Object } from './r2';
 
 const COMPOSITION_ID = 'MainComposition';
-const BUNDLE_DIR = path.join(tmpdir(), 'nayla-remotion-bundle');
-
-// A Vercel function can serve multiple requests while its module stays warm. Reuse
-// its immutable bundle, but create a new sandbox for every render because its
-// filesystem and lifecycle belong to that single render job.
-let bundlePromise: Promise<string> | undefined;
+const BUNDLE_DIR = path.join(process.cwd(), '.remotion');
 
 const inputPropsToRecord = (inputProps: unknown): Record<string, unknown> => {
   if (typeof inputProps !== 'object' || inputProps === null || Array.isArray(inputProps)) {
@@ -20,22 +13,14 @@ const inputPropsToRecord = (inputProps: unknown): Record<string, unknown> => {
   return inputProps as Record<string, unknown>;
 };
 
-const getBundle = async () => {
-  bundlePromise ??= bundle({
-    entryPoint: path.join(process.cwd(), 'src/remotion/index.ts'),
-    outDir: BUNDLE_DIR,
-    enableCaching: true,
-  }).catch((error: unknown) => {
-    bundlePromise = undefined;
-    throw error;
-  });
 
-  return bundlePromise;
-};
 
 /**
- * Bundles the Remotion entry point, renders it in an isolated Vercel Sandbox,
- * then copies the resulting media file to Cloudflare R2.
+ * Uses the Remotion bundle generated during the Vercel build, renders it in an
+ * isolated Vercel Sandbox, then copies the resulting media file to Cloudflare R2.
+ *
+ * Bundling at runtime is intentionally avoided: @remotion/bundler depends on
+ * native Rspack bindings which should not be loaded by the deployed API function.
  */
 export async function startVercelSandboxRender(
   inputProps: unknown,
@@ -48,7 +33,7 @@ export async function startVercelSandboxRender(
 
   const startedAt = Date.now();
   const bundleStartedAt = Date.now();
-  const bundleDir = await getBundle();
+  const bundleDir = BUNDLE_DIR;
   const bundleMs = Date.now() - bundleStartedAt;
 
   const sandboxStartedAt = Date.now();
