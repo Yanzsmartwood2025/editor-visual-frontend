@@ -43,9 +43,12 @@ export const MEDIA_PROVIDER_REGISTRY: ProviderDefinition[] = [
     capabilities: [
       'image_generation',
       'image_editing',
+      'image_to_image',
       'video_generation',
       'image_to_video',
       'audio_generation',
+      'music_generation',
+      'sound_effects',
       'speech_to_text',
       '3d_generation',
       'custom_model_inference',
@@ -62,7 +65,9 @@ export const MEDIA_PROVIDER_REGISTRY: ProviderDefinition[] = [
     capabilities: [
       'image_generation',
       'image_editing',
+      'image_to_image',
       'video_generation',
+      'image_to_video',
       'gpu_processing',
       'custom_model_inference',
     ],
