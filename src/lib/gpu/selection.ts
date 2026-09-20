@@ -58,7 +58,7 @@ const vastTarget = (offer: VastOffer): ComputeSelectionTarget => ({
   backendId: String(offer.id),
   gpuName: String(offer.gpu_name || 'GPU'),
   gpuRamGb: Number.isFinite(Number(offer.gpu_ram))
-    ? Number(offer.gpu_ram) / 1000
+    ? Math.round((Number(offer.gpu_ram) / 1000) * 10) / 10
     : undefined,
   hourlyPrice: Number(offer.dph_total || 0),
 });
