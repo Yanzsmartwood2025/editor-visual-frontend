@@ -61,8 +61,12 @@ apt-get update -qq
 DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends   git curl build-essential libgl1 libglib2.0-0
 rm -rf /var/lib/apt/lists/*
 
-git clone --depth 1 https://github.com/VAST-AI-Research/TripoSR.git "$WORKDIR/TripoSR"
+mkdir -p "$WORKDIR/TripoSR"
 cd "$WORKDIR/TripoSR"
+git init -q
+git remote add origin https://github.com/VAST-AI-Research/TripoSR.git
+git fetch -q --depth 1 origin 107cefdc244c39106fa830359024f6a2f1c78871
+git checkout -q --detach FETCH_HEAD
 
 python -m pip install --no-cache-dir --upgrade "setuptools>=69" wheel
 python -m pip install --no-cache-dir -r requirements.txt
