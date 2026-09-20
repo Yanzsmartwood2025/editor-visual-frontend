@@ -1192,23 +1192,40 @@ export default function NaylaCore() {
     try {
       const currentSession = session || await getFirebaseSession();
       if (!currentSession) throw new Error('Debes iniciar sesión para hablar con Nayla.');
+      if (!activeProjectId) throw new Error('Selecciona un proyecto antes de escribir a Nayla.');
+      if (!activeThreadId) throw new Error('Crea o selecciona un chat antes de escribir a Nayla.');
+      const attachmentIdsForMessage = [...chatAttachmentIds];
 
       const res = await fetch('/api/chat', {
         method: 'POST',
         headers: firebaseHeaders(currentSession, { 'Content-Type': 'application/json' }),
         body: JSON.stringify({
            message,
+           projectId: activeProjectId,
+           threadId: activeThreadId,
+           attachmentIds: attachmentIdsForMessage,
            history: chatMessages.map(m => ({ role: m.role === 'user' ? 'user' : 'assistant', content: m.text })),
            provider: selectedAiProvider,
-           mediaLibrary: galeriaMultimedia.map(item => ({
-             id: item.id,
-             tipo: item.tipo,
-             url: item.url,
-             nombre: item.nombre,
-             etiqueta: item.etiqueta,
-             fuente: item.fuente,
-             metadata: item.metadata
-           })),
+           mediaLibrary: [
+             ...galeriaMultimedia.map(item => ({
+               id: item.id,
+               tipo: item.tipo,
+               url: item.url,
+               nombre: item.nombre,
+               etiqueta: item.etiqueta,
+               fuente: item.fuente,
+               metadata: item.metadata
+             })),
+             ...modelos3d.map(item => ({
+               id: item.id,
+               tipo: 'modelo3d',
+               url: item.url,
+               nombre: item.nombre,
+               etiqueta: item.etiqueta,
+               fuente: item.fuente,
+               metadata: item.metadata
+             }))
+           ],
            currentTimeline: lineaDeTiempo.map(item => ({
              id: item.id,
              tipo: item.tipo,
@@ -1280,6 +1297,8 @@ export default function NaylaCore() {
         cards: data.action === 'SEARCH_MEDIA' && Array.isArray(data.results) ? data.results : undefined,
         actionPlan,
       }]);
+
+      setChatAttachmentIds([]);
 
       if (data.action === 'BUILD_TIMELINE') {
         await ejecutarBuildTimeline(data);
