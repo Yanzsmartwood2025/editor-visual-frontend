@@ -2,7 +2,7 @@ import type { NextApiRequest, NextApiResponse } from 'next';
 import { z } from 'zod';
 import { requireFirebaseUser } from '../../../lib/firebaseAdmin';
 import { sanitizeNaylaPublicText } from '../../../lib/naylaSystemCatalog';
-import { quoteVastGpuJob } from '../../../lib/gpu/quote';
+import { quoteComputeGpuJob } from '../../../lib/gpu/quote';
 
 const safeUrl = z.string().url().max(4000).refine((value) => {
   try {
@@ -60,7 +60,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   try {
     const { computeSelectionId, ...gpuInput } = parsed.data;
-    const quote = await quoteVastGpuJob(gpuInput, computeSelectionId);
+    const quote = await quoteComputeGpuJob(gpuInput, computeSelectionId);
     res.setHeader('Cache-Control', 'no-store, max-age=0');
     return res.status(200).json({ quote });
   } catch (error) {

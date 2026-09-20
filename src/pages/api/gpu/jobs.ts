@@ -4,7 +4,7 @@ import { requireFirebaseUser } from '../../../lib/firebaseAdmin';
 import { sanitizeNaylaPublicText } from '../../../lib/naylaSystemCatalog';
 import {
   getGpuJobStatusForUser,
-  startVastGpuJob,
+  startComputeGpuJob,
 } from '../../../lib/gpu/orchestrator';
 import { resolveRequestPublicBaseUrl } from '../../../lib/gpu/requestUrl';
 import { resolveOwnedWorkspaceScope } from '../../../lib/workspaceStore';
@@ -96,7 +96,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       threadId: parsed.data.threadId,
     });
     const { projectId: _projectId, threadId: _threadId, ...gpuInput } = parsed.data;
-    const job = await startVastGpuJob({
+    const job = await startComputeGpuJob({
       userId: user.uid,
       projectId: scope.projectId,
       threadId: scope.threadId,

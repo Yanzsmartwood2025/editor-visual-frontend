@@ -5,19 +5,18 @@ import {
   getGpuBudgetPolicy,
 } from './profiles';
 import {
-  getVastAccountSummary,
-  searchVastOffers,
-  type VastOffer,
-} from './vastApi';
+  getComputeCatalog,
+  type ComputeCandidate,
+} from './computeCatalog';
+import {
+  createComputeTargetSelectionId,
+  findComputeTargetBySelectionId,
+} from './selection';
 import {
   sanitizeNaylaPublicText,
   toNaylaComputeEstimatedPrice,
   toNaylaComputeHourlyPrice,
 } from '../naylaSystemCatalog';
-import {
-  createComputeSelectionId,
-  findOfferByComputeSelectionId,
-} from './selection';
 
 export type NaylaComputeCard = {
   selectionId: string;
@@ -31,7 +30,7 @@ export type NaylaComputeCard = {
   selected: boolean;
 };
 
-export type VastGpuQuote = {
+export type ComputeGpuQuote = {
   provider: 'nayla-compute';
   workload: GpuExecutionInput['workload'];
   recipe?: string;
@@ -53,12 +52,11 @@ export type VastGpuQuote = {
   };
 };
 
-type EvaluatedOffer = {
-  offer: VastOffer;
+// Compatibility type for existing imports.
+export type VastGpuQuote = ComputeGpuQuote;
+
+type EvaluatedCandidate = ComputeCandidate & {
   selectionId: string;
-  gpuName: string;
-  gpuRamGb?: number;
-  internalHourlyPrice: number;
   internalEstimatedMaxCost: number;
   publicHourlyPrice: number;
   publicEstimatedMaxCost: number;
@@ -66,14 +64,14 @@ type EvaluatedOffer = {
   unavailableReason?: string;
 };
 
-export const quoteVastGpuJob = async (
+export const quoteComputeGpuJob = async (
   input: GpuExecutionInput,
   requestedSelectionId?: string
-): Promise<VastGpuQuote> => {
+): Promise<ComputeGpuQuote> => {
   const { profile, recipePlan, workerImage } = resolveGpuExecutionPlan(input);
   const policy = getGpuBudgetPolicy();
 
-  const base: VastGpuQuote = {
+  const base: ComputeGpuQuote = {
     provider: 'nayla-compute',
     workload: input.workload,
     recipe: input.recipe,
@@ -103,46 +101,37 @@ export const quoteVastGpuJob = async (
     };
   }
 
-  const [account, offers] = await Promise.all([
-    getVastAccountSummary(),
-    searchVastOffers(profile, policy.offerReliabilityMin),
-  ]);
+  const catalog = await getComputeCatalog({
+    profile,
+    minReliability: policy.offerReliabilityMin,
+  });
 
   const quoteRuntimeMinutes = profile.maxRuntimeMinutes + policy.bootGraceMinutes;
 
-  const evaluated: EvaluatedOffer[] = offers.map((offer) => {
-    const internalHourlyPrice = Number(offer.dph_total);
+  const evaluated: EvaluatedCandidate[] = catalog.candidates.map((candidate) => {
     const internalEstimatedMaxCost = estimatedWorstCaseCost(
-      internalHourlyPrice,
+      candidate.hourlyPrice,
       quoteRuntimeMinutes,
       policy.safetyMultiplier
     );
 
-    const gpuRamMb = Number(offer.gpu_ram);
-    const gpuRamGb = Number.isFinite(gpuRamMb)
-      ? Math.round((gpuRamMb / 1000) * 10) / 10
-      : undefined;
-
     let unavailableReason: string | undefined;
-    if (internalHourlyPrice > profile.maxHourlyUsd) {
+    if (candidate.hourlyPrice > profile.maxHourlyUsd) {
       unavailableReason = 'Supera el límite por hora configurado para este tipo de trabajo.';
     } else if (internalEstimatedMaxCost > policy.maxJobUsd) {
       unavailableReason = 'Supera el tope de gasto configurado para un solo trabajo.';
-    } else if (account.balance - internalEstimatedMaxCost < policy.minBalanceReserveUsd) {
+    } else if (
+      candidate.balanceUsd - internalEstimatedMaxCost <
+      policy.minBalanceReserveUsd
+    ) {
       unavailableReason = 'No entra dentro del saldo protegido actual de Nayla Compute.';
     }
 
     return {
-      offer,
-      selectionId: createComputeSelectionId(offer),
-      gpuName:
-        typeof offer.gpu_name === 'string' && offer.gpu_name.trim()
-          ? offer.gpu_name.trim()
-          : 'GPU',
-      gpuRamGb,
-      internalHourlyPrice,
+      ...candidate,
+      selectionId: createComputeTargetSelectionId(candidate),
       internalEstimatedMaxCost,
-      publicHourlyPrice: toNaylaComputeHourlyPrice(internalHourlyPrice),
+      publicHourlyPrice: toNaylaComputeHourlyPrice(candidate.hourlyPrice),
       publicEstimatedMaxCost: toNaylaComputeEstimatedPrice(
         internalEstimatedMaxCost,
         quoteRuntimeMinutes
@@ -153,11 +142,11 @@ export const quoteVastGpuJob = async (
   });
 
   const recommended = evaluated.find((candidate) => candidate.available) || null;
-  const requestedOffer = requestedSelectionId
-    ? findOfferByComputeSelectionId(offers, requestedSelectionId)
+  const requested = requestedSelectionId
+    ? findComputeTargetBySelectionId(evaluated, requestedSelectionId)
     : null;
 
-  if (requestedSelectionId && !requestedOffer) {
+  if (requestedSelectionId && !requested) {
     return {
       ...base,
       cards: evaluated.map((candidate) => ({
@@ -175,13 +164,7 @@ export const quoteVastGpuJob = async (
     };
   }
 
-  const selected =
-    (requestedOffer
-      ? evaluated.find((candidate) => Number(candidate.offer.id) === Number(requestedOffer.id))
-      : null) ||
-    recommended ||
-    evaluated[0] ||
-    null;
+  const selected = requested || recommended || evaluated[0] || null;
 
   const cards: NaylaComputeCard[] = evaluated.map((candidate) => ({
     selectionId: candidate.selectionId,
@@ -199,7 +182,9 @@ export const quoteVastGpuJob = async (
     return {
       ...base,
       cards: [],
-      reason: 'No hay una GPU compatible disponible en este momento.',
+      reason: catalog.errors.length
+        ? 'Nayla Compute no pudo obtener tarjetas GPU disponibles de sus redes configuradas.'
+        : 'No hay una GPU compatible disponible en este momento.',
     };
   }
 
@@ -212,7 +197,9 @@ export const quoteVastGpuJob = async (
       cards,
       hourlyPrice: selected.publicHourlyPrice,
       estimatedMaxCost: selected.publicEstimatedMaxCost,
-      reason: selected.unavailableReason || 'La tarjeta seleccionada no está disponible dentro de los límites actuales.',
+      reason:
+        selected.unavailableReason ||
+        'La tarjeta seleccionada no está disponible dentro de los límites actuales.',
     };
   }
 
@@ -228,3 +215,6 @@ export const quoteVastGpuJob = async (
     reason: recipePlan ? sanitizeNaylaPublicText(recipePlan.label) : undefined,
   };
 };
+
+// Keep the old exported name while callers migrate.
+export const quoteVastGpuJob = quoteComputeGpuJob;

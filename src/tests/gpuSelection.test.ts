@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import {
   createComputeSelectionId,
+  createComputeTargetSelectionId,
+  findComputeTargetBySelectionId,
   findOfferByComputeSelectionId,
 } from '../lib/gpu/selection';
 import type { VastOffer } from '../lib/gpu/vastApi';
@@ -50,4 +52,33 @@ describe('Nayla Compute selection tokens', () => {
 
     expect(findOfferByComputeSelectionId(offers)?.id).toBe(1);
   });
+
+  it('keeps GPU selections opaque and unique across Compute networks', () => {
+    process.env.NAYLA_COMPUTE_SELECTION_SECRET = 'test-only-secret';
+    const targets = [
+      {
+        backend: 'vast' as const,
+        backendId: '101',
+        gpuName: 'RTX 4090',
+        gpuRamGb: 24,
+        hourlyPrice: 0.22,
+      },
+      {
+        backend: 'runpod' as const,
+        backendId: 'NVIDIA GeForce RTX 4090',
+        gpuName: 'RTX 4090',
+        gpuRamGb: 24,
+        hourlyPrice: 0.22,
+      },
+    ];
+
+    const vastToken = createComputeTargetSelectionId(targets[0]);
+    const runpodToken = createComputeTargetSelectionId(targets[1]);
+
+    expect(vastToken).not.toBe(runpodToken);
+    expect(vastToken).not.toContain('vast');
+    expect(runpodToken).not.toContain('runpod');
+    expect(findComputeTargetBySelectionId(targets, runpodToken)?.backend).toBe('runpod');
+  });
+
 });

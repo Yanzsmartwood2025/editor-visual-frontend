@@ -33,7 +33,17 @@ import {
   toNaylaComputeEstimatedPrice,
   toNaylaComputeHourlyPrice,
 } from '../naylaSystemCatalog';
-import { findOfferByComputeSelectionId } from './selection';
+import {
+  createComputeTargetSelectionId,
+  findComputeTargetBySelectionId,
+  findOfferByComputeSelectionId,
+} from './selection';
+import { getComputeCatalog, type ComputeCandidate } from './computeCatalog';
+import {
+  createRunpodPod,
+  getRunpodPod,
+  terminateRunpodPod,
+} from './runpodApi';
 
 export type GpuJobInput = {
   workload: GpuWorkload;
@@ -65,6 +75,27 @@ const computeRuntimeCost = (job: GpuJobRow, end = new Date()) => {
   if (!Number.isFinite(hourly) || !Number.isFinite(started)) return null;
   const seconds = Math.max(0, (end.getTime() - started) / 1000);
   return Math.ceil(hourly * (seconds / 3600) * 1_000_000) / 1_000_000;
+};
+
+const getRunpodPodId = (job: GpuJobRow): string | null => {
+  const value = job.metadata?.runpodPodId;
+  return typeof value === 'string' && value.trim() ? value.trim() : null;
+};
+
+const hasComputeInstance = (job: GpuJobRow) =>
+  job.provider === 'runpod' ? Boolean(getRunpodPodId(job)) : Boolean(job.instance_id);
+
+const destroyComputeInstance = async (job: GpuJobRow): Promise<void> => {
+  if (job.provider === 'runpod') {
+    const podId = getRunpodPodId(job);
+    if (!podId) return;
+    await terminateRunpodPod(podId);
+    return;
+  }
+
+  if (job.instance_id) {
+    await destroyVastInstance(job.instance_id);
+  }
 };
 
 const publicJob = async (job: GpuJobRow) => {
@@ -184,16 +215,16 @@ const workloadLabelPrefix = (workload: GpuWorkload) => {
   return 'GPU';
 };
 
-export const cleanupExpiredVastJobs = async () => {
+export const cleanupExpiredComputeJobs = async () => {
   const expired = await listExpiredGpuJobs(20);
   let destroyed = 0;
   let failed = 0;
 
   for (const job of expired) {
-    if (!job.instance_id) continue;
+    if (!hasComputeInstance(job)) continue;
 
     try {
-      await destroyVastInstance(job.instance_id);
+      await destroyComputeInstance(job);
       const now = new Date();
       const terminalStatus =
         job.status === 'cleanup_pending' &&
@@ -227,6 +258,9 @@ export const cleanupExpiredVastJobs = async () => {
   return { checked: expired.length, destroyed, failed };
 };
 
+// Backward-compatible export for the existing cron route while callers migrate.
+export const cleanupExpiredVastJobs = cleanupExpiredComputeJobs;
+
 export const startVastGpuJob = async ({
   userId,
   projectId,
@@ -251,7 +285,7 @@ export const startVastGpuJob = async ({
     );
   }
 
-  await cleanupExpiredVastJobs().catch((error) => {
+  await cleanupExpiredComputeJobs().catch((error) => {
     console.warn('[gpu] No se pudo completar la limpieza preventiva:', error);
   });
 
@@ -436,6 +470,306 @@ export const startVastGpuJob = async ({
   return publicJob(job);
 };
 
+
+const startRunpodGpuJob = async ({
+  userId,
+  projectId,
+  threadId,
+  input,
+  appBaseUrl,
+  candidate,
+}: {
+  userId: string;
+  projectId?: string;
+  threadId?: string;
+  input: GpuJobInput;
+  appBaseUrl: string;
+  candidate: ComputeCandidate;
+}) => {
+  const baseUrl = normalizeAppBaseUrl(appBaseUrl);
+  const { profile, recipePlan, workerImage } = resolveGpuExecutionPlan(input);
+  const policy = getGpuBudgetPolicy();
+
+  if (!workerImage) {
+    throw new Error(
+      'La máquina para ' + input.workload +
+      ' está preparada, pero falta configurar su imagen worker en Vercel. Nayla no rentará una GPU hasta tener un worker válido.'
+    );
+  }
+
+  const hourlyPrice = candidate.hourlyPrice;
+  const estimatedMaxCost = estimatedWorstCaseCost(
+    hourlyPrice,
+    profile.maxRuntimeMinutes + policy.bootGraceMinutes,
+    policy.safetyMultiplier
+  );
+
+  if (hourlyPrice > profile.maxHourlyUsd) {
+    throw new Error(
+      'La GPU seleccionada supera el límite por hora configurado para este tipo de trabajo. No se reservó ninguna máquina.'
+    );
+  }
+  if (estimatedMaxCost > policy.maxJobUsd) {
+    throw new Error(
+      'La GPU seleccionada supera el tope configurado por trabajo. No se reservó ninguna máquina.'
+    );
+  }
+  if (candidate.balanceUsd - estimatedMaxCost < policy.minBalanceReserveUsd) {
+    throw new Error(
+      'Saldo protegido: la GPU seleccionada no entra dentro de la reserva mínima de Nayla Compute.'
+    );
+  }
+
+  const callbackToken = randomBytes(32).toString('base64url');
+  const leaseExpiresAt = new Date(
+    Date.now() + (profile.maxRuntimeMinutes + policy.bootGraceMinutes) * 60_000
+  );
+
+  let job = await insertGpuJob({
+    user_id: userId,
+    project_id: projectId || null,
+    thread_id: threadId || null,
+    provider: 'runpod',
+    workload: input.workload,
+    status: 'renting',
+    offer_id: null,
+    gpu_name: candidate.gpuName,
+    hourly_price: hourlyPrice,
+    estimated_max_cost: estimatedMaxCost,
+    balance_before: candidate.balanceUsd,
+    lease_expires_at: leaseExpiresAt.toISOString(),
+    callback_token_hash: tokenHash(callbackToken),
+    metadata: {
+      request: {
+        recipe: input.recipe || 'default',
+        prompt: input.prompt || null,
+        inputUrls: input.inputUrls || [],
+        options: input.options || {},
+        computeSelectionId: input.computeSelectionId || null,
+      },
+      profile: {
+        minGpuRamGb: profile.minGpuRamGb,
+        diskGb: profile.diskGb,
+        maxHourlyUsd: profile.maxHourlyUsd,
+        maxRuntimeMinutes: profile.maxRuntimeMinutes,
+      },
+      recipePlan: recipePlan
+        ? { id: recipePlan.id, label: recipePlan.label }
+        : null,
+      runpodGpuTypeId: candidate.backendId,
+    },
+  });
+
+  const outputKey =
+    profile.outputExtension
+      ? userId +
+        '/projects/' + (projectId || 'unfiled') +
+        '/' + (threadId ? 'threads/' + threadId : 'shared') +
+        '/gpu/' + input.workload + '/' +
+        job.id + '.' + profile.outputExtension
+      : null;
+
+  job = await updateGpuJob(job.id, {
+    output_url: outputKey ? createR2StorageUrl(outputKey) : null,
+    output_content_type: profile.outputContentType || null,
+    metadata: { ...job.metadata, outputKey },
+  });
+
+  const manifestUrl =
+    baseUrl + '/api/gpu/manifest?jobId=' + encodeURIComponent(job.id);
+  const callbackUrl = baseUrl + '/api/gpu/callback';
+  const label = 'nayla-gpu-' + input.workload + '-' + job.id.slice(0, 8);
+  const onstart =
+    input.workload === 'probe'
+      ? buildProbeOnstart()
+      : recipePlan
+        ? buildRecipeBootstrap(recipePlan) + '\n' + buildWorkerOnstart()
+        : buildWorkerOnstart();
+
+  try {
+    const pod = await createRunpodPod({
+      gpuTypeId: candidate.backendId,
+      imageName: workerImage,
+      diskGb: profile.diskGb,
+      name: label,
+      onstart,
+      env: {
+        NAYLA_GPU_JOB_ID: job.id,
+        NAYLA_GPU_MANIFEST_URL: manifestUrl,
+        NAYLA_GPU_CALLBACK_URL: callbackUrl,
+        NAYLA_GPU_CALLBACK_TOKEN: callbackToken,
+      },
+      terminateAfter: leaseExpiresAt,
+    });
+
+    const actualHourly = Number(pod.costPerHr);
+    if (
+      Number.isFinite(actualHourly) &&
+      actualHourly > hourlyPrice + 0.0001
+    ) {
+      await terminateRunpodPod(pod.id).catch(() => undefined);
+      throw new Error(
+        'El precio de la GPU cambió antes de reservarla. Nayla canceló la operación para evitar un cargo distinto al confirmado.'
+      );
+    }
+
+    const effectiveHourly =
+      Number.isFinite(actualHourly) && actualHourly > 0
+        ? actualHourly
+        : hourlyPrice;
+    const effectiveEstimate = estimatedWorstCaseCost(
+      effectiveHourly,
+      profile.maxRuntimeMinutes + policy.bootGraceMinutes,
+      policy.safetyMultiplier
+    );
+
+    if (
+      effectiveHourly > profile.maxHourlyUsd ||
+      effectiveEstimate > policy.maxJobUsd
+    ) {
+      await terminateRunpodPod(pod.id).catch(() => undefined);
+      throw new Error(
+        'La GPU cambió fuera de los límites de gasto antes de reservarla. Nayla canceló la operación.'
+      );
+    }
+
+    const bootingJob = await updateGpuJobIfStatus(job.id, 'renting', {
+      status: 'booting',
+      started_at: new Date().toISOString(),
+      hourly_price: effectiveHourly,
+      estimated_max_cost: effectiveEstimate,
+      metadata: {
+        ...job.metadata,
+        runpodPodId: pod.id,
+        runpodRuntime: {
+          desiredStatus: pod.desiredStatus || null,
+          lastStatusChange: pod.lastStatusChange || null,
+          checkedAt: new Date().toISOString(),
+        },
+      },
+    });
+
+    if (bootingJob) {
+      job = bootingJob;
+    } else {
+      await terminateRunpodPod(pod.id).catch(() => undefined);
+      job = await updateGpuJob(job.id, {
+        destroyed_at: new Date().toISOString(),
+        metadata: { ...job.metadata, runpodPodId: pod.id },
+      });
+    }
+  } catch (error) {
+    await updateGpuJob(job.id, {
+      status: 'failed',
+      error_message: (
+        error instanceof Error ? error.message : 'No se pudo crear la GPU'
+      ).slice(0, 2000),
+      completed_at: new Date().toISOString(),
+    }).catch(() => undefined);
+    throw error;
+  }
+
+  return publicJob(job);
+};
+
+export const startComputeGpuJob = async ({
+  userId,
+  projectId,
+  threadId,
+  input,
+  appBaseUrl,
+}: {
+  userId: string;
+  projectId?: string;
+  threadId?: string;
+  input: GpuJobInput;
+  appBaseUrl: string;
+}) => {
+  const { profile, workerImage } = resolveGpuExecutionPlan(input);
+  const policy = getGpuBudgetPolicy();
+
+  if (!workerImage) {
+    throw new Error(
+      'Esta capacidad todavía no tiene un worker GPU compatible configurado.'
+    );
+  }
+
+  await cleanupExpiredComputeJobs().catch((error) => {
+    console.warn('[gpu] No se pudo completar la limpieza preventiva:', error);
+  });
+
+  const activeJobs = await countActiveGpuJobs();
+  if (activeJobs >= policy.maxConcurrentJobs) {
+    throw new Error(
+      'Ya existe un trabajo GPU activo. Nayla espera a que termine antes de reservar otra tarjeta.'
+    );
+  }
+
+  const catalog = await getComputeCatalog({
+    profile,
+    minReliability: policy.offerReliabilityMin,
+  });
+
+  const estimatedFor = (candidate: ComputeCandidate) =>
+    estimatedWorstCaseCost(
+      candidate.hourlyPrice,
+      profile.maxRuntimeMinutes + policy.bootGraceMinutes,
+      policy.safetyMultiplier
+    );
+
+  const isAllowed = (candidate: ComputeCandidate) => {
+    const estimate = estimatedFor(candidate);
+    return (
+      candidate.hourlyPrice <= profile.maxHourlyUsd &&
+      estimate <= policy.maxJobUsd &&
+      candidate.balanceUsd - estimate >= policy.minBalanceReserveUsd
+    );
+  };
+
+  const selected = input.computeSelectionId
+    ? findComputeTargetBySelectionId(catalog.candidates, input.computeSelectionId)
+    : catalog.candidates.find(isAllowed) || null;
+
+  if (!selected) {
+    throw new Error(
+      input.computeSelectionId
+        ? 'La GPU seleccionada ya no está disponible. Vuelve a cotizar y elige otra tarjeta.'
+        : 'No encontré una GPU compatible dentro de los límites actuales de Nayla Compute.'
+    );
+  }
+
+  if (!isAllowed(selected)) {
+    throw new Error(
+      'La GPU seleccionada ya no entra dentro de los límites protegidos de Nayla Compute.'
+    );
+  }
+
+  const exactSelectionId = createComputeTargetSelectionId(selected);
+  const exactInput: GpuJobInput = {
+    ...input,
+    computeSelectionId: exactSelectionId,
+  };
+
+  if (selected.backend === 'vast') {
+    return startVastGpuJob({
+      userId,
+      projectId,
+      threadId,
+      input: exactInput,
+      appBaseUrl,
+    });
+  }
+
+  return startRunpodGpuJob({
+    userId,
+    projectId,
+    threadId,
+    input: exactInput,
+    appBaseUrl,
+    candidate: selected,
+  });
+};
+
 export const getGpuManifest = async ({
   jobId,
   token,
@@ -611,9 +945,9 @@ export const finishGpuJob = async ({
     },
   });
 
-  if (job.instance_id) {
+  if (hasComputeInstance(job)) {
     try {
-      await destroyVastInstance(job.instance_id);
+      await destroyComputeInstance(job);
       job = await updateGpuJob(job.id, {
         destroyed_at: new Date().toISOString(),
       });
@@ -662,12 +996,91 @@ export const getGpuJobStatusForUser = async ({
   if (!job) return null;
 
   const terminal = ['completed', 'failed', 'expired'];
-  if (!job.instance_id || terminal.includes(job.status)) {
+  if (terminal.includes(job.status) || !hasComputeInstance(job)) {
+    return publicJob(job);
+  }
+
+  if (job.provider === 'runpod') {
+    const podId = getRunpodPodId(job);
+    if (!podId) return publicJob(job);
+
+    try {
+      const pod = await getRunpodPod(podId);
+      const latest = await getGpuJobForUser(jobId, userId);
+      if (!latest) return null;
+      job = latest;
+
+      if (terminal.includes(job.status)) {
+        return publicJob(job);
+      }
+
+      if (!pod) {
+        const now = new Date();
+        job = await updateGpuJob(job.id, {
+          status: 'failed',
+          error_message:
+            'Nayla Compute dejó de reportar la instancia antes de completar el trabajo.',
+          completed_at: now.toISOString(),
+          destroyed_at: now.toISOString(),
+          runtime_cost_estimate: computeRuntimeCost(job, now),
+        });
+        return publicJob(job);
+      }
+
+      const desiredStatus = String(pod.desiredStatus || 'unknown').toUpperCase();
+      const runtimeMetadata = {
+        ...job.metadata,
+        runpodRuntime: {
+          desiredStatus,
+          lastStatusChange: pod.lastStatusChange || null,
+          checkedAt: new Date().toISOString(),
+        },
+      };
+
+      const stopped = ['EXITED', 'DEAD', 'TERMINATED', 'STOPPED'].includes(
+        desiredStatus
+      );
+
+      if (stopped) {
+        const now = new Date();
+        job = await updateGpuJob(job.id, {
+          status: 'failed',
+          error_message:
+            'La GPU terminó antes de que el worker confirmara el resultado. Nayla activó la limpieza.',
+          completed_at: now.toISOString(),
+          destroyed_at: now.toISOString(),
+          runtime_cost_estimate: computeRuntimeCost(job, now),
+          metadata: runtimeMetadata,
+        });
+        return publicJob(job);
+      }
+
+      if (
+        desiredStatus === 'RUNNING' &&
+        (job.status === 'renting' || job.status === 'booting')
+      ) {
+        const updated = await updateGpuJobIfStatus(job.id, job.status, {
+          status: 'running',
+          metadata: runtimeMetadata,
+        });
+        if (updated) job = updated;
+        return publicJob(job);
+      }
+
+      job = await updateGpuJob(job.id, {
+        metadata: runtimeMetadata,
+      });
+    } catch (error) {
+      console.warn('[gpu] No se pudo reconciliar una instancia Nayla Compute:', error);
+    }
+
     return publicJob(job);
   }
 
   try {
-    const instance = await getVastInstance(job.instance_id);
+    const instance = job.instance_id
+      ? await getVastInstance(job.instance_id)
+      : null;
     const latest = await getGpuJobForUser(jobId, userId);
     if (!latest) return null;
     job = latest;
@@ -680,7 +1093,8 @@ export const getGpuJobStatusForUser = async ({
       const now = new Date();
       job = await updateGpuJob(job.id, {
         status: 'failed',
-        error_message: 'Vast.ai dejó de reportar la instancia antes de completar el trabajo.',
+        error_message:
+          'Nayla Compute dejó de reportar la instancia antes de completar el trabajo.',
         completed_at: now.toISOString(),
         destroyed_at: now.toISOString(),
         runtime_cost_estimate: computeRuntimeCost(job, now),
@@ -689,11 +1103,17 @@ export const getGpuJobStatusForUser = async ({
     }
 
     const actualStatus =
-      typeof instance.actual_status === 'string' ? instance.actual_status : 'unknown';
+      typeof instance.actual_status === 'string'
+        ? instance.actual_status
+        : 'unknown';
     const intendedStatus =
-      typeof instance.intended_status === 'string' ? instance.intended_status : 'unknown';
+      typeof instance.intended_status === 'string'
+        ? instance.intended_status
+        : 'unknown';
     const statusMessage =
-      typeof instance.status_msg === 'string' ? instance.status_msg.trim().slice(0, 1000) : '';
+      typeof instance.status_msg === 'string'
+        ? instance.status_msg.trim().slice(0, 1000)
+        : '';
 
     const runtimeMetadata = {
       ...job.metadata,
@@ -711,36 +1131,28 @@ export const getGpuJobStatusForUser = async ({
 
     if (hasStartupError(statusMessage) || stopped) {
       const now = new Date();
-      const instanceId = job.instance_id;
-      if (!instanceId) {
-        job = await updateGpuJob(job.id, {
-          status: 'failed',
-          error_message: statusMessage || 'La instancia Vast desapareció durante el arranque.',
-          completed_at: now.toISOString(),
-          destroyed_at: now.toISOString(),
-          runtime_cost_estimate: computeRuntimeCost(job, now),
-          metadata: runtimeMetadata,
-        });
-        return publicJob(job);
-      }
-
       let destroyedAt: string | null = null;
       try {
-        await destroyVastInstance(instanceId);
+        await destroyComputeInstance(job);
         destroyedAt = new Date().toISOString();
       } catch (destroyError) {
-        console.error('[gpu] No se pudo destruir la instancia tras fallo de arranque:', destroyError);
+        console.error(
+          '[gpu] No se pudo destruir la instancia tras fallo de arranque:',
+          destroyError
+        );
       }
 
       job = await updateGpuJob(job.id, {
         status: destroyedAt ? 'failed' : 'cleanup_pending',
         error_message:
           statusMessage ||
-          'La instancia Vast no alcanzó un estado ejecutable y Nayla activó la limpieza.',
+          'La instancia no alcanzó un estado ejecutable y Nayla activó la limpieza.',
         completed_at: now.toISOString(),
         destroyed_at: destroyedAt,
         runtime_cost_estimate: computeRuntimeCost(job, now),
-        lease_expires_at: destroyedAt ? job.lease_expires_at : new Date(Date.now() - 1000).toISOString(),
+        lease_expires_at: destroyedAt
+          ? job.lease_expires_at
+          : new Date(Date.now() - 1000).toISOString(),
         metadata: {
           ...runtimeMetadata,
           terminalStatus: 'failed',
@@ -766,8 +1178,9 @@ export const getGpuJobStatusForUser = async ({
       metadata: runtimeMetadata,
     });
   } catch (error) {
-    console.warn('[gpu] No se pudo reconciliar el estado de Vast:', error);
+    console.warn('[gpu] No se pudo reconciliar el estado de Nayla Compute:', error);
   }
 
   return publicJob(job);
 };
+
