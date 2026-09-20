@@ -1,3 +1,5 @@
+import { useEffect, useMemo, useState } from 'react';
+
 export type GpuQuoteView = {
   provider: 'nayla-compute';
   workload: string;
@@ -8,12 +10,15 @@ export type GpuQuoteView = {
   gpuRamGb?: number;
   hourlyPrice?: number;
   estimatedMaxCost?: number;
+  selectedSelectionId?: string;
   cards?: Array<{
-    id: string;
+    selectionId: string;
     gpuName: string;
     gpuRamGb?: number;
     hourlyPrice: number;
     estimatedMaxCost: number;
+    recommended: boolean;
+    selected: boolean;
   }>;
   maxRuntimeMinutes: number;
   bootGraceMinutes: number;
@@ -42,8 +47,28 @@ export function GpuQuoteModal({
   confirmLabel?: string;
   confirming?: boolean;
   onCancel: () => void;
-  onConfirm: () => void;
+  onConfirm: (selectionId: string) => void;
 }) {
+  const [selectedId, setSelectedId] = useState('');
+
+  useEffect(() => {
+    if (!quote) {
+      setSelectedId('');
+      return;
+    }
+    setSelectedId(
+      quote.selectedSelectionId ||
+      quote.cards?.find((card) => card.selected)?.selectionId ||
+      quote.cards?.[0]?.selectionId ||
+      ''
+    );
+  }, [quote]);
+
+  const selectedCard = useMemo(
+    () => quote?.cards?.find((card) => card.selectionId === selectedId) || null,
+    [quote, selectedId]
+  );
+
   if (!quote) return null;
 
   const money = (value?: number, digits = 3) =>
@@ -111,55 +136,66 @@ export function GpuQuoteModal({
               <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: '8px 14px', fontSize: '0.8rem' }}>
                 <span style={{ color: '#888' }}>Tarjeta disponible</span>
                 <strong>
-                  {quote.gpuName || 'GPU'}
-                  {quote.gpuRamGb ? ' · ' + quote.gpuRamGb + ' GB' : ''}
+                  {selectedCard?.gpuName || quote.gpuName || 'GPU'}
+                  {(selectedCard?.gpuRamGb || quote.gpuRamGb)
+                    ? ' · ' + (selectedCard?.gpuRamGb || quote.gpuRamGb) + ' GB'
+                    : ''}
                 </strong>
 
                 <span style={{ color: '#888' }}>Precio Nayla</span>
-                <strong>~{money(quote.hourlyPrice)}/h</strong>
+                <strong>~{money(selectedCard?.hourlyPrice ?? quote.hourlyPrice)}/h</strong>
 
                 <span style={{ color: '#888' }}>Tope estimado del trabajo</span>
-                <strong style={{ color: '#f4f4f4' }}>~{money(quote.estimatedMaxCost)}</strong>
+                <strong style={{ color: '#f4f4f4' }}>~{money(selectedCard?.estimatedMaxCost ?? quote.estimatedMaxCost)}</strong>
 
                 <span style={{ color: '#888' }}>Nayla Energy</span>
                 <strong style={{ color: '#777' }}>PRÓXIMAMENTE</strong>
               </div>
 
-              {quote.cards && quote.cards.length > 1 && (
+              {quote.cards && quote.cards.length > 0 && (
                 <div style={{ borderTop: '1px solid #252525', paddingTop: 10 }}>
                   <div style={{ color: '#8b8b8b', fontSize: '0.68rem', marginBottom: 7 }}>
-                    TARJETAS COMPATIBLES AHORA
+                    ELIGE LA GPU · {quote.cards.length} DISPONIBLE{quote.cards.length === 1 ? '' : 'S'}
                   </div>
-                  <div style={{ display: 'grid', gap: 6 }}>
-                    {quote.cards.slice(0, 4).map((card, index) => (
-                      <div
-                        key={card.id}
-                        style={{
-                          display: 'grid',
-                          gridTemplateColumns: '1fr auto',
-                          gap: 8,
-                          padding: '8px 9px',
-                          borderRadius: 9,
-                          border: index === 0 ? '1px solid #777' : '1px solid #292929',
-                          background: index === 0 ? '#181818' : '#0b0b0b',
-                          fontSize: '0.72rem',
-                        }}
-                      >
-                        <div>
-                          <strong>{card.gpuName}</strong>
-                          <div style={{ color: '#777', marginTop: 2 }}>
-                            {card.gpuRamGb ? card.gpuRamGb + ' GB VRAM' : 'VRAM según disponibilidad'}
-                            {index === 0 ? ' · selección automática' : ''}
+                  <div style={{ display: 'grid', gap: 6, maxHeight: '34vh', overflowY: 'auto', paddingRight: 2 }}>
+                    {quote.cards.map((card) => {
+                      const active = card.selectionId === selectedId;
+                      return (
+                        <button
+                          type="button"
+                          key={card.selectionId}
+                          onClick={() => setSelectedId(card.selectionId)}
+                          disabled={confirming}
+                          style={{
+                            display: 'grid',
+                            gridTemplateColumns: '1fr auto',
+                            gap: 8,
+                            padding: '9px 10px',
+                            borderRadius: 9,
+                            border: active ? '1px solid #f2f2f2' : '1px solid #292929',
+                            background: active ? '#202020' : '#0b0b0b',
+                            color: '#fff',
+                            fontSize: '0.72rem',
+                            textAlign: 'left',
+                            cursor: confirming ? 'wait' : !selectedId ? 'not-allowed' : 'pointer',
+                          }}
+                        >
+                          <div>
+                            <strong>{card.gpuName}</strong>
+                            <div style={{ color: '#777', marginTop: 2 }}>
+                              {card.gpuRamGb ? card.gpuRamGb + ' GB VRAM' : 'VRAM según disponibilidad'}
+                              {card.recommended ? ' · Nayla recomienda' : ''}
+                            </div>
                           </div>
-                        </div>
-                        <div style={{ textAlign: 'right' }}>
-                          <strong>~{money(card.hourlyPrice)}/h</strong>
-                          <div style={{ color: '#777', marginTop: 2 }}>
-                            tope ~{money(card.estimatedMaxCost)}
+                          <div style={{ textAlign: 'right' }}>
+                            <strong>~{money(card.hourlyPrice)}/h</strong>
+                            <div style={{ color: '#777', marginTop: 2 }}>
+                              tope ~{money(card.estimatedMaxCost)}
+                            </div>
                           </div>
-                        </div>
-                      </div>
-                    ))}
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
               )}
@@ -203,13 +239,13 @@ export function GpuQuoteModal({
           {quote.available && (
             <button
               type="button"
-              onClick={onConfirm}
-              disabled={confirming}
+              onClick={() => selectedId && onConfirm(selectedId)}
+              disabled={confirming || !selectedId}
               style={{
                 border: 0,
                 borderRadius: 10,
-                background: confirming ? '#555' : '#f2f2f2',
-                color: confirming ? '#ddd' : '#050505',
+                background: confirming || !selectedId ? '#555' : '#f2f2f2',
+                color: confirming || !selectedId ? '#bbb' : '#050505',
                 padding: '10px 15px',
                 fontWeight: 800,
                 cursor: confirming ? 'wait' : 'pointer',
