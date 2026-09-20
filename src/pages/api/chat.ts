@@ -101,7 +101,22 @@ const describeActionPlan = (action: NaylaAction) => {
   };
 };
 
-const executeValidatedAction = async (action: NaylaAction) => {
+const inferGpuWorkload = (action: Extract<NaylaAction, { action: 'RUN_GPU_JOB' }>): GpuWorkload | null => {
+  if (action.workload) return action.workload;
+
+  const normalized = action.jobType.toLowerCase();
+  if (/\b(probe|test|prueba|diagnostic)/.test(normalized)) return 'probe';
+  if (/\b(video|clip|movie|animation)/.test(normalized)) return 'video';
+  if (/\b(3d|mesh|model|rig|texture)/.test(normalized)) return '3d';
+  if (/\b(audio|voice|speech|music|sound|voz|musica|sonido)/.test(normalized)) return 'audio';
+  if (/\b(image|photo|picture|foto|imagen)/.test(normalized)) return 'image';
+  return null;
+};
+
+const executeValidatedAction = async (
+  action: NaylaAction,
+  context: { userId: string; appBaseUrl: string }
+) => {
   if (action.action === 'SEARCH_MEDIA') {
     const search = await searchStockMedia({
       query: action.query,
@@ -124,6 +139,44 @@ const executeValidatedAction = async (action: NaylaAction) => {
     return action;
   }
 
+  if (action.action === 'RUN_GPU_JOB') {
+    if (action.provider === 'runpod') {
+      return describeActionPlan(action);
+    }
+
+    const workload = inferGpuWorkload(action);
+    if (!workload) {
+      return {
+        ...describeActionPlan(action),
+        text: 'Preparé la tarea GPU, pero necesito clasificarla como image, video, audio, 3d o probe antes de alquilar una máquina.',
+      };
+    }
+
+    const job = await startVastGpuJob({
+      userId: context.userId,
+      input: {
+        workload,
+        recipe: action.jobType,
+        prompt: action.prompt,
+        inputUrls: action.inputUrls,
+      },
+      appBaseUrl: context.appBaseUrl,
+    });
+
+    return {
+      ...action,
+      workload,
+      provider: 'vast' as const,
+      gpuJobId: job.id,
+      status: job.status,
+      executionReady: true,
+      requiresConfirmation: false,
+      job,
+      text:
+        'GPU Vast.ai iniciada con límite de gasto y vencimiento automático. Nayla guardará el resultado en R2/Bóveda y destruirá la instancia al terminar.',
+    };
+  }
+
   return describeActionPlan(action);
 };
 
@@ -132,8 +185,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
+  let firebaseUser;
   try {
-    await requireFirebaseUser(req);
+    firebaseUser = await requireFirebaseUser(req);
   } catch {
     return res.status(401).json({ error: 'Token Firebase inválido.' });
   }
@@ -329,7 +383,10 @@ Si una petición combina pasos, elige la PRIMERA acción necesaria. El resultado
     const action = parseNaylaAction(responseText);
     if (action) {
       try {
-        const executed = await executeValidatedAction(action);
+        const executed = await executeValidatedAction(action, {
+          userId: firebaseUser.uid,
+          appBaseUrl: resolveRequestPublicBaseUrl(req),
+        });
         return res.status(200).json(executed);
       } catch (error) {
         const message = error instanceof Error ? error.message : 'La acción de Nayla no pudo ejecutarse.';
