@@ -70,19 +70,28 @@ const vastRequest = async <T>(
 
 export const getVastAccountSummary = async () => {
   const user = await vastRequest<Record<string, unknown>>('/users/current', { method: 'GET' });
-  const balance = Number(user.balance);
+  const credit = Number(user.credit);
+  const rawBalance = Number(user.balance);
+  const spendable = Number.isFinite(credit)
+    ? credit
+    : Number.isFinite(rawBalance)
+      ? rawBalance
+      : Number.NaN;
 
-  if (!Number.isFinite(balance)) {
+  if (!Number.isFinite(spendable)) {
+    const hasCreditField = Object.prototype.hasOwnProperty.call(user, 'credit');
     const hasBalanceField = Object.prototype.hasOwnProperty.call(user, 'balance');
     throw new Error(
-      hasBalanceField
-        ? 'Vast.ai devolvió un saldo no válido. Revisa la API key o los permisos de cuenta.'
-        : 'La API key de Vast.ai no permite leer el saldo de la cuenta. Activa permiso de lectura de User/Billing para esta key.'
+      hasCreditField || hasBalanceField
+        ? 'Vast.ai devolvió un crédito/saldo no válido. Revisa la API key o los permisos de cuenta.'
+        : 'La API key de Vast.ai no permite leer el crédito de la cuenta. Activa permiso de lectura de User/Billing para esta key.'
     );
   }
 
   return {
-    balance,
+    balance: spendable,
+    credit: Number.isFinite(credit) ? credit : undefined,
+    rawBalance: Number.isFinite(rawBalance) ? rawBalance : undefined,
     id: typeof user.id === 'number' || typeof user.id === 'string' ? user.id : undefined,
   };
 };
