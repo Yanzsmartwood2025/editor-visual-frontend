@@ -34,13 +34,13 @@ const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://dummy.supab
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'dummy_key';
 
 if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
-  console.warn('Supabase no está configurado. Auth/storage siguen en compatibilidad temporal; la IA usa llaves de Vercel/Coolify y el render va por Oracle Cloud PC.');
+  console.warn('Supabase no está configurado. Auth/storage quedan limitados y el render CPU usa Vercel Sandbox cuando la sesión y R2 están disponibles.');
 }
 const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 type Rect = { id: string; x: number; y: number; width: number; height: number };
 type MediaItem = { id: string; url: string; tipo: 'foto' | 'video' | 'audio'; nombre: string; creado_en: string; esOverlay: boolean; etiqueta: string; fuente?: string; metadata?: MediaMetadata; r2_key?: string | null; project_id?: string | null; thread_id?: string | null; privacy?: 'private' | 'public' };
-type TimelineItem = { id: string; mediaId: string; tipo: 'foto' | 'video' | 'audio'; nombre: string; etiqueta: string; url: string; durationInSeconds?: number; originalDurationInSeconds?: number; volume?: number; fadeIn?: number; fadeOut?: number; scale?: number; delay?: number; startFrom?: number; trimBefore?: number; trimAfter?: number; loop?: boolean; playbackRate?: number; transitionDuration?: number; transitionType?: 'fade' | 'none' | 'wipe' | 'slide' | 'zoom'; efecto?: string; overlay?: string; overlayIntensity?: number; metadata?: MediaMetadata; };
+type TimelineItem = { id: string; mediaId: string; tipo: 'foto' | 'video' | 'audio'; nombre: string; etiqueta: string; url: string; durationInSeconds?: number; originalDurationInSeconds?: number; volume?: number; fadeIn?: number; fadeOut?: number; scale?: number; delay?: number; startFrom?: number; trimBefore?: number; trimAfter?: number; loop?: boolean; playbackRate?: number; transitionDuration?: number; transitionType?: 'fade' | 'none' | 'wipe' | 'slide' | 'zoom'; efecto?: string; brightness?: number; contrast?: number; saturation?: number; overlay?: string; overlayIntensity?: number; metadata?: MediaMetadata; };
 type SubtitleItem = { id: string; texto: string; inicioSec: number; finSec: number; };
 type LogoItem = { id: string; url: string; x: number; y: number; scale: number; opacity: number; inicioSec?: number; finSec?: number; fadeIn?: number; fadeOut?: number; };
 type ExpandedSurface = 'tools' | 'chat' | null;
@@ -953,41 +953,20 @@ export default function NaylaCore() {
       const outputUrl = data.output.url as string;
       setVideoResultadoUrl(outputUrl);
 
-      const renderCount = galeriaMultimedia.filter(item => item.fuente === 'render').length + 1;
-      const renderItem: MediaItem = {
-        id: createMediaId(),
-        url: outputUrl,
-        tipo: 'video',
-        nombre: `Render ${renderCount}`,
-        creado_en: new Date().toISOString(),
-        esOverlay: false,
-        etiqueta: `R${renderCount}`,
-        fuente: 'render',
-        metadata: buildMediaMetadata(canvas.width, canvas.height, durationInFrames / 30),
-        r2_key: data.output.r2Key || data.output.key || null,
-        project_id: activeProjectId || null,
-        thread_id: activeThreadId || null,
-        privacy: 'private'
-      };
-
-      setGaleriaMultimedia(prev => prev.some(item => item.url === outputUrl) ? prev : [...prev, renderItem]);
-
-      const galleryResponse = await fetch('/api/galeria', {
-        method: 'POST',
-        headers: firebaseHeaders(currentSession, { 'Content-Type': 'application/json' }),
-        body: JSON.stringify({
-          items: [renderItem],
-          projectId: activeProjectId || undefined,
-          threadId: activeThreadId || undefined,
-        })
-      });
-
-      if (!galleryResponse.ok) {
-        const payload = await galleryResponse.json().catch(() => ({}));
-        console.warn('El render terminó, pero no se pudo registrar en la Bóveda:', payload);
+      const renderItem = data.galleryItem as MediaItem | undefined;
+      if (renderItem) {
+        setGaleriaMultimedia(prev =>
+          prev.some(item => item.id === renderItem.id)
+            ? prev
+            : [...prev, renderItem]
+        );
       }
 
-      showAlert(`Render completado: ${canvas.width}×${canvas.height} (${renderRatio}).`);
+      const sandboxSeconds = Number(data.usage?.sandboxWallSeconds);
+      const usageSuffix = Number.isFinite(sandboxSeconds)
+        ? ` · Sandbox ${sandboxSeconds}s`
+        : '';
+      showAlert(`Render CPU completado: ${canvas.width}×${canvas.height} (${renderRatio})${usageSuffix}.`);
       return data;
     }
 
@@ -1011,6 +990,14 @@ export default function NaylaCore() {
       const etiqueta = mediaExistente?.etiqueta || `${tipo === 'foto' ? 'F' : tipo === 'audio' ? 'A' : 'V'}_IA_${index + 1}`;
       const nombre = mediaExistente?.nombre || `Nayla ${tipo} ${index + 1}`;
 
+      const requestedDuration = Number(asset.durationInSeconds);
+      const baseDuration =
+        Number.isFinite(requestedDuration) && requestedDuration > 0
+          ? requestedDuration
+          : tipo === 'foto'
+            ? 5
+            : mediaExistente?.durationInSeconds;
+
       nextTimeline.push({
         id: `nayla-timeline-${Date.now()}-${index}`,
         mediaId,
@@ -1018,14 +1005,28 @@ export default function NaylaCore() {
         nombre,
         etiqueta,
         url,
-        durationInSeconds: tipo === 'foto' ? 5 : mediaExistente?.durationInSeconds,
-        originalDurationInSeconds: tipo === 'foto' ? 5 : mediaExistente?.originalDurationInSeconds,
+        durationInSeconds: baseDuration,
+        originalDurationInSeconds:
+          mediaExistente?.originalDurationInSeconds ||
+          mediaExistente?.durationInSeconds ||
+          baseDuration,
         metadata: mediaExistente?.metadata,
         ...(typeof asset.efecto === 'string' ? { efecto: asset.efecto } : {}),
         ...(typeof asset.transitionType === 'string' ? { transitionType: asset.transitionType } : {}),
         ...(Number.isFinite(Number(asset.transitionDuration)) ? { transitionDuration: Number(asset.transitionDuration) } : {}),
         ...(Number.isFinite(Number(asset.fadeIn)) ? { fadeIn: Number(asset.fadeIn) } : {}),
         ...(Number.isFinite(Number(asset.fadeOut)) ? { fadeOut: Number(asset.fadeOut) } : {}),
+        ...(Number.isFinite(Number(asset.volume)) ? { volume: Number(asset.volume) } : {}),
+        ...(Number.isFinite(Number(asset.scale)) ? { scale: Number(asset.scale) } : {}),
+        ...(Number.isFinite(Number(asset.delay)) ? { delay: Number(asset.delay) } : {}),
+        ...(Number.isFinite(Number(asset.startFrom)) ? { startFrom: Number(asset.startFrom) } : {}),
+        ...(Number.isFinite(Number(asset.trimBefore)) ? { trimBefore: Number(asset.trimBefore) } : {}),
+        ...(Number.isFinite(Number(asset.trimAfter)) ? { trimAfter: Number(asset.trimAfter) } : {}),
+        ...(typeof asset.loop === 'boolean' ? { loop: asset.loop } : {}),
+        ...(Number.isFinite(Number(asset.playbackRate)) ? { playbackRate: Number(asset.playbackRate) } : {}),
+        ...(Number.isFinite(Number(asset.brightness)) ? { brightness: Number(asset.brightness) } : {}),
+        ...(Number.isFinite(Number(asset.contrast)) ? { contrast: Number(asset.contrast) } : {}),
+        ...(Number.isFinite(Number(asset.saturation)) ? { saturation: Number(asset.saturation) } : {}),
         ...(typeof asset.overlay === 'string' ? { overlay: asset.overlay } : {}),
         ...(Number.isFinite(Number(asset.overlayIntensity)) ? { overlayIntensity: Number(asset.overlayIntensity) } : {})
       });
@@ -1050,7 +1051,7 @@ export default function NaylaCore() {
 
     if (actionData.render === true) {
       await solicitarRenderTimeline(timelineValidado, undefined, formatoDetectado);
-      showAlert('Nayla armó el timeline y envió el render con el formato detectado.');
+      showAlert('Nayla armó la edición y terminó el render CPU en Vercel Sandbox.');
     } else {
       showAlert('Nayla armó el timeline con los medios existentes.');
     }

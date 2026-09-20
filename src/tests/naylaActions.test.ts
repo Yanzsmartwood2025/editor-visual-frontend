@@ -127,4 +127,51 @@ describe('Nayla action contracts', () => {
       '3d_retargeting',
     ]));
   });
+
+  it('accepts simple Remotion CPU editing instructions with perspective effects', () => {
+    const action = parseNaylaAction(JSON.stringify({
+      action: 'BUILD_TIMELINE',
+      assets: [
+        {
+          type: 'foto',
+          source: 'url',
+          url: 'https://cdn.example/photo.jpg',
+          durationInSeconds: 4,
+          efecto: 'parallax-3d',
+          transitionType: 'fade',
+          transitionDuration: 0.5,
+          overlay: 'vignette',
+          overlayIntensity: 0.35,
+          brightness: 1.05,
+          contrast: 1.15,
+        },
+        {
+          type: 'audio',
+          source: 'url',
+          url: 'https://cdn.example/music.mp3',
+          volume: 0.7,
+          fadeIn: 0.8,
+          fadeOut: 1.2,
+        },
+      ],
+      render: true,
+    }));
+
+    expect(action).not.toBeNull();
+    expect(action).toMatchObject({
+      action: 'BUILD_TIMELINE',
+      render: true,
+      assets: [
+        expect.objectContaining({
+          efecto: 'parallax-3d',
+          overlay: 'vignette',
+        }),
+        expect.objectContaining({
+          type: 'audio',
+          volume: 0.7,
+        }),
+      ],
+    });
+  });
+
 });

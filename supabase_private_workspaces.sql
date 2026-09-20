@@ -141,10 +141,30 @@ end $$;
 
 alter table public.render_requests
   add column if not exists project_id uuid,
-  add column if not exists thread_id uuid;
+  add column if not exists thread_id uuid,
+  add column if not exists r2_key text,
+  add column if not exists engine text,
+  add column if not exists usage jsonb not null default '{}'::jsonb,
+  add column if not exists gallery_item_id uuid;
 
 create index if not exists render_requests_owner_project_idx
   on public.render_requests(user_id, project_id, created_at desc);
+
+create index if not exists render_requests_gallery_item_idx
+  on public.render_requests(gallery_item_id);
+
+do $
+begin
+  if not exists (
+    select 1 from pg_constraint where conname = 'render_requests_gallery_item_fkey'
+  ) then
+    alter table public.render_requests
+      add constraint render_requests_gallery_item_fkey
+      foreign key (gallery_item_id)
+      references public.galeria_multimedia(id)
+      on delete set null;
+  end if;
+end $;
 
 do $$
 begin

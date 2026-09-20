@@ -82,6 +82,15 @@ const getFilterStyle = (clip: TimelineItem): string | undefined => {
       case 'blur':
         filters.push('blur(10px)');
         break;
+      case 'glow':
+        filters.push('saturate(1.18) contrast(1.08) brightness(1.05) drop-shadow(0 0 18px rgba(255,255,255,0.22))');
+        break;
+      case 'high-contrast':
+        filters.push('contrast(1.55) saturate(1.08)');
+        break;
+      case 'soft':
+        filters.push('contrast(0.92) brightness(1.05) saturate(0.92)');
+        break;
       // You can add more predefined effects here if needed
     }
   }
@@ -100,51 +109,91 @@ const getFilterStyle = (clip: TimelineItem): string | undefined => {
 
 
 
-const getPhotoMotionTransform = (clip: TimelineItem, frame: number, durationInFrames: number): string | undefined => {
+const getVisualMotionTransform = (
+  clip: TimelineItem,
+  frame: number,
+  durationInFrames: number
+): string | undefined => {
   const baseScale = clip.scale !== undefined ? Number(clip.scale) : 1;
-  const animationEndFrame = Math.max(1, durationInFrames - 1);
+  const end = Math.max(1, durationInFrames - 1);
+  const progress = interpolate(
+    frame,
+    [0, end],
+    [0, 1],
+    { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' }
+  );
 
-  if (clip.efecto === 'ken-burns') {
+  if (clip.efecto === 'ken-burns' || clip.efecto === 'push-in') {
     const scale = interpolate(
-      frame,
-      [0, animationEndFrame],
-      [baseScale, baseScale * 1.12],
-      { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' }
+      progress,
+      [0, 1],
+      [baseScale, baseScale * 1.12]
     );
+    return `scale(${scale})`;
+  }
 
+  if (clip.efecto === 'pull-out') {
+    const scale = interpolate(
+      progress,
+      [0, 1],
+      [baseScale * 1.12, baseScale]
+    );
     return `scale(${scale})`;
   }
 
   if (clip.efecto === 'pan') {
-    const translateX = interpolate(
-      frame,
-      [0, animationEndFrame],
-      [-4, 4],
-      { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' }
-    );
-    const motionScale = baseScale * 1.08;
-
-    return `translateX(${translateX}%) scale(${motionScale})`;
+    const translateX = interpolate(progress, [0, 1], [-4, 4]);
+    return `translateX(${translateX}%) scale(${baseScale * 1.08})`;
   }
 
   if (clip.efecto === 'rotate') {
-    const rotation = interpolate(
-      frame,
-      [0, animationEndFrame],
-      [-1.5, 1.5],
-      { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' }
-    );
-    const motionScale = baseScale * 1.04;
+    const rotation = interpolate(progress, [0, 1], [-1.5, 1.5]);
+    return `rotate(${rotation}deg) scale(${baseScale * 1.04})`;
+  }
 
-    return `rotate(${rotation}deg) scale(${motionScale})`;
+  if (clip.efecto === 'float') {
+    const wave = Math.sin(progress * Math.PI * 2);
+    return `translateY(${wave * 1.8}%) scale(${baseScale * 1.035})`;
+  }
+
+  if (clip.efecto === 'tilt-3d') {
+    const rotateY = interpolate(progress, [0, 1], [-6, 6]);
+    const rotateX = interpolate(progress, [0, 0.5, 1], [2, -2, 2]);
+    return `perspective(1200px) rotateX(${rotateX}deg) rotateY(${rotateY}deg) scale(${baseScale * 1.045})`;
+  }
+
+  if (clip.efecto === 'parallax-3d') {
+    const rotateY = interpolate(progress, [0, 1], [-4, 4]);
+    const translateX = interpolate(progress, [0, 1], [-2.5, 2.5]);
+    const translateZ = interpolate(progress, [0, 0.5, 1], [0, 36, 0]);
+    return `perspective(1400px) translateX(${translateX}%) translateZ(${translateZ}px) rotateY(${rotateY}deg) scale(${baseScale * 1.06})`;
   }
 
   return clip.scale !== undefined ? `scale(${baseScale})` : undefined;
 };
 
-const AnimatedPhoto: React.FC<{ clip: TimelineItem, durationInFrames: number }> = ({ clip, durationInFrames }) => {
+const AnimatedVisualFrame: React.FC<{
+  clip: TimelineItem;
+  durationInFrames: number;
+  children: React.ReactNode;
+}> = ({ clip, durationInFrames, children }) => {
   const frame = useCurrentFrame();
 
+  return (
+    <AbsoluteFill
+      style={{
+        transform: getVisualMotionTransform(clip, frame, durationInFrames),
+        transformOrigin: 'center center',
+        willChange: 'transform',
+      }}
+    >
+      {children}
+    </AbsoluteFill>
+  );
+};
+
+
+const AnimatedPhoto: React.FC<{ clip: TimelineItem, durationInFrames: number }> = ({ clip, durationInFrames }) => {
   return (
     <PreloadedImage
       src={clip.url}
@@ -152,7 +201,7 @@ const AnimatedPhoto: React.FC<{ clip: TimelineItem, durationInFrames: number }> 
         width: '100%',
         height: '100%',
         objectFit: 'contain',
-        transform: getPhotoMotionTransform(clip, frame, durationInFrames),
+        transform: undefined,
         filter: getFilterStyle(clip),
       }}
     />
@@ -308,19 +357,23 @@ export const MainComposition: React.FC<MainCompositionProps> = ({ timeline, subt
             <TransitionSeries.Sequence key={clip.id} durationInFrames={clip.durationInFrames}>
               <ClipWithFades clip={clip} durationInFrames={clip.durationInFrames}>
                 {clip.tipo === 'video' ? (
-                  <AnimatedVolume clip={clip} durationInFrames={clip.durationInFrames} absoluteStartFrame={clip.absoluteStartFrame} totalCompositionFrames={totalCompositionFrames} globalFadeOutFrames={globalFadeOutFrames} render={(volume) => (
-                    <Video
-                      src={clip.url}
-                      volume={volume}
-                      trimBefore={clip.trimBefore !== undefined ? Math.round(clip.trimBefore * fps) : (clip.startFrom ? Math.round(clip.startFrom * fps) : undefined)}
-                      trimAfter={clip.trimAfter !== undefined ? Math.round(clip.trimAfter * fps) : undefined}
-                      loop={clip.loop}
-                      playbackRate={clip.playbackRate || 1}
-                      style={{ width: '100%', height: '100%', objectFit: 'contain', transform: clip.scale !== undefined ? `scale(${clip.scale})` : undefined, filter: getFilterStyle(clip) }}
-                    />
-                  )} />
+                  <AnimatedVisualFrame clip={clip} durationInFrames={clip.durationInFrames}>
+                    <AnimatedVolume clip={clip} durationInFrames={clip.durationInFrames} absoluteStartFrame={clip.absoluteStartFrame} totalCompositionFrames={totalCompositionFrames} globalFadeOutFrames={globalFadeOutFrames} render={(volume) => (
+                      <Video
+                        src={clip.url}
+                        volume={volume}
+                        trimBefore={clip.trimBefore !== undefined ? Math.round(clip.trimBefore * fps) : (clip.startFrom ? Math.round(clip.startFrom * fps) : undefined)}
+                        trimAfter={clip.trimAfter !== undefined ? Math.round(clip.trimAfter * fps) : undefined}
+                        loop={clip.loop}
+                        playbackRate={clip.playbackRate || 1}
+                        style={{ width: '100%', height: '100%', objectFit: 'contain', filter: getFilterStyle(clip) }}
+                      />
+                    )} />
+                  </AnimatedVisualFrame>
                 ) : (
-                  <AnimatedPhoto clip={clip} durationInFrames={clip.durationInFrames} />
+                  <AnimatedVisualFrame clip={clip} durationInFrames={clip.durationInFrames}>
+                    <AnimatedPhoto clip={clip} durationInFrames={clip.durationInFrames} />
+                  </AnimatedVisualFrame>
                 )}
                 {clip.overlay === 'vignette' && (
                     <AbsoluteFill style={{
@@ -348,6 +401,26 @@ export const MainComposition: React.FC<MainCompositionProps> = ({ timeline, subt
                                 style={{ width: '100%', height: '100%', objectFit: 'cover' }}
                             />
                         </Loop>
+                    </AbsoluteFill>
+                )}
+                {clip.overlay === 'letterbox' && (
+                    <AbsoluteFill style={{ pointerEvents: 'none' }}>
+                      <div style={{
+                        position: 'absolute',
+                        left: 0,
+                        right: 0,
+                        top: 0,
+                        height: `${Math.round(8 + 8 * (clip.overlayIntensity ?? 0.5))}%`,
+                        background: '#000',
+                      }} />
+                      <div style={{
+                        position: 'absolute',
+                        left: 0,
+                        right: 0,
+                        bottom: 0,
+                        height: `${Math.round(8 + 8 * (clip.overlayIntensity ?? 0.5))}%`,
+                        background: '#000',
+                      }} />
                     </AbsoluteFill>
                 )}
               </ClipWithFades>

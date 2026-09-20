@@ -1,4 +1,5 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
+import { randomUUID } from 'node:crypto';
 import { requireFirebaseUser } from '../../lib/firebaseAdmin';
 import { startVercelSandboxRender } from '../../lib/vercelSandboxRender';
 import { getCanvasDimensionsFromRatio } from '../../lib/mediaMetadata';
@@ -13,7 +14,15 @@ const MAX_RENDERS_PER_WINDOW = 6;
 
 class RenderValidationError extends Error {}
 
-const validateInputProps = (inputProps: unknown) => {
+type ValidatedRenderProps = Record<string, unknown> & {
+  timeline: any[];
+  subtitles?: any[];
+  logos?: any[];
+  canvasWidth: number;
+  canvasHeight: number;
+};
+
+const validateInputProps = (inputProps: unknown): ValidatedRenderProps => {
   if (!inputProps || typeof inputProps !== 'object' || Array.isArray(inputProps)) {
     throw new RenderValidationError('inputProps debe ser un objeto.');
   }
@@ -65,9 +74,10 @@ const validateInputProps = (inputProps: unknown) => {
 
   return {
     ...props,
+    timeline: props.timeline as any[],
     canvasWidth,
     canvasHeight,
-  };
+  } as ValidatedRenderProps;
 };
 
 const reserveRenderSlot = async ({
@@ -180,17 +190,83 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       threadId: scope.threadId,
     });
 
+    const durationInFrames = getCompositionDurationInFrames(
+      inputProps.timeline as any[],
+      30,
+      Array.isArray(inputProps.subtitles) ? inputProps.subtitles as any[] : [],
+      Array.isArray(inputProps.logos) ? inputProps.logos as any[] : []
+    );
+    const durationInSeconds = durationInFrames / 30;
+
+    const { count: renderCount, error: countError } = await renderLedger
+      .from('galeria_multimedia')
+      .select('id', { count: 'exact', head: true })
+      .eq('user_id', user.uid)
+      .eq('project_id', scope.projectId)
+      .eq('tipo', 'video')
+      .like('fuente', 'render:%');
+
+    if (countError) throw countError;
+
+    const galleryItem = {
+      id: randomUUID(),
+      user_id: user.uid,
+      project_id: scope.projectId,
+      thread_id: scope.threadId || null,
+      url: data.output.storageUrl,
+      r2_key: data.output.r2Key,
+      privacy: 'private',
+      tipo: 'video',
+      nombre: `Render CPU ${(renderCount || 0) + 1}.mp4`,
+      creado_en: new Date().toISOString(),
+      esOverlay: false,
+      etiqueta: `R${(renderCount || 0) + 1}`,
+      fuente: 'render:cpu',
+      metadata: {
+        width: inputProps.canvasWidth,
+        height: inputProps.canvasHeight,
+        durationInSeconds,
+        fps: 30,
+        renderEngine: 'remotion-cpu-sandbox',
+        usage: data.usage,
+      },
+    };
+
+    const { data: insertedGalleryItem, error: galleryError } = await renderLedger
+      .from('galeria_multimedia')
+      .insert(galleryItem)
+      .select('*')
+      .single();
+
+    if (galleryError) throw galleryError;
+
     await renderLedger
       .from('render_requests')
       .update({
         status: 'completed',
         output_url: data.output?.storageUrl || null,
         r2_key: data.output?.r2Key || null,
+        engine: data.engine,
+        usage: {
+          ...data.usage,
+          mediaDurationSeconds: durationInSeconds,
+          frames: durationInFrames,
+          canvasWidth: inputProps.canvasWidth,
+          canvasHeight: inputProps.canvasHeight,
+        },
+        gallery_item_id: insertedGalleryItem.id,
         completed_at: new Date().toISOString(),
       })
       .eq('id', renderRequestId);
 
-    return res.status(data.status === 'completed' ? 200 : 202).json(data);
+    return res.status(200).json({
+      ...data,
+      requestId: renderRequestId,
+      galleryItem: {
+        ...insertedGalleryItem,
+        url: data.output.url,
+      },
+    });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Error iniciando el renderizado.';
 
