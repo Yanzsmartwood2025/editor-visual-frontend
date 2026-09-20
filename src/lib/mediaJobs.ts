@@ -51,11 +51,13 @@ export const createMediaJobPlan = async ({
   projectId,
   threadId,
   action,
+  attachmentIds = [],
 }: {
   userId: string;
   projectId?: string;
   threadId?: string;
   action: NaylaAction;
+  attachmentIds?: string[];
 }) => {
   const domain = domainForNaylaAction(action);
   const capability = capabilityForNaylaAction(action);
@@ -96,6 +98,7 @@ export const createMediaJobPlan = async ({
       metadata: {
         candidateProviders: candidates.map((candidate) => candidate.id),
         requestedProvider: requestedProviderForAction(action) || null,
+        attachmentIds: Array.from(new Set(attachmentIds)),
       },
     })
     .select('*')
