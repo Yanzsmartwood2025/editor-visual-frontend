@@ -42,7 +42,7 @@ if not prompt:
 
 options = manifest.get("options") or {}
 duration = float(options.get("duration") or options.get("durationSeconds") or 30)
-duration = max(5.0, min(duration, 90.0))
+duration = max(10.0, min(duration, 90.0))
 instrumental = bool(options.get("instrumental", True))
 lyrics = str(options.get("lyrics") or "").strip()
 if instrumental:
@@ -69,6 +69,9 @@ payload = {
     "use_cot_metas": False,
     "use_cot_language": False,
     "use_format": False,
+    "model": "acestep-v15-turbo",
+    "batch_size": 1,
+    "audio_format": "wav",
 }
 
 json.dump(
