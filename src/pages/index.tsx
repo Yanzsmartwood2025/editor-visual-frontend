@@ -34,7 +34,7 @@ const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://dummy.supab
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'dummy_key';
 
 if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
-  console.warn('Supabase no está configurado. Auth/storage siguen en compatibilidad temporal; la IA usa llaves de Vercel/Coolify y el render va por Oracle Cloud PC.');
+  console.warn('Supabase no está configurado. Auth/storage quedan limitados y el render CPU usa Vercel Sandbox cuando la sesión y R2 están disponibles.');
 }
 const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
