@@ -3221,7 +3221,7 @@ if (!session) {
               }}
             />
             <button
-              onClick={sendNaylaMessage}
+              onClick={() => void sendNaylaMessage()}
               disabled={chatProcessing}
               style={{
                 padding: '10px 16px',
