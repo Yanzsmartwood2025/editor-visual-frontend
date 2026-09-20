@@ -319,3 +319,33 @@ comment on table public.chat_messages is 'Persisted private chat history; attach
 comment on table public.chat_message_media is 'Ownership-safe links between chat messages and private gallery assets.';
 comment on table public.media_jobs is 'Provider-independent ledger for image/video/audio/3D/GPU jobs.';
 comment on column public.galeria_multimedia.r2_key is 'Private Cloudflare R2 object key. Prefer short-lived signed GET URLs over permanent public URLs.';
+
+
+-- Performance indexes for ownership-preserving foreign keys.
+create index if not exists chat_message_media_asset_owner_idx on public.chat_message_media(media_id, user_id);
+create index if not exists chat_message_media_message_owner_idx on public.chat_message_media(message_id, user_id);
+create index if not exists chat_messages_thread_owner_idx on public.chat_messages(thread_id, project_id, user_id);
+create index if not exists chat_threads_project_owner_idx on public.chat_threads(project_id, user_id);
+create index if not exists galeria_project_owner_fk_idx on public.galeria_multimedia(project_id, user_id);
+create index if not exists galeria_thread_owner_fk_idx on public.galeria_multimedia(thread_id, project_id, user_id);
+create index if not exists gpu_jobs_project_owner_fk_idx on public.gpu_jobs(project_id, user_id);
+create index if not exists gpu_jobs_thread_owner_fk_idx on public.gpu_jobs(thread_id, project_id, user_id);
+create index if not exists media_jobs_output_owner_idx on public.media_jobs(output_gallery_item_id, user_id);
+create index if not exists media_jobs_project_owner_fk_idx on public.media_jobs(project_id, user_id);
+create index if not exists media_jobs_thread_owner_fk_idx on public.media_jobs(thread_id, project_id, user_id);
+create index if not exists memoria_project_owner_fk_idx on public.memoria_nayla(project_id, user_id);
+create index if not exists memoria_thread_owner_fk_idx on public.memoria_nayla(thread_id, project_id, user_id);
+create index if not exists render_requests_project_owner_fk_idx on public.render_requests(project_id, user_id);
+create index if not exists render_requests_thread_owner_fk_idx on public.render_requests(thread_id, project_id, user_id);
+
+-- Each editor project owns its own timeline. Render outputs keep their private R2 key.
+alter table public.editor_projects
+  add column if not exists linea_de_tiempo jsonb not null default '[]'::jsonb;
+
+alter table public.render_requests
+  add column if not exists r2_key text;
+
+comment on column public.editor_projects.linea_de_tiempo is
+  'Project-scoped Remotion/editor timeline. Each project owns an independent timeline.';
+comment on column public.render_requests.r2_key is
+  'Private Cloudflare R2 object key for the rendered output.';
