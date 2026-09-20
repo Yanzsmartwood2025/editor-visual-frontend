@@ -27,6 +27,7 @@ const buildTimelineAssetSchema = z.object({
   transitionType: z.enum(['fade', 'wipe', 'slide', 'zoom']).optional(),
   transitionDuration: z.number().min(0).max(10).optional(),
   efecto: z.enum([
+    'none',
     'grayscale',
     'sepia',
     'vintage',
@@ -47,7 +48,7 @@ const buildTimelineAssetSchema = z.object({
   brightness: z.number().min(0.1).max(3).optional(),
   contrast: z.number().min(0.1).max(3).optional(),
   saturation: z.number().min(0).max(4).optional(),
-  overlay: z.enum(['vignette', 'film-grain', 'light-leak', 'letterbox']).optional(),
+  overlay: z.enum(['none', 'vignette', 'film-grain', 'light-leak', 'letterbox']).optional(),
   overlayIntensity: z.number().min(0).max(1).optional(),
 });
 
