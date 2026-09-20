@@ -94,4 +94,41 @@ describe('Nayla Cloud executors', () => {
     expect(result.output.contentType).toBe('audio/mpeg');
     expect(result.output.bytes.byteLength).toBe(4);
   });
+
+  it('uses the current unified Tripo v2 task endpoint for text to 3D', async () => {
+    process.env.TRIPO_API_KEY = 'tripo-test-secret';
+    const fetchMock = vi.fn(async (url: string | URL | Request, init?: RequestInit) =>
+      new Response(JSON.stringify({
+        code: 0,
+        data: { task_id: 'tripo_task_123' },
+      }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    const result = await startCloudProviderExecution('tripo', {
+      action: 'GENERATE_3D',
+      mode: 'text_to_3d',
+      prompt: 'a walnut chair',
+    });
+
+    expect(result).toMatchObject({
+      state: 'queued',
+      providerJobId: 'tripo_task_123',
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(String(fetchMock.mock.calls[0]?.[0]))
+      .toBe('https://api.tripo3d.ai/v2/openapi/task');
+    const init = fetchMock.mock.calls[0]?.[1] as RequestInit;
+    const body = JSON.parse(String(init.body || '{}'));
+    expect(body).toMatchObject({
+      type: 'text_to_model',
+      model_version: 'v3.1-20260211',
+      prompt: 'a walnut chair',
+    });
+    expect(JSON.stringify(result)).not.toContain('tripo-test-secret');
+  });
+
 });
