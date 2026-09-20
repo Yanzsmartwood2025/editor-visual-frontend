@@ -77,6 +77,8 @@ type NaylaChatMessage = {
     hourlyPrice?: number | null;
     estimatedMaxCost?: number | null;
     runtimeCostEstimate?: number | null;
+    outputUrl?: string | null;
+    textOutput?: string | null;
   };
 };
 
@@ -312,6 +314,7 @@ export default function NaylaCore() {
   const [chatInput, setChatInput] = useState('');
   const [chatMessages, setChatMessages] = useState<NaylaChatMessage[]>([]);
   const [chatProcessing, setChatProcessing] = useState(false);
+  const [cloudExecutingIds, setCloudExecutingIds] = useState<string[]>([]);
   const [stockImportingId, setStockImportingId] = useState<string | null>(null);
   const [projects, setProjects] = useState<NaylaProject[]>([]);
   const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
@@ -339,6 +342,134 @@ export default function NaylaCore() {
     })),
   ];
   const chatAttachedAssets = chatChannelAssets.filter((asset) => chatAttachmentIds.includes(asset.id));
+
+  const absorbCloudJob = (job: any) => {
+    if (!job) return;
+
+    if (job.galleryItem) {
+      if (job.galleryItem.tipo === 'modelo3d') {
+        setModelos3d((prev) =>
+          prev.some((item) => item.id === job.galleryItem.id)
+            ? prev
+            : [...prev, job.galleryItem]
+        );
+        setModelo3dActivoId((current) => current || job.galleryItem.id);
+      } else if (['foto', 'video', 'audio'].includes(job.galleryItem.tipo)) {
+        setGaleriaMultimedia((prev) =>
+          prev.some((item) => item.id === job.galleryItem.id)
+            ? prev
+            : [...prev, job.galleryItem]
+        );
+      }
+    }
+
+    setChatMessages((prev) => prev.map((message) => {
+      if (message.actionPlan?.mediaJobId !== job.id) return message;
+
+      let text = message.text;
+      if (job.status === 'completed') {
+        text = job.textOutput
+          ? job.textOutput
+          : 'Nayla Cloud terminó la generación y guardó el resultado en la Bóveda.';
+      } else if (job.status === 'failed') {
+        text = 'Nayla Cloud no pudo completar la tarea. ' + (job.error || '');
+      } else if (job.status === 'running') {
+        text = 'Nayla Cloud está procesando la tarea.';
+      } else if (job.status === 'queued') {
+        text = 'Nayla Cloud puso la tarea en ejecución.';
+      }
+
+      return {
+        ...message,
+        text,
+        actionPlan: {
+          ...message.actionPlan,
+          status: job.status,
+          outputUrl: job.outputUrl ?? message.actionPlan.outputUrl,
+          textOutput: job.textOutput ?? message.actionPlan.textOutput,
+        },
+      };
+    }));
+  };
+
+  const confirmCloudJob = async (jobId: string) => {
+    if (!jobId || cloudExecutingIds.includes(jobId)) return;
+    const currentSession = session || await getFirebaseSession();
+    if (!currentSession) return showAlert('Debes iniciar sesión para usar Nayla Cloud.');
+
+    setCloudExecutingIds((prev) => [...prev, jobId]);
+    try {
+      const response = await fetch('/api/media/jobs', {
+        method: 'POST',
+        headers: firebaseHeaders(currentSession, { 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ id: jobId }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if ((!response.ok && response.status !== 422) || payload.error) {
+        throw new Error(payload.error || 'No se pudo iniciar Nayla Cloud.');
+      }
+      if (payload.job) absorbCloudJob(payload.job);
+    } catch (error: any) {
+      showAlert(error?.message || 'No se pudo iniciar Nayla Cloud.');
+    } finally {
+      setCloudExecutingIds((prev) => prev.filter((id) => id !== jobId));
+    }
+  };
+
+  const mediaPollKey = chatMessages
+    .map((message) =>
+      message.actionPlan?.mediaJobId
+        ? message.actionPlan.mediaJobId + ':' + (message.actionPlan.status || 'awaiting_confirmation')
+        : ''
+    )
+    .filter(Boolean)
+    .join('|');
+
+  useEffect(() => {
+    const terminal = new Set(['completed', 'failed', 'cancelled']);
+    const pendingIds = Array.from(new Set(
+      chatMessages
+        .filter((message) =>
+          message.actionPlan?.mediaJobId &&
+          !terminal.has(message.actionPlan.status || '') &&
+          message.actionPlan.status !== 'awaiting_confirmation' &&
+          message.actionPlan.status !== 'planned'
+        )
+        .map((message) => message.actionPlan!.mediaJobId as string)
+    ));
+    if (!pendingIds.length || !session) return;
+
+    let cancelled = false;
+    let running = false;
+    const refresh = async () => {
+      if (running || cancelled) return;
+      running = true;
+      try {
+        const currentSession = session || await getFirebaseSession();
+        if (!currentSession) return;
+
+        for (const jobId of pendingIds) {
+          const response = await fetch('/api/media/jobs?id=' + encodeURIComponent(jobId), {
+            headers: firebaseHeaders(currentSession),
+          });
+          if (!response.ok) continue;
+          const payload = await response.json().catch(() => ({}));
+          if (!cancelled && payload.job) absorbCloudJob(payload.job);
+        }
+      } catch (error) {
+        console.warn('No se pudo actualizar Nayla Cloud:', error);
+      } finally {
+        running = false;
+      }
+    };
+
+    void refresh();
+    const timer = window.setInterval(refresh, 4500);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [mediaPollKey, session]);
 
   const gpuPollKey = chatMessages
     .map((message) =>
@@ -1457,7 +1588,7 @@ export default function NaylaCore() {
     }
   };
 
-  const confirmGpuQuote = async () => {
+  const confirmGpuQuote = async (computeSelectionId: string) => {
     if (!gpuQuote?.available || !gpuQuoteRequest) return;
 
     const currentSession = session || await getFirebaseSession();
@@ -1471,7 +1602,10 @@ export default function NaylaCore() {
       const response = await fetch('/api/gpu/jobs', {
         method: 'POST',
         headers: firebaseHeaders(currentSession, { 'Content-Type': 'application/json' }),
-        body: JSON.stringify(gpuQuoteRequest),
+        body: JSON.stringify({
+          ...gpuQuoteRequest,
+          computeSelectionId,
+        }),
       });
 
       const raw = await response.text();
@@ -1487,6 +1621,7 @@ export default function NaylaCore() {
       }
 
       const job = payload.job || {};
+      const selectedCard = gpuQuote.cards?.find((card) => card.selectionId === computeSelectionId);
       const gpuJobId = payload.gpuJobId || job.id;
       if (!gpuJobId) throw new Error('Nayla Compute no devolvió un identificador de trabajo.');
 
@@ -1506,9 +1641,9 @@ export default function NaylaCore() {
             status: job.status || 'booting',
             engine: 'nayla-compute',
             gpuJobId,
-            gpuName: job.gpuName ?? gpuQuote.gpuName ?? null,
-            hourlyPrice: job.hourlyPrice ?? gpuQuote.hourlyPrice ?? null,
-            estimatedMaxCost: job.estimatedMaxCost ?? gpuQuote.estimatedMaxCost ?? null,
+            gpuName: job.gpuName ?? selectedCard?.gpuName ?? gpuQuote.gpuName ?? null,
+            hourlyPrice: job.hourlyPrice ?? selectedCard?.hourlyPrice ?? gpuQuote.hourlyPrice ?? null,
+            estimatedMaxCost: job.estimatedMaxCost ?? selectedCard?.estimatedMaxCost ?? gpuQuote.estimatedMaxCost ?? null,
             runtimeCostEstimate: job.runtimeCostEstimate ?? null,
           },
         },
@@ -1746,7 +1881,9 @@ export default function NaylaCore() {
               gpuName: message.action.job?.gpuName ?? message.action.quote?.gpuName ?? null,
               hourlyPrice: message.action.job?.hourlyPrice ?? message.action.quote?.hourlyPrice ?? null,
               estimatedMaxCost: message.action.job?.estimatedMaxCost ?? message.action.quote?.estimatedMaxCost ?? null,
-              runtimeCostEstimate: message.action.job?.runtimeCostEstimate ?? null,
+              runtimeCostEstimate: message.action.job?.runtimeCostEstimate ?? message.action.runtimeCostEstimate ?? null,
+              outputUrl: message.action.outputUrl ?? null,
+              textOutput: message.action.textOutput ?? null,
             }
           : undefined,
       }));
@@ -3809,6 +3946,35 @@ if (!session) {
                       <div style={{ color: '#999', marginTop: '4px', fontSize: '0.78rem' }}>
                         Motor: {msg.actionPlan.engine === 'nayla-compute' ? 'Nayla Compute' : 'Nayla Cloud'}
                       </div>
+                      {msg.actionPlan.mediaJobId && (
+                        <div style={{ marginTop: '7px', display: 'grid', gap: '7px', color: '#777', fontSize: '0.7rem' }}>
+                          <span>Estado: {String(msg.actionPlan.status || 'awaiting_confirmation').toUpperCase()}</span>
+                          {msg.actionPlan.status === 'awaiting_confirmation' && (
+                            <button
+                              type="button"
+                              onClick={() => void confirmCloudJob(msg.actionPlan!.mediaJobId!)}
+                              disabled={cloudExecutingIds.includes(msg.actionPlan.mediaJobId)}
+                              style={{
+                                border: '1px solid #ddd',
+                                borderRadius: 8,
+                                background: cloudExecutingIds.includes(msg.actionPlan.mediaJobId) ? '#333' : '#f1f1f1',
+                                color: cloudExecutingIds.includes(msg.actionPlan.mediaJobId) ? '#aaa' : '#050505',
+                                padding: '7px 10px',
+                                fontSize: '0.68rem',
+                                fontWeight: 800,
+                                cursor: cloudExecutingIds.includes(msg.actionPlan.mediaJobId) ? 'wait' : 'pointer',
+                              }}
+                            >
+                              {cloudExecutingIds.includes(msg.actionPlan.mediaJobId)
+                                ? 'INICIANDO…'
+                                : 'GENERAR CON NAYLA CLOUD'}
+                            </button>
+                          )}
+                          {msg.actionPlan.status === 'completed' && msg.actionPlan.outputUrl && (
+                            <span style={{ color: '#aaa' }}>Resultado guardado en Bóveda.</span>
+                          )}
+                        </div>
+                      )}
                       {msg.actionPlan.gpuJobId && (
                         <div style={{ marginTop: '7px', display: 'grid', gap: '3px', color: '#777', fontSize: '0.7rem' }}>
                           <span>Estado: {String(msg.actionPlan.status || 'queued').toUpperCase()}</span>
@@ -3998,7 +4164,7 @@ if (!session) {
           setGpuQuoteRequest(null);
           setGpuQuoteUi(null);
         }}
-        onConfirm={() => void confirmGpuQuote()}
+        onConfirm={(selectionId) => void confirmGpuQuote(selectionId)}
       />
 
 {customAlertMsg && (
