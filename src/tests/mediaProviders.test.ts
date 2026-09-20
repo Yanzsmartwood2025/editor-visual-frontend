@@ -49,6 +49,32 @@ describe('media provider registry', () => {
     expect(JSON.stringify(providers)).not.toContain('deepgram-secret');
     expect(JSON.stringify(providers)).not.toContain('cartesia-secret');
   });
+
+  it('activates configured video, audio, and 3D providers without exposing secrets', () => {
+    process.env.FAL_KEY = 'fal-secret';
+    process.env.REPLICATE_API_TOKEN = 'replicate-secret';
+    process.env.DEEPGRAM_API_KEY = 'deepgram-secret';
+    process.env.CARTESIA_API_KEY = 'cartesia-secret';
+    process.env.ELEVENLABS_API_KEY = 'elevenlabs-secret';
+    process.env.TRIPO_API_KEY = 'tripo-secret';
+    process.env.MESHY_API_KEY = 'meshy-secret';
+
+    expect(getProviderCandidates('video_generation').map((provider) => provider.id))
+      .toEqual(['fal', 'replicate']);
+    expect(getProviderCandidates('tts').map((provider) => provider.id))
+      .toEqual(['deepgram', 'cartesia', 'elevenlabs']);
+    expect(getProviderCandidates('3d_generation').map((provider) => provider.id))
+      .toEqual(['fal', 'tripo', 'meshy']);
+
+    const serialized = JSON.stringify([
+      ...getProviderCandidates('video_generation'),
+      ...getProviderCandidates('tts'),
+      ...getProviderCandidates('3d_generation'),
+    ]);
+    expect(serialized).not.toContain('fal-secret');
+    expect(serialized).not.toContain('elevenlabs-secret');
+    expect(serialized).not.toContain('meshy-secret');
+  });
 });
 
 describe('stock media engine', () => {
