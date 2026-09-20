@@ -47,6 +47,29 @@ describe('Nayla action contracts', () => {
     expect(JSON.stringify(providers)).not.toContain('secret-value');
   });
 
+  it('parses an explicit Vast GPU workload without exposing credentials', () => {
+    process.env.VAST_API_KEY = 'vast-secret';
+
+    const action = parseNaylaAction(JSON.stringify({
+      action: 'RUN_GPU_JOB',
+      provider: 'vast',
+      workload: 'video',
+      jobType: 'video-upscale',
+      inputUrls: ['https://cdn.example/input.mp4'],
+    }));
+
+    expect(action).not.toBeNull();
+    expect(action).toMatchObject({
+      action: 'RUN_GPU_JOB',
+      provider: 'vast',
+      workload: 'video',
+      jobType: 'video-upscale',
+    });
+    const providers = action ? getAvailableProvidersForAction(action) : [];
+    expect(providers.map((provider) => provider.id)).toEqual(['vast']);
+    expect(JSON.stringify(providers)).not.toContain('vast-secret');
+  });
+
   it('records the detailed ElevenLabs and Tripo toolsets', () => {
     expect(getProviderDefinition('elevenlabs')?.capabilities).toEqual(expect.arrayContaining([
       'tts',

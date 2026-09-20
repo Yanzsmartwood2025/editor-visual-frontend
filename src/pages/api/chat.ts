@@ -12,6 +12,9 @@ import {
   parseNaylaAction,
   type NaylaAction,
 } from '../../lib/naylaActions';
+import { startVastGpuJob } from '../../lib/gpu/orchestrator';
+import { resolveRequestPublicBaseUrl } from '../../lib/gpu/requestUrl';
+import type { GpuWorkload } from '../../lib/gpu/profiles';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
 const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
@@ -98,7 +101,22 @@ const describeActionPlan = (action: NaylaAction) => {
   };
 };
 
-const executeValidatedAction = async (action: NaylaAction) => {
+const inferGpuWorkload = (action: Extract<NaylaAction, { action: 'RUN_GPU_JOB' }>): GpuWorkload | null => {
+  if (action.workload) return action.workload;
+
+  const normalized = action.jobType.toLowerCase();
+  if (/\b(probe|test|prueba|diagnostic)/.test(normalized)) return 'probe';
+  if (/\b(video|clip|movie|animation)/.test(normalized)) return 'video';
+  if (/\b(3d|mesh|model|rig|texture)/.test(normalized)) return '3d';
+  if (/\b(audio|voice|speech|music|sound|voz|musica|sonido)/.test(normalized)) return 'audio';
+  if (/\b(image|photo|picture|foto|imagen)/.test(normalized)) return 'image';
+  return null;
+};
+
+const executeValidatedAction = async (
+  action: NaylaAction,
+  context: { userId: string; appBaseUrl: string }
+) => {
   if (action.action === 'SEARCH_MEDIA') {
     const search = await searchStockMedia({
       query: action.query,
@@ -121,6 +139,44 @@ const executeValidatedAction = async (action: NaylaAction) => {
     return action;
   }
 
+  if (action.action === 'RUN_GPU_JOB') {
+    if (action.provider === 'runpod') {
+      return describeActionPlan(action);
+    }
+
+    const workload = inferGpuWorkload(action);
+    if (!workload) {
+      return {
+        ...describeActionPlan(action),
+        text: 'Preparé la tarea GPU, pero necesito clasificarla como image, video, audio, 3d o probe antes de alquilar una máquina.',
+      };
+    }
+
+    const job = await startVastGpuJob({
+      userId: context.userId,
+      input: {
+        workload,
+        recipe: action.jobType,
+        prompt: action.prompt,
+        inputUrls: action.inputUrls,
+      },
+      appBaseUrl: context.appBaseUrl,
+    });
+
+    return {
+      ...action,
+      workload,
+      provider: 'vast' as const,
+      gpuJobId: job.id,
+      status: job.status,
+      executionReady: true,
+      requiresConfirmation: false,
+      job,
+      text:
+        'GPU Vast.ai iniciada con límite de gasto y vencimiento automático. Nayla guardará el resultado en R2/Bóveda y destruirá la instancia al terminar.',
+    };
+  }
+
   return describeActionPlan(action);
 };
 
@@ -129,8 +185,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
+  let firebaseUser;
   try {
-    await requireFirebaseUser(req);
+    firebaseUser = await requireFirebaseUser(req);
   } catch {
     return res.status(401).json({ error: 'Token Firebase inválido.' });
   }
@@ -160,6 +217,8 @@ REGLAS DE SEGURIDAD Y EJECUCIÓN:
 - Nunca pidas, muestres, inventes ni repitas API keys, tokens o secretos.
 - Solo puedes usar proveedores y capacidades que aparecen en el catálogo seguro de este prompt.
 - Si el usuario no elige proveedor, omite "provider": el servidor elegirá uno configurado.
+- Usa RUN_GPU_JOB solo cuando el usuario pida explícitamente Vast/GPU/modelo propio/proceso local pesado, o cuando la tarea requiera un worker GPU propio. Para generación normal usa GENERATE_IMAGE / GENERATE_VIDEO / GENERATE_AUDIO / GENERATE_3D.
+- Los trabajos Vast tienen presupuesto, lease y destrucción automática. No inventes precios ni prometas que una GPU fue alquilada: el servidor lo decide.
 - No afirmes que una generación pagada terminó. Tu trabajo es devolver una acción validada; el servidor decide si la ejecuta.
 - Clonación/cambio de voz debe tratarse como una función que requiere una muestra autorizada y consentimiento del titular.
 - No inventes URLs. Para BUILD_TIMELINE copia solo URLs presentes en mediaLibrary/currentTimeline.
@@ -218,13 +277,17 @@ Incluye solo los campos necesarios.
 }
 mode: text_to_3d, image_to_3d, multiview_to_3d, texture, optimize, rig, animate, retarget.
 
-6) GPU:
+6) GPU propia / Vast:
 {
   "action": "RUN_GPU_JOB",
-  "jobType": "nombre corto del proceso",
+  "provider": "vast",
+  "workload": "video",
+  "jobType": "nombre-corto-del-proceso",
   "prompt": "opcional",
   "inputUrls": ["https://..."]
 }
+workload debe ser: "probe" | "image" | "video" | "audio" | "3d".
+"probe" sirve únicamente para probar que la máquina GPU puede arrancar y apagarse correctamente.
 
 7) Construir timeline con medios existentes:
 {
@@ -326,7 +389,10 @@ Si una petición combina pasos, elige la PRIMERA acción necesaria. El resultado
     const action = parseNaylaAction(responseText);
     if (action) {
       try {
-        const executed = await executeValidatedAction(action);
+        const executed = await executeValidatedAction(action, {
+          userId: firebaseUser.uid,
+          appBaseUrl: resolveRequestPublicBaseUrl(req),
+        });
         return res.status(200).json(executed);
       } catch (error) {
         const message = error instanceof Error ? error.message : 'La acción de Nayla no pudo ejecutarse.';

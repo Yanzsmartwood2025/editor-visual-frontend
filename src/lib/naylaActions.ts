@@ -89,6 +89,7 @@ export const naylaActionSchema = z.discriminatedUnion('action', [
   z.object({
     action: z.literal('RUN_GPU_JOB'),
     provider: gpuProviderSchema.optional(),
+    workload: z.enum(['probe', 'image', 'video', 'audio', '3d']).optional(),
     jobType: z.string().trim().min(1).max(100),
     prompt: z.string().max(3000).optional(),
     inputUrls: z.array(urlSchema).max(20).optional(),
