@@ -5,6 +5,12 @@ CREATE TABLE IF NOT EXISTS public.render_requests (
   status TEXT NOT NULL DEFAULT 'started'
     CHECK (status IN ('started', 'completed', 'failed')),
   output_url TEXT,
+  r2_key TEXT,
+  project_id UUID,
+  thread_id UUID,
+  engine TEXT,
+  usage JSONB NOT NULL DEFAULT '{}'::jsonb,
+  gallery_item_id UUID,
   error_message TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   completed_at TIMESTAMPTZ
@@ -36,3 +42,29 @@ CREATE POLICY render_requests_deny_authenticated
   TO authenticated
   USING (false)
   WITH CHECK (false);
+
+
+ALTER TABLE public.render_requests
+  ADD COLUMN IF NOT EXISTS project_id UUID,
+  ADD COLUMN IF NOT EXISTS thread_id UUID,
+  ADD COLUMN IF NOT EXISTS r2_key TEXT,
+  ADD COLUMN IF NOT EXISTS engine TEXT,
+  ADD COLUMN IF NOT EXISTS usage JSONB NOT NULL DEFAULT '{}'::jsonb,
+  ADD COLUMN IF NOT EXISTS gallery_item_id UUID;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conname = 'render_requests_gallery_item_fkey'
+  ) THEN
+    ALTER TABLE public.render_requests
+      ADD CONSTRAINT render_requests_gallery_item_fkey
+      FOREIGN KEY (gallery_item_id)
+      REFERENCES public.galeria_multimedia(id)
+      ON DELETE SET NULL;
+  END IF;
+END $$;
+
+CREATE INDEX IF NOT EXISTS render_requests_gallery_item_idx
+  ON public.render_requests (gallery_item_id);
