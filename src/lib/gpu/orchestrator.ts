@@ -10,6 +10,7 @@ import {
   insertGpuJob,
   listExpiredGpuJobs,
   updateGpuJob,
+  updateGpuJobIfStatus,
   type GpuJobRow,
 } from './jobStore';
 import {
@@ -322,7 +323,7 @@ export const startVastGpuJob = async ({
       },
     });
 
-    job = await updateGpuJob(job.id, {
+    const bootingJob = await updateGpuJobIfStatus(job.id, 'renting', {
       instance_id: instance.instanceId,
       status: 'booting',
       started_at: new Date().toISOString(),
@@ -337,6 +338,18 @@ export const startVastGpuJob = async ({
         },
       },
     });
+
+    if (bootingJob) {
+      job = bootingJob;
+    } else {
+      // El worker pudo terminar durante los pocos milisegundos entre crear la
+      // instancia y guardar su ID. No revivimos el job: destruimos la GPU ya.
+      await destroyVastInstance(instance.instanceId);
+      job = await updateGpuJob(job.id, {
+        instance_id: instance.instanceId,
+        destroyed_at: new Date().toISOString(),
+      });
+    }
   } catch (error) {
     await updateGpuJob(job.id, {
       status: 'failed',
@@ -525,12 +538,16 @@ export const finishGpuJob = async ({
       });
     } catch (destroyError) {
       job = await updateGpuJob(job.id, {
-        status: finalStatus === 'completed' ? 'cleanup_pending' : finalStatus,
+        status: 'cleanup_pending',
         error_message:
           finalStatus === 'completed'
             ? 'La salida terminó, pero la GPU quedó pendiente de destrucción automática.'
-            : job.error_message,
+            : (job.error_message || 'El trabajo falló y la GPU quedó pendiente de destrucción automática.'),
         lease_expires_at: new Date(Date.now() - 1000).toISOString(),
+        metadata: {
+          ...job.metadata,
+          terminalStatus: finalStatus,
+        },
       });
       console.error('[gpu] Error destruyendo instancia tras callback:', destroyError);
     }
