@@ -1589,7 +1589,7 @@ export default function NaylaCore() {
   };
 
   const confirmGpuQuote = async (computeSelectionId: string) => {
-    if (!gpuQuote?.available || !gpuQuoteRequest) return;
+    if (!gpuQuoteRequest || !computeSelectionId) return;
 
     const currentSession = session || await getFirebaseSession();
     if (!currentSession) {
@@ -1599,6 +1599,29 @@ export default function NaylaCore() {
 
     setGpuQuoteConfirming(true);
     try {
+      // Re-cotizamos la MISMA tarjeta justo antes de reservar. El token de
+      // selección también incluye el precio, así que una oferta modificada no
+      // puede sustituirse silenciosamente por otra.
+      const verifyResponse = await fetch('/api/gpu/quote', {
+        method: 'POST',
+        headers: firebaseHeaders(currentSession, { 'Content-Type': 'application/json' }),
+        body: JSON.stringify({
+          ...gpuQuoteRequest,
+          computeSelectionId,
+        }),
+      });
+      const verifyPayload = await verifyResponse.json().catch(() => ({}));
+      if (!verifyResponse.ok || verifyPayload.error) {
+        throw new Error(verifyPayload.error || 'No se pudo verificar la GPU seleccionada.');
+      }
+
+      const verifiedQuote = verifyPayload.quote as GpuQuoteView | null;
+      if (!verifiedQuote?.available) {
+        setGpuQuote(verifiedQuote || null);
+        return;
+      }
+      setGpuQuote(verifiedQuote);
+
       const response = await fetch('/api/gpu/jobs', {
         method: 'POST',
         headers: firebaseHeaders(currentSession, { 'Content-Type': 'application/json' }),
@@ -1621,7 +1644,9 @@ export default function NaylaCore() {
       }
 
       const job = payload.job || {};
-      const selectedCard = gpuQuote.cards?.find((card) => card.selectionId === computeSelectionId);
+      const selectedCard = verifiedQuote.cards?.find(
+        (card) => card.selectionId === computeSelectionId
+      );
       const gpuJobId = payload.gpuJobId || job.id;
       if (!gpuJobId) throw new Error('Nayla Compute no devolvió un identificador de trabajo.');
 
@@ -1641,9 +1666,10 @@ export default function NaylaCore() {
             status: job.status || 'booting',
             engine: 'nayla-compute',
             gpuJobId,
-            gpuName: job.gpuName ?? selectedCard?.gpuName ?? gpuQuote.gpuName ?? null,
-            hourlyPrice: job.hourlyPrice ?? selectedCard?.hourlyPrice ?? gpuQuote.hourlyPrice ?? null,
-            estimatedMaxCost: job.estimatedMaxCost ?? selectedCard?.estimatedMaxCost ?? gpuQuote.estimatedMaxCost ?? null,
+            gpuName: job.gpuName ?? selectedCard?.gpuName ?? verifiedQuote.gpuName ?? null,
+            hourlyPrice: job.hourlyPrice ?? selectedCard?.hourlyPrice ?? verifiedQuote.hourlyPrice ?? null,
+            estimatedMaxCost:
+              job.estimatedMaxCost ?? selectedCard?.estimatedMaxCost ?? verifiedQuote.estimatedMaxCost ?? null,
             runtimeCostEstimate: job.runtimeCostEstimate ?? null,
           },
         },
