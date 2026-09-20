@@ -90,6 +90,24 @@ export const updateGpuJob = async (
   return data as GpuJobRow;
 };
 
+export const updateGpuJobIfStatus = async (
+  jobId: string,
+  expectedStatus: string,
+  patch: Record<string, unknown>
+): Promise<GpuJobRow | null> => {
+  const supabase = getGpuSupabaseAdmin();
+  const { data, error } = await supabase
+    .from('gpu_jobs')
+    .update(patch)
+    .eq('id', jobId)
+    .eq('status', expectedStatus)
+    .select('*')
+    .maybeSingle();
+
+  if (error) throw error;
+  return (data as GpuJobRow | null) || null;
+};
+
 export const getGpuJob = async (jobId: string): Promise<GpuJobRow | null> => {
   const supabase = getGpuSupabaseAdmin();
   const { data, error } = await supabase
