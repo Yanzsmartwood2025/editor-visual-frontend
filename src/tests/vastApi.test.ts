@@ -117,6 +117,9 @@ describe('Vast API adapter', () => {
     expect(created.instanceId).toBe(12345);
     expect(calls[0]?.url).toContain('/asks/99/');
     expect(calls[0]?.body.cancel_unavail).toBe(true);
+    expect(calls[0]?.body.runtype).toBe('args');
+    expect(calls[0]?.body.onstart).toBe('bash');
+    expect(calls[0]?.body.args).toEqual(['-lc', 'echo ok']);
     expect(calls[0]?.body.env).toEqual({ TEST_ONLY: '1' });
 
     await destroyVastInstance(12345);
