@@ -34,6 +34,18 @@ describe('Vast API adapter', () => {
     expect(JSON.stringify(account)).not.toContain('must-not-escape');
   });
 
+  it('fails clearly when the API key cannot expose the account balance', async () => {
+    process.env.VAST_API_KEY = 'vast-secret';
+
+    vi.stubGlobal('fetch', vi.fn(async () =>
+      new Response(JSON.stringify({ id: 7 }), { status: 200 })
+    ));
+
+    await expect(getVastAccountSummary()).rejects.toThrow(
+      'no permite leer el saldo'
+    );
+  });
+
   it('searches only verified on-demand offers inside the GPU caps', async () => {
     process.env.VAST_API_KEY = 'vast-secret';
     let receivedBody: any;
