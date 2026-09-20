@@ -27,7 +27,7 @@ export type Model3DAsset = {
   };
 };
 
-const isGlbFile = (file: Pick<File, 'name' | 'type'>) => {
+export const isSupportedModel3DFile = (file: Pick<File, 'name' | 'type'>) => {
   const extension = file.name.split('.').pop()?.toLowerCase();
   return extension === 'glb' || file.type === 'model/gltf-binary';
 };
@@ -46,7 +46,7 @@ export const uploadModel3DToBoveda = async ({
   metadata?: NonNullable<Model3DAsset['metadata']>;
 }): Promise<Model3DAsset> => {
   if (!session?.user?.id) throw new Error('Debes iniciar sesión para guardar modelos 3D.');
-  if (!isGlbFile(file)) throw new Error('Por ahora la Bóveda 3D acepta archivos GLB.');
+  if (!isSupportedModel3DFile(file)) throw new Error('Por ahora la Bóveda 3D acepta archivos GLB.');
   if (file.size > 150 * 1024 * 1024) {
     throw new Error('El modelo supera 150 MB. Optimízalo antes de subirlo a la Bóveda web.');
   }
