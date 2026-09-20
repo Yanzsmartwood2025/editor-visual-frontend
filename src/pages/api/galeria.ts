@@ -10,7 +10,7 @@ const hydratePrivateUrl = (item: Record<string, any>) => {
   if (!item?.r2_key) return item;
   return {
     ...item,
-    url: createR2PresignedGetUrl({ key: item.r2_key, expiresIn: 900 }).url,
+    url: createR2PresignedGetUrl({ key: item.r2_key, expiresIn: 3600 }).url,
   };
 };
 
