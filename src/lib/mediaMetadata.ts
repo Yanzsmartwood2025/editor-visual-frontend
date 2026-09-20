@@ -6,6 +6,13 @@ export type MediaMetadata = {
   aspectRatio?: number;
   aspectRatioLabel?: string;
   durationInSeconds?: number;
+  sourceProvider?: string;
+  sourceUrl?: string;
+  creator?: string;
+  creatorUrl?: string;
+  licenseName?: string;
+  licenseUrl?: string;
+  attribution?: string;
 };
 
 const gcd = (a: number, b: number): number => {
