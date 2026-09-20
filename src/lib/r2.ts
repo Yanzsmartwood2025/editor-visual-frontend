@@ -1,5 +1,12 @@
 import { createHmac, createHash } from 'crypto';
-import { DeleteObjectCommand, HeadObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import {
+  DeleteObjectCommand,
+  GetBucketCorsCommand,
+  HeadObjectCommand,
+  PutBucketCorsCommand,
+  PutObjectCommand,
+  S3Client,
+} from '@aws-sdk/client-s3';
 
 const r2Config = () => {
   const accountId = process.env.CLOUDFLARE_R2_ACCOUNT_ID;
@@ -28,6 +35,83 @@ async function client() {
       },
     }),
   };
+}
+
+
+const NAYLA_CORS_RULE_ID = 'nayla-direct-uploads';
+const NAYLA_PRODUCTION_ORIGIN = 'https://editor-visual-frontend-cauc.vercel.app';
+
+const isTrustedNaylaOrigin = (origin?: string | null) => {
+  if (!origin) return false;
+  if (origin === NAYLA_PRODUCTION_ORIGIN) return true;
+  if (origin === 'http://localhost:3000' || origin === 'http://127.0.0.1:3000') return true;
+
+  try {
+    const parsed = new URL(origin);
+    if (parsed.protocol !== 'https:') return false;
+    return /^editor-visual-frontend-cauc(?:-[a-z0-9-]+)?\.vercel\.app$/i.test(parsed.hostname);
+  } catch {
+    return false;
+  }
+};
+
+export async function ensureNaylaR2UploadCors(origin?: string | null) {
+  if (!isTrustedNaylaOrigin(origin)) return false;
+
+  const { config, s3 } = await client();
+  let currentRules: any[] = [];
+
+  try {
+    const current = await s3.send(new GetBucketCorsCommand({ Bucket: config.bucket }));
+    currentRules = Array.isArray(current.CORSRules) ? current.CORSRules : [];
+  } catch (error: any) {
+    const code = String(error?.name || error?.Code || error?.code || '');
+    if (!/NoSuchCORS|NoSuchCORSConfiguration|NotFound/i.test(code)) {
+      console.warn('Nayla no pudo leer la política de subida de la Bóveda:', error);
+      return false;
+    }
+  }
+
+  const existingRule = currentRules.find((rule) => rule?.ID === NAYLA_CORS_RULE_ID);
+  const existingOrigins = Array.isArray(existingRule?.AllowedOrigins)
+    ? existingRule.AllowedOrigins.filter((value: unknown): value is string => typeof value === 'string')
+    : [];
+  const allowedOrigins = Array.from(new Set([
+    ...existingOrigins,
+    NAYLA_PRODUCTION_ORIGIN,
+    origin!,
+  ]));
+
+  const hasRequiredRule =
+    existingRule &&
+    allowedOrigins.every((value) => existingOrigins.includes(value)) &&
+    ['GET', 'HEAD', 'PUT'].every((method) => existingRule.AllowedMethods?.includes(method)) &&
+    existingRule.AllowedHeaders?.includes('*');
+
+  if (hasRequiredRule) return true;
+
+  const nextRules = [
+    ...currentRules.filter((rule) => rule?.ID !== NAYLA_CORS_RULE_ID),
+    {
+      ID: NAYLA_CORS_RULE_ID,
+      AllowedOrigins: allowedOrigins,
+      AllowedMethods: ['GET', 'HEAD', 'PUT'],
+      AllowedHeaders: ['*'],
+      ExposeHeaders: ['ETag'],
+      MaxAgeSeconds: 3600,
+    },
+  ];
+
+  try {
+    await s3.send(new PutBucketCorsCommand({
+      Bucket: config.bucket,
+      CORSConfiguration: { CORSRules: nextRules },
+    }));
+    return true;
+  } catch (error) {
+    console.warn('Nayla no pudo actualizar automáticamente la política de subida de la Bóveda:', error);
+    return false;
+  }
 }
 
 const encodeRfc3986 = (value: string) =>
