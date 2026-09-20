@@ -4,7 +4,7 @@ const VAST_BASE_URL =
   process.env.VAST_API_BASE_URL?.trim().replace(/\/$/, '') ||
   'https://console.vast.ai/api/v0';
 
-type VastOffer = {
+export type VastOffer = {
   id: number;
   gpu_name?: string;
   gpu_ram?: number;
@@ -116,7 +116,7 @@ export const searchVastOffers = async (
       ['reliability', 'desc'],
     ],
     type: 'on-demand',
-    limit: 20,
+    limit: 100,
     allocated_storage: profile.diskGb,
   };
 
