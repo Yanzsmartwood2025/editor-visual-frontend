@@ -1517,63 +1517,201 @@ export default function NaylaCore() {
     return () => clearTimeout(timer);
   }, [showIntro, session, authChecked, authError]);
 
-  const cargarDatosUsuario = async (userId: string) => {
-    try {
-      // Cargar Bodega
-      const currentSession = session || await getFirebaseSession();
-      const galeriaResponse = currentSession ? await fetch('/api/galeria', {
+  const cargarMensajesDelChat = async (
+    currentSession: FirebaseSession,
+    threadId: string
+  ) => {
+    const response = await fetch('/api/chat/messages?threadId=' + encodeURIComponent(threadId) + '&limit=100', {
+      headers: firebaseHeaders(currentSession),
+    });
+    const payload = await response.json().catch(() => ({})) as { messages?: any[]; error?: string };
+
+    if (!response.ok) {
+      throw new Error(payload.error || 'No se pudo cargar el historial del chat.');
+    }
+
+    const loaded = (payload.messages || [])
+      .filter((message) => message.role === 'user' || message.role === 'assistant')
+      .map((message) => ({
+        role: message.role === 'user' ? 'user' as const : 'ai' as const,
+        text: String(message.content || ''),
+        actionPlan: message.action && typeof message.action === 'object'
+          ? {
+              action: String(message.action.action || 'ACTION'),
+              status: message.action.status,
+              providers: message.action.selectedProvider
+                ? [message.action.selectedProvider]
+                : (Array.isArray(message.action.availableProviders) ? message.action.availableProviders : []),
+              gpuJobId: message.action.gpuJobId,
+              mediaJobId: message.action.mediaJobId,
+              gpuName: message.action.job?.gpuName ?? message.action.quote?.gpuName ?? null,
+              hourlyPrice: message.action.job?.hourlyPrice ?? message.action.quote?.hourlyPrice ?? null,
+              estimatedMaxCost: message.action.job?.estimatedMaxCost ?? message.action.quote?.estimatedMaxCost ?? null,
+              runtimeCostEstimate: message.action.job?.runtimeCostEstimate ?? null,
+            }
+          : undefined,
+      }));
+
+    setChatMessages(loaded);
+  };
+
+  const cargarProyectoActivo = async (
+    projectId: string,
+    currentSession: FirebaseSession
+  ) => {
+    setActiveProjectId(projectId);
+    setChatAttachmentIds([]);
+    setVideoResultadoUrl(null);
+
+    const [galeriaResponse, proyectoResponse, threadsResponse] = await Promise.all([
+      fetch('/api/galeria?projectId=' + encodeURIComponent(projectId), {
         headers: firebaseHeaders(currentSession),
-      }) : null;
-      const galeriaPayload = galeriaResponse ? await galeriaResponse.json() as { data?: any[]; error?: string } : null;
-      const galeriaData = galeriaPayload?.data;
+      }),
+      fetch('/api/proyectos?projectId=' + encodeURIComponent(projectId), {
+        headers: firebaseHeaders(currentSession),
+      }),
+      fetch('/api/chat/threads?projectId=' + encodeURIComponent(projectId), {
+        headers: firebaseHeaders(currentSession),
+      }),
+    ]);
 
-      if (galeriaResponse?.ok && galeriaData) {
-        const modelos = galeriaData
-          .filter((item) => item.tipo === 'modelo3d')
-          .map((item) => ({
-            id: item.id,
-            url: item.url,
-            tipo: 'modelo3d' as const,
-            nombre: item.nombre,
-            creado_en: item.creado_en,
-            esOverlay: false as const,
-            etiqueta: item.etiqueta || 'M',
-            fuente: item.fuente,
-            metadata: item.metadata || {},
-            r2_key: item.r2_key || null,
-            project_id: item.project_id || null,
-            thread_id: item.thread_id || null,
-            privacy: item.privacy || 'private'
-          }));
+    const galeriaPayload = await galeriaResponse.json().catch(() => ({})) as { data?: any[]; error?: string };
+    if (!galeriaResponse.ok) throw new Error(galeriaPayload.error || 'No se pudo cargar la Bóveda del proyecto.');
+    const galeriaData = galeriaPayload.data || [];
 
-        const galeria = galeriaData
-          .filter((item) => ['foto', 'video', 'audio'].includes(item.tipo))
-          .map(item => ({
-            id: item.id,
-            url: item.url,
-            tipo: item.tipo,
-            nombre: item.nombre,
-            creado_en: item.creado_en,
-            esOverlay: item.esOverlay,
-            etiqueta: item.etiqueta,
-            fuente: item.fuente,
-            metadata: item.metadata || {},
-            r2_key: item.r2_key || null,
-            project_id: item.project_id || null,
-            thread_id: item.thread_id || null,
-            privacy: item.privacy || 'private'
-          }));
+    const modelos = galeriaData
+      .filter((item) => item.tipo === 'modelo3d')
+      .map((item) => ({
+        id: item.id,
+        url: item.url,
+        tipo: 'modelo3d' as const,
+        nombre: item.nombre,
+        creado_en: item.creado_en,
+        esOverlay: false as const,
+        etiqueta: item.etiqueta || 'M',
+        fuente: item.fuente,
+        metadata: item.metadata || {},
+        r2_key: item.r2_key || null,
+        project_id: item.project_id || null,
+        thread_id: item.thread_id || null,
+        privacy: item.privacy || 'private'
+      }));
 
-        setModelos3d(modelos);
-        setModelo3dActivoId((current) =>
-          current && modelos.some((item) => item.id === current)
-            ? current
-            : modelos[0]?.id || null
-        );
-        setGaleriaMultimedia(galeria);
+    const galeria = galeriaData
+      .filter((item) => ['foto', 'video', 'audio'].includes(item.tipo))
+      .map((item) => ({
+        id: item.id,
+        url: item.url,
+        tipo: item.tipo,
+        nombre: item.nombre,
+        creado_en: item.creado_en,
+        esOverlay: item.esOverlay,
+        etiqueta: item.etiqueta,
+        fuente: item.fuente,
+        metadata: item.metadata || {},
+        r2_key: item.r2_key || null,
+        project_id: item.project_id || null,
+        thread_id: item.thread_id || null,
+        privacy: item.privacy || 'private'
+      }));
+
+    setModelos3d(modelos);
+    setModelo3dActivoId(modelos[0]?.id || null);
+    setGaleriaMultimedia(galeria);
+
+    const proyectoPayload = await proyectoResponse.json().catch(() => ({})) as {
+      data?: { linea_de_tiempo?: any[] };
+      error?: string;
+    };
+    if (!proyectoResponse.ok) throw new Error(proyectoPayload.error || 'No se pudo cargar el timeline del proyecto.');
+
+    const timeline = Array.isArray(proyectoPayload.data?.linea_de_tiempo)
+      ? proyectoPayload.data!.linea_de_tiempo!
+      : [];
+    setLineaDeTiempo(timeline);
+
+    const firstVisual = timeline.find((item: any) => item.tipo === 'video' || item.tipo === 'foto');
+    if (firstVisual) {
+      setMediaActivaUrl(firstVisual.url);
+      setClipSeleccionado(firstVisual.id);
+      let persistedMetadata = firstVisual.metadata ||
+        galeriaData.find((item: any) => item.id === firstVisual.mediaId)?.metadata;
+
+      if (!persistedMetadata?.aspectRatioLabel) {
+        try {
+          persistedMetadata = await probeMediaUrl(firstVisual.url, firstVisual.tipo);
+        } catch (error) {
+          console.warn('No se pudo recuperar el formato del primer clip del proyecto.', error);
+        }
+      }
+      adoptarFormatoVisual(persistedMetadata);
+    } else {
+      setMediaActivaUrl(null);
+      setClipSeleccionado(null);
+    }
+
+    const threadsPayload = await threadsResponse.json().catch(() => ({})) as { threads?: any[]; error?: string };
+    if (!threadsResponse.ok) throw new Error(threadsPayload.error || 'No se pudieron cargar los chats del proyecto.');
+
+    let threadList = (threadsPayload.threads || []).filter((thread) => thread.status !== 'archived');
+    let selectedThread = threadList[0] || null;
+
+    if (!selectedThread) {
+      const createResponse = await fetch('/api/chat/threads', {
+        method: 'POST',
+        headers: firebaseHeaders(currentSession, { 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ projectId, title: 'Nuevo chat' }),
+      });
+      const createPayload = await createResponse.json().catch(() => ({})) as { thread?: any; error?: string };
+      if (!createResponse.ok || !createPayload.thread) {
+        throw new Error(createPayload.error || 'No se pudo crear el chat inicial del proyecto.');
+      }
+      selectedThread = createPayload.thread;
+      threadList = [selectedThread];
+    }
+
+    setChatThreads(threadList);
+    setActiveThreadId(selectedThread.id);
+    await cargarMensajesDelChat(currentSession, selectedThread.id);
+  };
+
+  const cargarDatosUsuario = async (userId: string, preferredProjectId?: string) => {
+    try {
+      const currentSession = session || await getFirebaseSession();
+      if (!currentSession) return;
+
+      const projectsResponse = await fetch('/api/projects', {
+        headers: firebaseHeaders(currentSession),
+      });
+      const projectsPayload = await projectsResponse.json().catch(() => ({})) as { projects?: NaylaProject[]; error?: string };
+      if (!projectsResponse.ok) throw new Error(projectsPayload.error || 'No se pudieron cargar los proyectos.');
+
+      let activeProjects = (projectsPayload.projects || []).filter((project) => project.status !== 'archived');
+
+      if (!activeProjects.length) {
+        const createResponse = await fetch('/api/projects', {
+          method: 'POST',
+          headers: firebaseHeaders(currentSession, { 'Content-Type': 'application/json' }),
+          body: JSON.stringify({ name: 'Proyecto principal' }),
+        });
+        const createPayload = await createResponse.json().catch(() => ({})) as { project?: NaylaProject; error?: string };
+        if (!createResponse.ok || !createPayload.project) {
+          throw new Error(createPayload.error || 'No se pudo crear el proyecto principal.');
+        }
+        activeProjects = [createPayload.project];
       }
 
-      // Cargar Plantillas (Moldes)
+      setProjects(activeProjects);
+
+      const requestedProject =
+        activeProjects.find((project) => project.id === preferredProjectId) ||
+        activeProjects.find((project) => project.id === activeProjectId) ||
+        activeProjects[0];
+
+      if (requestedProject) {
+        await cargarProyectoActivo(requestedProject.id, currentSession);
+      }
+
       const { data: plantillasData, error: plantillasError } = await supabase
         .from('plantillas_usuario')
         .select('*')
@@ -1581,40 +1719,11 @@ export default function NaylaCore() {
         .order('created_at', { ascending: true });
 
       if (!plantillasError && plantillasData) {
-        setMoldesScripts(plantillasData.map(p => ({
-          id: p.id,
-          nombre: p.nombre,
-          codigo: p.codigo_script
+        setMoldesScripts(plantillasData.map((projectTemplate) => ({
+          id: projectTemplate.id,
+          nombre: projectTemplate.nombre,
+          codigo: projectTemplate.codigo_script
         })));
-      }
-
-      // Cargar Línea de Tiempo
-      const proyectoResponse = currentSession ? await fetch('/api/proyectos', {
-        headers: firebaseHeaders(currentSession),
-      }) : null;
-      const proyectoPayload = proyectoResponse ? await proyectoResponse.json() as { data?: { linea_de_tiempo?: any[] } | null; error?: string } : null;
-      const proyectoData = proyectoPayload?.data;
-
-      if (proyectoResponse?.ok && proyectoData && proyectoData.linea_de_tiempo) {
-        setLineaDeTiempo(proyectoData.linea_de_tiempo);
-        // Si hay clips, establecer el primero que sea video/foto como mediaActivaUrl
-        const clipsVisuales = proyectoData.linea_de_tiempo.filter((c: any) => c.tipo === 'video' || c.tipo === 'foto');
-        if (clipsVisuales.length > 0 && !mediaActivaUrl) {
-          setMediaActivaUrl(clipsVisuales[0].url);
-          setClipSeleccionado(clipsVisuales[0].id);
-          let persistedMetadata = clipsVisuales[0].metadata ||
-            galeriaData?.find((item: any) => item.url === clipsVisuales[0].url)?.metadata;
-
-          if (!persistedMetadata?.aspectRatioLabel) {
-            try {
-              persistedMetadata = await probeMediaUrl(clipsVisuales[0].url, clipsVisuales[0].tipo);
-            } catch (error) {
-              console.warn('No se pudo recuperar el formato del primer clip del proyecto.', error);
-            }
-          }
-
-          adoptarFormatoVisual(persistedMetadata);
-        }
       }
     } catch (err) {
       console.error('Error al cargar los datos del usuario:', err);
