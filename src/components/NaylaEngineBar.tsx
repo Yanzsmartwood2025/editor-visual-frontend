@@ -59,10 +59,12 @@ export function NaylaEngineBar({
   session,
   mode,
   onModeChange,
+  compact = false,
 }: {
   session: FirebaseSession | null;
   mode: NaylaEngineMode;
   onModeChange: (mode: NaylaEngineMode) => void;
+  compact?: boolean;
 }) {
   const [catalog, setCatalog] = useState<SystemCatalog | null>(null);
   const [openPanel, setOpenPanel] = useState<'cloud' | 'compute' | 'energy' | null>(null);
@@ -134,17 +136,18 @@ export function NaylaEngineBar({
   );
 
   const buttonStyle = (active: boolean): React.CSSProperties => ({
-    flex: 1,
+    flex: compact ? '0 0 auto' : 1,
     minWidth: 0,
     border: active ? '1px solid #f4f4f4' : '1px solid #333',
-    borderRadius: 10,
+    borderRadius: compact ? 999 : 10,
     background: active ? '#f1f1f1' : '#0b0b0b',
     color: active ? '#050505' : '#d4d4d4',
-    padding: '8px 10px',
-    fontSize: '0.72rem',
+    padding: compact ? '5px 8px' : '8px 10px',
+    fontSize: compact ? '0.61rem' : '0.72rem',
     fontWeight: 750,
-    letterSpacing: '0.04em',
+    letterSpacing: compact ? '0.02em' : '0.04em',
     cursor: 'pointer',
+    whiteSpace: 'nowrap',
   });
 
   const togglePanel = (panel: 'cloud' | 'compute' | 'energy') => {
@@ -154,39 +157,51 @@ export function NaylaEngineBar({
   };
 
   return (
-    <div style={{ position: 'relative', background: '#050505', borderBottom: '1px solid #1a1a1a' }}>
-      <div style={{ display: 'flex', gap: 8, padding: '9px 12px' }}>
+    <div style={{
+      position: compact ? 'static' : 'relative',
+      background: compact ? 'transparent' : '#050505',
+      borderBottom: compact ? 'none' : '1px solid #1a1a1a',
+      minWidth: 0,
+    }}>
+      <div style={{
+        display: 'flex',
+        gap: compact ? 5 : 8,
+        padding: compact ? 0 : '9px 12px',
+        alignItems: 'center',
+        overflowX: compact ? 'auto' : 'visible',
+        scrollbarWidth: 'none',
+      }}>
         <button
           type="button"
           onClick={() => togglePanel('cloud')}
           style={buttonStyle(mode === 'cloud')}
         >
-          NAYLA CLOUD
+          {compact ? '☁ Cloud' : 'NAYLA CLOUD'}
         </button>
         <button
           type="button"
           onClick={() => togglePanel('compute')}
           style={buttonStyle(mode === 'compute')}
         >
-          NAYLA COMPUTE
+          {compact ? '⚡ Potencia' : 'NAYLA COMPUTE'}
         </button>
         <button
           type="button"
           onClick={() => togglePanel('energy')}
           style={buttonStyle(false)}
         >
-          {energyLabel.toUpperCase()}
+          {compact ? '◌ Energy' : energyLabel.toUpperCase()}
         </button>
       </div>
 
       {openPanel && (
         <div style={{
           position: 'absolute',
-          zIndex: 44,
-          top: '100%',
-          left: 12,
-          right: 12,
-          maxHeight: '52dvh',
+          zIndex: 60,
+          top: compact ? '100%' : '100%',
+          left: compact ? 10 : 12,
+          right: compact ? 10 : 12,
+          maxHeight: compact ? '58dvh' : '52dvh',
           overflowY: 'auto',
           background: 'rgba(8,8,8,0.99)',
           border: '1px solid #3a3a3a',
