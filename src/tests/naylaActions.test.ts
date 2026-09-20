@@ -70,6 +70,39 @@ describe('Nayla action contracts', () => {
     expect(JSON.stringify(providers)).not.toContain('vast-secret');
   });
 
+  it('validates bounded ACE-Step GPU music options', () => {
+    const valid = parseNaylaAction(JSON.stringify({
+      action: 'RUN_GPU_JOB',
+      provider: 'vast',
+      workload: 'audio',
+      jobType: 'ace-step-music',
+      prompt: 'dark cinematic rock instrumental',
+      options: {
+        duration: 30,
+        instrumental: true,
+      },
+    }));
+
+    expect(valid).not.toBeNull();
+    expect(valid).toMatchObject({
+      action: 'RUN_GPU_JOB',
+      workload: 'audio',
+      jobType: 'ace-step-music',
+      options: { duration: 30, instrumental: true },
+    });
+
+    const tooShort = parseNaylaAction(JSON.stringify({
+      action: 'RUN_GPU_JOB',
+      provider: 'vast',
+      workload: 'audio',
+      jobType: 'ace-step-music',
+      prompt: 'short test',
+      options: { duration: 5 },
+    }));
+
+    expect(tooShort).toBeNull();
+  });
+
   it('records the detailed ElevenLabs and Tripo toolsets', () => {
     expect(getProviderDefinition('elevenlabs')?.capabilities).toEqual(expect.arrayContaining([
       'tts',

@@ -13,6 +13,7 @@ import {
   type NaylaAction,
 } from '../../lib/naylaActions';
 import { startVastGpuJob } from '../../lib/gpu/orchestrator';
+import { quoteVastGpuJob } from '../../lib/gpu/quote';
 import { resolveRequestPublicBaseUrl } from '../../lib/gpu/requestUrl';
 import type { GpuWorkload } from '../../lib/gpu/profiles';
 
@@ -152,14 +153,34 @@ const executeValidatedAction = async (
       };
     }
 
+    const gpuInput = {
+      workload,
+      recipe: action.jobType,
+      prompt: action.prompt,
+      inputUrls: action.inputUrls,
+      options: action.options,
+    };
+
+    if (workload !== 'probe') {
+      const quote = await quoteVastGpuJob(gpuInput);
+      return {
+        ...action,
+        workload,
+        provider: 'vast' as const,
+        status: 'awaiting_confirmation' as const,
+        executionReady: quote.available,
+        requiresConfirmation: true,
+        quote,
+        pendingGpuRequest: gpuInput,
+        text: quote.available
+          ? 'Encontré una GPU Vast.ai dentro del presupuesto. Revisa el costo y confirma antes de alquilarla.'
+          : (quote.reason || 'No hay una GPU disponible dentro de los límites de seguridad.'),
+      };
+    }
+
     const job = await startVastGpuJob({
       userId: context.userId,
-      input: {
-        workload,
-        recipe: action.jobType,
-        prompt: action.prompt,
-        inputUrls: action.inputUrls,
-      },
+      input: gpuInput,
       appBaseUrl: context.appBaseUrl,
     });
 
@@ -290,6 +311,21 @@ workload debe ser: "probe" | "image" | "video" | "audio" | "3d".
 "probe" sirve únicamente para probar que la máquina GPU puede arrancar y apagarse correctamente.
 
 RECETAS GPU PROPIAS HABILITADAS:
+- Para generar música con nuestra GPU Vast usa exactamente:
+{
+  "action": "RUN_GPU_JOB",
+  "provider": "vast",
+  "workload": "audio",
+  "jobType": "ace-step-music",
+  "prompt": "descripción musical",
+  "options": {
+    "duration": 30,
+    "instrumental": true
+  }
+}
+La duración permitida en Nayla es de 10 a 90 segundos. Si el usuario entrega letra autorizada, puedes usar "lyrics" y poner "instrumental": false.
+Esta acción SIEMPRE se cotiza primero y requiere confirmación humana antes de alquilar GPU.
+
 - Para convertir UNA imagen existente en un GLB con nuestra GPU usa exactamente:
 {
   "action": "RUN_GPU_JOB",
