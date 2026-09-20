@@ -247,7 +247,980 @@ export const startVastGpuJob = async ({
 
   if (account.balance - estimatedMaxCost < policy.minBalanceReserveUsd) {
     throw new Error(
-      'Saldo protegido: el trabajo podría dejar menos de $' +
+      'Saldo protegido: Vast.ai reporta 
+
+  const callbackToken = randomBytes(32).toString('base64url');
+  const leaseExpiresAt = new Date(
+    Date.now() + (profile.maxRuntimeMinutes + policy.bootGraceMinutes) * 60_000
+  );
+
+  let job = await insertGpuJob({
+    user_id: userId,
+    provider: 'vast',
+    workload: input.workload,
+    status: 'renting',
+    offer_id: Number(offer.id),
+    gpu_name: typeof offer.gpu_name === 'string' ? offer.gpu_name : null,
+    hourly_price: hourlyPrice,
+    estimated_max_cost: estimatedMaxCost,
+    balance_before: account.balance,
+    lease_expires_at: leaseExpiresAt.toISOString(),
+    callback_token_hash: tokenHash(callbackToken),
+    metadata: {
+      request: {
+        recipe: input.recipe || 'default',
+        prompt: input.prompt || null,
+        inputUrls: input.inputUrls || [],
+        options: input.options || {},
+      },
+      profile: {
+        minGpuRamGb: profile.minGpuRamGb,
+        diskGb: profile.diskGb,
+        maxHourlyUsd: profile.maxHourlyUsd,
+        maxRuntimeMinutes: profile.maxRuntimeMinutes,
+      },
+    },
+  });
+
+  const outputKey =
+    profile.outputExtension
+      ? userId + '/gpu/' + job.id + '.' + profile.outputExtension
+      : null;
+
+  const outputUrl =
+    outputKey && profile.outputContentType
+      ? createR2PresignedPutUrl({
+          key: outputKey,
+          contentType: profile.outputContentType,
+          expiresIn: 3600,
+        }).url
+      : null;
+
+  job = await updateGpuJob(job.id, {
+    output_url: outputUrl,
+    output_content_type: profile.outputContentType || null,
+    metadata: {
+      ...job.metadata,
+      outputKey,
+    },
+  });
+
+  const manifestUrl =
+    baseUrl + '/api/gpu/manifest?jobId=' + encodeURIComponent(job.id);
+  const callbackUrl = baseUrl + '/api/gpu/callback';
+  const label =
+    'nayla-gpu-' + input.workload + '-' + job.id.slice(0, 8);
+
+  try {
+    const instance = await createVastInstance({
+      offerId: Number(offer.id),
+      image: profile.workerImage,
+      diskGb: profile.diskGb,
+      label,
+      onstart: input.workload === 'probe' ? buildProbeOnstart() : buildWorkerOnstart(),
+      env: {
+        NAYLA_GPU_JOB_ID: job.id,
+        NAYLA_GPU_MANIFEST_URL: manifestUrl,
+        NAYLA_GPU_CALLBACK_URL: callbackUrl,
+        NAYLA_GPU_CALLBACK_TOKEN: callbackToken,
+      },
+    });
+
+    const bootingJob = await updateGpuJobIfStatus(job.id, 'renting', {
+      instance_id: instance.instanceId,
+      status: 'booting',
+      started_at: new Date().toISOString(),
+      metadata: {
+        ...job.metadata,
+        offer: {
+          id: Number(offer.id),
+          gpuName: offer.gpu_name || null,
+          gpuRamMb: Number(offer.gpu_ram) || null,
+          reliability: Number(offer.reliability) || null,
+          inetDown: Number(offer.inet_down) || null,
+        },
+      },
+    });
+
+    if (bootingJob) {
+      job = bootingJob;
+    } else {
+      // El worker pudo terminar durante los pocos milisegundos entre crear la
+      // instancia y guardar su ID. No revivimos el job: destruimos la GPU ya.
+      await destroyVastInstance(instance.instanceId);
+      job = await updateGpuJob(job.id, {
+        instance_id: instance.instanceId,
+        destroyed_at: new Date().toISOString(),
+      });
+    }
+  } catch (error) {
+    await updateGpuJob(job.id, {
+      status: 'failed',
+      error_message: (
+        error instanceof Error ? error.message : 'No se pudo crear la instancia GPU'
+      ).slice(0, 2000),
+      completed_at: new Date().toISOString(),
+    }).catch(() => undefined);
+    throw error;
+  }
+
+  return publicJob(job);
+};
+
+export const getGpuManifest = async ({
+  jobId,
+  token,
+}: {
+  jobId: string;
+  token: string;
+}) => {
+  const job = await getGpuJob(jobId);
+  if (!job || !job.callback_token_hash) {
+    throw new Error('Trabajo GPU no encontrado.');
+  }
+
+  const actual = Buffer.from(tokenHash(token), 'hex');
+  const expected = Buffer.from(job.callback_token_hash, 'hex');
+  if (actual.length !== expected.length || !timingSafeEqual(actual, expected)) {
+    throw new Error('Token GPU inválido.');
+  }
+
+  if (
+    job.lease_expires_at &&
+    new Date(job.lease_expires_at).getTime() < Date.now()
+  ) {
+    throw new Error('El lease GPU ya expiró.');
+  }
+
+  const profile = getGpuProfile(job.workload as GpuWorkload);
+  const outputKey = job.metadata?.outputKey as string | null | undefined;
+  const outputUpload =
+    outputKey && profile.outputContentType
+      ? createR2PresignedPutUrl({
+          key: outputKey,
+          contentType: profile.outputContentType,
+          expiresIn: 3600,
+        })
+      : null;
+
+  await updateGpuJob(job.id, { status: 'processing' }).catch(() => undefined);
+
+  return {
+    jobId: job.id,
+    workload: job.workload,
+    recipe: job.metadata?.request?.recipe || 'default',
+    prompt: job.metadata?.request?.prompt || null,
+    inputUrls: job.metadata?.request?.inputUrls || [],
+    options: job.metadata?.request?.options || {},
+    deadline: job.lease_expires_at,
+    output: outputUpload
+      ? {
+          uploadUrl: outputUpload.uploadUrl,
+          publicUrl: outputUpload.url,
+          contentType: outputUpload.contentType,
+          key: outputUpload.key,
+        }
+      : null,
+  };
+};
+
+export const finishGpuJob = async ({
+  jobId,
+  token,
+  status,
+  error,
+  metadata,
+}: {
+  jobId: string;
+  token: string;
+  status: 'completed' | 'failed';
+  error?: string | null;
+  metadata?: Record<string, unknown>;
+}) => {
+  let job = await getGpuJob(jobId);
+  if (!job || !job.callback_token_hash) {
+    throw new Error('Trabajo GPU no encontrado.');
+  }
+
+  const actual = Buffer.from(tokenHash(token), 'hex');
+  const expected = Buffer.from(job.callback_token_hash, 'hex');
+  if (actual.length !== expected.length || !timingSafeEqual(actual, expected)) {
+    throw new Error('Token GPU inválido.');
+  }
+
+  if (['completed', 'failed', 'expired'].includes(job.status)) {
+    return publicJob(job);
+  }
+
+  const now = new Date();
+  let finalStatus: 'completed' | 'failed' = status;
+  let finalError = error?.slice(0, 2000) || null;
+  let galleryItemId: string | null = job.gallery_item_id;
+  const workload = job.workload as GpuWorkload;
+  const outputKey = job.metadata?.outputKey as string | null | undefined;
+
+  try {
+    if (status === 'completed' && workload !== 'probe') {
+      if (!outputKey || !job.output_url) {
+        throw new Error('El trabajo GPU terminó sin una salida R2 preparada.');
+      }
+
+      const head = await headR2Object(outputKey);
+      const galleryType = workloadToGalleryType(workload);
+      if (!galleryType) {
+        throw new Error('Tipo de salida GPU no soportado.');
+      }
+
+      const supabase = getGpuSupabaseAdmin();
+      const prefix = workloadLabelPrefix(workload);
+      const { count, error: countError } = await supabase
+        .from('galeria_multimedia')
+        .select('id', { count: 'exact', head: true })
+        .eq('user_id', job.user_id)
+        .eq('tipo', galleryType);
+      if (countError) throw countError;
+
+      const galleryItem = {
+        id: randomUUID(),
+        user_id: job.user_id,
+        url: job.output_url,
+        tipo: galleryType,
+        nombre:
+          'Nayla GPU ' + workload + ' ' + job.id.slice(0, 8) + '.' +
+          (getGpuProfile(workload).outputExtension || 'bin'),
+        creado_en: now.toISOString(),
+        esOverlay: false,
+        etiqueta: prefix + ((count || 0) + 1),
+        fuente: 'gpu:vast',
+        metadata: {
+          sourceProvider: 'vast',
+          gpuJobId: job.id,
+          gpuName: job.gpu_name,
+          recipe: job.metadata?.request?.recipe || 'default',
+          contentType: head.contentType || job.output_content_type,
+          contentLength: head.contentLength || null,
+          workerMetadata: metadata || {},
+        },
+      };
+
+      const { data: inserted, error: insertError } = await supabase
+        .from('galeria_multimedia')
+        .insert(galleryItem)
+        .select('id')
+        .single();
+      if (insertError) throw insertError;
+      galleryItemId = inserted.id as string;
+    }
+  } catch (outputError) {
+    finalStatus = 'failed';
+    finalError = (
+      outputError instanceof Error ? outputError.message : 'Salida GPU inválida'
+    ).slice(0, 2000);
+  }
+
+  const runtimeCost = computeRuntimeCost(job, now);
+
+  job = await updateGpuJob(job.id, {
+    status: finalStatus,
+    error_message:
+      finalStatus === 'failed' ? finalError || 'El worker GPU falló.' : null,
+    gallery_item_id: galleryItemId,
+    runtime_cost_estimate: runtimeCost,
+    completed_at: now.toISOString(),
+    metadata: {
+      ...job.metadata,
+      callbackMetadata: metadata || {},
+    },
+  });
+
+  if (job.instance_id) {
+    try {
+      await destroyVastInstance(job.instance_id);
+      job = await updateGpuJob(job.id, {
+        destroyed_at: new Date().toISOString(),
+      });
+    } catch (destroyError) {
+      job = await updateGpuJob(job.id, {
+        status: 'cleanup_pending',
+        error_message:
+          finalStatus === 'completed'
+            ? 'La salida terminó, pero la GPU quedó pendiente de destrucción automática.'
+            : (job.error_message || 'El trabajo falló y la GPU quedó pendiente de destrucción automática.'),
+        lease_expires_at: new Date(Date.now() - 1000).toISOString(),
+        metadata: {
+          ...job.metadata,
+          terminalStatus: finalStatus,
+        },
+      });
+      console.error('[gpu] Error destruyendo instancia tras callback:', destroyError);
+    }
+  }
+
+  return publicJob(job);
+};
+
+export const getGpuJobStatusForUser = async ({
+  jobId,
+  userId,
+}: {
+  jobId: string;
+  userId: string;
+}) => {
+  const job = await getGpuJobForUser(jobId, userId);
+  if (!job) return null;
+  return publicJob(job);
+};
+ +
+      account.balance.toFixed(2) +
+      ' disponibles; este trabajo tiene un tope estimado de 
+
+  const callbackToken = randomBytes(32).toString('base64url');
+  const leaseExpiresAt = new Date(
+    Date.now() + (profile.maxRuntimeMinutes + policy.bootGraceMinutes) * 60_000
+  );
+
+  let job = await insertGpuJob({
+    user_id: userId,
+    provider: 'vast',
+    workload: input.workload,
+    status: 'renting',
+    offer_id: Number(offer.id),
+    gpu_name: typeof offer.gpu_name === 'string' ? offer.gpu_name : null,
+    hourly_price: hourlyPrice,
+    estimated_max_cost: estimatedMaxCost,
+    balance_before: account.balance,
+    lease_expires_at: leaseExpiresAt.toISOString(),
+    callback_token_hash: tokenHash(callbackToken),
+    metadata: {
+      request: {
+        recipe: input.recipe || 'default',
+        prompt: input.prompt || null,
+        inputUrls: input.inputUrls || [],
+        options: input.options || {},
+      },
+      profile: {
+        minGpuRamGb: profile.minGpuRamGb,
+        diskGb: profile.diskGb,
+        maxHourlyUsd: profile.maxHourlyUsd,
+        maxRuntimeMinutes: profile.maxRuntimeMinutes,
+      },
+    },
+  });
+
+  const outputKey =
+    profile.outputExtension
+      ? userId + '/gpu/' + job.id + '.' + profile.outputExtension
+      : null;
+
+  const outputUrl =
+    outputKey && profile.outputContentType
+      ? createR2PresignedPutUrl({
+          key: outputKey,
+          contentType: profile.outputContentType,
+          expiresIn: 3600,
+        }).url
+      : null;
+
+  job = await updateGpuJob(job.id, {
+    output_url: outputUrl,
+    output_content_type: profile.outputContentType || null,
+    metadata: {
+      ...job.metadata,
+      outputKey,
+    },
+  });
+
+  const manifestUrl =
+    baseUrl + '/api/gpu/manifest?jobId=' + encodeURIComponent(job.id);
+  const callbackUrl = baseUrl + '/api/gpu/callback';
+  const label =
+    'nayla-gpu-' + input.workload + '-' + job.id.slice(0, 8);
+
+  try {
+    const instance = await createVastInstance({
+      offerId: Number(offer.id),
+      image: profile.workerImage,
+      diskGb: profile.diskGb,
+      label,
+      onstart: input.workload === 'probe' ? buildProbeOnstart() : buildWorkerOnstart(),
+      env: {
+        NAYLA_GPU_JOB_ID: job.id,
+        NAYLA_GPU_MANIFEST_URL: manifestUrl,
+        NAYLA_GPU_CALLBACK_URL: callbackUrl,
+        NAYLA_GPU_CALLBACK_TOKEN: callbackToken,
+      },
+    });
+
+    const bootingJob = await updateGpuJobIfStatus(job.id, 'renting', {
+      instance_id: instance.instanceId,
+      status: 'booting',
+      started_at: new Date().toISOString(),
+      metadata: {
+        ...job.metadata,
+        offer: {
+          id: Number(offer.id),
+          gpuName: offer.gpu_name || null,
+          gpuRamMb: Number(offer.gpu_ram) || null,
+          reliability: Number(offer.reliability) || null,
+          inetDown: Number(offer.inet_down) || null,
+        },
+      },
+    });
+
+    if (bootingJob) {
+      job = bootingJob;
+    } else {
+      // El worker pudo terminar durante los pocos milisegundos entre crear la
+      // instancia y guardar su ID. No revivimos el job: destruimos la GPU ya.
+      await destroyVastInstance(instance.instanceId);
+      job = await updateGpuJob(job.id, {
+        instance_id: instance.instanceId,
+        destroyed_at: new Date().toISOString(),
+      });
+    }
+  } catch (error) {
+    await updateGpuJob(job.id, {
+      status: 'failed',
+      error_message: (
+        error instanceof Error ? error.message : 'No se pudo crear la instancia GPU'
+      ).slice(0, 2000),
+      completed_at: new Date().toISOString(),
+    }).catch(() => undefined);
+    throw error;
+  }
+
+  return publicJob(job);
+};
+
+export const getGpuManifest = async ({
+  jobId,
+  token,
+}: {
+  jobId: string;
+  token: string;
+}) => {
+  const job = await getGpuJob(jobId);
+  if (!job || !job.callback_token_hash) {
+    throw new Error('Trabajo GPU no encontrado.');
+  }
+
+  const actual = Buffer.from(tokenHash(token), 'hex');
+  const expected = Buffer.from(job.callback_token_hash, 'hex');
+  if (actual.length !== expected.length || !timingSafeEqual(actual, expected)) {
+    throw new Error('Token GPU inválido.');
+  }
+
+  if (
+    job.lease_expires_at &&
+    new Date(job.lease_expires_at).getTime() < Date.now()
+  ) {
+    throw new Error('El lease GPU ya expiró.');
+  }
+
+  const profile = getGpuProfile(job.workload as GpuWorkload);
+  const outputKey = job.metadata?.outputKey as string | null | undefined;
+  const outputUpload =
+    outputKey && profile.outputContentType
+      ? createR2PresignedPutUrl({
+          key: outputKey,
+          contentType: profile.outputContentType,
+          expiresIn: 3600,
+        })
+      : null;
+
+  await updateGpuJob(job.id, { status: 'processing' }).catch(() => undefined);
+
+  return {
+    jobId: job.id,
+    workload: job.workload,
+    recipe: job.metadata?.request?.recipe || 'default',
+    prompt: job.metadata?.request?.prompt || null,
+    inputUrls: job.metadata?.request?.inputUrls || [],
+    options: job.metadata?.request?.options || {},
+    deadline: job.lease_expires_at,
+    output: outputUpload
+      ? {
+          uploadUrl: outputUpload.uploadUrl,
+          publicUrl: outputUpload.url,
+          contentType: outputUpload.contentType,
+          key: outputUpload.key,
+        }
+      : null,
+  };
+};
+
+export const finishGpuJob = async ({
+  jobId,
+  token,
+  status,
+  error,
+  metadata,
+}: {
+  jobId: string;
+  token: string;
+  status: 'completed' | 'failed';
+  error?: string | null;
+  metadata?: Record<string, unknown>;
+}) => {
+  let job = await getGpuJob(jobId);
+  if (!job || !job.callback_token_hash) {
+    throw new Error('Trabajo GPU no encontrado.');
+  }
+
+  const actual = Buffer.from(tokenHash(token), 'hex');
+  const expected = Buffer.from(job.callback_token_hash, 'hex');
+  if (actual.length !== expected.length || !timingSafeEqual(actual, expected)) {
+    throw new Error('Token GPU inválido.');
+  }
+
+  if (['completed', 'failed', 'expired'].includes(job.status)) {
+    return publicJob(job);
+  }
+
+  const now = new Date();
+  let finalStatus: 'completed' | 'failed' = status;
+  let finalError = error?.slice(0, 2000) || null;
+  let galleryItemId: string | null = job.gallery_item_id;
+  const workload = job.workload as GpuWorkload;
+  const outputKey = job.metadata?.outputKey as string | null | undefined;
+
+  try {
+    if (status === 'completed' && workload !== 'probe') {
+      if (!outputKey || !job.output_url) {
+        throw new Error('El trabajo GPU terminó sin una salida R2 preparada.');
+      }
+
+      const head = await headR2Object(outputKey);
+      const galleryType = workloadToGalleryType(workload);
+      if (!galleryType) {
+        throw new Error('Tipo de salida GPU no soportado.');
+      }
+
+      const supabase = getGpuSupabaseAdmin();
+      const prefix = workloadLabelPrefix(workload);
+      const { count, error: countError } = await supabase
+        .from('galeria_multimedia')
+        .select('id', { count: 'exact', head: true })
+        .eq('user_id', job.user_id)
+        .eq('tipo', galleryType);
+      if (countError) throw countError;
+
+      const galleryItem = {
+        id: randomUUID(),
+        user_id: job.user_id,
+        url: job.output_url,
+        tipo: galleryType,
+        nombre:
+          'Nayla GPU ' + workload + ' ' + job.id.slice(0, 8) + '.' +
+          (getGpuProfile(workload).outputExtension || 'bin'),
+        creado_en: now.toISOString(),
+        esOverlay: false,
+        etiqueta: prefix + ((count || 0) + 1),
+        fuente: 'gpu:vast',
+        metadata: {
+          sourceProvider: 'vast',
+          gpuJobId: job.id,
+          gpuName: job.gpu_name,
+          recipe: job.metadata?.request?.recipe || 'default',
+          contentType: head.contentType || job.output_content_type,
+          contentLength: head.contentLength || null,
+          workerMetadata: metadata || {},
+        },
+      };
+
+      const { data: inserted, error: insertError } = await supabase
+        .from('galeria_multimedia')
+        .insert(galleryItem)
+        .select('id')
+        .single();
+      if (insertError) throw insertError;
+      galleryItemId = inserted.id as string;
+    }
+  } catch (outputError) {
+    finalStatus = 'failed';
+    finalError = (
+      outputError instanceof Error ? outputError.message : 'Salida GPU inválida'
+    ).slice(0, 2000);
+  }
+
+  const runtimeCost = computeRuntimeCost(job, now);
+
+  job = await updateGpuJob(job.id, {
+    status: finalStatus,
+    error_message:
+      finalStatus === 'failed' ? finalError || 'El worker GPU falló.' : null,
+    gallery_item_id: galleryItemId,
+    runtime_cost_estimate: runtimeCost,
+    completed_at: now.toISOString(),
+    metadata: {
+      ...job.metadata,
+      callbackMetadata: metadata || {},
+    },
+  });
+
+  if (job.instance_id) {
+    try {
+      await destroyVastInstance(job.instance_id);
+      job = await updateGpuJob(job.id, {
+        destroyed_at: new Date().toISOString(),
+      });
+    } catch (destroyError) {
+      job = await updateGpuJob(job.id, {
+        status: 'cleanup_pending',
+        error_message:
+          finalStatus === 'completed'
+            ? 'La salida terminó, pero la GPU quedó pendiente de destrucción automática.'
+            : (job.error_message || 'El trabajo falló y la GPU quedó pendiente de destrucción automática.'),
+        lease_expires_at: new Date(Date.now() - 1000).toISOString(),
+        metadata: {
+          ...job.metadata,
+          terminalStatus: finalStatus,
+        },
+      });
+      console.error('[gpu] Error destruyendo instancia tras callback:', destroyError);
+    }
+  }
+
+  return publicJob(job);
+};
+
+export const getGpuJobStatusForUser = async ({
+  jobId,
+  userId,
+}: {
+  jobId: string;
+  userId: string;
+}) => {
+  const job = await getGpuJobForUser(jobId, userId);
+  if (!job) return null;
+  return publicJob(job);
+};
+ +
+      estimatedMaxCost.toFixed(3) +
+      ' y Nayla conserva 
+
+  const callbackToken = randomBytes(32).toString('base64url');
+  const leaseExpiresAt = new Date(
+    Date.now() + (profile.maxRuntimeMinutes + policy.bootGraceMinutes) * 60_000
+  );
+
+  let job = await insertGpuJob({
+    user_id: userId,
+    provider: 'vast',
+    workload: input.workload,
+    status: 'renting',
+    offer_id: Number(offer.id),
+    gpu_name: typeof offer.gpu_name === 'string' ? offer.gpu_name : null,
+    hourly_price: hourlyPrice,
+    estimated_max_cost: estimatedMaxCost,
+    balance_before: account.balance,
+    lease_expires_at: leaseExpiresAt.toISOString(),
+    callback_token_hash: tokenHash(callbackToken),
+    metadata: {
+      request: {
+        recipe: input.recipe || 'default',
+        prompt: input.prompt || null,
+        inputUrls: input.inputUrls || [],
+        options: input.options || {},
+      },
+      profile: {
+        minGpuRamGb: profile.minGpuRamGb,
+        diskGb: profile.diskGb,
+        maxHourlyUsd: profile.maxHourlyUsd,
+        maxRuntimeMinutes: profile.maxRuntimeMinutes,
+      },
+    },
+  });
+
+  const outputKey =
+    profile.outputExtension
+      ? userId + '/gpu/' + job.id + '.' + profile.outputExtension
+      : null;
+
+  const outputUrl =
+    outputKey && profile.outputContentType
+      ? createR2PresignedPutUrl({
+          key: outputKey,
+          contentType: profile.outputContentType,
+          expiresIn: 3600,
+        }).url
+      : null;
+
+  job = await updateGpuJob(job.id, {
+    output_url: outputUrl,
+    output_content_type: profile.outputContentType || null,
+    metadata: {
+      ...job.metadata,
+      outputKey,
+    },
+  });
+
+  const manifestUrl =
+    baseUrl + '/api/gpu/manifest?jobId=' + encodeURIComponent(job.id);
+  const callbackUrl = baseUrl + '/api/gpu/callback';
+  const label =
+    'nayla-gpu-' + input.workload + '-' + job.id.slice(0, 8);
+
+  try {
+    const instance = await createVastInstance({
+      offerId: Number(offer.id),
+      image: profile.workerImage,
+      diskGb: profile.diskGb,
+      label,
+      onstart: input.workload === 'probe' ? buildProbeOnstart() : buildWorkerOnstart(),
+      env: {
+        NAYLA_GPU_JOB_ID: job.id,
+        NAYLA_GPU_MANIFEST_URL: manifestUrl,
+        NAYLA_GPU_CALLBACK_URL: callbackUrl,
+        NAYLA_GPU_CALLBACK_TOKEN: callbackToken,
+      },
+    });
+
+    const bootingJob = await updateGpuJobIfStatus(job.id, 'renting', {
+      instance_id: instance.instanceId,
+      status: 'booting',
+      started_at: new Date().toISOString(),
+      metadata: {
+        ...job.metadata,
+        offer: {
+          id: Number(offer.id),
+          gpuName: offer.gpu_name || null,
+          gpuRamMb: Number(offer.gpu_ram) || null,
+          reliability: Number(offer.reliability) || null,
+          inetDown: Number(offer.inet_down) || null,
+        },
+      },
+    });
+
+    if (bootingJob) {
+      job = bootingJob;
+    } else {
+      // El worker pudo terminar durante los pocos milisegundos entre crear la
+      // instancia y guardar su ID. No revivimos el job: destruimos la GPU ya.
+      await destroyVastInstance(instance.instanceId);
+      job = await updateGpuJob(job.id, {
+        instance_id: instance.instanceId,
+        destroyed_at: new Date().toISOString(),
+      });
+    }
+  } catch (error) {
+    await updateGpuJob(job.id, {
+      status: 'failed',
+      error_message: (
+        error instanceof Error ? error.message : 'No se pudo crear la instancia GPU'
+      ).slice(0, 2000),
+      completed_at: new Date().toISOString(),
+    }).catch(() => undefined);
+    throw error;
+  }
+
+  return publicJob(job);
+};
+
+export const getGpuManifest = async ({
+  jobId,
+  token,
+}: {
+  jobId: string;
+  token: string;
+}) => {
+  const job = await getGpuJob(jobId);
+  if (!job || !job.callback_token_hash) {
+    throw new Error('Trabajo GPU no encontrado.');
+  }
+
+  const actual = Buffer.from(tokenHash(token), 'hex');
+  const expected = Buffer.from(job.callback_token_hash, 'hex');
+  if (actual.length !== expected.length || !timingSafeEqual(actual, expected)) {
+    throw new Error('Token GPU inválido.');
+  }
+
+  if (
+    job.lease_expires_at &&
+    new Date(job.lease_expires_at).getTime() < Date.now()
+  ) {
+    throw new Error('El lease GPU ya expiró.');
+  }
+
+  const profile = getGpuProfile(job.workload as GpuWorkload);
+  const outputKey = job.metadata?.outputKey as string | null | undefined;
+  const outputUpload =
+    outputKey && profile.outputContentType
+      ? createR2PresignedPutUrl({
+          key: outputKey,
+          contentType: profile.outputContentType,
+          expiresIn: 3600,
+        })
+      : null;
+
+  await updateGpuJob(job.id, { status: 'processing' }).catch(() => undefined);
+
+  return {
+    jobId: job.id,
+    workload: job.workload,
+    recipe: job.metadata?.request?.recipe || 'default',
+    prompt: job.metadata?.request?.prompt || null,
+    inputUrls: job.metadata?.request?.inputUrls || [],
+    options: job.metadata?.request?.options || {},
+    deadline: job.lease_expires_at,
+    output: outputUpload
+      ? {
+          uploadUrl: outputUpload.uploadUrl,
+          publicUrl: outputUpload.url,
+          contentType: outputUpload.contentType,
+          key: outputUpload.key,
+        }
+      : null,
+  };
+};
+
+export const finishGpuJob = async ({
+  jobId,
+  token,
+  status,
+  error,
+  metadata,
+}: {
+  jobId: string;
+  token: string;
+  status: 'completed' | 'failed';
+  error?: string | null;
+  metadata?: Record<string, unknown>;
+}) => {
+  let job = await getGpuJob(jobId);
+  if (!job || !job.callback_token_hash) {
+    throw new Error('Trabajo GPU no encontrado.');
+  }
+
+  const actual = Buffer.from(tokenHash(token), 'hex');
+  const expected = Buffer.from(job.callback_token_hash, 'hex');
+  if (actual.length !== expected.length || !timingSafeEqual(actual, expected)) {
+    throw new Error('Token GPU inválido.');
+  }
+
+  if (['completed', 'failed', 'expired'].includes(job.status)) {
+    return publicJob(job);
+  }
+
+  const now = new Date();
+  let finalStatus: 'completed' | 'failed' = status;
+  let finalError = error?.slice(0, 2000) || null;
+  let galleryItemId: string | null = job.gallery_item_id;
+  const workload = job.workload as GpuWorkload;
+  const outputKey = job.metadata?.outputKey as string | null | undefined;
+
+  try {
+    if (status === 'completed' && workload !== 'probe') {
+      if (!outputKey || !job.output_url) {
+        throw new Error('El trabajo GPU terminó sin una salida R2 preparada.');
+      }
+
+      const head = await headR2Object(outputKey);
+      const galleryType = workloadToGalleryType(workload);
+      if (!galleryType) {
+        throw new Error('Tipo de salida GPU no soportado.');
+      }
+
+      const supabase = getGpuSupabaseAdmin();
+      const prefix = workloadLabelPrefix(workload);
+      const { count, error: countError } = await supabase
+        .from('galeria_multimedia')
+        .select('id', { count: 'exact', head: true })
+        .eq('user_id', job.user_id)
+        .eq('tipo', galleryType);
+      if (countError) throw countError;
+
+      const galleryItem = {
+        id: randomUUID(),
+        user_id: job.user_id,
+        url: job.output_url,
+        tipo: galleryType,
+        nombre:
+          'Nayla GPU ' + workload + ' ' + job.id.slice(0, 8) + '.' +
+          (getGpuProfile(workload).outputExtension || 'bin'),
+        creado_en: now.toISOString(),
+        esOverlay: false,
+        etiqueta: prefix + ((count || 0) + 1),
+        fuente: 'gpu:vast',
+        metadata: {
+          sourceProvider: 'vast',
+          gpuJobId: job.id,
+          gpuName: job.gpu_name,
+          recipe: job.metadata?.request?.recipe || 'default',
+          contentType: head.contentType || job.output_content_type,
+          contentLength: head.contentLength || null,
+          workerMetadata: metadata || {},
+        },
+      };
+
+      const { data: inserted, error: insertError } = await supabase
+        .from('galeria_multimedia')
+        .insert(galleryItem)
+        .select('id')
+        .single();
+      if (insertError) throw insertError;
+      galleryItemId = inserted.id as string;
+    }
+  } catch (outputError) {
+    finalStatus = 'failed';
+    finalError = (
+      outputError instanceof Error ? outputError.message : 'Salida GPU inválida'
+    ).slice(0, 2000);
+  }
+
+  const runtimeCost = computeRuntimeCost(job, now);
+
+  job = await updateGpuJob(job.id, {
+    status: finalStatus,
+    error_message:
+      finalStatus === 'failed' ? finalError || 'El worker GPU falló.' : null,
+    gallery_item_id: galleryItemId,
+    runtime_cost_estimate: runtimeCost,
+    completed_at: now.toISOString(),
+    metadata: {
+      ...job.metadata,
+      callbackMetadata: metadata || {},
+    },
+  });
+
+  if (job.instance_id) {
+    try {
+      await destroyVastInstance(job.instance_id);
+      job = await updateGpuJob(job.id, {
+        destroyed_at: new Date().toISOString(),
+      });
+    } catch (destroyError) {
+      job = await updateGpuJob(job.id, {
+        status: 'cleanup_pending',
+        error_message:
+          finalStatus === 'completed'
+            ? 'La salida terminó, pero la GPU quedó pendiente de destrucción automática.'
+            : (job.error_message || 'El trabajo falló y la GPU quedó pendiente de destrucción automática.'),
+        lease_expires_at: new Date(Date.now() - 1000).toISOString(),
+        metadata: {
+          ...job.metadata,
+          terminalStatus: finalStatus,
+        },
+      });
+      console.error('[gpu] Error destruyendo instancia tras callback:', destroyError);
+    }
+  }
+
+  return publicJob(job);
+};
+
+export const getGpuJobStatusForUser = async ({
+  jobId,
+  userId,
+}: {
+  jobId: string;
+  userId: string;
+}) => {
+  const job = await getGpuJobForUser(jobId, userId);
+  if (!job) return null;
+  return publicJob(job);
+};
+ +
       policy.minBalanceReserveUsd.toFixed(2) +
       ' de reserva. No se alquiló ninguna GPU.'
     );
