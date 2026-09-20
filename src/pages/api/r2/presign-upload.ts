@@ -4,6 +4,7 @@ import { requireFirebaseUser } from '../../../lib/firebaseAdmin';
 import {
   createR2PresignedGetUrl,
   createR2PresignedPutUrl,
+  ensureNaylaR2UploadCors,
 } from '../../../lib/r2';
 import { resolveOwnedWorkspaceScope } from '../../../lib/workspaceStore';
 
@@ -59,6 +60,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       projectId: parsed.data.projectId,
       threadId: parsed.data.threadId,
     });
+
+    const origin = typeof req.headers.origin === 'string' ? req.headers.origin : null;
+    await ensureNaylaR2UploadCors(origin);
 
     const { mediaId, extension, contentType, kind } = parsed.data;
     const detectedKind = detectMediaKind({ contentType, extension });
