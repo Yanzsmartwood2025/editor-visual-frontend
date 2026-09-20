@@ -50,6 +50,72 @@ export const resolveMediaKind = (file: Pick<File, 'name' | 'type'>, fallback?: M
   return fallback || null;
 };
 
+const nextLabelNumber = (
+  items: Array<{ tipo: MediaKind; etiqueta?: string | null }>,
+  tipo: MediaKind
+) => {
+  const prefix = tipo === 'video' ? 'V' : tipo === 'foto' ? 'F' : 'A';
+  const max = items.reduce((current, item) => {
+    if (item.tipo !== tipo || typeof item.etiqueta !== 'string') return current;
+    const match = item.etiqueta.trim().toUpperCase().match(new RegExp(`^${prefix}(\\d+)import type { FirebaseSession } from './firebaseClient';
+import { firebaseHeaders } from './apiClient';
+import { probeMediaFile, type MediaMetadata } from './mediaMetadata';
+
+export type MediaKind = 'foto' | 'video' | 'audio';
+
+export type MediaItem = {
+  id: string;
+  url: string;
+  tipo: MediaKind;
+  nombre: string;
+  creado_en: string;
+  esOverlay: boolean;
+  etiqueta: string;
+  fuente?: string;
+  metadata?: MediaMetadata;
+  r2_key?: string | null;
+  project_id?: string | null;
+  thread_id?: string | null;
+  privacy?: 'private' | 'public';
+};
+
+export type UploadableMediaFile = Pick<File, 'name' | 'type'> & Blob;
+
+type UploadMediaToBodegaParams = {
+  session: FirebaseSession;
+  files: UploadableMediaFile[];
+  existingItems?: MediaItem[];
+  forcedTipo?: MediaKind;
+  fuente?: string;
+  metadataExtra?: Partial<MediaMetadata>;
+  projectId?: string;
+  threadId?: string;
+};
+
+export const SHARED_MEDIA_PENDING_TTL_MS = 24 * 60 * 60 * 1000;
+
+export const resolveMediaKind = (file: Pick<File, 'name' | 'type'>, fallback?: MediaKind): MediaKind | null => {
+  if (file.type.startsWith('image/')) return 'foto';
+  if (file.type.startsWith('video/')) return 'video';
+  if (file.type.startsWith('audio/')) return 'audio';
+
+  const extension = file.name.split('.').pop()?.toLowerCase();
+  if (!extension) return fallback || null;
+
+  if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'avif', 'heic', 'heif'].includes(extension)) return 'foto';
+  if (['mp4', 'mov', 'm4v', 'webm', 'mkv', 'avi'].includes(extension)) return 'video';
+  if (['mp3', 'wav', 'm4a', 'aac', 'ogg', 'opus', 'flac'].includes(extension)) return 'audio';
+
+  return fallback || null;
+};
+
+));
+    if (!match) return current;
+    return Math.max(current, Number(match[1]) || 0);
+  }, 0);
+  return max + 1;
+};
+
 const defaultExtensionForKind = (tipo: MediaKind): string => {
   if (tipo === 'foto') return 'jpg';
   if (tipo === 'video') return 'mp4';
@@ -259,11 +325,11 @@ export const uploadMediaFilesToBodega = async ({
       const tipo = resolveMediaKind(file, forcedTipo) || forcedTipo;
       if (!tipo) throw new Error(`Tipo de archivo no soportado: ${file.name}`);
 
-      const countTipo =
-        existingItems.filter((item) => item.tipo === tipo).length +
-        nuevosItems.filter((item) => item.tipo === tipo).length +
-        1;
       const inicial = tipo === 'video' ? 'V' : tipo === 'foto' ? 'F' : 'A';
+      const countTipo = nextLabelNumber(
+        [...existingItems, ...nuevosItems],
+        tipo
+      );
       const id = createMediaId();
       const extension = getExtension(file, tipo);
 
