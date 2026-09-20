@@ -3441,32 +3441,10 @@ if (!session) {
                 />
               </div>
             )}
-            {!isCleanMode && (
-              <div
-                style={{
-                  position: 'absolute',
-                  top: '12px',
-                  left: '12px',
-                  zIndex: 35,
-                  borderRadius: '10px',
-                  border: '1px solid rgba(255,255,255,0.18)',
-                  backgroundColor: 'rgba(0,0,0,0.62)',
-                  backdropFilter: 'blur(8px)',
-                  padding: '5px 9px',
-                  color: '#e5e5e5',
-                  fontSize: '0.62rem',
-                  fontWeight: 700,
-                  letterSpacing: '0.06em',
-                  pointerEvents: 'none'
-                }}
-              >
-                FORMATO {canvasRatio.replace('/', ':')} · {canvasPreviewDimensions.width}×{canvasPreviewDimensions.height}
-              </div>
-            )}
-
-            {/* CUADRO / BOTÓN FLOTANTE SUPERIOR DERECHO DE NAYLA IA */}
+            {/* BOTÓN FLOTANTE DE NAYLA */}
             {!isCleanMode && (
               <button
+                aria-label="Abrir Nayla"
                 onClick={(e) => {
                   e.stopPropagation();
                   setIsAiModalOpen(true);
@@ -3476,28 +3454,24 @@ if (!session) {
                   top: '12px',
                   right: '12px',
                   zIndex: 35,
-                  borderRadius: '12px',
-                  border: '1px solid rgba(var(--glow-color-rgb), calc(var(--glow-intensity) * 0.6))',
-                  backgroundColor: 'var(--glass-bg)',
-                  backdropFilter: 'blur(var(--glass-blur))',
-                  WebkitBackdropFilter: 'blur(var(--glass-blur))',
-                  padding: '5px 10px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '6px',
+                  width: '42px',
+                  height: '42px',
+                  borderRadius: '50%',
+                  border: '2px solid #f4f4f4',
+                  backgroundColor: '#050505',
+                  padding: 0,
+                  display: 'grid',
+                  placeItems: 'center',
                   cursor: 'pointer',
                   color: '#fff',
-                  boxShadow: '0 4px 20px rgba(0,0,0,0.6), 0 0 var(--glow-spread) rgba(var(--glow-color-rgb), var(--glow-intensity))',
-                  transition: 'all 0.2s ease'
+                  boxShadow: '0 4px 18px rgba(0,0,0,0.65)',
                 }}
               >
                 <img
                   src="/assets/imagenes/Icono-intro.jpeg"
                   alt="Nayla"
-                  style={{ width: '22px', height: '22px', borderRadius: '50%', objectFit: 'cover', border: '1px solid #00cc66' }}
+                  style={{ width: '34px', height: '34px', borderRadius: '50%', objectFit: 'cover' }}
                 />
-                <span style={{ fontSize: '0.7rem', fontWeight: 'bold', letterSpacing: '1px', color: '#00ffcc' }}>NAYLA IA</span>
-                <div style={{ width: '6px', height: '6px', backgroundColor: '#00cc66', borderRadius: '50%', boxShadow: '0 0 6px #00cc66' }} />
               </button>
             )}
 
@@ -3688,51 +3662,82 @@ if (!session) {
         }}>
           {/* Header Modal IA */}
           <div style={{
-            padding: '16px 20px',
-            borderBottom: '1px solid #1a1a1a',
-            backgroundColor: '#0a0a0a',
+            minHeight: '74px',
+            padding: '12px 18px',
+            borderBottom: '1px solid #1f1f1f',
+            backgroundColor: '#070707',
             display: 'flex',
             justifyContent: 'space-between',
-            alignItems: 'center'
+            alignItems: 'center',
+            position: 'relative',
+            zIndex: 45,
           }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+            <button
+              type="button"
+              aria-label="Abrir proyectos y canales de Nayla"
+              onClick={() => setProjectMenuOpen((value) => !value)}
+              style={{
+                width: '50px',
+                height: '50px',
+                borderRadius: '50%',
+                border: '2px solid #f4f4f4',
+                background: '#050505',
+                padding: 0,
+                cursor: 'pointer',
+                display: 'grid',
+                placeItems: 'center',
+                boxShadow: projectMenuOpen ? '0 0 0 1px rgba(255,255,255,0.18)' : 'none',
+              }}
+            >
               <img
                 src="/assets/imagenes/Icono-intro.jpeg"
                 alt="Nayla"
-                style={{ width: '42px', height: '42px', borderRadius: '50%', objectFit: 'cover', border: '2px solid #00cc66' }}
+                style={{ width: '40px', height: '40px', borderRadius: '50%', objectFit: 'cover' }}
               />
-              <div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <h3 style={{ margin: 0, color: '#fff', fontSize: '1.1rem', fontWeight: 'bold' }}>Nayla IA</h3>
-                  <span style={{ backgroundColor: '#1a1a1a', color: '#00ffcc', fontSize: '0.75rem', fontWeight: 'bold', padding: '2px 8px', borderRadius: '12px' }}>
-                    {chatMessages.length}
-                  </span>
-                </div>
-                <p style={{ margin: '2px 0 0 0', color: '#888', fontSize: '0.75rem' }}>Asistente Curador de Contenido Inteligente</p>
-              </div>
-            </div>
+            </button>
 
-            {/* Botón de Cerrar X */}
             <button
-              onClick={() => setIsAiModalOpen(false)}
+              aria-label="Cerrar Nayla"
+              onClick={() => {
+                setProjectMenuOpen(false);
+                setIsAiModalOpen(false);
+              }}
               style={{
-                background: '#1a1a1a',
-                border: '1px solid #333',
+                background: '#171717',
+                border: '1px solid #3a3a3a',
                 color: '#fff',
-                width: '38px',
-                height: '38px',
+                width: '42px',
+                height: '42px',
                 borderRadius: '50%',
                 cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                fontSize: '18px',
-                fontWeight: 'bold'
+                display: 'grid',
+                placeItems: 'center',
+                fontSize: '22px',
+                lineHeight: 1,
               }}
             >
               ✕
             </button>
           </div>
+
+          <NaylaProjectMenu
+            open={projectMenuOpen}
+            projects={projects}
+            activeProjectId={activeProjectId}
+            assets={chatChannelAssets}
+            attachedIds={chatAttachmentIds}
+            uploadingKind={channelUploadingKind}
+            onSelectProject={(projectId) => void seleccionarProyectoDesdeChat(projectId)}
+            onNewChat={() => void crearNuevoChat()}
+            onNewProject={() => void crearNuevoProyecto()}
+            onUpload={(kind, files) => void subirArchivosDesdeCanal(kind, files)}
+            onToggleAttachment={toggleChatAttachment}
+            onViewProject={() => {
+              setProjectMenuOpen(false);
+              setIsAiModalOpen(false);
+            }}
+            onDeleteProject={() => void eliminarProyectoActivo()}
+          />
 
           {/* Toggle Fast / Pro */}
           <div style={{ padding: '10px 20px', backgroundColor: '#050505', borderBottom: '1px solid #1a1a1a', display: 'flex', gap: '10px' }}>
@@ -3744,7 +3749,7 @@ if (!session) {
                 borderRadius: '8px',
                 border: '1px solid #333',
                 backgroundColor: selectedAiProvider === 'groq' ? '#222' : 'transparent',
-                color: selectedAiProvider === 'groq' ? '#00ffcc' : '#888',
+                color: selectedAiProvider === 'groq' ? '#fff' : '#888',
                 fontWeight: 'bold',
                 fontSize: '0.85rem',
                 cursor: 'pointer'
@@ -3760,7 +3765,7 @@ if (!session) {
                 borderRadius: '8px',
                 border: '1px solid #333',
                 backgroundColor: selectedAiProvider === 'mistral' ? '#222' : 'transparent',
-                color: selectedAiProvider === 'mistral' ? '#00ffcc' : '#888',
+                color: selectedAiProvider === 'mistral' ? '#fff' : '#888',
                 fontWeight: 'bold',
                 fontSize: '0.85rem',
                 cursor: 'pointer'
@@ -3774,7 +3779,7 @@ if (!session) {
           <div style={{ flex: 1, padding: '20px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '14px' }}>
             {chatMessages.length === 0 ? (
               <div style={{ textAlign: 'center', color: '#666', marginTop: '40px', fontSize: '0.95rem' }}>
-                ¡Hola! Soy Nayla. Dime qué necesitas o pega un enlace para asistirte en la edición.
+                Hola, soy Nayla. ¿En qué puedo ayudarte hoy?
               </div>
             ) : (
               chatMessages.map((msg, i) => (
@@ -3792,7 +3797,7 @@ if (!session) {
                   <div>{msg.text}</div>
                   {msg.actionPlan && (
                     <div style={{ marginTop: '10px', padding: '10px', border: '1px solid #2b2b2b', borderRadius: '10px', backgroundColor: '#080808' }}>
-                      <div style={{ color: '#00ffcc', fontSize: '0.78rem', fontWeight: 700, letterSpacing: '0.04em' }}>
+                      <div style={{ color: '#f2f2f2', fontSize: '0.78rem', fontWeight: 700, letterSpacing: '0.04em' }}>
                         {msg.actionPlan.action.replaceAll('_', ' ')}
                       </div>
                       <div style={{ color: '#999', marginTop: '4px', fontSize: '0.78rem' }}>
@@ -3858,7 +3863,7 @@ if (!session) {
                               <button
                                 onClick={() => importStockCard(card, true).catch((error) => showAlert(error.message || 'No se pudo usar.'))}
                                 disabled={stockImportingId === card.id || !card.mediaUrl}
-                                style={{ padding: '6px 9px', borderRadius: '7px', border: 'none', background: '#00cc66', color: '#000', fontWeight: 700, fontSize: '0.7rem', cursor: stockImportingId === card.id ? 'wait' : 'pointer', opacity: !card.mediaUrl ? 0.45 : 1 }}
+                                style={{ padding: '6px 9px', borderRadius: '7px', border: 'none', background: '#f2f2f2', color: '#050505', fontWeight: 700, fontSize: '0.7rem', cursor: stockImportingId === card.id ? 'wait' : 'pointer', opacity: !card.mediaUrl ? 0.45 : 1 }}
                               >
                                 USAR
                               </button>
@@ -3872,11 +3877,57 @@ if (!session) {
               ))
             )}
             {chatProcessing && (
-              <div style={{ alignSelf: 'flex-start', color: '#00ffcc', padding: '10px', fontSize: '0.9rem', fontStyle: 'italic' }}>
+              <div style={{ alignSelf: 'flex-start', color: '#f2f2f2', padding: '10px', fontSize: '0.9rem', fontStyle: 'italic' }}>
                 Nayla está pensando...
               </div>
             )}
           </div>
+
+          {chatAttachedAssets.length > 0 && (
+            <div style={{
+              display: 'flex',
+              gap: 8,
+              overflowX: 'auto',
+              padding: '8px 12px',
+              borderTop: '1px solid #1f1f1f',
+              backgroundColor: '#080808',
+            }}>
+              {chatAttachedAssets.map((asset) => (
+                <div
+                  key={asset.id}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 7,
+                    flex: '0 0 auto',
+                    maxWidth: 190,
+                    border: '1px solid #333',
+                    borderRadius: 10,
+                    padding: '6px 8px',
+                    background: '#111',
+                    color: '#eee',
+                  }}
+                >
+                  {asset.tipo === 'foto' && asset.url ? (
+                    <img src={asset.url} alt="" style={{ width: 28, height: 28, borderRadius: 6, objectFit: 'cover' }} />
+                  ) : (
+                    <span style={{ width: 28, height: 28, borderRadius: 6, border: '1px solid #333', display: 'grid', placeItems: 'center', fontSize: 11 }}>
+                      {asset.tipo === 'video' ? 'VID' : asset.tipo === 'audio' ? 'AUD' : '3D'}
+                    </span>
+                  )}
+                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 12 }}>{asset.nombre}</span>
+                  <button
+                    type="button"
+                    aria-label={`Quitar ${asset.nombre}`}
+                    onClick={() => toggleChatAttachment(asset)}
+                    style={{ border: 'none', background: 'transparent', color: '#aaa', cursor: 'pointer', fontSize: 16, padding: 0 }}
+                  >
+                    ×
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
 
           {/* Chat Input */}
           <div style={{
@@ -3913,7 +3964,7 @@ if (!session) {
               disabled={chatProcessing}
               style={{
                 padding: '10px 16px',
-                backgroundColor: chatProcessing ? '#333' : '#00cc66',
+                backgroundColor: chatProcessing ? '#333' : '#f2f2f2',
                 color: '#000',
                 border: 'none',
                 borderRadius: '10px',
