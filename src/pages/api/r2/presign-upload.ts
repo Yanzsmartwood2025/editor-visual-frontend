@@ -17,6 +17,28 @@ const schema = z.object({
   threadId: z.string().uuid().optional(),
 });
 
+const detectMediaKind = ({
+  contentType,
+  extension,
+}: {
+  contentType: string;
+  extension: string;
+}): 'foto' | 'video' | 'audio' | 'modelo3d' | null => {
+  const mime = contentType.toLowerCase();
+  const ext = extension.toLowerCase();
+
+  if (mime.startsWith('image/')) return 'foto';
+  if (mime.startsWith('video/')) return 'video';
+  if (mime.startsWith('audio/')) return 'audio';
+  if (mime === 'model/gltf-binary' || ext === 'glb') return 'modelo3d';
+
+  if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'avif', 'heic', 'heif'].includes(ext)) return 'foto';
+  if (['mp4', 'mov', 'm4v', 'webm', 'mkv', 'avi'].includes(ext)) return 'video';
+  if (['mp3', 'wav', 'm4a', 'aac', 'ogg', 'opus', 'flac'].includes(ext)) return 'audio';
+
+  return null;
+};
+
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Usa POST.' });
@@ -39,6 +61,16 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     });
 
     const { mediaId, extension, contentType, kind } = parsed.data;
+    const detectedKind = detectMediaKind({ contentType, extension });
+    if (!detectedKind) {
+      return res.status(415).json({ error: 'Tipo de archivo no soportado.' });
+    }
+    if (detectedKind !== kind) {
+      return res.status(400).json({
+        error: `El archivo corresponde a ${detectedKind}, no a ${kind}.`,
+      });
+    }
+
     const threadSegment = scope.threadId ? `threads/${scope.threadId}` : 'shared';
     const key =
       `${user.uid}/projects/${scope.projectId}/${threadSegment}/${kind}/` +
@@ -49,7 +81,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       contentType,
       expiresIn: 900,
     });
-    const read = createR2PresignedGetUrl({ key, expiresIn: 900 });
+    const read = createR2PresignedGetUrl({ key, expiresIn: 3600 });
 
     return res.status(200).json({
       ...signed,
