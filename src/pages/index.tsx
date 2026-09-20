@@ -14,6 +14,12 @@ import { buildMediaMetadata, getCanvasDimensionsFromRatio, probeMediaUrl, type M
 import { getCompositionDurationInFrames } from '../lib/timelineMetrics';
 import { getFirebaseSession, observeFirebaseSession, signOutFirebase, signInWithCustomTokenValue, type FirebaseSession } from '../lib/firebaseClient';
 import { firebaseHeaders } from '../lib/apiClient';
+import { Model3DWorkspace } from '../components/Model3DWorkspace';
+import {
+  deleteModel3DFromBoveda,
+  uploadModel3DToBoveda,
+  type Model3DAsset,
+} from '../lib/model3d';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://dummy.supabase.co';
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'dummy_key';
@@ -143,6 +149,9 @@ export default function NaylaCore() {
   const [marcoImagenes, setMarcoImagenes] = useState<{ original: string; procesada: string; nombre: string }[]>([]);
   const [marcoProcesando, setMarcoProcesando] = useState(false);
   const [galeriaMultimedia, setGaleriaMultimedia] = useState<MediaItem[]>([]);
+  const [modelos3d, setModelos3d] = useState<Model3DAsset[]>([]);
+  const [modelo3dActivoId, setModelo3dActivoId] = useState<string | null>(null);
+  const [subiendo3d, setSubiendo3d] = useState(false);
   const [lineaDeTiempo, setLineaDeTiempo] = useState<TimelineItem[]>([]);
   const [subtitulos, setSubtitulos] = useState<SubtitleItem[]>([]);
   const [logos, setLogos] = useState<LogoItem[]>([]);
@@ -518,12 +527,39 @@ export default function NaylaCore() {
       setIsChatOpen(true);
       setMobileOverlaysVisible(true);
       openExpandedSurface('chat');
+    } else if (tool.id === 'texto-3d') {
+      setMainNav('3d');
+      setToolMessage('Describe el modelo en el campo CREAR del Estudio 3D.');
+    } else if (tool.id === 'imagen-3d') {
+      setToolMessage(null);
+      void handle3DNaylaAction('image_to_3d');
+    } else if (tool.id === 'multivista-3d') {
+      setToolMessage(null);
+      void handle3DNaylaAction('multiview_to_3d');
+    } else if (tool.id === 'textura-3d') {
+      setToolMessage(null);
+      void handle3DNaylaAction('texture');
+    } else if (tool.id === 'optimizar-3d') {
+      setToolMessage(null);
+      void handle3DNaylaAction('optimize');
+    } else if (tool.id === 'rig-3d') {
+      setToolMessage(null);
+      void handle3DNaylaAction('rig');
+    } else if (tool.id === 'animar-3d') {
+      setToolMessage(null);
+      void handle3DNaylaAction('animate');
     } else if (['marco', 'delogo', 'script', 'supervisor', 'youtube', 'pixabay', 'musicastock', 'noticias', 'artistas', 'stockvideo', 'sonidos', 'iafoto', 'enlace', 'render'].includes(tool.id)) {
       setToolMessage(null);
     } else {
       setToolMessage('PRÓXIMAMENTE');
     }
   };
+
+  useEffect(() => {
+    if (mainNav !== '3d') return;
+    if (playerRef.current && !playerRef.current.paused) playerRef.current.pause();
+    setIsPlaying(false);
+  }, [mainNav]);
 
   const seekBy = (seconds: number) => {
     if (!playerRef.current) return;
@@ -816,12 +852,12 @@ export default function NaylaCore() {
     }
   };
 
-  const sendNaylaMessage = async () => {
-    const message = chatInput.trim();
+  const sendNaylaMessage = async (messageOverride?: string) => {
+    const message = (messageOverride ?? chatInput).trim();
     if (!message) return;
     const newMessages: NaylaChatMessage[] = [...chatMessages, { role: 'user', text: message }];
     setChatMessages(newMessages);
-    setChatInput('');
+    if (!messageOverride) setChatInput('');
     setChatProcessing(true);
 
     try {
@@ -894,6 +930,98 @@ export default function NaylaCore() {
     } finally {
       setChatProcessing(false);
     }
+  };
+
+  const handleSubir3D = async (files: FileList) => {
+    const currentSession = session || await getFirebaseSession();
+    if (!currentSession) return showAlert('Debes iniciar sesión para subir modelos 3D.');
+
+    setSubiendo3d(true);
+    try {
+      const nextAssets = [...modelos3d];
+      let firstNew: Model3DAsset | null = null;
+
+      for (const file of Array.from(files)) {
+        const saved = await uploadModel3DToBoveda({
+          session: currentSession,
+          file,
+          existingItems: nextAssets,
+          fuente: 'manual-3d',
+        });
+        nextAssets.push(saved);
+        if (!firstNew) firstNew = saved;
+      }
+
+      setModelos3d(nextAssets);
+      if (firstNew) setModelo3dActivoId(firstNew.id);
+      setMainNav('3d');
+      showAlert(`Modelo${files.length > 1 ? 's' : ''} 3D guardado${files.length > 1 ? 's' : ''} en la Bóveda 3D.`);
+    } catch (error: any) {
+      console.error('Error subiendo modelo 3D:', error);
+      showAlert(error?.message || 'No se pudo guardar el modelo 3D.');
+    } finally {
+      setSubiendo3d(false);
+    }
+  };
+
+  const handleEliminar3D = async (asset: Model3DAsset) => {
+    const currentSession = session || await getFirebaseSession();
+    if (!currentSession) return showAlert('Debes iniciar sesión para eliminar modelos 3D.');
+
+    try {
+      await deleteModel3DFromBoveda({ session: currentSession, item: asset });
+      const next = modelos3d.filter((item) => item.id !== asset.id);
+      setModelos3d(next);
+      if (modelo3dActivoId === asset.id) setModelo3dActivoId(next[0]?.id || null);
+      showAlert('Modelo 3D eliminado de la Bóveda.');
+    } catch (error: any) {
+      console.error('Error eliminando modelo 3D:', error);
+      showAlert(error?.message || 'No se pudo eliminar el modelo 3D.');
+    }
+  };
+
+  const handle3DNaylaAction = async (
+    mode: 'text_to_3d' | 'image_to_3d' | 'multiview_to_3d' | 'texture' | 'optimize' | 'rig' | 'animate' | 'retarget',
+    prompt?: string
+  ) => {
+    let instruction = '';
+    const active3d = modelos3d.find((item) => item.id === modelo3dActivoId) || modelos3d[0];
+
+    if (mode === 'text_to_3d') {
+      if (!prompt?.trim()) return showAlert('Describe primero el modelo que quieres crear.');
+      instruction = `Crea un modelo 3D desde texto con esta descripción: ${prompt.trim()}`;
+    } else if (mode === 'image_to_3d') {
+      const selectedPhoto =
+        galeriaMultimedia.find((item) => item.id === clipSeleccionado && item.tipo === 'foto') ||
+        [...galeriaMultimedia].reverse().find((item) => item.tipo === 'foto');
+      if (!selectedPhoto) return showAlert('Necesito una imagen en la Bóveda para crear el modelo 3D.');
+      instruction = `Crea un modelo 3D usando esta imagen como entrada: ${selectedPhoto.url}`;
+    } else if (mode === 'multiview_to_3d') {
+      const selectedPhotos = galeriaMultimedia.filter(
+        (item) => item.tipo === 'foto' && selectedMediaIds.includes(item.id)
+      );
+      if (selectedPhotos.length < 2) {
+        return showAlert('Selecciona al menos 2 fotos en la Bóveda para una reconstrucción multivista.');
+      }
+      instruction = `Crea un modelo 3D multivista usando estas imágenes: ${selectedPhotos.map((item) => item.url).join(' , ')}`;
+    } else {
+      if (!active3d) return showAlert('Primero selecciona o sube un modelo 3D.');
+      const actionLabel: Record<string, string> = {
+        texture: 'texturiza',
+        optimize: 'optimiza para web',
+        rig: 'haz rigging',
+        animate: 'prepara una animación',
+        retarget: 'haz retargeting de animación',
+      };
+      instruction = `${actionLabel[mode] || mode} este modelo 3D: ${active3d.url}`;
+      if (prompt?.trim()) instruction += `. Instrucción adicional: ${prompt.trim()}`;
+    }
+
+    setMainNav('3d');
+    setIsChatOpen(true);
+    setMobileOverlaysVisible(true);
+    openExpandedSurface('chat');
+    await sendNaylaMessage(instruction);
   };
 
   const descargarIndividual = async (url: string, nombre: string, tipo: string) => {
@@ -1051,18 +1179,40 @@ export default function NaylaCore() {
       const galeriaData = galeriaPayload?.data;
 
       if (galeriaResponse?.ok && galeriaData) {
-        // Adaptar si es necesario, o setear directo si coinciden los campos
-        const galeria = galeriaData.map(item => ({
-          id: item.id,
-          url: item.url,
-          tipo: item.tipo,
-          nombre: item.nombre,
-          creado_en: item.creado_en,
-          esOverlay: item.esOverlay,
-          etiqueta: item.etiqueta,
-          fuente: item.fuente,
-          metadata: item.metadata || {}
-        }));
+        const modelos = galeriaData
+          .filter((item) => item.tipo === 'modelo3d')
+          .map((item) => ({
+            id: item.id,
+            url: item.url,
+            tipo: 'modelo3d' as const,
+            nombre: item.nombre,
+            creado_en: item.creado_en,
+            esOverlay: false as const,
+            etiqueta: item.etiqueta || 'M',
+            fuente: item.fuente,
+            metadata: item.metadata || {}
+          }));
+
+        const galeria = galeriaData
+          .filter((item) => ['foto', 'video', 'audio'].includes(item.tipo))
+          .map(item => ({
+            id: item.id,
+            url: item.url,
+            tipo: item.tipo,
+            nombre: item.nombre,
+            creado_en: item.creado_en,
+            esOverlay: item.esOverlay,
+            etiqueta: item.etiqueta,
+            fuente: item.fuente,
+            metadata: item.metadata || {}
+          }));
+
+        setModelos3d(modelos);
+        setModelo3dActivoId((current) =>
+          current && modelos.some((item) => item.id === current)
+            ? current
+            : modelos[0]?.id || null
+        );
         setGaleriaMultimedia(galeria);
       }
 
@@ -2224,6 +2374,24 @@ if (!session) {
                       </label>
                     );
                   }
+                  if (tool.id === 'subir-3d') {
+                    return (
+                      <label key={tool.id} className="sub-btn">
+                        <div className="icon-container">{tool.icon}</div>
+                        <span>{subiendo3d ? 'Subiendo…' : tool.nombre}</span>
+                        <input
+                          type="file"
+                          accept=".glb,model/gltf-binary"
+                          disabled={subiendo3d}
+                          onChange={(e) => {
+                            if (e.target.files?.length) void handleSubir3D(e.target.files);
+                            e.currentTarget.value = '';
+                          }}
+                          style={{ display: 'none' }}
+                        />
+                      </label>
+                    );
+                  }
                   if (tool.isFilter) {
                     return (
                       <button key={tool.id} className={`sub-btn ${filtroGaleria === tool.filterValue ? 'active' : ''}`} onClick={() => setFiltroGaleria(tool.filterValue)}>
@@ -2576,6 +2744,30 @@ if (!session) {
               touchAction: 'manipulation'
             }}
           >
+            {mainNav === '3d' && (
+              <div
+                onPointerDown={(e) => e.stopPropagation()}
+                onPointerUp={(e) => e.stopPropagation()}
+                onDoubleClick={(e) => e.stopPropagation()}
+                style={{
+                  position: 'absolute',
+                  inset: 0,
+                  zIndex: 60,
+                  backgroundColor: '#000',
+                  cursor: 'default'
+                }}
+              >
+                <Model3DWorkspace
+                  assets={modelos3d}
+                  activeAssetId={modelo3dActivoId}
+                  uploading={subiendo3d}
+                  onSelect={(asset) => setModelo3dActivoId(asset.id)}
+                  onUpload={(files) => void handleSubir3D(files)}
+                  onDelete={(asset) => void handleEliminar3D(asset)}
+                  onNaylaAction={(mode, prompt) => void handle3DNaylaAction(mode, prompt)}
+                />
+              </div>
+            )}
             {!isCleanMode && (
               <div
                 style={{
@@ -2736,7 +2928,7 @@ if (!session) {
 
         {/* SECCIÓN INFERIOR: LÍNEA DE TIEMPO Y TRACKS */}
         <div style={{
-          display: isCleanMode ? 'none' : 'flex',
+          display: (isCleanMode || mainNav === '3d') ? 'none' : 'flex',
           height: '76px',
           flexShrink: 0,
           backgroundColor: '#050505',
