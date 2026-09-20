@@ -37,6 +37,7 @@ const schema = z.object({
   prompt: z.string().max(5000).optional(),
   inputUrls: z.array(safeUrl).max(12).optional(),
   options: z.record(z.string(), z.unknown()).optional(),
+  computeSelectionId: z.string().min(20).max(128).optional(),
 });
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
@@ -58,7 +59,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
 
   try {
-    const quote = await quoteVastGpuJob(parsed.data);
+    const { computeSelectionId, ...gpuInput } = parsed.data;
+    const quote = await quoteVastGpuJob(gpuInput, computeSelectionId);
     res.setHeader('Cache-Control', 'no-store, max-age=0');
     return res.status(200).json({ quote });
   } catch (error) {
