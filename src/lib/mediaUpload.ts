@@ -91,7 +91,7 @@ const readApiJson = async <T extends Record<string, unknown>>(response: Response
   }
 };
 
-const uploadFileToR2 = async (
+export const uploadFileToR2 = async (
   file: UploadableMediaFile,
   session: FirebaseSession,
   mediaId: string,
@@ -140,7 +140,7 @@ const uploadFileToR2 = async (
   return { key: signed.key, url: signed.url };
 };
 
-const deleteR2Files = async (keys: string[], session: FirebaseSession) => {
+export const deleteR2Files = async (keys: string[], session: FirebaseSession) => {
   await Promise.allSettled(keys.map(async (key) => {
     await fetch('/api/r2/delete', {
       method: 'DELETE',
