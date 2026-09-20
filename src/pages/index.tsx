@@ -1738,9 +1738,9 @@ export default function NaylaCore() {
           ? {
               action: String(message.action.action || 'ACTION'),
               status: message.action.status,
-              providers: message.action.selectedProvider
-                ? [message.action.selectedProvider]
-                : (Array.isArray(message.action.availableProviders) ? message.action.availableProviders : []),
+              engine: message.action.engine === 'nayla-compute' || message.action.action === 'RUN_GPU_JOB'
+                ? 'nayla-compute'
+                : 'nayla-cloud',
               gpuJobId: message.action.gpuJobId,
               mediaJobId: message.action.mediaJobId,
               gpuName: message.action.job?.gpuName ?? message.action.quote?.gpuName ?? null,
