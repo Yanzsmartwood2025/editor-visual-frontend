@@ -367,3 +367,13 @@ revoke all on public.memoria_nayla from anon, authenticated;
 revoke all on public.proyectos_usuario from anon, authenticated;
 revoke all on public.render_requests from anon, authenticated;
 revoke all on public.gpu_jobs from anon, authenticated;
+
+
+-- Carry any legacy single-project timeline into the user's principal private project.
+update public.editor_projects project
+set linea_de_tiempo = legacy.linea_de_tiempo,
+    updated_at = greatest(project.updated_at, legacy.updated_at)
+from public.proyectos_usuario legacy
+where project.user_id = legacy.user_id
+  and project.metadata->>'system' = 'legacy-default'
+  and jsonb_array_length(project.linea_de_tiempo) = 0;
