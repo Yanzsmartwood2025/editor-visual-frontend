@@ -344,12 +344,12 @@ export const startMediaJobForUser = async ({
   }
 
   const action = parseAction(job);
-  const candidateIds = Array.isArray(job.metadata?.candidateProviders)
-    ? job.metadata.candidateProviders
+  const candidateIds: MediaProviderId[] = Array.isArray(job.metadata?.candidateProviders)
+    ? (job.metadata.candidateProviders as unknown[])
         .filter((value: unknown): value is MediaProviderId => typeof value === 'string')
     : [job.provider as MediaProviderId];
 
-  const uniqueCandidates = Array.from(new Set(candidateIds))
+  const uniqueCandidates: MediaProviderId[] = Array.from(new Set<MediaProviderId>(candidateIds))
     .filter((provider) => providerCanExecuteAction(provider, action));
 
   if (!uniqueCandidates.length) {
