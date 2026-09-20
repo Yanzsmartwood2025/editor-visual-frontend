@@ -16,6 +16,8 @@ import { getFirebaseSession, observeFirebaseSession, signOutFirebase, signInWith
 import { firebaseHeaders } from '../lib/apiClient';
 import { Model3DWorkspace } from '../components/Model3DWorkspace';
 import { GpuQuoteModal, type GpuQuoteView } from '../components/GpuQuoteModal';
+import { NaylaEngineBar } from '../components/NaylaEngineBar';
+import type { NaylaEngineMode } from '../lib/naylaSystemCatalog';
 import {
   NaylaProjectMenu,
   type NaylaProject,
@@ -68,7 +70,7 @@ type NaylaChatMessage = {
   actionPlan?: {
     action: string;
     status?: string;
-    providers?: { id: string; label: string }[];
+    engine?: 'nayla-cloud' | 'nayla-compute';
     gpuJobId?: string;
     mediaJobId?: string;
     gpuName?: string | null;
@@ -101,6 +103,7 @@ export default function NaylaCore() {
   const [iaPrompt, setIaPrompt] = useState('Haz un video con 3 clips y ponles subtítulos');
   const [iaLoading, setIaLoading] = useState(false);
   const [selectedAiProvider, setSelectedAiProvider] = useState<'groq' | 'mistral'>('groq');
+  const [naylaEngineMode, setNaylaEngineMode] = useState<NaylaEngineMode>('cloud');
   // Configuración de Cristal y Luz (Glassmorphism & Border Glow)
   const [glowColor, setGlowColor] = useState('#ffffff');
   const [glowSpread, setGlowSpread] = useState(12);
@@ -416,7 +419,7 @@ export default function NaylaCore() {
             } else if (job.status === 'processing') {
               text = 'La GPU está procesando el trabajo.';
             } else if (job.status === 'booting' || job.status === 'renting') {
-              text = 'Nayla está preparando la GPU Vast.ai.';
+              text = 'Nayla Compute está preparando la GPU.';
             }
 
             return {
@@ -1218,6 +1221,7 @@ export default function NaylaCore() {
            attachmentIds: attachmentIdsForMessage,
            history: chatMessages.map(m => ({ role: m.role === 'user' ? 'user' : 'assistant', content: m.text })),
            provider: selectedAiProvider,
+           engineMode: naylaEngineMode,
            mediaLibrary: [
              ...galeriaMultimedia.map(item => ({
                id: item.id,
@@ -1269,11 +1273,7 @@ export default function NaylaCore() {
         ? {
             action: data.action,
             status: data.status,
-            providers: isGpuAction && (data.gpuJobId || data.quote)
-              ? [{ id: 'vast', label: 'Vast.ai' }]
-              : data.selectedProvider
-                ? [data.selectedProvider]
-                : (Array.isArray(data.availableProviders) ? data.availableProviders : []),
+            engine: data.engine === 'nayla-compute' || isGpuAction ? 'nayla-compute' : 'nayla-cloud',
             gpuJobId: data.gpuJobId,
             mediaJobId: data.mediaJobId,
             gpuName: data.job?.gpuName ?? data.quote?.gpuName ?? null,
@@ -1292,10 +1292,10 @@ export default function NaylaCore() {
         setGpuQuoteSource(null);
         setGpuQuoteRequest(data.pendingGpuRequest);
         setGpuQuoteUi({
-          title: isMusic ? 'Música IA · ACE-Step' : 'Trabajo GPU',
+          title: isMusic ? 'Música · Nayla Compute' : 'Nayla Compute',
           description: isMusic
-            ? 'Generación musical propia con Vast.ai · el resultado se guardará en la Bóveda.'
-            : 'Proceso bajo demanda con Vast.ai.',
+            ? 'Generación musical bajo demanda; el resultado se guardará en la Bóveda privada.'
+            : 'Proceso GPU bajo demanda de Nayla Compute.',
           confirmLabel: isMusic ? 'CONFIRMAR Y GENERAR MÚSICA' : 'CONFIRMAR GPU',
           fromChat: true,
           userText: message,
@@ -1425,7 +1425,7 @@ export default function NaylaCore() {
       try {
         payload = raw ? JSON.parse(raw) : {};
       } catch {
-        throw new Error('Vast devolvió una cotización inválida.');
+        throw new Error('Nayla Compute devolvió una cotización inválida.');
       }
 
       if (!response.ok || payload.error) {
@@ -1442,10 +1442,10 @@ export default function NaylaCore() {
       });
       setGpuQuoteUi({
         title: 'Imagen → 3D',
-        description: 'Conversión 3D con TripoSR en Vast.ai.',
+        description: 'Conversión 3D bajo demanda con Nayla Compute.',
         confirmLabel: 'CONFIRMAR Y CREAR 3D',
         fromChat: false,
-        userText: 'Crear 3D desde ' + (selectedPhoto.nombre || 'la imagen seleccionada') + ' con TripoSR.',
+        userText: 'Crear 3D desde ' + (selectedPhoto.nombre || 'la imagen seleccionada') + ' con Nayla Compute.',
       });
       setGpuQuote(payload.quote || null);
     } catch (error: any) {
@@ -1488,23 +1488,23 @@ export default function NaylaCore() {
 
       const job = payload.job || {};
       const gpuJobId = payload.gpuJobId || job.id;
-      if (!gpuJobId) throw new Error('Vast no devolvió un identificador de trabajo.');
+      if (!gpuJobId) throw new Error('Nayla Compute no devolvió un identificador de trabajo.');
 
       const is3d = gpuQuoteRequest.workload === '3d';
       const isMusic = gpuQuoteRequest.recipe === 'ace-step-music';
       const userText = gpuQuoteUi?.userText ||
-        (isMusic ? 'Generar música con ACE-Step en GPU Vast.ai.' : 'Ejecutar trabajo GPU Vast.ai.');
+        (isMusic ? 'Generar música con Nayla Compute.' : 'Ejecutar trabajo con Nayla Compute.');
 
       setChatMessages((prev) => [
         ...prev,
         ...(gpuQuoteUi?.fromChat ? [] : [{ role: 'user' as const, text: userText }]),
         {
           role: 'ai' as const,
-          text: payload.text || 'Nayla está preparando la GPU Vast.ai.',
+          text: payload.text || 'Nayla Compute está preparando la GPU.',
           actionPlan: {
             action: 'RUN_GPU_JOB',
             status: job.status || 'booting',
-            providers: [{ id: 'vast', label: 'Vast.ai' }],
+            engine: 'nayla-compute',
             gpuJobId,
             gpuName: job.gpuName ?? gpuQuote.gpuName ?? null,
             hourlyPrice: job.hourlyPrice ?? gpuQuote.hourlyPrice ?? null,
@@ -1738,9 +1738,9 @@ export default function NaylaCore() {
           ? {
               action: String(message.action.action || 'ACTION'),
               status: message.action.status,
-              providers: message.action.selectedProvider
-                ? [message.action.selectedProvider]
-                : (Array.isArray(message.action.availableProviders) ? message.action.availableProviders : []),
+              engine: message.action.engine === 'nayla-compute' || message.action.action === 'RUN_GPU_JOB'
+                ? 'nayla-compute'
+                : 'nayla-cloud',
               gpuJobId: message.action.gpuJobId,
               mediaJobId: message.action.mediaJobId,
               gpuName: message.action.job?.gpuName ?? message.action.quote?.gpuName ?? null,
@@ -3775,6 +3775,12 @@ if (!session) {
             </button>
           </div>
 
+          <NaylaEngineBar
+            session={session}
+            mode={naylaEngineMode}
+            onModeChange={setNaylaEngineMode}
+          />
+
           {/* Chat Messages Body */}
           <div style={{ flex: 1, padding: '20px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '14px' }}>
             {chatMessages.length === 0 ? (
@@ -3801,9 +3807,7 @@ if (!session) {
                         {msg.actionPlan.action.replaceAll('_', ' ')}
                       </div>
                       <div style={{ color: '#999', marginTop: '4px', fontSize: '0.78rem' }}>
-                        {msg.actionPlan.providers?.length
-                          ? `Proveedor: ${msg.actionPlan.providers.map(p => p.label).join(', ')}`
-                          : 'Proveedor pendiente de configuración.'}
+                        Motor: {msg.actionPlan.engine === 'nayla-compute' ? 'Nayla Compute' : 'Nayla Cloud'}
                       </div>
                       {msg.actionPlan.gpuJobId && (
                         <div style={{ marginTop: '7px', display: 'grid', gap: '3px', color: '#777', fontSize: '0.7rem' }}>

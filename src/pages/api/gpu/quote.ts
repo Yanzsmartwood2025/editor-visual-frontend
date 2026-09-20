@@ -1,6 +1,7 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { z } from 'zod';
 import { requireFirebaseUser } from '../../../lib/firebaseAdmin';
+import { sanitizeNaylaPublicText } from '../../../lib/naylaSystemCatalog';
 import { quoteVastGpuJob } from '../../../lib/gpu/quote';
 
 const safeUrl = z.string().url().max(4000).refine((value) => {
@@ -62,7 +63,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(200).json({ quote });
   } catch (error) {
     const message =
-      error instanceof Error ? error.message : 'No se pudo cotizar la GPU.';
-    return res.status(500).json({ error: message });
+      error instanceof Error ? error.message : 'No se pudo cotizar Nayla Compute.';
+    return res.status(500).json({ error: sanitizeNaylaPublicText(message) });
   }
 }

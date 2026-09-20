@@ -1,6 +1,7 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { z } from 'zod';
 import { requireFirebaseUser } from '../../../lib/firebaseAdmin';
+import { sanitizeNaylaPublicText } from '../../../lib/naylaSystemCatalog';
 import {
   getGpuJobStatusForUser,
   startVastGpuJob,
@@ -106,11 +107,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       gpuJobId: job.id,
       job,
       text:
-        'Nayla alquiló una GPU Vast.ai dentro del presupuesto y le asignó un vencimiento automático. ' +
-        'Al terminar, el resultado irá a R2/Bóveda y la instancia se destruirá.',
+        'Nayla Compute reservó una GPU dentro del presupuesto y le asignó un vencimiento automático. ' +
+        'Al terminar, el resultado irá a la Bóveda privada y la instancia se cerrará.',
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'No se pudo iniciar la GPU.';
+    const rawMessage = error instanceof Error ? error.message : 'No se pudo iniciar Nayla Compute.';
+    const message = sanitizeNaylaPublicText(rawMessage);
     const status =
       message.includes('no está configurada') ||
       message.includes('falta configurar') ||

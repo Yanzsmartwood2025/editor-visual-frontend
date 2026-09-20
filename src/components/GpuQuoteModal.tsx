@@ -1,5 +1,5 @@
 export type GpuQuoteView = {
-  provider: 'vast';
+  provider: 'nayla-compute';
   workload: string;
   recipe?: string;
   available: boolean;
@@ -8,19 +8,29 @@ export type GpuQuoteView = {
   gpuRamGb?: number;
   hourlyPrice?: number;
   estimatedMaxCost?: number;
-  spendableCredit?: number;
-  reserveUsd: number;
-  maxJobUsd: number;
+  cards?: Array<{
+    id: string;
+    gpuName: string;
+    gpuRamGb?: number;
+    hourlyPrice: number;
+    estimatedMaxCost: number;
+  }>;
   maxRuntimeMinutes: number;
   bootGraceMinutes: number;
+  pricingStatus: 'preview';
+  energy: {
+    enabled: false;
+    balanceUsd: null;
+    status: 'coming_soon';
+  };
 };
 
 export function GpuQuoteModal({
   quote,
   sourceName,
-  title = 'Imagen → 3D',
+  title = 'Nayla Compute',
   description,
-  confirmLabel = 'CONFIRMAR Y CREAR 3D',
+  confirmLabel = 'CONFIRMAR',
   confirming,
   onCancel,
   onConfirm,
@@ -43,12 +53,12 @@ export function GpuQuoteModal({
     <div
       role="dialog"
       aria-modal="true"
-      aria-label="Confirmar uso de GPU"
+      aria-label="Confirmar Nayla Compute"
       style={{
         position: 'fixed',
         inset: 0,
         zIndex: 100500,
-        background: 'rgba(0,0,0,0.86)',
+        background: 'rgba(0,0,0,0.88)',
         display: 'grid',
         placeItems: 'center',
         padding: 18,
@@ -57,17 +67,17 @@ export function GpuQuoteModal({
       <div
         style={{
           width: 'min(430px, 100%)',
-          border: '1px solid #343434',
+          border: '1px solid #3a3a3a',
           borderRadius: 18,
-          background: '#101010',
+          background: '#0d0d0d',
           color: '#fff',
-          boxShadow: '0 18px 80px rgba(0,0,0,0.75)',
+          boxShadow: '0 18px 80px rgba(0,0,0,0.78)',
           overflow: 'hidden',
         }}
       >
         <div style={{ padding: '18px 18px 12px', borderBottom: '1px solid #242424' }}>
-          <div style={{ color: '#00ffcc', fontSize: '0.72rem', fontWeight: 800, letterSpacing: '0.1em' }}>
-            GPU BAJO DEMANDA
+          <div style={{ color: '#d9d9d9', fontSize: '0.72rem', fontWeight: 800, letterSpacing: '0.1em' }}>
+            NAYLA COMPUTE · GPU BAJO DEMANDA
           </div>
           <h3 style={{ margin: '6px 0 0', fontSize: '1.15rem' }}>
             {title}
@@ -76,7 +86,7 @@ export function GpuQuoteModal({
             {sourceName ? (
               <>Entrada: <strong style={{ color: '#ddd' }}>{sourceName}</strong></>
             ) : (
-              description || 'Proceso con GPU Vast.ai'
+              description || 'Proceso GPU administrado por Nayla Compute.'
             )}
           </div>
         </div>
@@ -86,46 +96,82 @@ export function GpuQuoteModal({
             style={{
               padding: '9px 11px',
               borderRadius: 10,
-              border: '1px solid #245b49',
-              background: '#0a2119',
-              color: '#62f5c1',
+              border: '1px solid #3a3a3a',
+              background: '#151515',
+              color: '#ededed',
               fontSize: '0.75rem',
               fontWeight: 700,
             }}
           >
-            TODAVÍA NO SE HA ALQUILADO NINGUNA GPU
+            TODAVÍA NO SE HA RESERVADO NINGUNA GPU
           </div>
 
           {quote.available ? (
             <>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: '8px 14px', fontSize: '0.8rem' }}>
-                <span style={{ color: '#888' }}>GPU disponible</span>
+                <span style={{ color: '#888' }}>Tarjeta disponible</span>
                 <strong>
-                  {quote.gpuName || 'Vast GPU'}
+                  {quote.gpuName || 'GPU'}
                   {quote.gpuRamGb ? ' · ' + quote.gpuRamGb + ' GB' : ''}
                 </strong>
 
-                <span style={{ color: '#888' }}>Tarifa</span>
+                <span style={{ color: '#888' }}>Precio Nayla</span>
                 <strong>~{money(quote.hourlyPrice)}/h</strong>
 
-                <span style={{ color: '#888' }}>Tope estimado de este trabajo</span>
-                <strong style={{ color: '#00ffcc' }}>~{money(quote.estimatedMaxCost)}</strong>
+                <span style={{ color: '#888' }}>Tope estimado del trabajo</span>
+                <strong style={{ color: '#f4f4f4' }}>~{money(quote.estimatedMaxCost)}</strong>
 
-                <span style={{ color: '#888' }}>Crédito disponible</span>
-                <strong>{money(quote.spendableCredit, 2)}</strong>
-
-                <span style={{ color: '#888' }}>Reserva que Nayla protege</span>
-                <strong>{money(quote.reserveUsd, 2)}</strong>
+                <span style={{ color: '#888' }}>Nayla Energy</span>
+                <strong style={{ color: '#777' }}>PRÓXIMAMENTE</strong>
               </div>
 
+              {quote.cards && quote.cards.length > 1 && (
+                <div style={{ borderTop: '1px solid #252525', paddingTop: 10 }}>
+                  <div style={{ color: '#8b8b8b', fontSize: '0.68rem', marginBottom: 7 }}>
+                    TARJETAS COMPATIBLES AHORA
+                  </div>
+                  <div style={{ display: 'grid', gap: 6 }}>
+                    {quote.cards.slice(0, 4).map((card, index) => (
+                      <div
+                        key={card.id}
+                        style={{
+                          display: 'grid',
+                          gridTemplateColumns: '1fr auto',
+                          gap: 8,
+                          padding: '8px 9px',
+                          borderRadius: 9,
+                          border: index === 0 ? '1px solid #777' : '1px solid #292929',
+                          background: index === 0 ? '#181818' : '#0b0b0b',
+                          fontSize: '0.72rem',
+                        }}
+                      >
+                        <div>
+                          <strong>{card.gpuName}</strong>
+                          <div style={{ color: '#777', marginTop: 2 }}>
+                            {card.gpuRamGb ? card.gpuRamGb + ' GB VRAM' : 'VRAM según disponibilidad'}
+                            {index === 0 ? ' · selección automática' : ''}
+                          </div>
+                        </div>
+                        <div style={{ textAlign: 'right' }}>
+                          <strong>~{money(card.hourlyPrice)}/h</strong>
+                          <div style={{ color: '#777', marginTop: 2 }}>
+                            tope ~{money(card.estimatedMaxCost)}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               <p style={{ margin: 0, color: '#777', fontSize: '0.72rem', lineHeight: 1.5 }}>
-                El precio puede cambiar entre esta cotización y la confirmación. Antes de alquilar,
-                Nayla vuelve a comprobar oferta, saldo y límites. Si sube demasiado, cancela el trabajo.
+                La disponibilidad puede cambiar antes de confirmar. Nayla vuelve a comprobar
+                la tarjeta y los límites justo antes de reservarla.
               </p>
             </>
           ) : (
             <div style={{ color: '#ddd', fontSize: '0.85rem', lineHeight: 1.55 }}>
-              {quote.reason || 'No hay una GPU disponible dentro de los límites de seguridad.'}
+              {quote.reason || 'No hay una GPU compatible disponible dentro de los límites de seguridad.'}
             </div>
           )}
         </div>
@@ -162,14 +208,14 @@ export function GpuQuoteModal({
               style={{
                 border: 0,
                 borderRadius: 10,
-                background: confirming ? '#174b39' : '#00cc66',
-                color: confirming ? '#8ad9bd' : '#00180c',
+                background: confirming ? '#555' : '#f2f2f2',
+                color: confirming ? '#ddd' : '#050505',
                 padding: '10px 15px',
                 fontWeight: 800,
                 cursor: confirming ? 'wait' : 'pointer',
               }}
             >
-              {confirming ? 'ALQUILANDO…' : confirmLabel}
+              {confirming ? 'RESERVANDO…' : confirmLabel}
             </button>
           )}
         </div>

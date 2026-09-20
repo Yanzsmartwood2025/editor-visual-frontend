@@ -2,6 +2,7 @@ import type { NextApiRequest, NextApiResponse } from 'next';
 import { z } from 'zod';
 import { requireFirebaseUser } from '../../../lib/firebaseAdmin';
 import { listThreadMessagesForUser } from '../../../lib/workspaceStore';
+import { sanitizeNaylaPublicText } from '../../../lib/naylaSystemCatalog';
 
 const querySchema = z.object({
   threadId: z.string().uuid(),
@@ -30,10 +31,41 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       threadId: parsed.data.threadId,
       limit: parsed.data.limit,
     });
+    const messages = result.messages.map((message: Record<string, any>) => {
+      const rawAction = message.action && typeof message.action === 'object'
+        ? message.action as Record<string, any>
+        : null;
+      const publicAction = rawAction
+        ? {
+            action: rawAction.action,
+            status: rawAction.status,
+            engine:
+              rawAction.engine === 'nayla-compute' || rawAction.action === 'RUN_GPU_JOB'
+                ? 'nayla-compute'
+                : 'nayla-cloud',
+            gpuJobId: rawAction.gpuJobId,
+            mediaJobId: rawAction.mediaJobId,
+            gpuName: rawAction.job?.gpuName ?? rawAction.quote?.gpuName ?? rawAction.gpuName ?? null,
+            hourlyPrice:
+              rawAction.job?.hourlyPrice ?? rawAction.quote?.hourlyPrice ?? rawAction.hourlyPrice ?? null,
+            estimatedMaxCost:
+              rawAction.job?.estimatedMaxCost ?? rawAction.quote?.estimatedMaxCost ?? rawAction.estimatedMaxCost ?? null,
+            runtimeCostEstimate:
+              rawAction.job?.runtimeCostEstimate ?? rawAction.runtimeCostEstimate ?? null,
+          }
+        : null;
+
+      return {
+        ...message,
+        content: sanitizeNaylaPublicText(String(message.content || '')),
+        action: publicAction,
+      };
+    });
+
     return res.status(200).json({
       projectId: result.scope.projectId,
       threadId: result.scope.threadId,
-      messages: result.messages,
+      messages,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'No se pudo leer el historial.';

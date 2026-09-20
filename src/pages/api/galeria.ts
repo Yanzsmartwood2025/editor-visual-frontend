@@ -6,10 +6,29 @@ import {
   resolveOwnedWorkspaceScope,
 } from '../../lib/workspaceStore';
 
+const publicSourceName = (value: unknown) => {
+  if (typeof value !== 'string') return value;
+  if (/vast|runpod|gpu:/i.test(value)) return 'nayla-compute';
+  if (/fal|replicate|deepgram|cartesia|elevenlabs|tripo|meshy/i.test(value)) return 'nayla-cloud';
+  return value;
+};
+
 const hydratePrivateUrl = (item: Record<string, any>) => {
-  if (!item?.r2_key) return item;
-  return {
+  const metadata = {
+    ...(item?.metadata || {}),
+    ...(item?.metadata?.sourceProvider
+      ? { sourceProvider: publicSourceName(item.metadata.sourceProvider) }
+      : {}),
+  };
+  const publicItem = {
     ...item,
+    fuente: publicSourceName(item?.fuente),
+    metadata,
+  };
+
+  if (!item?.r2_key) return publicItem;
+  return {
+    ...publicItem,
     url: createR2PresignedGetUrl({ key: item.r2_key, expiresIn: 3600 }).url,
   };
 };

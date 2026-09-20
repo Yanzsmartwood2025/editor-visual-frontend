@@ -8,9 +8,14 @@ import {
   getVastAccountSummary,
   searchVastOffers,
 } from './vastApi';
+import {
+  sanitizeNaylaPublicText,
+  toNaylaComputeEstimatedPrice,
+  toNaylaComputeHourlyPrice,
+} from '../naylaSystemCatalog';
 
 export type VastGpuQuote = {
-  provider: 'vast';
+  provider: 'nayla-compute';
   workload: GpuExecutionInput['workload'];
   recipe?: string;
   available: boolean;
@@ -19,11 +24,21 @@ export type VastGpuQuote = {
   gpuRamGb?: number;
   hourlyPrice?: number;
   estimatedMaxCost?: number;
-  spendableCredit?: number;
-  reserveUsd: number;
-  maxJobUsd: number;
+  cards?: Array<{
+    id: string;
+    gpuName: string;
+    gpuRamGb?: number;
+    hourlyPrice: number;
+    estimatedMaxCost: number;
+  }>;
   maxRuntimeMinutes: number;
   bootGraceMinutes: number;
+  pricingStatus: 'preview';
+  energy: {
+    enabled: false;
+    balanceUsd: null;
+    status: 'coming_soon';
+  };
 };
 
 export const quoteVastGpuJob = async (
@@ -33,14 +48,18 @@ export const quoteVastGpuJob = async (
   const policy = getGpuBudgetPolicy();
 
   const base: VastGpuQuote = {
-    provider: 'vast',
+    provider: 'nayla-compute',
     workload: input.workload,
     recipe: input.recipe,
     available: false,
-    reserveUsd: policy.minBalanceReserveUsd,
-    maxJobUsd: policy.maxJobUsd,
     maxRuntimeMinutes: profile.maxRuntimeMinutes,
     bootGraceMinutes: policy.bootGraceMinutes,
+    pricingStatus: 'preview',
+    energy: {
+      enabled: false,
+      balanceUsd: null,
+      status: 'coming_soon',
+    },
   };
 
   if (!workerImage) {
@@ -65,11 +84,46 @@ export const quoteVastGpuJob = async (
     searchVastOffers(profile, policy.offerReliabilityMin),
   ]);
 
+  const quoteRuntimeMinutes = profile.maxRuntimeMinutes + policy.bootGraceMinutes;
+  const seenCards = new Set<string>();
+  const cards = offers.flatMap((candidate, index) => {
+    const candidateHourly = Number(candidate.dph_total);
+    if (!Number.isFinite(candidateHourly)) return [];
+    const candidateName =
+      typeof candidate.gpu_name === 'string' && candidate.gpu_name.trim()
+        ? candidate.gpu_name.trim()
+        : 'GPU';
+    const candidateRamMb = Number(candidate.gpu_ram);
+    const candidateRamGb = Number.isFinite(candidateRamMb)
+      ? Math.round((candidateRamMb / 1000) * 10) / 10
+      : undefined;
+    const key = candidateName + ':' + String(candidateRamGb || '');
+    if (seenCards.has(key)) return [];
+    seenCards.add(key);
+
+    const internalCandidateMax = estimatedWorstCaseCost(
+      candidateHourly,
+      quoteRuntimeMinutes,
+      policy.safetyMultiplier
+    );
+
+    return [{
+      id: 'compute-card-' + String(index + 1),
+      gpuName: candidateName,
+      gpuRamGb: candidateRamGb,
+      hourlyPrice: toNaylaComputeHourlyPrice(candidateHourly),
+      estimatedMaxCost: toNaylaComputeEstimatedPrice(
+        internalCandidateMax,
+        quoteRuntimeMinutes
+      ),
+    }];
+  }).slice(0, 5);
+
   const offer = offers[0];
   if (!offer) {
     return {
       ...base,
-      spendableCredit: account.balance,
+      cards: [],
       reason:
         'No hay una GPU verificada disponible dentro del límite de precio actual.',
     };
@@ -93,9 +147,9 @@ export const quoteVastGpuJob = async (
       gpuName:
         typeof offer.gpu_name === 'string' ? offer.gpu_name : undefined,
       gpuRamGb,
-      hourlyPrice,
-      estimatedMaxCost,
-      spendableCredit: account.balance,
+      cards,
+      hourlyPrice: toNaylaComputeHourlyPrice(hourlyPrice),
+      estimatedMaxCost: toNaylaComputeEstimatedPrice(estimatedMaxCost, quoteRuntimeMinutes),
       reason:
         'La GPU disponible supera el tope máximo permitido para este trabajo.',
     };
@@ -107,11 +161,11 @@ export const quoteVastGpuJob = async (
       gpuName:
         typeof offer.gpu_name === 'string' ? offer.gpu_name : undefined,
       gpuRamGb,
-      hourlyPrice,
-      estimatedMaxCost,
-      spendableCredit: account.balance,
+      cards,
+      hourlyPrice: toNaylaComputeHourlyPrice(hourlyPrice),
+      estimatedMaxCost: toNaylaComputeEstimatedPrice(estimatedMaxCost, quoteRuntimeMinutes),
       reason:
-        'El trabajo podría reducir el crédito por debajo de la reserva protegida.',
+        'El trabajo no está disponible dentro de los límites protegidos de Nayla Compute.',
     };
   }
 
@@ -121,11 +175,11 @@ export const quoteVastGpuJob = async (
     gpuName:
       typeof offer.gpu_name === 'string' ? offer.gpu_name : undefined,
     gpuRamGb,
-    hourlyPrice,
-    estimatedMaxCost,
-    spendableCredit: account.balance,
+    cards,
+    hourlyPrice: toNaylaComputeHourlyPrice(hourlyPrice),
+    estimatedMaxCost: toNaylaComputeEstimatedPrice(estimatedMaxCost, quoteRuntimeMinutes),
     reason: recipePlan
-      ? recipePlan.label
+      ? sanitizeNaylaPublicText(recipePlan.label)
       : undefined,
   };
 };
