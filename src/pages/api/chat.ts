@@ -94,6 +94,101 @@ const getRequestedPhotoLabels = (message: string) => {
   return labels;
 };
 
+const getOrderedMediaLabels = (message: string) => {
+  const found: Array<{ label: string; index: number }> = [];
+  const patterns = [
+    /\b([FVAM])\s*(\d+)\b/gi,
+    /\b(foto|imagen|video|audio|m[uú]sica|modelo|3d)\s*(?:n(?:[uú]mero)?\s*)?(\d+)\b/gi,
+  ];
+
+  for (const pattern of patterns) {
+    for (const match of message.matchAll(pattern)) {
+      const rawType = match[1].toLowerCase();
+      const prefix =
+        rawType === 'f' || rawType === 'foto' || rawType === 'imagen'
+          ? 'F'
+          : rawType === 'v' || rawType === 'video'
+            ? 'V'
+            : rawType === 'a' || rawType === 'audio' || rawType === 'música' || rawType === 'musica'
+              ? 'A'
+              : 'M';
+      found.push({ label: `${prefix}${Number(match[2])}`, index: match.index ?? 0 });
+    }
+  }
+
+  found.sort((a, b) => a.index - b.index);
+  return Array.from(new Set(found.map((item) => item.label)));
+};
+
+const buildLabelTimelineFallback = (
+  message: string,
+  mediaLibrary: Array<{
+    tipo: 'foto' | 'video' | 'audio' | 'modelo3d';
+    url: string;
+    etiqueta?: string;
+  }>
+): NaylaAction | null => {
+  const normalized = message.toLowerCase();
+  const editingIntent =
+    /\b(crea|crear|haz|hacer|arma|armar|monta|montar|edita|editar|compone|componer|renderiza|renderizar|genera|generar)\b/.test(normalized) &&
+    /\b(video|timeline|edici[oó]n|montaje|render)\b/.test(normalized);
+
+  if (!editingIntent) return null;
+
+  const labels = getOrderedMediaLabels(message).filter((label) => !label.startsWith('M'));
+  if (!labels.length) return null;
+
+  const byLabel = new Map(
+    mediaLibrary
+      .filter((item) => item.etiqueta && item.tipo !== 'modelo3d')
+      .map((item) => [item.etiqueta!.trim().toUpperCase(), item])
+  );
+
+  const resolved = labels.map((label) => byLabel.get(label));
+  if (resolved.some((item) => !item)) return null;
+
+  const durationMatch = message.match(/\b(?:aproximadamente\s+|aprox\.?\s+|unos?\s+|de\s+)?(\d+(?:[.,]\d+)?)\s*(?:segundos?|s)\b/i);
+  const totalSeconds = durationMatch ? Number(durationMatch[1].replace(',', '.')) : null;
+  const visualCount = resolved.filter((item) => item?.tipo === 'foto' || item?.tipo === 'video').length;
+  const perVisualDuration =
+    totalSeconds && Number.isFinite(totalSeconds) && totalSeconds > 0 && visualCount > 0
+      ? totalSeconds / visualCount
+      : undefined;
+
+  const wantsSoftMotion = /\b(ken[ -]?burns|movimiento\s+suave|zoom\s+suave|acercamiento\s+suave)\b/i.test(message);
+  const wantsCinematic = /\b(cinematogr[aá]fic[oa]s?|pel[ií]cula)\b/i.test(message);
+  const wantsFade = /\b(fade|fundido|transici[oó]n(?:es)?\s+suaves?|cinematogr[aá]fic[oa]s?)\b/i.test(message);
+
+  const assets = resolved.map((item) => {
+    const asset: Record<string, unknown> = {
+      type: item!.tipo,
+      source: 'url',
+      url: item!.url,
+    };
+    if (perVisualDuration && (item!.tipo === 'foto' || item!.tipo === 'video')) {
+      asset.durationInSeconds = perVisualDuration;
+    }
+    if (item!.tipo === 'foto') {
+      if (wantsSoftMotion) asset.efecto = 'ken-burns';
+      else if (wantsCinematic) asset.efecto = 'cinematic';
+      if (wantsFade) {
+        asset.transitionType = 'fade';
+        asset.transitionDuration = 0.5;
+      }
+    }
+    return asset;
+  });
+
+  const parsed = {
+    action: 'BUILD_TIMELINE' as const,
+    assets,
+    render: /\b(renderiza|renderizar|video\s+final|gu[aá]rd(?:a|alo).*b[oó]veda|crea\s+un\s+video|haz\s+un\s+video|monta\s+un\s+video)\b/i.test(message),
+  };
+
+  const validated = parseNaylaAction(JSON.stringify(parsed));
+  return validated;
+};
+
 const describeActionPlan = (action: NaylaAction) => {
   const routeCount = getAvailableProvidersForAction(action).length;
 
@@ -433,6 +528,7 @@ REGLAS DE SEGURIDAD Y EJECUCIÓN:
 - Nunca sustituyas una etiqueta por otro archivo parecido. Si la etiqueta pedida no existe en el proyecto, indícalo en texto normal y no inventes una URL.
 - Para cortes sobre un video existente puedes repetir la misma URL de video en varios assets usando trimBefore/trimAfter y colocar fotos o clips entre esos segmentos. Ejemplo conceptual: V1 tramo inicial → F1 → V1 tramo siguiente → F2 → V1 tramo final.
 - Para una petición ejecutable responde ÚNICAMENTE JSON válido, sin markdown ni texto adicional.
+- Nunca afirmes que un render, generación o trabajo está "en marcha", "procesando", "guardándose" o "listo" dentro de una respuesta de texto normal. Esos estados solo los confirma el servidor después de crear un trabajo real.
 - Para conversación normal responde texto normal.
 
 ACCIONES EJECUTABLES:
@@ -642,7 +738,10 @@ Si una petición combina pasos, elige la PRIMERA acción necesaria. El resultado
       });
     }
 
-    const action = parseNaylaAction(responseText);
+    const action =
+      parseNaylaAction(responseText) ||
+      buildLabelTimelineFallback(message, mergedLibrary);
+
     if (action) {
       try {
         const executed = await executeValidatedAction(action, {
@@ -683,7 +782,13 @@ Si una petición combina pasos, elige la PRIMERA acción necesaria. El resultado
       }
     }
 
-    const publicResponseText = sanitizeNaylaPublicText(responseText);
+    let publicResponseText = sanitizeNaylaPublicText(responseText);
+    if (
+      /\b(en\s+marcha|renderiz(?:ando|aci[oó]n)|procesando|guard(?:ando|ar[aá]).*b[oó]veda|cuando\s+termine)\b/i.test(publicResponseText) &&
+      /\b(video|render|timeline|edici[oó]n)\b/i.test(message)
+    ) {
+      publicResponseText = 'No se inició ningún procesamiento todavía. Reformula la orden con las etiquetas F/V/A que quieres usar para que Nayla pueda crear el trabajo real.';
+    }
 
     if (scope.threadId) {
       await insertChatMessageForUser({
