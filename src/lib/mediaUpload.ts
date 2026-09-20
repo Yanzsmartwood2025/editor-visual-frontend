@@ -101,10 +101,63 @@ const readApiJson = async <T extends Record<string, unknown>>(response: Response
     const preview = raw.replace(/\s+/g, ' ').trim().slice(0, 140);
     throw new Error(
       response.status === 413
-        ? 'El archivo es demasiado grande para pasar por Vercel. La subida directa a R2 no pudo iniciarse.'
-        : `El servidor respondió en un formato inesperado (${response.status}): ${preview || 'respuesta vacía'}`
+        ? 'Este archivo necesita la ruta de subida directa de Nayla.'
+        : `Nayla recibió una respuesta inesperada (${response.status}): ${preview || 'respuesta vacía'}`
     );
   }
+};
+
+
+const NAYLA_FALLBACK_UPLOAD_LIMIT = 4 * 1024 * 1024;
+
+const uploadThroughNaylaFallback = async ({
+  file,
+  session,
+  mediaId,
+  extension,
+  contentType,
+  kind,
+  projectId,
+  threadId,
+}: {
+  file: UploadableMediaFile;
+  session: FirebaseSession;
+  mediaId: string;
+  extension: string;
+  contentType: string;
+  kind: MediaKind | 'modelo3d';
+  projectId?: string;
+  threadId?: string;
+}): Promise<R2UploadResponse> => {
+  if (file.size > NAYLA_FALLBACK_UPLOAD_LIMIT) {
+    throw new Error('Nayla no pudo completar la subida directa de este archivo. Intenta nuevamente en unos segundos.');
+  }
+
+  const form = new FormData();
+  form.append('file', file, file.name);
+  form.append('mediaId', mediaId);
+  form.append('extension', extension);
+  form.append('kind', kind);
+  if (projectId) form.append('projectId', projectId);
+  if (threadId) form.append('threadId', threadId);
+
+  const response = await fetch('/api/r2/upload-proxy', {
+    method: 'POST',
+    headers: firebaseHeaders(session),
+    body: form,
+  });
+
+  const payload = await readApiJson<R2UploadResponse & { error?: string }>(response);
+  if (!response.ok || !payload.key || !payload.url) {
+    throw new Error(payload.error || 'Nayla no pudo completar la subida en este intento.');
+  }
+
+  return {
+    key: payload.key,
+    url: payload.url,
+    projectId: payload.projectId,
+    threadId: payload.threadId,
+  };
 };
 
 export const uploadFileToR2 = async (
@@ -136,10 +189,10 @@ export const uploadFileToR2 = async (
 
   const signed = await readApiJson<R2PresignResponse>(authorization);
   if (!authorization.ok || !signed.uploadUrl || !signed.key || !signed.url) {
-    throw new Error(signed.error || `No se pudo autorizar la subida de ${file.name} a R2.`);
+    throw new Error(signed.error || `No se pudo autorizar la subida de ${file.name} a la Bóveda.`);
   }
 
-  let uploadResponse: Response;
+  let uploadResponse: Response | null = null;
   try {
     uploadResponse = await fetch(signed.uploadUrl, {
       method: 'PUT',
@@ -149,16 +202,20 @@ export const uploadFileToR2 = async (
       body: file,
     });
   } catch {
-    throw new Error(
-      'No se pudo enviar el archivo directamente a Cloudflare R2. Revisa CORS del bucket para permitir PUT desde el dominio de Nayla.'
-    );
+    uploadResponse = null;
   }
 
-  if (!uploadResponse.ok) {
-    const details = (await uploadResponse.text()).replace(/\s+/g, ' ').trim().slice(0, 180);
-    throw new Error(
-      `Cloudflare R2 rechazó la subida (${uploadResponse.status}). ${details || 'Verifica CORS y la autorización temporal.'}`
-    );
+  if (!uploadResponse?.ok) {
+    return uploadThroughNaylaFallback({
+      file,
+      session,
+      mediaId,
+      extension,
+      contentType: signed.contentType || contentType,
+      kind: scope?.kind || 'foto',
+      projectId: signed.projectId || scope?.projectId,
+      threadId: signed.threadId || scope?.threadId,
+    });
   }
 
   return {
