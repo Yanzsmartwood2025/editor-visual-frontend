@@ -95,6 +95,93 @@ const ICONOS_POS: Record<string, string> = { derecha: '→', izquierda: '←', a
 
 
 
+const CopyableChatText: React.FC<{ text: string }> = ({ text }) => {
+  const [copied, setCopied] = useState(false);
+  const copiedTimerRef = useRef<number | null>(null);
+  const structured = /^\s*[\[{]/.test(text) || (text.includes('https://') && text.length > 500);
+
+  useEffect(() => {
+    return () => {
+      if (copiedTimerRef.current) window.clearTimeout(copiedTimerRef.current);
+    };
+  }, []);
+
+  const copyText = async () => {
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text);
+      } else {
+        const helper = document.createElement('textarea');
+        helper.value = text;
+        helper.setAttribute('readonly', '');
+        helper.style.position = 'fixed';
+        helper.style.opacity = '0';
+        document.body.appendChild(helper);
+        helper.select();
+        document.execCommand('copy');
+        document.body.removeChild(helper);
+      }
+
+      setCopied(true);
+      if (copiedTimerRef.current) window.clearTimeout(copiedTimerRef.current);
+      copiedTimerRef.current = window.setTimeout(() => setCopied(false), 1400);
+    } catch (error) {
+      console.warn('No se pudo copiar el mensaje de Nayla:', error);
+    }
+  };
+
+  return (
+    <div data-no-edge-swipe style={{ minWidth: 0, maxWidth: '100%' }}>
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '6px' }}>
+        <button
+          type="button"
+          onClick={() => void copyText()}
+          aria-label="Copiar contenido del mensaje"
+          style={{
+            minHeight: '30px',
+            padding: '4px 9px',
+            borderRadius: '8px',
+            border: '1px solid #333',
+            background: '#111',
+            color: copied ? '#fff' : '#aaa',
+            fontSize: '0.65rem',
+            fontWeight: 800,
+            letterSpacing: '0.05em',
+            cursor: 'pointer',
+          }}
+        >
+          {copied ? 'COPIADO' : 'COPIAR'}
+        </button>
+      </div>
+
+      <div
+        tabIndex={0}
+        aria-label="Contenido del mensaje. Se puede desplazar vertical y horizontalmente."
+        style={{
+          width: '100%',
+          maxWidth: '100%',
+          maxHeight: '44dvh',
+          overflowX: 'auto',
+          overflowY: 'auto',
+          WebkitOverflowScrolling: 'touch',
+          overscrollBehavior: 'contain',
+          touchAction: 'pan-x pan-y',
+          userSelect: 'text',
+          WebkitUserSelect: 'text',
+          whiteSpace: structured ? 'pre' : 'pre-wrap',
+          overflowWrap: structured ? 'normal' : 'anywhere',
+          wordBreak: 'normal',
+          fontFamily: structured ? 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace' : 'inherit',
+          scrollbarWidth: 'thin',
+          paddingBottom: '4px',
+        }}
+      >
+        {text}
+      </div>
+    </div>
+  );
+};
+
 export default function NaylaCore() {
 
   const [darkMode, setDarkMode] = useState(true);
@@ -3946,7 +4033,7 @@ if (!session) {
           />
 
           {/* Chat Messages Body */}
-          <div style={{ flex: 1, padding: '20px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+          <div data-no-edge-swipe style={{ flex: 1, minWidth: 0, padding: '20px', overflowX: 'hidden', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '14px', overscrollBehavior: 'contain' }}>
             {chatMessages.length === 0 ? (
               <div style={{ textAlign: 'center', color: '#666', marginTop: '40px', fontSize: '0.95rem' }}>
                 Hola, soy Nayla. ¿En qué puedo ayudarte hoy?
@@ -3960,11 +4047,13 @@ if (!session) {
                   padding: '12px 16px',
                   borderRadius: '14px',
                   maxWidth: '80%',
+                  minWidth: 0,
+                  overflow: 'hidden',
                   border: msg.role === 'ai' ? '1px solid #262626' : '1px solid #333',
                   fontSize: '0.95rem',
                   lineHeight: '1.5'
                 }}>
-                  <div>{msg.text}</div>
+                  <CopyableChatText text={msg.text} />
                   {msg.actionPlan && (
                     <div style={{ marginTop: '10px', padding: '10px', border: '1px solid #2b2b2b', borderRadius: '10px', backgroundColor: '#080808' }}>
                       <div style={{ color: '#f2f2f2', fontSize: '0.78rem', fontWeight: 700, letterSpacing: '0.04em' }}>
