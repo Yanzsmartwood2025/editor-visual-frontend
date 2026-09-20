@@ -70,6 +70,9 @@ export async function startVercelSandboxRender(
   const renderStartedAt = Date.now();
 
   try {
+    // @remotion/vercel creates nested bundle directories but expects the root
+    // directory to exist first inside a fresh Vercel Sandbox.
+    await sandbox.mkDir('remotion-bundle');
     await addBundleToSandbox({ sandbox, bundleDir });
     await emitProgress({ stage: 'preparing', phase: 'Organizando medios', progress: 0.12 });
 
