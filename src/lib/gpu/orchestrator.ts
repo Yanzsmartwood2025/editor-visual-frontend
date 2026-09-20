@@ -20,6 +20,11 @@ import {
   type GpuWorkload,
 } from './profiles';
 import {
+  buildRecipeBootstrap,
+  getGpuRecipePlan,
+  validateRecipeInputs,
+} from './recipes';
+import {
   createVastInstance,
   destroyVastInstance,
   getVastAccountSummary,
@@ -196,10 +201,16 @@ export const startVastGpuJob = async ({
   appBaseUrl: string;
 }) => {
   const baseUrl = normalizeAppBaseUrl(appBaseUrl);
-  const profile = getGpuProfile(input.workload);
+  const recipePlan = getGpuRecipePlan(input.workload, input.recipe);
+  const profile = recipePlan?.profile || getGpuProfile(input.workload);
+  const workerImage = recipePlan?.workerImage || profile.workerImage;
   const policy = getGpuBudgetPolicy();
 
-  if (!profile.workerImage) {
+  if (recipePlan) {
+    validateRecipeInputs(recipePlan, input.inputUrls || []);
+  }
+
+  if (!workerImage) {
     throw new Error(
       'La máquina para ' + input.workload +
       ' está preparada, pero falta configurar su imagen worker en Vercel. Nayla no rentará una GPU hasta tener un worker válido.'
@@ -284,6 +295,12 @@ export const startVastGpuJob = async ({
         maxHourlyUsd: profile.maxHourlyUsd,
         maxRuntimeMinutes: profile.maxRuntimeMinutes,
       },
+      recipePlan: recipePlan
+        ? {
+            id: recipePlan.id,
+            label: recipePlan.label,
+          }
+        : null,
     },
   });
 
@@ -319,10 +336,15 @@ export const startVastGpuJob = async ({
   try {
     const instance = await createVastInstance({
       offerId: Number(offer.id),
-      image: profile.workerImage,
+      image: workerImage,
       diskGb: profile.diskGb,
       label,
-      onstart: input.workload === 'probe' ? buildProbeOnstart() : buildWorkerOnstart(),
+      onstart:
+        input.workload === 'probe'
+          ? buildProbeOnstart()
+          : recipePlan
+            ? buildRecipeBootstrap(recipePlan) + '\n' + buildWorkerOnstart()
+            : buildWorkerOnstart(),
       env: {
         NAYLA_GPU_JOB_ID: job.id,
         NAYLA_GPU_MANIFEST_URL: manifestUrl,
