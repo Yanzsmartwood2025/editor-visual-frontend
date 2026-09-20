@@ -5,6 +5,7 @@ import {
   requestedProviderForAction,
 } from './naylaActions';
 import type { MediaProviderId } from './mediaProviders/types';
+import { providerCanExecuteAction } from './mediaProviders/execution';
 import { getWorkspaceSupabaseAdmin, resolveOwnedWorkspaceScope } from './workspaceStore';
 
 export type MediaJobDomain = 'image' | 'video' | 'audio' | '3d' | 'gpu';
@@ -64,10 +65,12 @@ export const createMediaJobPlan = async ({
   if (!domain || !capability) return null;
 
   const scope = await resolveOwnedWorkspaceScope({ userId, projectId, threadId });
-  const candidates = getAvailableProvidersForAction(action).map((provider) => ({
-    id: provider.id,
-    label: provider.label,
-  }));
+  const candidates = getAvailableProvidersForAction(action)
+    .filter((provider) => providerCanExecuteAction(provider.id, action))
+    .map((provider) => ({
+      id: provider.id,
+      label: provider.label,
+    }));
   const chosen = chooseProvider(action, candidates);
 
   if (!chosen) {
