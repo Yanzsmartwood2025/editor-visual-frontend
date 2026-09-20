@@ -5,12 +5,14 @@ import { startVercelSandboxRender } from '../../lib/vercelSandboxRender';
 import { getCanvasDimensionsFromRatio } from '../../lib/mediaMetadata';
 import { getCompositionDurationInFrames } from '../../lib/timelineMetrics';
 import { getWorkspaceSupabaseAdmin, resolveOwnedWorkspaceScope } from '../../lib/workspaceStore';
+import { createR2PresignedGetUrl } from '../../lib/r2';
 
 const MAX_TIMELINE_ITEMS = 250;
 const MAX_RENDER_SECONDS = 20 * 60;
 const MAX_LONG_EDGE = 4096;
 const RATE_LIMIT_WINDOW_MS = 10 * 60 * 1000;
 const MAX_RENDERS_PER_WINDOW = 6;
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 class RenderValidationError extends Error {}
 
@@ -84,10 +86,12 @@ const reserveRenderSlot = async ({
   userId,
   projectId,
   threadId,
+  requestId,
 }: {
   userId: string;
   projectId: string;
   threadId?: string;
+  requestId?: string;
 }) => {
   const supabase = getWorkspaceSupabaseAdmin();
   const windowStartMs = Date.now() - RATE_LIMIT_WINDOW_MS;
@@ -129,10 +133,16 @@ const reserveRenderSlot = async ({
   const { data: request, error: insertError } = await supabase
     .from('render_requests')
     .insert({
+      ...(requestId ? { id: requestId } : {}),
       user_id: userId,
       project_id: projectId,
       thread_id: threadId || null,
       status: 'started',
+      usage: {
+        stage: 'preparing',
+        phase: 'Preparando edición',
+        progress: 0,
+      },
     })
     .select('id')
     .single();
@@ -154,14 +164,90 @@ export const config = {
   },
 };
 
+
+const publicRenderError = (message: string) => {
+  const normalized = message.toLowerCase();
+  if (normalized.includes('timeout') || normalized.includes('timed out')) {
+    return 'El procesamiento tardó más de lo esperado. Intenta nuevamente.';
+  }
+  if (normalized.includes('duration') || normalized.includes('duración') || normalized.includes('timeline')) {
+    return 'No se pudo preparar correctamente la edición solicitada.';
+  }
+  if (normalized.includes('media') || normalized.includes('archivo') || normalized.includes('video')) {
+    return 'Uno de los archivos no pudo procesarse correctamente.';
+  }
+  return 'No se pudo completar el procesamiento en este intento.';
+};
+
+const getRenderStatus = async (req: NextApiRequest, res: NextApiResponse) => {
+  try {
+    const user = await requireFirebaseUser(req);
+    const id = typeof req.query.id === 'string' ? req.query.id : '';
+    if (!UUID_RE.test(id)) return res.status(400).json({ error: 'Identificador de trabajo inválido.' });
+
+    const supabase = getWorkspaceSupabaseAdmin();
+    const { data: request, error } = await supabase
+      .from('render_requests')
+      .select('id,status,engine,usage,error_message,gallery_item_id,r2_key,created_at,completed_at')
+      .eq('id', id)
+      .eq('user_id', user.uid)
+      .maybeSingle();
+
+    if (error) throw error;
+    if (!request) return res.status(404).json({ error: 'Trabajo no encontrado.' });
+
+    let galleryItem: any = null;
+    if (request.gallery_item_id) {
+      const { data: item, error: itemError } = await supabase
+        .from('galeria_multimedia')
+        .select('*')
+        .eq('id', request.gallery_item_id)
+        .eq('user_id', user.uid)
+        .maybeSingle();
+
+      if (itemError) throw itemError;
+      if (item) {
+        galleryItem = {
+          ...item,
+          url: item.r2_key
+            ? createR2PresignedGetUrl({ key: item.r2_key, expiresIn: 900 }).url
+            : item.url,
+        };
+      }
+    }
+
+    res.setHeader('Cache-Control', 'private, no-store');
+    return res.status(200).json({
+      requestId: request.id,
+      status: request.status,
+      engine: request.engine || 'nayla-render',
+      usage: request.usage || {},
+      error: request.status === 'failed'
+        ? publicRenderError(String(request.error_message || ''))
+        : null,
+      galleryItem,
+      completedAt: request.completed_at,
+    });
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : 'No se pudo consultar el trabajo.';
+    const status = message.includes('token') || message.includes('Bearer') || message.includes('Firebase') ? 401 : 500;
+    return res.status(status).json({ error: status === 401 ? 'Sesión no válida.' : 'No se pudo consultar el trabajo.' });
+  }
+};
+
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
-  if (req.method !== 'POST') return res.status(405).json({ error: 'Usa POST.' });
+  if (req.method === 'GET') return getRenderStatus(req, res);
+  if (req.method !== 'POST') return res.status(405).json({ error: 'Usa GET o POST.' });
 
   let renderRequestId: string | null = null;
   let renderLedger: ReturnType<typeof getWorkspaceSupabaseAdmin> | null = null;
 
   try {
     const user = await requireFirebaseUser(req);
+    const requestedId = typeof req.body?.requestId === 'string' ? req.body.requestId : undefined;
+    if (requestedId && !UUID_RE.test(requestedId)) {
+      return res.status(400).json({ error: 'Identificador de trabajo inválido.' });
+    }
     const inputProps = validateInputProps(req.body?.inputProps);
     const scope = await resolveOwnedWorkspaceScope({
       userId: user.uid,
@@ -172,6 +258,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       userId: user.uid,
       projectId: scope.projectId,
       threadId: scope.threadId,
+      requestId: requestedId,
     });
     renderLedger = slot.supabase;
 
@@ -184,11 +271,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
 
     renderRequestId = slot.requestId;
-    const data = await startVercelSandboxRender(inputProps, {
-      ownerId: user.uid,
-      projectId: scope.projectId,
-      threadId: scope.threadId,
-    });
 
     const durationInFrames = getCompositionDurationInFrames(
       inputProps.timeline as any[],
@@ -197,6 +279,49 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       Array.isArray(inputProps.logos) ? inputProps.logos as any[] : []
     );
     const durationInSeconds = durationInFrames / 30;
+
+    let lastProgressWrite = 0;
+    let lastProgressValue = -1;
+
+    const data = await startVercelSandboxRender(
+      inputProps,
+      {
+        ownerId: user.uid,
+        projectId: scope.projectId,
+        threadId: scope.threadId,
+      },
+      async (update) => {
+        if (!renderLedger || !renderRequestId) return;
+
+        const now = Date.now();
+        const progress = Math.max(0, Math.min(1, Number(update.progress) || 0));
+        const shouldWrite =
+          progress >= 1 ||
+          progress - lastProgressValue >= 0.025 ||
+          now - lastProgressWrite >= 900;
+
+        if (!shouldWrite) return;
+        lastProgressWrite = now;
+        lastProgressValue = progress;
+
+        await renderLedger
+          .from('render_requests')
+          .update({
+            usage: {
+              stage: update.stage,
+              phase: update.phase,
+              progress,
+              framesDone: Math.min(durationInFrames, Math.round(durationInFrames * progress)),
+              framesTotal: durationInFrames,
+              canvasWidth: inputProps.canvasWidth,
+              canvasHeight: inputProps.canvasHeight,
+              mediaDurationSeconds: durationInSeconds,
+            },
+          })
+          .eq('id', renderRequestId)
+          .eq('user_id', user.uid);
+      }
+    );
 
     const { count: renderCount, error: countError } = await renderLedger
       .from('galeria_multimedia')
@@ -249,6 +374,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         engine: data.engine,
         usage: {
           ...data.usage,
+          stage: 'completed',
+          phase: 'Resultado listo',
+          progress: 1,
+          framesDone: durationInFrames,
+          framesTotal: durationInFrames,
           mediaDurationSeconds: durationInSeconds,
           frames: durationInFrames,
           canvasWidth: inputProps.canvasWidth,
@@ -286,6 +416,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
 
     const status = message.includes('token') || message.includes('Bearer') || message.includes('Firebase') ? 401 : 500;
-    return res.status(status).json({ error: message });
+    if (status === 500) console.error('Nayla Render falló:', error);
+    return res.status(status).json({
+      error: status === 401 ? 'Sesión no válida.' : publicRenderError(message),
+      requestId: renderRequestId,
+    });
   }
 }

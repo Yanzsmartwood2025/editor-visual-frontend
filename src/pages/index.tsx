@@ -67,6 +67,17 @@ type NaylaChatMessage = {
   role: 'user' | 'ai';
   text: string;
   cards?: NaylaStockCard[];
+  renderTask?: {
+    requestId?: string;
+    status: 'preparing' | 'rendering' | 'saving' | 'completed' | 'failed';
+    phase: string;
+    progress: number;
+    framesDone?: number;
+    framesTotal?: number;
+    outputUrl?: string | null;
+    galleryItem?: MediaItem | null;
+    error?: string | null;
+  };
   actionPlan?: {
     action: string;
     status?: string;
@@ -180,6 +191,17 @@ const CopyableChatText: React.FC<{ text: string }> = ({ text }) => {
       </div>
     </div>
   );
+};
+
+const createRenderRequestId = () => {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (char) => {
+    const value = Math.floor(Math.random() * 16);
+    const next = char === 'x' ? value : (value & 0x3) | 0x8;
+    return next.toString(16);
+  });
 };
 
 export default function NaylaCore() {
@@ -411,6 +433,56 @@ export default function NaylaCore() {
   const [chatAttachmentIds, setChatAttachmentIds] = useState<string[]>([]);
   const [channelUploadingKind, setChannelUploadingKind] = useState<NaylaChannelKind | null>(null);
 
+  const updateRenderTask = (
+    requestId: string | undefined,
+    patch: Partial<NonNullable<NaylaChatMessage['renderTask']>>
+  ) => {
+    setChatMessages((prev) => {
+      let targetIndex = -1;
+
+      for (let index = prev.length - 1; index >= 0; index -= 1) {
+        const task = prev[index].renderTask;
+        if (!task) continue;
+        if (requestId && task.requestId === requestId) {
+          targetIndex = index;
+          break;
+        }
+        if (!requestId && !['completed', 'failed'].includes(task.status)) {
+          targetIndex = index;
+          break;
+        }
+      }
+
+      if (targetIndex === -1) {
+        return [
+          ...prev,
+          {
+            role: 'ai' as const,
+            text: 'Estoy preparando tu resultado.',
+            renderTask: {
+              status: 'preparing' as const,
+              phase: 'Preparando edición',
+              progress: 0,
+              ...patch,
+            },
+          },
+        ];
+      }
+
+      return prev.map((message, index) =>
+        index === targetIndex
+          ? {
+              ...message,
+              renderTask: {
+                ...message.renderTask!,
+                ...patch,
+              },
+            }
+          : message
+      );
+    });
+  };
+
   const activeProject = projects.find((project) => project.id === activeProjectId) || null;
   const chatChannelAssets: NaylaChannelAsset[] = [
     ...galeriaMultimedia.map((item) => ({
@@ -429,6 +501,33 @@ export default function NaylaCore() {
     })),
   ];
   const chatAttachedAssets = chatChannelAssets.filter((asset) => chatAttachmentIds.includes(asset.id));
+  const naylaIsWorking =
+    chatProcessing ||
+    cloudExecutingIds.length > 0 ||
+    gpuQuoteLoading ||
+    gpuQuoteConfirming ||
+    channelUploadingKind !== null ||
+    chatMessages.some((message) => {
+      const renderActive = message.renderTask && !['completed', 'failed'].includes(message.renderTask.status);
+      const actionStatus = message.actionPlan?.status || '';
+      const actionActive = Boolean(
+        message.actionPlan &&
+        !['completed', 'failed', 'cancelled', 'expired', 'awaiting_confirmation', 'planned'].includes(actionStatus)
+      );
+      return Boolean(renderActive || actionActive);
+    });
+
+  const openRenderResult = (task: NonNullable<NaylaChatMessage['renderTask']>) => {
+    if (!task.outputUrl) return;
+    setVideoResultadoUrl(task.outputUrl);
+    setMediaActivaUrl(task.outputUrl);
+    setClipSeleccionado(null);
+    setIsPlaying(false);
+    setProjectMenuOpen(false);
+    setIsAiModalOpen(false);
+    setIsChatOpen(false);
+    setExpandedSurface(null);
+  };
 
   const absorbCloudJob = (job: any) => {
     if (!job) return;
@@ -1012,6 +1111,17 @@ export default function NaylaCore() {
     const renderRatio = ratioOverride || canvasRatio;
     const canvas = getCanvasDimensionsFromRatio(renderRatio, exportQuality);
     const durationInFrames = getCompositionDurationInFrames(lineaValidada, 30, subtitulos, logos);
+    const requestId = createRenderRequestId();
+
+    updateRenderTask(undefined, {
+      requestId,
+      status: 'preparing',
+      phase: 'Preparando edición',
+      progress: 0.01,
+      framesDone: 0,
+      framesTotal: durationInFrames,
+      error: null,
+    });
 
     const inputProps = {
       timeline: lineaValidada,
@@ -1024,42 +1134,145 @@ export default function NaylaCore() {
       settings: globalSettings
     };
 
-    const res = await fetch('/api/render', {
-      method: 'POST',
-      headers: firebaseHeaders(currentSession, { 'Content-Type': 'application/json' }),
-      body: JSON.stringify({
-        inputProps,
-        projectId: activeProjectId || undefined,
-        threadId: activeThreadId || undefined,
-      })
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || 'Error al solicitar renderizado');
+    let pollTimer: number | null = null;
+    let stopped = false;
 
-    if (data.status === 'completed' && data.output?.url) {
-      const outputUrl = data.output.url as string;
-      setVideoResultadoUrl(outputUrl);
+    const absorbRenderStatus = (payload: any) => {
+      const usage = payload?.usage || {};
+      const rawProgress = Number(usage.progress);
+      const progress = Number.isFinite(rawProgress) ? Math.max(0, Math.min(1, rawProgress)) : 0;
+      const serverStatus = String(payload?.status || 'started');
+      const stage = String(usage.stage || 'preparing');
+      const status: NonNullable<NaylaChatMessage['renderTask']>['status'] =
+        serverStatus === 'completed'
+          ? 'completed'
+          : serverStatus === 'failed'
+            ? 'failed'
+            : stage === 'saving'
+              ? 'saving'
+              : stage === 'rendering'
+                ? 'rendering'
+                : 'preparing';
 
-      const renderItem = data.galleryItem as MediaItem | undefined;
-      if (renderItem) {
-        setGaleriaMultimedia(prev =>
-          prev.some(item => item.id === renderItem.id)
+      const galleryItem = payload?.galleryItem as MediaItem | undefined;
+      if (galleryItem) {
+        setGaleriaMultimedia((prev) =>
+          prev.some((item) => item.id === galleryItem.id)
             ? prev
-            : [...prev, renderItem]
+            : [...prev, galleryItem]
         );
       }
 
-      const sandboxSeconds = Number(data.usage?.sandboxWallSeconds);
-      const usageSuffix = Number.isFinite(sandboxSeconds)
-        ? ` · Sandbox ${sandboxSeconds}s`
-        : '';
-      showAlert(`Render CPU completado: ${canvas.width}×${canvas.height} (${renderRatio})${usageSuffix}.`);
+      updateRenderTask(requestId, {
+        requestId,
+        status,
+        phase: String(usage.phase || (status === 'failed' ? 'No se pudo completar' : 'Procesando')),
+        progress: status === 'completed' ? 1 : progress,
+        framesDone: Number.isFinite(Number(usage.framesDone)) ? Number(usage.framesDone) : undefined,
+        framesTotal: Number.isFinite(Number(usage.framesTotal)) ? Number(usage.framesTotal) : durationInFrames,
+        outputUrl: galleryItem?.url || undefined,
+        galleryItem: galleryItem || undefined,
+        error: payload?.error || null,
+      });
+    };
+
+    const pollStatus = async () => {
+      if (stopped) return;
+      try {
+        const response = await fetch('/api/render?id=' + encodeURIComponent(requestId), {
+          headers: firebaseHeaders(currentSession),
+          cache: 'no-store',
+        });
+        if (response.status === 404) return;
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) return;
+        absorbRenderStatus(payload);
+        if (payload.status === 'completed' || payload.status === 'failed') {
+          stopped = true;
+          if (pollTimer) window.clearInterval(pollTimer);
+        }
+      } catch {
+        // El POST principal sigue siendo la fuente final de verdad.
+      }
+    };
+
+    pollTimer = window.setInterval(() => void pollStatus(), 850);
+
+    try {
+      const res = await fetch('/api/render', {
+        method: 'POST',
+        headers: firebaseHeaders(currentSession, { 'Content-Type': 'application/json' }),
+        body: JSON.stringify({
+          requestId,
+          inputProps,
+          projectId: activeProjectId || undefined,
+          threadId: activeThreadId || undefined,
+        })
+      });
+
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        const publicMessage = data.error || 'No se pudo completar el procesamiento en este intento.';
+        updateRenderTask(requestId, {
+          status: 'failed',
+          phase: 'Procesamiento interrumpido',
+          progress: 0,
+          framesTotal: durationInFrames,
+          error: publicMessage,
+        });
+        const renderError: any = new Error(publicMessage);
+        renderError.naylaRenderHandled = true;
+        throw renderError;
+      }
+
+      stopped = true;
+      if (pollTimer) window.clearInterval(pollTimer);
+
+      if (data.status === 'completed' && data.output?.url) {
+        const outputUrl = data.output.url as string;
+        setVideoResultadoUrl(outputUrl);
+
+        const renderItem = data.galleryItem as MediaItem | undefined;
+        if (renderItem) {
+          setGaleriaMultimedia(prev =>
+            prev.some(item => item.id === renderItem.id)
+              ? prev
+              : [...prev, renderItem]
+          );
+        }
+
+        updateRenderTask(requestId, {
+          status: 'completed',
+          phase: 'Resultado listo',
+          progress: 1,
+          framesDone: durationInFrames,
+          framesTotal: durationInFrames,
+          outputUrl,
+          galleryItem: renderItem || null,
+          error: null,
+        });
+
+        return data;
+      }
+
       return data;
+    } catch (error: any) {
+      if (!error?.naylaRenderHandled) {
+        const publicMessage = 'No se pudo completar el procesamiento en este intento.';
+        updateRenderTask(requestId, {
+          status: 'failed',
+          phase: 'Procesamiento interrumpido',
+          progress: 0,
+          framesTotal: durationInFrames,
+          error: publicMessage,
+        });
+        error.naylaRenderHandled = true;
+      }
+      throw error;
+    } finally {
+      stopped = true;
+      if (pollTimer) window.clearInterval(pollTimer);
     }
-
-
-
-    return data;
   };
 
   const ejecutarBuildTimeline = async (actionData: any) => {
@@ -1138,7 +1351,6 @@ export default function NaylaCore() {
 
     if (actionData.render === true) {
       await solicitarRenderTimeline(timelineValidado, undefined, formatoDetectado);
-      showAlert('Nayla armó la edición y terminó el render CPU en Vercel Sandbox.');
     } else {
       showAlert('Nayla armó el timeline con los medios existentes.');
     }
@@ -1483,9 +1695,9 @@ export default function NaylaCore() {
         throw new Error(data.error || 'Error en la respuesta del servidor');
       }
 
-      const aiText = data.text || (data.action === 'BUILD_TIMELINE'
-        ? 'Voy a armar el timeline con los medios existentes.'
-        : 'Acción preparada.');
+      const aiText = data.action === 'BUILD_TIMELINE'
+        ? (data.render === true ? 'Estoy preparando tu video.' : 'Edición preparada en el timeline.')
+        : (data.text || 'Acción preparada.');
 
       const isGpuAction = data.action === 'RUN_GPU_JOB';
       const actionPlan = (data.status === 'planned' || data.status === 'awaiting_confirmation' || data.gpuJobId || data.mediaJobId)
@@ -1527,6 +1739,13 @@ export default function NaylaCore() {
         text: aiText,
         cards: data.action === 'SEARCH_MEDIA' && Array.isArray(data.results) ? data.results : undefined,
         actionPlan,
+        renderTask: data.action === 'BUILD_TIMELINE' && data.render === true
+          ? {
+              status: 'preparing',
+              phase: 'Preparando edición',
+              progress: 0,
+            }
+          : undefined,
       }]);
 
       setChatAttachmentIds([]);
@@ -1536,7 +1755,9 @@ export default function NaylaCore() {
       }
     } catch (error: any) {
       console.error(error);
-      setChatMessages(prev => [...prev, { role: 'ai', text: error.message || 'Lo siento, ocurrió un error procesando tu solicitud.' }]);
+      if (!error?.naylaRenderHandled) {
+        setChatMessages(prev => [...prev, { role: 'ai', text: error.message || 'No se pudo completar la solicitud.' }]);
+      }
     } finally {
       setChatProcessing(false);
     }
@@ -3912,62 +4133,88 @@ if (!session) {
           overflow: 'hidden'
         }}>
           {/* Header Modal IA */}
+          <style>{`
+            @keyframes naylaWorkSpin {
+              to { transform: rotate(360deg); }
+            }
+            @keyframes naylaJobSweep {
+              0% { transform: translateX(-120%); }
+              100% { transform: translateX(320%); }
+            }
+          `}</style>
           <div style={{
-            minHeight: '74px',
-            padding: '12px 18px',
+            minHeight: '66px',
+            padding: '10px 12px',
             borderBottom: '1px solid #1f1f1f',
             backgroundColor: '#070707',
             display: 'flex',
             justifyContent: 'space-between',
             alignItems: 'center',
+            gap: 8,
             position: 'relative',
             zIndex: 45,
           }}>
-            <button
-              type="button"
-              aria-label="Abrir proyectos y canales de Nayla"
-              onClick={() => setProjectMenuOpen((value) => !value)}
-              style={{
-                width: '50px',
-                height: '50px',
-                borderRadius: '50%',
-                border: '2px solid #f4f4f4',
-                background: '#050505',
-                padding: 0,
-                cursor: 'pointer',
-                display: 'grid',
-                placeItems: 'center',
-                boxShadow: projectMenuOpen ? '0 0 0 1px rgba(255,255,255,0.18)' : 'none',
-              }}
-            >
-              <img
-                src="/assets/imagenes/Icono-intro.jpeg"
-                alt="Nayla"
-                style={{ width: '40px', height: '40px', borderRadius: '50%', objectFit: 'cover', filter: 'grayscale(1)' }}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0, flex: 1 }}>
+              <div
+                aria-label={naylaIsWorking ? 'Nayla está trabajando' : 'Nayla lista'}
+                style={{
+                  width: 46,
+                  height: 46,
+                  flex: '0 0 46px',
+                  borderRadius: '50%',
+                  position: 'relative',
+                  display: 'grid',
+                  placeItems: 'center',
+                }}
+              >
+                <span style={{
+                  position: 'absolute',
+                  inset: 0,
+                  borderRadius: '50%',
+                  border: '2px solid rgba(255,255,255,0.24)',
+                  borderTopColor: naylaIsWorking ? '#fff' : 'rgba(255,255,255,0.82)',
+                  borderRightColor: naylaIsWorking ? '#fff' : 'rgba(255,255,255,0.82)',
+                  animation: naylaIsWorking ? 'naylaWorkSpin 0.85s linear infinite' : 'none',
+                }} />
+                <img
+                  src="/assets/imagenes/Icono-intro.jpeg"
+                  alt="Nayla"
+                  style={{ width: '36px', height: '36px', borderRadius: '50%', objectFit: 'cover', filter: 'grayscale(1)' }}
+                />
+              </div>
+
+              <NaylaEngineBar
+                session={session}
+                mode={naylaEngineMode}
+                onModeChange={setNaylaEngineMode}
+                compact
               />
-            </button>
+            </div>
 
             <button
+              type="button"
               aria-label="Cerrar Nayla"
               onClick={() => {
                 setProjectMenuOpen(false);
                 setIsAiModalOpen(false);
               }}
               style={{
-                background: '#171717',
-                border: '1px solid #3a3a3a',
+                background: 'transparent',
+                border: 'none',
                 color: '#fff',
-                width: '42px',
-                height: '42px',
-                borderRadius: '50%',
+                width: '30px',
+                height: '30px',
                 cursor: 'pointer',
                 display: 'grid',
                 placeItems: 'center',
-                fontSize: '22px',
+                fontSize: '25px',
+                fontWeight: 300,
                 lineHeight: 1,
+                padding: 0,
+                flex: '0 0 30px',
               }}
             >
-              ✕
+              ×
             </button>
           </div>
 
@@ -4026,12 +4273,6 @@ if (!session) {
             </button>
           </div>
 
-          <NaylaEngineBar
-            session={session}
-            mode={naylaEngineMode}
-            onModeChange={setNaylaEngineMode}
-          />
-
           {/* Chat Messages Body */}
           <div data-no-edge-swipe style={{ flex: 1, minWidth: 0, padding: '20px', overflowX: 'hidden', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '14px', overscrollBehavior: 'contain' }}>
             {chatMessages.length === 0 ? (
@@ -4054,6 +4295,115 @@ if (!session) {
                   lineHeight: '1.5'
                 }}>
                   <CopyableChatText text={msg.text} />
+                  {msg.renderTask && (
+                    <div style={{
+                      marginTop: 10,
+                      padding: 11,
+                      border: '1px solid #303030',
+                      borderRadius: 12,
+                      background: '#080808',
+                    }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center' }}>
+                        <div style={{ fontSize: '0.73rem', fontWeight: 800, letterSpacing: '0.06em', color: '#f4f4f4' }}>
+                          NAYLA RENDER
+                        </div>
+                        <div style={{ fontSize: '0.65rem', color: '#8b8b8b', whiteSpace: 'nowrap' }}>
+                          {msg.renderTask.status === 'completed'
+                            ? 'LISTO'
+                            : msg.renderTask.status === 'failed'
+                              ? 'INTERRUMPIDO'
+                              : `${Math.round((msg.renderTask.progress || 0) * 100)}%`}
+                        </div>
+                      </div>
+
+                      <div style={{ color: '#bdbdbd', fontSize: '0.75rem', marginTop: 7 }}>
+                        {msg.renderTask.phase}
+                      </div>
+
+                      {msg.renderTask.status !== 'failed' && (
+                        <div style={{
+                          height: 6,
+                          borderRadius: 999,
+                          background: '#171717',
+                          border: '1px solid #292929',
+                          overflow: 'hidden',
+                          marginTop: 9,
+                        }}>
+                          <div style={{
+                            height: '100%',
+                            width: `${Math.max(2, Math.round((msg.renderTask.progress || 0) * 100))}%`,
+                            background: '#f1f1f1',
+                            borderRadius: 999,
+                            transition: 'width 260ms ease',
+                          }} />
+                        </div>
+                      )}
+
+                      {msg.renderTask.framesTotal && msg.renderTask.status !== 'failed' && (
+                        <div style={{ color: '#777', fontSize: '0.67rem', marginTop: 7 }}>
+                          Fotogramas: {Math.min(msg.renderTask.framesDone || 0, msg.renderTask.framesTotal)} / {msg.renderTask.framesTotal}
+                        </div>
+                      )}
+
+                      {msg.renderTask.status === 'failed' && (
+                        <div style={{
+                          marginTop: 9,
+                          padding: '8px 9px',
+                          borderRadius: 9,
+                          border: '1px solid #333',
+                          color: '#aaa',
+                          fontSize: '0.72rem',
+                          lineHeight: 1.4,
+                        }}>
+                          {msg.renderTask.error || 'No se pudo completar el procesamiento en este intento.'}
+                        </div>
+                      )}
+
+                      {msg.renderTask.status === 'completed' && msg.renderTask.outputUrl && (
+                        <button
+                          type="button"
+                          onClick={() => openRenderResult(msg.renderTask!)}
+                          style={{
+                            marginTop: 10,
+                            width: '100%',
+                            padding: 0,
+                            border: '1px solid #383838',
+                            borderRadius: 11,
+                            overflow: 'hidden',
+                            background: '#050505',
+                            color: '#fff',
+                            cursor: 'pointer',
+                            textAlign: 'left',
+                          }}
+                        >
+                          <video
+                            src={msg.renderTask.outputUrl}
+                            muted
+                            playsInline
+                            preload="metadata"
+                            style={{
+                              width: '100%',
+                              maxHeight: 190,
+                              display: 'block',
+                              objectFit: 'contain',
+                              background: '#000',
+                              pointerEvents: 'none',
+                            }}
+                          />
+                          <div style={{
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
+                            gap: 8,
+                            padding: '9px 10px',
+                          }}>
+                            <span style={{ fontSize: '0.73rem', fontWeight: 750 }}>Resultado listo</span>
+                            <span style={{ color: '#888', fontSize: '0.67rem' }}>Guardado · Toca para abrir</span>
+                          </div>
+                        </button>
+                      )}
+                    </div>
+                  )}
                   {msg.actionPlan && (
                     <div style={{ marginTop: '10px', padding: '10px', border: '1px solid #2b2b2b', borderRadius: '10px', backgroundColor: '#080808' }}>
                       <div style={{ color: '#f2f2f2', fontSize: '0.78rem', fontWeight: 700, letterSpacing: '0.04em' }}>
@@ -4062,6 +4412,24 @@ if (!session) {
                       <div style={{ color: '#999', marginTop: '4px', fontSize: '0.78rem' }}>
                         Motor: {msg.actionPlan.engine === 'nayla-compute' ? 'Nayla Compute' : 'Nayla Cloud'}
                       </div>
+                      {!['completed', 'failed', 'cancelled', 'expired', 'awaiting_confirmation', 'planned'].includes(String(msg.actionPlan.status || '')) && (
+                        <div style={{
+                          height: 5,
+                          borderRadius: 999,
+                          background: '#171717',
+                          border: '1px solid #292929',
+                          overflow: 'hidden',
+                          marginTop: 9,
+                        }}>
+                          <div style={{
+                            width: '32%',
+                            height: '100%',
+                            background: '#eee',
+                            borderRadius: 999,
+                            animation: 'naylaJobSweep 1.15s ease-in-out infinite',
+                          }} />
+                        </div>
+                      )}
                       {msg.actionPlan.mediaJobId && (
                         <div style={{ marginTop: '7px', display: 'grid', gap: '7px', color: '#777', fontSize: '0.7rem' }}>
                           <span>Estado: {String(msg.actionPlan.status || 'awaiting_confirmation').toUpperCase()}</span>
@@ -4164,7 +4532,7 @@ if (!session) {
             )}
             {chatProcessing && (
               <div style={{ alignSelf: 'flex-start', color: '#f2f2f2', padding: '10px', fontSize: '0.9rem', fontStyle: 'italic' }}>
-                Nayla está pensando...
+                {naylaIsWorking ? 'Nayla está trabajando…' : 'Nayla está preparando la respuesta…'}
               </div>
             )}
           </div>
@@ -4245,6 +4613,29 @@ if (!session) {
                 boxSizing: 'border-box'
               }}
             />
+            <button
+              type="button"
+              aria-label="Abrir proyectos, archivos y opciones"
+              onClick={() => setProjectMenuOpen((value) => !value)}
+              style={{
+                width: 42,
+                height: 42,
+                flex: '0 0 42px',
+                borderRadius: '50%',
+                border: projectMenuOpen ? '1px solid #f1f1f1' : '1px solid #3a3a3a',
+                background: projectMenuOpen ? '#f1f1f1' : '#111',
+                color: projectMenuOpen ? '#050505' : '#f1f1f1',
+                display: 'grid',
+                placeItems: 'center',
+                cursor: 'pointer',
+                fontSize: 25,
+                fontWeight: 300,
+                lineHeight: 1,
+                padding: 0,
+              }}
+            >
+              +
+            </button>
             <button
               onClick={() => void sendNaylaMessage()}
               disabled={chatProcessing}
