@@ -413,7 +413,11 @@ const startDeepgram = async (action: NaylaAction): Promise<CloudProviderStart> =
   const key = requiredEnv('DEEPGRAM_API_KEY');
 
   if (action.mode === 'tts') {
-    const model = process.env.DEEPGRAM_TTS_MODEL?.trim() || 'aura-2-thalia-en';
+    const requestedLanguage = (action.targetLanguage || '').trim().toLowerCase();
+    const defaultModel = requestedLanguage.startsWith('en')
+      ? 'aura-2-thalia-en'
+      : 'aura-2-celeste-es';
+    const model = process.env.DEEPGRAM_TTS_MODEL?.trim() || defaultModel;
     const output = await binaryRequest(
       `https://api.deepgram.com/v1/speak?model=${encodeURIComponent(model)}`,
       {
@@ -433,7 +437,7 @@ const startDeepgram = async (action: NaylaAction): Promise<CloudProviderStart> =
   if (action.mode === 'speech_to_text') {
     if (!action.inputUrl) throw new Error('La transcripción necesita un audio o video de entrada.');
     const payload = await jsonRequest(
-      `https://api.deepgram.com/v1/listen?model=${encodeURIComponent(process.env.DEEPGRAM_STT_MODEL?.trim() || 'nova-3')}&smart_format=true`,
+      `https://api.deepgram.com/v1/listen?model=${encodeURIComponent(process.env.DEEPGRAM_STT_MODEL?.trim() || 'nova-3')}&smart_format=true&language=${encodeURIComponent(action.targetLanguage || 'multi')}`,
       {
         method: 'POST',
         headers: {
