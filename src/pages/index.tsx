@@ -160,6 +160,14 @@ export default function NaylaCore() {
   const [subiendo3d, setSubiendo3d] = useState(false);
   const [gpuQuote, setGpuQuote] = useState<GpuQuoteView | null>(null);
   const [gpuQuoteSource, setGpuQuoteSource] = useState<MediaItem | null>(null);
+  const [gpuQuoteRequest, setGpuQuoteRequest] = useState<any | null>(null);
+  const [gpuQuoteUi, setGpuQuoteUi] = useState<{
+    title: string;
+    description?: string;
+    confirmLabel: string;
+    fromChat?: boolean;
+    userText?: string;
+  } | null>(null);
   const [gpuQuoteLoading, setGpuQuoteLoading] = useState(false);
   const [gpuQuoteConfirming, setGpuQuoteConfirming] = useState(false);
   const [lineaDeTiempo, setLineaDeTiempo] = useState<TimelineItem[]>([]);
@@ -1028,20 +1036,40 @@ export default function NaylaCore() {
         ? 'Voy a armar el timeline con los medios existentes.'
         : 'Acción preparada.');
 
-      const actionPlan = (data.status === 'planned' || data.gpuJobId)
+      const actionPlan = (data.status === 'planned' || data.status === 'awaiting_confirmation' || data.gpuJobId)
         ? {
             action: data.action,
             status: data.status,
-            providers: data.gpuJobId
+            providers: (data.gpuJobId || data.status === 'awaiting_confirmation')
               ? [{ id: 'vast', label: 'Vast.ai' }]
               : (Array.isArray(data.availableProviders) ? data.availableProviders : []),
             gpuJobId: data.gpuJobId,
-            gpuName: data.job?.gpuName ?? null,
-            hourlyPrice: data.job?.hourlyPrice ?? null,
-            estimatedMaxCost: data.job?.estimatedMaxCost ?? null,
+            gpuName: data.job?.gpuName ?? data.quote?.gpuName ?? null,
+            hourlyPrice: data.job?.hourlyPrice ?? data.quote?.hourlyPrice ?? null,
+            estimatedMaxCost: data.job?.estimatedMaxCost ?? data.quote?.estimatedMaxCost ?? null,
             runtimeCostEstimate: data.job?.runtimeCostEstimate ?? null,
           }
         : undefined;
+
+      if (
+        data.status === 'awaiting_confirmation' &&
+        data.quote &&
+        data.pendingGpuRequest
+      ) {
+        const isMusic = data.pendingGpuRequest.recipe === 'ace-step-music';
+        setGpuQuoteSource(null);
+        setGpuQuoteRequest(data.pendingGpuRequest);
+        setGpuQuoteUi({
+          title: isMusic ? 'Música IA · ACE-Step' : 'Trabajo GPU',
+          description: isMusic
+            ? 'Generación musical propia con Vast.ai · el resultado se guardará en la Bóveda.'
+            : 'Proceso bajo demanda con Vast.ai.',
+          confirmLabel: isMusic ? 'CONFIRMAR Y GENERAR MÚSICA' : 'CONFIRMAR GPU',
+          fromChat: true,
+          userText: message,
+        });
+        setGpuQuote(data.quote);
+      }
 
       setChatMessages(prev => [...prev, {
         role: 'ai',
@@ -1169,6 +1197,18 @@ export default function NaylaCore() {
       }
 
       setGpuQuoteSource(selectedPhoto);
+      setGpuQuoteRequest({
+        workload: '3d',
+        recipe: 'triposr-image-to-3d',
+        inputUrls: [selectedPhoto.url],
+      });
+      setGpuQuoteUi({
+        title: 'Imagen → 3D',
+        description: 'Conversión 3D con TripoSR en Vast.ai.',
+        confirmLabel: 'CONFIRMAR Y CREAR 3D',
+        fromChat: false,
+        userText: 'Crear 3D desde ' + (selectedPhoto.nombre || 'la imagen seleccionada') + ' con TripoSR.',
+      });
       setGpuQuote(payload.quote || null);
     } catch (error: any) {
       console.error('Error cotizando GPU 3D:', error);
@@ -1179,8 +1219,8 @@ export default function NaylaCore() {
     }
   };
 
-  const confirmImageTo3D = async () => {
-    if (!gpuQuote?.available || !gpuQuoteSource) return;
+  const confirmGpuQuote = async () => {
+    if (!gpuQuote?.available || !gpuQuoteRequest) return;
 
     const currentSession = session || await getFirebaseSession();
     if (!currentSession) {
@@ -1193,11 +1233,7 @@ export default function NaylaCore() {
       const response = await fetch('/api/gpu/jobs', {
         method: 'POST',
         headers: firebaseHeaders(currentSession, { 'Content-Type': 'application/json' }),
-        body: JSON.stringify({
-          workload: '3d',
-          recipe: 'triposr-image-to-3d',
-          inputUrls: [gpuQuoteSource.url],
-        }),
+        body: JSON.stringify(gpuQuoteRequest),
       });
 
       const raw = await response.text();
@@ -1216,14 +1252,16 @@ export default function NaylaCore() {
       const gpuJobId = payload.gpuJobId || job.id;
       if (!gpuJobId) throw new Error('Vast no devolvió un identificador de trabajo.');
 
+      const is3d = gpuQuoteRequest.workload === '3d';
+      const isMusic = gpuQuoteRequest.recipe === 'ace-step-music';
+      const userText = gpuQuoteUi?.userText ||
+        (isMusic ? 'Generar música con ACE-Step en GPU Vast.ai.' : 'Ejecutar trabajo GPU Vast.ai.');
+
       setChatMessages((prev) => [
         ...prev,
+        ...(gpuQuoteUi?.fromChat ? [] : [{ role: 'user' as const, text: userText }]),
         {
-          role: 'user',
-          text: 'Crear 3D desde ' + (gpuQuoteSource.nombre || 'la imagen seleccionada') + ' con TripoSR.',
-        },
-        {
-          role: 'ai',
+          role: 'ai' as const,
           text: payload.text || 'Nayla está preparando la GPU Vast.ai.',
           actionPlan: {
             action: 'RUN_GPU_JOB',
@@ -1240,13 +1278,16 @@ export default function NaylaCore() {
 
       setGpuQuote(null);
       setGpuQuoteSource(null);
-      setMainNav('3d');
+      setGpuQuoteRequest(null);
+      setGpuQuoteUi(null);
+      if (is3d) setMainNav('3d');
+      if (isMusic) setMainNav('boveda');
       setIsChatOpen(true);
       setMobileOverlaysVisible(true);
       openExpandedSurface('chat');
     } catch (error: any) {
-      console.error('Error iniciando Imagen → 3D:', error);
-      showAlert(error?.message || 'No se pudo iniciar Imagen → 3D.');
+      console.error('Error iniciando trabajo GPU:', error);
+      showAlert(error?.message || 'No se pudo iniciar el trabajo GPU.');
     } finally {
       setGpuQuoteConfirming(false);
     }
@@ -3528,13 +3569,18 @@ if (!session) {
 <GpuQuoteModal
         quote={gpuQuote}
         sourceName={gpuQuoteSource?.nombre}
+        title={gpuQuoteUi?.title}
+        description={gpuQuoteUi?.description}
+        confirmLabel={gpuQuoteUi?.confirmLabel}
         confirming={gpuQuoteConfirming}
         onCancel={() => {
           if (gpuQuoteConfirming) return;
           setGpuQuote(null);
           setGpuQuoteSource(null);
+          setGpuQuoteRequest(null);
+          setGpuQuoteUi(null);
         }}
-        onConfirm={() => void confirmImageTo3D()}
+        onConfirm={() => void confirmGpuQuote()}
       />
 
 {customAlertMsg && (
