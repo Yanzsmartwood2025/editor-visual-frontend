@@ -349,3 +349,11 @@ comment on column public.editor_projects.linea_de_tiempo is
   'Project-scoped Remotion/editor timeline. Each project owns an independent timeline.';
 comment on column public.render_requests.r2_key is
   'Private Cloudflare R2 object key for the rendered output.';
+
+
+-- Backfill private object keys for legacy R2.dev gallery rows.
+-- The URL field may remain for compatibility; reads prefer r2_key and signed GET URLs.
+update public.galeria_multimedia
+set r2_key = regexp_replace(url, '^https://[^/]+/', '')
+where r2_key is null
+  and url ~ '^https://[^/]+\\.r2\\.dev/';
