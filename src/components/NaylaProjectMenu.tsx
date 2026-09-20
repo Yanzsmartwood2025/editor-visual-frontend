@@ -123,7 +123,7 @@ export function NaylaProjectMenu({
   const audioRef = useRef<HTMLInputElement>(null);
   const modelRef = useRef<HTMLInputElement>(null);
 
-  const refs: Record<NaylaChannelKind, React.RefObject<HTMLInputElement>> = {
+  const refs: Record<NaylaChannelKind, React.RefObject<HTMLInputElement | null>> = {
     foto: photoRef,
     video: videoRef,
     audio: audioRef,
