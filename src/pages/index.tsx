@@ -111,92 +111,25 @@ const ICONOS_POS: Record<string, string> = { derecha: '→', izquierda: '←', a
 
 
 
-const CopyableChatText: React.FC<{ text: string }> = ({ text }) => {
-  const [copied, setCopied] = useState(false);
-  const copiedTimerRef = useRef<number | null>(null);
-  const structured = /^\s*[\[{]/.test(text) || (text.includes('https://') && text.length > 500);
-
-  useEffect(() => {
-    return () => {
-      if (copiedTimerRef.current) window.clearTimeout(copiedTimerRef.current);
-    };
-  }, []);
-
-  const copyText = async () => {
-    try {
-      if (navigator.clipboard?.writeText) {
-        await navigator.clipboard.writeText(text);
-      } else {
-        const helper = document.createElement('textarea');
-        helper.value = text;
-        helper.setAttribute('readonly', '');
-        helper.style.position = 'fixed';
-        helper.style.opacity = '0';
-        document.body.appendChild(helper);
-        helper.select();
-        document.execCommand('copy');
-        document.body.removeChild(helper);
-      }
-
-      setCopied(true);
-      if (copiedTimerRef.current) window.clearTimeout(copiedTimerRef.current);
-      copiedTimerRef.current = window.setTimeout(() => setCopied(false), 1400);
-    } catch (error) {
-      console.warn('No se pudo copiar el mensaje de Nayla:', error);
-    }
-  };
-
-  return (
-    <div data-no-edge-swipe style={{ minWidth: 0, maxWidth: '100%' }}>
-      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '6px' }}>
-        <button
-          type="button"
-          onClick={() => void copyText()}
-          aria-label="Copiar contenido del mensaje"
-          style={{
-            minHeight: '30px',
-            padding: '4px 9px',
-            borderRadius: '8px',
-            border: '1px solid #333',
-            background: '#111',
-            color: copied ? '#fff' : '#aaa',
-            fontSize: '0.65rem',
-            fontWeight: 800,
-            letterSpacing: '0.05em',
-            cursor: 'pointer',
-          }}
-        >
-          {copied ? 'COPIADO' : 'COPIAR'}
-        </button>
-      </div>
-
-      <div
-        tabIndex={0}
-        aria-label="Contenido del mensaje. Se puede desplazar vertical y horizontalmente."
-        style={{
-          width: '100%',
-          maxWidth: '100%',
-          maxHeight: '44dvh',
-          overflowX: 'auto',
-          overflowY: 'auto',
-          WebkitOverflowScrolling: 'touch',
-          overscrollBehavior: 'contain',
-          touchAction: 'pan-x pan-y',
-          userSelect: 'text',
-          WebkitUserSelect: 'text',
-          whiteSpace: structured ? 'pre' : 'pre-wrap',
-          overflowWrap: structured ? 'normal' : 'anywhere',
-          wordBreak: 'normal',
-          fontFamily: structured ? 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace' : 'inherit',
-          scrollbarWidth: 'thin',
-          paddingBottom: '4px',
-        }}
-      >
-        {text}
-      </div>
-    </div>
-  );
-};
+const SelectableChatText: React.FC<{ text: string }> = ({ text }) => (
+  <div
+    data-no-edge-swipe
+    style={{
+      width: '100%',
+      minWidth: 0,
+      maxWidth: '100%',
+      userSelect: 'text',
+      WebkitUserSelect: 'text',
+      whiteSpace: 'pre-wrap',
+      overflowWrap: 'anywhere',
+      wordBreak: 'normal',
+      touchAction: 'pan-y',
+      lineHeight: 1.55,
+    }}
+  >
+    {text}
+  </div>
+);
 
 const createRenderRequestId = () => {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
@@ -4398,7 +4331,7 @@ if (!session) {
           </div>
 
           {/* Chat Messages Body */}
-          <div data-no-edge-swipe style={{ flex: 1, minWidth: 0, padding: '20px', overflowX: 'hidden', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '14px', overscrollBehavior: 'contain' }}>
+          <div data-no-edge-swipe style={{ flex: 1, minWidth: 0, padding: '16px 14px', overflowX: 'hidden', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '18px', overscrollBehavior: 'contain' }}>
             {chatMessages.length === 0 ? (
               <div style={{ textAlign: 'center', color: '#666', marginTop: '40px', fontSize: '0.95rem' }}>
                 Hola, soy Nayla. ¿En qué puedo ayudarte hoy?
@@ -4406,19 +4339,20 @@ if (!session) {
             ) : (
               chatMessages.map((msg, i) => (
                 <div key={i} style={{
-                  alignSelf: msg.role === 'user' ? 'flex-end' : 'flex-start',
-                  backgroundColor: msg.role === 'user' ? '#1a1a1a' : '#0d0d0d',
+                  alignSelf: msg.role === 'user' ? 'flex-end' : 'stretch',
+                  backgroundColor: msg.role === 'user' ? '#202020' : 'transparent',
                   color: '#fff',
-                  padding: '12px 16px',
-                  borderRadius: '14px',
-                  maxWidth: '80%',
+                  padding: msg.role === 'user' ? '10px 13px' : '2px 2px',
+                  borderRadius: msg.role === 'user' ? '18px' : 0,
+                  maxWidth: msg.role === 'user' ? '88%' : '100%',
+                  width: msg.role === 'user' ? 'auto' : '100%',
                   minWidth: 0,
-                  overflow: 'hidden',
-                  border: msg.role === 'ai' ? '1px solid #262626' : '1px solid #333',
+                  overflow: 'visible',
+                  border: msg.role === 'user' ? '1px solid #303030' : 'none',
                   fontSize: '0.95rem',
-                  lineHeight: '1.5'
+                  lineHeight: '1.55'
                 }}>
-                  {msg.text ? <CopyableChatText text={msg.text} /> : null}
+                  {msg.text ? <SelectableChatText text={msg.text} /> : null}
                   {msg.attachments?.length ? (
                     <div style={{
                       display: 'grid',
@@ -4793,23 +4727,36 @@ if (!session) {
             width: '100%',
             maxWidth: '100vw'
           }}>
-            <input
-              type="text"
+            <textarea
               value={chatInput}
               onChange={(e) => setChatInput(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && sendNaylaMessage()}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault();
+                  void sendNaylaMessage();
+                }
+              }}
+              rows={1}
               placeholder="Escribe aquí tu mensaje..."
               style={{
                 flex: 1,
                 minWidth: 0,
+                minHeight: 42,
+                maxHeight: 132,
                 padding: '10px 12px',
                 backgroundColor: '#111',
                 border: '1px solid #333',
-                borderRadius: '10px',
+                borderRadius: '16px',
                 color: '#fff',
                 outline: 'none',
-                fontSize: '0.9rem',
-                boxSizing: 'border-box'
+                fontSize: '16px',
+                lineHeight: 1.4,
+                boxSizing: 'border-box',
+                resize: 'none',
+                overflowY: 'auto',
+                fontFamily: 'inherit',
+                userSelect: 'text',
+                WebkitUserSelect: 'text',
               }}
             />
             <button
