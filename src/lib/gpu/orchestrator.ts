@@ -19,11 +19,8 @@ import {
   getGpuProfile,
   type GpuWorkload,
 } from './profiles';
-import {
-  buildRecipeBootstrap,
-  getGpuRecipePlan,
-  validateRecipeInputs,
-} from './recipes';
+import { buildRecipeBootstrap } from './recipes';
+import { resolveGpuExecutionPlan } from './planner';
 import {
   createVastInstance,
   destroyVastInstance,
@@ -201,14 +198,8 @@ export const startVastGpuJob = async ({
   appBaseUrl: string;
 }) => {
   const baseUrl = normalizeAppBaseUrl(appBaseUrl);
-  const recipePlan = getGpuRecipePlan(input.workload, input.recipe);
-  const profile = recipePlan?.profile || getGpuProfile(input.workload);
-  const workerImage = recipePlan?.workerImage || profile.workerImage;
+  const { profile, recipePlan, workerImage } = resolveGpuExecutionPlan(input);
   const policy = getGpuBudgetPolicy();
-
-  if (recipePlan) {
-    validateRecipeInputs(recipePlan, input.inputUrls || []);
-  }
 
   if (!workerImage) {
     throw new Error(
