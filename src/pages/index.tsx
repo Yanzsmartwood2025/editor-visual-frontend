@@ -3470,7 +3470,7 @@ if (!session) {
                 <img
                   src="/assets/imagenes/Icono-intro.jpeg"
                   alt="Nayla"
-                  style={{ width: '34px', height: '34px', borderRadius: '50%', objectFit: 'cover' }}
+                  style={{ width: '34px', height: '34px', borderRadius: '50%', objectFit: 'cover', filter: 'grayscale(1)' }}
                 />
               </button>
             )}
@@ -3654,8 +3654,8 @@ if (!session) {
           backgroundColor: 'var(--glass-bg)',
           backdropFilter: 'blur(var(--glass-blur))',
           WebkitBackdropFilter: 'blur(var(--glass-blur))',
-          border: '1px solid rgba(var(--glow-color-rgb), calc(var(--glow-intensity) * 0.5))',
-          boxShadow: '0 0 var(--glow-spread) rgba(var(--glow-color-rgb), var(--glow-intensity))',
+          border: '1px solid rgba(255,255,255,0.18)',
+          boxShadow: '0 0 18px rgba(255,255,255,0.06)',
           display: 'flex',
           flexDirection: 'column',
           overflow: 'hidden'
@@ -3692,7 +3692,7 @@ if (!session) {
               <img
                 src="/assets/imagenes/Icono-intro.jpeg"
                 alt="Nayla"
-                style={{ width: '40px', height: '40px', borderRadius: '50%', objectFit: 'cover' }}
+                style={{ width: '40px', height: '40px', borderRadius: '50%', objectFit: 'cover', filter: 'grayscale(1)' }}
               />
             </button>
 
