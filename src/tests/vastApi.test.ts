@@ -16,21 +16,22 @@ afterEach(() => {
 });
 
 describe('Vast API adapter', () => {
-  it('reads balance without returning account secrets', async () => {
+  it('uses Vast credit as the spendable budget without returning account secrets', async () => {
     process.env.VAST_API_KEY = 'vast-secret';
 
     const fetchMock = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
       expect((init?.headers as Record<string, string>)?.Authorization).toBe('Bearer vast-secret');
       return new Response(JSON.stringify({
         id: 7,
-        balance: 4.87,
+        balance: 0,
+        credit: 4.87,
         api_key: 'must-not-escape',
       }), { status: 200 });
     });
     vi.stubGlobal('fetch', fetchMock);
 
     const account = await getVastAccountSummary();
-    expect(account).toEqual({ id: 7, balance: 4.87 });
+    expect(account).toEqual({ id: 7, balance: 4.87, credit: 4.87, rawBalance: 0 });
     expect(JSON.stringify(account)).not.toContain('must-not-escape');
   });
 
@@ -42,8 +43,19 @@ describe('Vast API adapter', () => {
     ));
 
     await expect(getVastAccountSummary()).rejects.toThrow(
-      'no permite leer el saldo'
+      'no permite leer el crédito'
     );
+  });
+
+  it('falls back to balance when an older Vast response omits credit', async () => {
+    process.env.VAST_API_KEY = 'vast-secret';
+
+    vi.stubGlobal('fetch', vi.fn(async () =>
+      new Response(JSON.stringify({ id: 8, balance: 3.25 }), { status: 200 })
+    ));
+
+    const account = await getVastAccountSummary();
+    expect(account).toEqual({ id: 8, balance: 3.25, credit: undefined, rawBalance: 3.25 });
   });
 
   it('searches only verified on-demand offers inside the GPU caps', async () => {
