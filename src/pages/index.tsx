@@ -15,6 +15,7 @@ import { getCompositionDurationInFrames } from '../lib/timelineMetrics';
 import { getFirebaseSession, observeFirebaseSession, signOutFirebase, signInWithCustomTokenValue, type FirebaseSession } from '../lib/firebaseClient';
 import { firebaseHeaders } from '../lib/apiClient';
 import { Model3DWorkspace } from '../components/Model3DWorkspace';
+import { GpuQuoteModal, type GpuQuoteView } from '../components/GpuQuoteModal';
 import {
   deleteModel3DFromBoveda,
   uploadModel3DToBoveda,
@@ -157,6 +158,10 @@ export default function NaylaCore() {
   const [modelos3d, setModelos3d] = useState<Model3DAsset[]>([]);
   const [modelo3dActivoId, setModelo3dActivoId] = useState<string | null>(null);
   const [subiendo3d, setSubiendo3d] = useState(false);
+  const [gpuQuote, setGpuQuote] = useState<GpuQuoteView | null>(null);
+  const [gpuQuoteSource, setGpuQuoteSource] = useState<MediaItem | null>(null);
+  const [gpuQuoteLoading, setGpuQuoteLoading] = useState(false);
+  const [gpuQuoteConfirming, setGpuQuoteConfirming] = useState(false);
   const [lineaDeTiempo, setLineaDeTiempo] = useState<TimelineItem[]>([]);
   const [subtitulos, setSubtitulos] = useState<SubtitleItem[]>([]);
   const [logos, setLogos] = useState<LogoItem[]>([]);
@@ -1104,6 +1109,149 @@ export default function NaylaCore() {
     }
   };
 
+  const getImageTo3DSource = () => {
+    const selectedPhoto = galeriaMultimedia.find(
+      (item) => item.tipo === 'foto' && selectedMediaIds.includes(item.id)
+    );
+    if (selectedPhoto) return selectedPhoto;
+
+    const clipPhoto = galeriaMultimedia.find(
+      (item) => item.id === clipSeleccionado && item.tipo === 'foto'
+    );
+    if (clipPhoto) return clipPhoto;
+
+    if (visualActivo?.tipo === 'foto') {
+      const activePhoto = galeriaMultimedia.find(
+        (item) => item.tipo === 'foto' && item.url === visualActivo.url
+      );
+      if (activePhoto) return activePhoto;
+    }
+
+    return [...galeriaMultimedia].reverse().find((item) => item.tipo === 'foto') || null;
+  };
+
+  const quoteImageTo3D = async () => {
+    const selectedPhoto = getImageTo3DSource();
+    if (!selectedPhoto) {
+      showAlert('Necesito una imagen en la Bóveda para crear el modelo 3D.');
+      return;
+    }
+
+    const currentSession = session || await getFirebaseSession();
+    if (!currentSession) {
+      showAlert('Debes iniciar sesión para cotizar una GPU.');
+      return;
+    }
+
+    setGpuQuoteLoading(true);
+    setToolMessage('COTIZANDO GPU…');
+    try {
+      const response = await fetch('/api/gpu/quote', {
+        method: 'POST',
+        headers: firebaseHeaders(currentSession, { 'Content-Type': 'application/json' }),
+        body: JSON.stringify({
+          workload: '3d',
+          recipe: 'triposr-image-to-3d',
+          inputUrls: [selectedPhoto.url],
+        }),
+      });
+
+      const raw = await response.text();
+      let payload: any = {};
+      try {
+        payload = raw ? JSON.parse(raw) : {};
+      } catch {
+        throw new Error('Vast devolvió una cotización inválida.');
+      }
+
+      if (!response.ok || payload.error) {
+        throw new Error(payload.error || 'No se pudo cotizar la GPU.');
+      }
+
+      setGpuQuoteSource(selectedPhoto);
+      setGpuQuote(payload.quote || null);
+    } catch (error: any) {
+      console.error('Error cotizando GPU 3D:', error);
+      showAlert(error?.message || 'No se pudo cotizar la GPU.');
+    } finally {
+      setGpuQuoteLoading(false);
+      setToolMessage(null);
+    }
+  };
+
+  const confirmImageTo3D = async () => {
+    if (!gpuQuote?.available || !gpuQuoteSource) return;
+
+    const currentSession = session || await getFirebaseSession();
+    if (!currentSession) {
+      showAlert('Debes iniciar sesión para usar la GPU.');
+      return;
+    }
+
+    setGpuQuoteConfirming(true);
+    try {
+      const response = await fetch('/api/gpu/jobs', {
+        method: 'POST',
+        headers: firebaseHeaders(currentSession, { 'Content-Type': 'application/json' }),
+        body: JSON.stringify({
+          workload: '3d',
+          recipe: 'triposr-image-to-3d',
+          inputUrls: [gpuQuoteSource.url],
+        }),
+      });
+
+      const raw = await response.text();
+      let payload: any = {};
+      try {
+        payload = raw ? JSON.parse(raw) : {};
+      } catch {
+        throw new Error('La respuesta de la GPU no es válida.');
+      }
+
+      if (!response.ok || payload.error) {
+        throw new Error(payload.error || 'No se pudo iniciar la GPU.');
+      }
+
+      const job = payload.job || {};
+      const gpuJobId = payload.gpuJobId || job.id;
+      if (!gpuJobId) throw new Error('Vast no devolvió un identificador de trabajo.');
+
+      setChatMessages((prev) => [
+        ...prev,
+        {
+          role: 'user',
+          text: 'Crear 3D desde ' + (gpuQuoteSource.nombre || 'la imagen seleccionada') + ' con TripoSR.',
+        },
+        {
+          role: 'ai',
+          text: payload.text || 'Nayla está preparando la GPU Vast.ai.',
+          actionPlan: {
+            action: 'RUN_GPU_JOB',
+            status: job.status || 'booting',
+            providers: [{ id: 'vast', label: 'Vast.ai' }],
+            gpuJobId,
+            gpuName: job.gpuName ?? gpuQuote.gpuName ?? null,
+            hourlyPrice: job.hourlyPrice ?? gpuQuote.hourlyPrice ?? null,
+            estimatedMaxCost: job.estimatedMaxCost ?? gpuQuote.estimatedMaxCost ?? null,
+            runtimeCostEstimate: job.runtimeCostEstimate ?? null,
+          },
+        },
+      ]);
+
+      setGpuQuote(null);
+      setGpuQuoteSource(null);
+      setMainNav('3d');
+      setIsChatOpen(true);
+      setMobileOverlaysVisible(true);
+      openExpandedSurface('chat');
+    } catch (error: any) {
+      console.error('Error iniciando Imagen → 3D:', error);
+      showAlert(error?.message || 'No se pudo iniciar Imagen → 3D.');
+    } finally {
+      setGpuQuoteConfirming(false);
+    }
+  };
+
   const handle3DNaylaAction = async (
     mode: 'text_to_3d' | 'image_to_3d' | 'multiview_to_3d' | 'texture' | 'optimize' | 'rig' | 'animate' | 'retarget',
     prompt?: string
@@ -1115,11 +1263,8 @@ export default function NaylaCore() {
       if (!prompt?.trim()) return showAlert('Describe primero el modelo que quieres crear.');
       instruction = `Crea un modelo 3D desde texto con esta descripción: ${prompt.trim()}`;
     } else if (mode === 'image_to_3d') {
-      const selectedPhoto =
-        galeriaMultimedia.find((item) => item.id === clipSeleccionado && item.tipo === 'foto') ||
-        [...galeriaMultimedia].reverse().find((item) => item.tipo === 'foto');
-      if (!selectedPhoto) return showAlert('Necesito una imagen en la Bóveda para crear el modelo 3D.');
-      instruction = `Crea un modelo 3D usando esta imagen como entrada: ${selectedPhoto.url}`;
+      await quoteImageTo3D();
+      return;
     } else if (mode === 'multiview_to_3d') {
       const selectedPhotos = galeriaMultimedia.filter(
         (item) => item.tipo === 'foto' && selectedMediaIds.includes(item.id)
@@ -3379,6 +3524,18 @@ if (!session) {
           </div>
         </div>
       )}
+
+<GpuQuoteModal
+        quote={gpuQuote}
+        sourceName={gpuQuoteSource?.nombre}
+        confirming={gpuQuoteConfirming}
+        onCancel={() => {
+          if (gpuQuoteConfirming) return;
+          setGpuQuote(null);
+          setGpuQuoteSource(null);
+        }}
+        onConfirm={() => void confirmImageTo3D()}
+      />
 
 {customAlertMsg && (
         <div style={{
