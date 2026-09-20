@@ -1017,6 +1017,170 @@ export default function NaylaCore() {
     }
   };
 
+  const seleccionarProyectoDesdeChat = async (projectId: string) => {
+    try {
+      const currentSession = session || await getFirebaseSession();
+      if (!currentSession) throw new Error('Debes iniciar sesión para cambiar de proyecto.');
+      await cargarProyectoActivo(projectId, currentSession);
+      setProjectMenuOpen(false);
+    } catch (error: any) {
+      showAlert(error?.message || 'No se pudo abrir el proyecto.');
+    }
+  };
+
+  const crearNuevoChat = async () => {
+    if (!activeProjectId) return showAlert('Primero selecciona un proyecto.');
+
+    try {
+      const currentSession = session || await getFirebaseSession();
+      if (!currentSession) throw new Error('Debes iniciar sesión para crear un chat.');
+
+      const response = await fetch('/api/chat/threads', {
+        method: 'POST',
+        headers: firebaseHeaders(currentSession, { 'Content-Type': 'application/json' }),
+        body: JSON.stringify({
+          projectId: activeProjectId,
+          title: `Chat ${chatThreads.length + 1}`,
+        }),
+      });
+      const payload = await response.json().catch(() => ({})) as { thread?: any; error?: string };
+      if (!response.ok || !payload.thread) {
+        throw new Error(payload.error || 'No se pudo crear el nuevo chat.');
+      }
+
+      setChatThreads((prev) => [payload.thread, ...prev]);
+      setActiveThreadId(payload.thread.id);
+      setChatMessages([]);
+      setChatAttachmentIds([]);
+      setProjectMenuOpen(false);
+    } catch (error: any) {
+      showAlert(error?.message || 'No se pudo crear el chat.');
+    }
+  };
+
+  const crearNuevoProyecto = async () => {
+    const requestedName = window.prompt('Nombre del nuevo proyecto:', 'Nuevo proyecto');
+    if (requestedName === null) return;
+    const name = requestedName.trim() || 'Nuevo proyecto';
+
+    try {
+      const currentSession = session || await getFirebaseSession();
+      if (!currentSession) throw new Error('Debes iniciar sesión para crear un proyecto.');
+
+      const response = await fetch('/api/projects', {
+        method: 'POST',
+        headers: firebaseHeaders(currentSession, { 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ name }),
+      });
+      const payload = await response.json().catch(() => ({})) as { project?: NaylaProject; error?: string };
+      if (!response.ok || !payload.project) {
+        throw new Error(payload.error || 'No se pudo crear el proyecto.');
+      }
+
+      setProjects((prev) => [payload.project!, ...prev.filter((project) => project.id !== payload.project!.id)]);
+      await cargarProyectoActivo(payload.project.id, currentSession);
+      setProjectMenuOpen(false);
+    } catch (error: any) {
+      showAlert(error?.message || 'No se pudo crear el proyecto.');
+    }
+  };
+
+  const eliminarProyectoActivo = async () => {
+    if (!activeProject) return;
+    const confirmed = window.confirm(
+      `¿Eliminar el proyecto “${activeProject.name}”?\n\nSe eliminarán sus chats y los archivos privados guardados para este proyecto.`
+    );
+    if (!confirmed) return;
+
+    try {
+      const currentSession = session || await getFirebaseSession();
+      if (!currentSession) throw new Error('Debes iniciar sesión para eliminar un proyecto.');
+
+      const response = await fetch('/api/projects', {
+        method: 'DELETE',
+        headers: firebaseHeaders(currentSession, { 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ id: activeProject.id }),
+      });
+      const payload = await response.json().catch(() => ({})) as {
+        deleted?: { name?: string; r2DeleteFailures?: number };
+        error?: string;
+      };
+      if (!response.ok) throw new Error(payload.error || 'No se pudo eliminar el proyecto.');
+
+      setProjectMenuOpen(false);
+      setChatMessages([]);
+      setChatAttachmentIds([]);
+      await cargarDatosUsuario(currentSession.user.id);
+
+      if (payload.deleted?.r2DeleteFailures) {
+        showAlert('El proyecto fue eliminado, pero algunos objetos de almacenamiento necesitarán limpieza posterior.');
+      }
+    } catch (error: any) {
+      showAlert(error?.message || 'No se pudo eliminar el proyecto.');
+    }
+  };
+
+  const toggleChatAttachment = (asset: NaylaChannelAsset) => {
+    setChatAttachmentIds((prev) =>
+      prev.includes(asset.id)
+        ? prev.filter((id) => id !== asset.id)
+        : [...prev, asset.id]
+    );
+  };
+
+  const subirArchivosDesdeCanal = async (kind: NaylaChannelKind, files: FileList) => {
+    if (!activeProjectId) return showAlert('Primero selecciona un proyecto.');
+
+    const currentSession = session || await getFirebaseSession();
+    if (!currentSession) return showAlert('Debes iniciar sesión para subir archivos.');
+
+    setChannelUploadingKind(kind);
+    try {
+      if (kind === 'modelo3d') {
+        const nextAssets = [...modelos3d];
+        const uploadedIds: string[] = [];
+
+        for (const file of Array.from(files)) {
+          const saved = await uploadModel3DToBoveda({
+            session: currentSession,
+            file,
+            existingItems: nextAssets,
+            fuente: 'chat:canal-3d',
+            projectId: activeProjectId,
+            threadId: activeThreadId || undefined,
+          });
+          nextAssets.push(saved);
+          uploadedIds.push(saved.id);
+        }
+
+        setModelos3d(nextAssets);
+        setModelo3dActivoId((current) => current || nextAssets[0]?.id || null);
+        setChatAttachmentIds((prev) => Array.from(new Set([...prev, ...uploadedIds])));
+      } else {
+        const saved = await uploadMediaFilesToBodega({
+          session: currentSession,
+          files: Array.from(files),
+          existingItems: galeriaMultimedia,
+          forcedTipo: kind,
+          fuente: `chat:canal-${kind}`,
+          projectId: activeProjectId,
+          threadId: activeThreadId || undefined,
+        });
+
+        setGaleriaMultimedia((prev) => {
+          const currentIds = new Set(prev.map((item) => item.id));
+          return [...prev, ...saved.filter((item) => !currentIds.has(item.id))];
+        });
+        setChatAttachmentIds((prev) => Array.from(new Set([...prev, ...saved.map((item) => item.id)])));
+      }
+    } catch (error: any) {
+      console.error('Error subiendo desde canal del chat:', error);
+      showAlert(error?.message || 'No se pudo subir el archivo.');
+    } finally {
+      setChannelUploadingKind(null);
+    }
+  };
+
   const sendNaylaMessage = async (messageOverride?: string) => {
     const message = (messageOverride ?? chatInput).trim();
     if (!message) return;
