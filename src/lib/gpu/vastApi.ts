@@ -109,14 +109,12 @@ export const searchVastOffers = async (
     // La REST API usa MB para gpu_ram. La CLI multiplica GB × 1000 antes de enviar.
     gpu_ram: { gte: profile.minGpuRamGb * 1000 },
     disk_space: { gte: profile.diskGb },
-    dph_total: { lte: profile.maxHourlyUsd },
     reliability: { gte: minReliability },
     order: [
       ['dph_total', 'asc'],
       ['reliability', 'desc'],
     ],
     type: 'on-demand',
-    limit: 100,
     allocated_storage: profile.diskGb,
   };
 
