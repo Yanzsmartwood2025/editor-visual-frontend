@@ -174,4 +174,43 @@ describe('Nayla action contracts', () => {
     });
   });
 
+
+  it('accepts explicit none values emitted by Nayla for simple timeline edits', () => {
+    const action = parseNaylaAction(JSON.stringify({
+      action: 'BUILD_TIMELINE',
+      assets: [
+        {
+          type: 'video',
+          source: 'url',
+          url: 'https://cdn.example/video.mp4',
+          durationInSeconds: 3.5,
+          efecto: 'none',
+          transitionType: 'fade',
+          transitionDuration: 0.5,
+          overlay: 'none',
+        },
+        {
+          type: 'foto',
+          source: 'url',
+          url: 'https://cdn.example/photo.png',
+          durationInSeconds: 2.5,
+          efecto: 'parallax-3d',
+          overlay: 'vignette',
+          overlayIntensity: 0.2,
+        },
+      ],
+      render: true,
+    }));
+
+    expect(action).not.toBeNull();
+    expect(action).toMatchObject({
+      action: 'BUILD_TIMELINE',
+      render: true,
+      assets: [
+        expect.objectContaining({ efecto: 'none', overlay: 'none' }),
+        expect.objectContaining({ efecto: 'parallax-3d', overlay: 'vignette' }),
+      ],
+    });
+  });
+
 });
