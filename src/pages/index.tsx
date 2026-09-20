@@ -806,7 +806,11 @@ export default function NaylaCore() {
     const res = await fetch('/api/render', {
       method: 'POST',
       headers: firebaseHeaders(currentSession, { 'Content-Type': 'application/json' }),
-      body: JSON.stringify({ inputProps })
+      body: JSON.stringify({
+        inputProps,
+        projectId: activeProjectId || undefined,
+        threadId: activeThreadId || undefined,
+      })
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Error al solicitar renderizado');
@@ -827,6 +831,8 @@ export default function NaylaCore() {
         fuente: 'render',
         metadata: buildMediaMetadata(canvas.width, canvas.height, durationInFrames / 30),
         r2_key: data.output.r2Key || data.output.key || null,
+        project_id: activeProjectId || null,
+        thread_id: activeThreadId || null,
         privacy: 'private'
       };
 
@@ -835,7 +841,11 @@ export default function NaylaCore() {
       const galleryResponse = await fetch('/api/galeria', {
         method: 'POST',
         headers: firebaseHeaders(currentSession, { 'Content-Type': 'application/json' }),
-        body: JSON.stringify({ items: [renderItem] })
+        body: JSON.stringify({
+          items: [renderItem],
+          projectId: activeProjectId || undefined,
+          threadId: activeThreadId || undefined,
+        })
       });
 
       if (!galleryResponse.ok) {
@@ -969,6 +979,8 @@ export default function NaylaCore() {
           existingItems: galeriaMultimedia,
           forcedTipo: tipo,
           fuente: `stock:${card.provider}`,
+          projectId: activeProjectId || undefined,
+          threadId: activeThreadId || undefined,
           metadataExtra: {
             sourceProvider: card.provider,
             sourceUrl: card.sourceUrl,
@@ -1326,6 +1338,8 @@ export default function NaylaCore() {
           file,
           existingItems: nextAssets,
           fuente: 'manual-3d',
+          projectId: activeProjectId || undefined,
+          threadId: activeThreadId || undefined,
         });
         nextAssets.push(saved);
         if (!firstNew) firstNew = saved;
@@ -1420,6 +1434,8 @@ export default function NaylaCore() {
 
       setGpuQuoteSource(selectedPhoto);
       setGpuQuoteRequest({
+        projectId: activeProjectId || undefined,
+        threadId: activeThreadId || undefined,
         workload: '3d',
         recipe: 'triposr-image-to-3d',
         inputUrls: [selectedPhoto.url],
@@ -1985,7 +2001,9 @@ export default function NaylaCore() {
         files,
         existingItems: galeriaMultimedia,
         forcedTipo: tipo,
-        fuente: 'manual'
+        fuente: 'manual',
+        projectId: activeProjectId || undefined,
+        threadId: activeThreadId || undefined,
       });
 
       setGaleriaMultimedia(prev => [...prev, ...nuevosItems]);
@@ -2073,6 +2091,7 @@ export default function NaylaCore() {
         method: 'PUT',
         headers: firebaseHeaders(session, { 'Content-Type': 'application/json' }),
         body: JSON.stringify({
+          projectId: activeProjectId || undefined,
           linea_de_tiempo: nuevaLinea,
           actualizado_en: new Date().toISOString()
         }),
@@ -2322,7 +2341,11 @@ export default function NaylaCore() {
          fetch('/api/galeria', {
            method: 'POST',
            headers: firebaseHeaders(session, { 'Content-Type': 'application/json' }),
-           body: JSON.stringify({ items: [nuevoItem] }),
+           body: JSON.stringify({
+             items: [nuevoItem],
+             projectId: activeProjectId || undefined,
+             threadId: activeThreadId || undefined,
+           }),
          }).then(async (response) => {
            if (!response.ok) {
              const payload = await response.json() as { error?: string };
