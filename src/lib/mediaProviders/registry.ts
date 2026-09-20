@@ -134,14 +134,16 @@ export const isProviderConfigured = (provider: ProviderDefinition): boolean =>
 
 export const getProviderRuntimeStatus = (provider: ProviderDefinition): ProviderRuntimeStatus => {
   const configured = isProviderConfigured(provider);
-  const hasOptionalCredentials = provider.optionalEnvKeys?.some(hasEnvValue) ?? false;
+  const optionalKeys = provider.optionalEnvKeys || [];
+  const hasCompleteOptionalCredentials =
+    optionalKeys.length > 0 && optionalKeys.every(hasEnvValue);
 
   return {
     id: provider.id,
     label: provider.label,
     configured,
     mode: configured
-      ? provider.requiredEnvKeys.length === 0 && !hasOptionalCredentials
+      ? provider.requiredEnvKeys.length === 0 && !hasCompleteOptionalCredentials
         ? 'anonymous'
         : 'authenticated'
       : 'unconfigured',
