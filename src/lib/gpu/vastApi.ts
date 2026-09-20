@@ -153,11 +153,15 @@ export const createVastInstance = async ({
       image,
       disk: diskGb,
       label,
-      onstart,
+      // En runtype=args Vast interpreta "onstart" como ENTRYPOINT.
+      // El patrón oficial es entrypoint=bash + args=-lc <script>.
+      // Pasar el script completo como onstart hacía que la instancia quedara
+      // arrancando sin ejecutar el worker.
+      onstart: 'bash',
       force: false,
       cancel_unavail: true,
       runtype: 'args',
-      args: ['sleep', 'infinity'],
+      args: ['-lc', onstart],
       env,
     }),
   });

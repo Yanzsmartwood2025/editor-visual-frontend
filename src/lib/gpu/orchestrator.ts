@@ -23,6 +23,7 @@ import {
   createVastInstance,
   destroyVastInstance,
   getVastAccountSummary,
+  getVastInstance,
   searchVastOffers,
 } from './vastApi';
 
@@ -563,6 +564,20 @@ export const finishGpuJob = async ({
   return publicJob(job);
 };
 
+const hasStartupError = (value: unknown) => {
+  if (typeof value !== 'string' || !value.trim()) return false;
+  const normalized = value.toLowerCase();
+  return [
+    'error',
+    'failed',
+    'failure',
+    'exception',
+    'traceback',
+    'oci runtime',
+    'permission denied',
+  ].some((token) => normalized.includes(token));
+};
+
 export const getGpuJobStatusForUser = async ({
   jobId,
   userId,
@@ -570,7 +585,116 @@ export const getGpuJobStatusForUser = async ({
   jobId: string;
   userId: string;
 }) => {
-  const job = await getGpuJobForUser(jobId, userId);
+  let job = await getGpuJobForUser(jobId, userId);
   if (!job) return null;
+
+  const terminal = ['completed', 'failed', 'expired'];
+  if (!job.instance_id || terminal.includes(job.status)) {
+    return publicJob(job);
+  }
+
+  try {
+    const instance = await getVastInstance(job.instance_id);
+    const latest = await getGpuJobForUser(jobId, userId);
+    if (!latest) return null;
+    job = latest;
+
+    if (terminal.includes(job.status)) {
+      return publicJob(job);
+    }
+
+    if (!instance) {
+      const now = new Date();
+      job = await updateGpuJob(job.id, {
+        status: 'failed',
+        error_message: 'Vast.ai dejó de reportar la instancia antes de completar el trabajo.',
+        completed_at: now.toISOString(),
+        destroyed_at: now.toISOString(),
+        runtime_cost_estimate: computeRuntimeCost(job, now),
+      });
+      return publicJob(job);
+    }
+
+    const actualStatus =
+      typeof instance.actual_status === 'string' ? instance.actual_status : 'unknown';
+    const intendedStatus =
+      typeof instance.intended_status === 'string' ? instance.intended_status : 'unknown';
+    const statusMessage =
+      typeof instance.status_msg === 'string' ? instance.status_msg.trim().slice(0, 1000) : '';
+
+    const runtimeMetadata = {
+      ...job.metadata,
+      vastRuntime: {
+        actualStatus,
+        intendedStatus,
+        statusMessage: statusMessage || null,
+        checkedAt: new Date().toISOString(),
+      },
+    };
+
+    const stopped =
+      ['offline', 'stopped', 'exited', 'destroyed', 'terminated'].includes(actualStatus) ||
+      ['offline', 'stopped', 'exited', 'destroyed', 'terminated'].includes(intendedStatus);
+
+    if (hasStartupError(statusMessage) || stopped) {
+      const now = new Date();
+      const instanceId = job.instance_id;
+      if (!instanceId) {
+        job = await updateGpuJob(job.id, {
+          status: 'failed',
+          error_message: statusMessage || 'La instancia Vast desapareció durante el arranque.',
+          completed_at: now.toISOString(),
+          destroyed_at: now.toISOString(),
+          runtime_cost_estimate: computeRuntimeCost(job, now),
+          metadata: runtimeMetadata,
+        });
+        return publicJob(job);
+      }
+
+      let destroyedAt: string | null = null;
+      try {
+        await destroyVastInstance(instanceId);
+        destroyedAt = new Date().toISOString();
+      } catch (destroyError) {
+        console.error('[gpu] No se pudo destruir la instancia tras fallo de arranque:', destroyError);
+      }
+
+      job = await updateGpuJob(job.id, {
+        status: destroyedAt ? 'failed' : 'cleanup_pending',
+        error_message:
+          statusMessage ||
+          'La instancia Vast no alcanzó un estado ejecutable y Nayla activó la limpieza.',
+        completed_at: now.toISOString(),
+        destroyed_at: destroyedAt,
+        runtime_cost_estimate: computeRuntimeCost(job, now),
+        lease_expires_at: destroyedAt ? job.lease_expires_at : new Date(Date.now() - 1000).toISOString(),
+        metadata: {
+          ...runtimeMetadata,
+          terminalStatus: 'failed',
+        },
+      });
+      return publicJob(job);
+    }
+
+    if (
+      actualStatus === 'running' &&
+      intendedStatus === 'running' &&
+      (job.status === 'renting' || job.status === 'booting')
+    ) {
+      const updated = await updateGpuJobIfStatus(job.id, job.status, {
+        status: 'running',
+        metadata: runtimeMetadata,
+      });
+      if (updated) job = updated;
+      return publicJob(job);
+    }
+
+    job = await updateGpuJob(job.id, {
+      metadata: runtimeMetadata,
+    });
+  } catch (error) {
+    console.warn('[gpu] No se pudo reconciliar el estado de Vast:', error);
+  }
+
   return publicJob(job);
 };

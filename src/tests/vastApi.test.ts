@@ -3,6 +3,7 @@ import {
   createVastInstance,
   destroyVastInstance,
   getVastAccountSummary,
+  getVastInstance,
   searchVastOffers,
 } from '../lib/gpu/vastApi';
 import { getGpuProfile } from '../lib/gpu/profiles';
@@ -87,6 +88,28 @@ describe('Vast API adapter', () => {
     expect(offers.map((offer) => offer.id)).toEqual([1, 2]);
   });
 
+  it('reads Vast runtime status for startup diagnostics', async () => {
+    process.env.VAST_API_KEY = 'vast-secret';
+
+    vi.stubGlobal('fetch', vi.fn(async (url: string | URL | Request) => {
+      expect(String(url)).toContain('/instances/12345/');
+      return new Response(JSON.stringify({
+        instances: {
+          id: 12345,
+          actual_status: 'running',
+          intended_status: 'running',
+          status_msg: '',
+        },
+      }), { status: 200 });
+    }));
+
+    const instance = await getVastInstance(12345);
+    expect(instance).toMatchObject({
+      actual_status: 'running',
+      intended_status: 'running',
+    });
+  });
+
   it('creates and destroys an instance through the current Vast endpoints', async () => {
     process.env.VAST_API_KEY = 'vast-secret';
     const calls: Array<{ url: string; method?: string; body?: any }> = [];
@@ -117,6 +140,9 @@ describe('Vast API adapter', () => {
     expect(created.instanceId).toBe(12345);
     expect(calls[0]?.url).toContain('/asks/99/');
     expect(calls[0]?.body.cancel_unavail).toBe(true);
+    expect(calls[0]?.body.runtype).toBe('args');
+    expect(calls[0]?.body.onstart).toBe('bash');
+    expect(calls[0]?.body.args).toEqual(['-lc', 'echo ok']);
     expect(calls[0]?.body.env).toEqual({ TEST_ONLY: '1' });
 
     await destroyVastInstance(12345);
