@@ -13,8 +13,8 @@ import {
   parseNaylaAction,
   type NaylaAction,
 } from '../../lib/naylaActions';
-import { startVastGpuJob } from '../../lib/gpu/orchestrator';
-import { quoteVastGpuJob } from '../../lib/gpu/quote';
+import { startComputeGpuJob } from '../../lib/gpu/orchestrator';
+import { quoteComputeGpuJob } from '../../lib/gpu/quote';
 import { resolveRequestPublicBaseUrl } from '../../lib/gpu/requestUrl';
 import type { GpuWorkload } from '../../lib/gpu/profiles';
 import { createMediaJobPlan } from '../../lib/mediaJobs';
@@ -198,28 +198,6 @@ const executeValidatedAction = async (
   }
 
   if (action.action === 'RUN_GPU_JOB') {
-    if (action.provider === 'runpod') {
-      const base = describeActionPlan(action);
-      const mediaJob = await createMediaJobPlan({
-        userId: context.userId,
-        projectId: context.projectId,
-        threadId: context.threadId,
-        action,
-        attachmentIds: context.attachmentIds,
-      });
-      return {
-        ...base,
-        projectId: context.projectId,
-        threadId: context.threadId || null,
-        mediaJobId: mediaJob?.id || null,
-        engine: 'nayla-compute' as const,
-        status: mediaJob?.id ? 'awaiting_confirmation' as const : base.status,
-        text: mediaJob?.id
-          ? 'Nayla Compute registró el trabajo de forma privada. La ejecución se habilitará antes de usar créditos.'
-          : base.text,
-      };
-    }
-
     const workload = inferGpuWorkload(action);
     if (!workload) {
       return {
@@ -239,7 +217,7 @@ const executeValidatedAction = async (
     };
 
     if (workload !== 'probe') {
-      const quote = await quoteVastGpuJob(gpuInput);
+      const quote = await quoteComputeGpuJob(gpuInput);
       return {
         action: action.action,
         workload,
@@ -261,7 +239,7 @@ const executeValidatedAction = async (
       };
     }
 
-    const job = await startVastGpuJob({
+    const job = await startComputeGpuJob({
       userId: context.userId,
       projectId: context.projectId,
       threadId: context.threadId,
