@@ -8,6 +8,13 @@ export type GpuQuoteView = {
   gpuRamGb?: number;
   hourlyPrice?: number;
   estimatedMaxCost?: number;
+  cards?: Array<{
+    id: string;
+    gpuName: string;
+    gpuRamGb?: number;
+    hourlyPrice: number;
+    estimatedMaxCost: number;
+  }>;
   maxRuntimeMinutes: number;
   bootGraceMinutes: number;
   pricingStatus: 'preview';
@@ -117,6 +124,45 @@ export function GpuQuoteModal({
                 <span style={{ color: '#888' }}>Nayla Energy</span>
                 <strong style={{ color: '#777' }}>PRÓXIMAMENTE</strong>
               </div>
+
+              {quote.cards && quote.cards.length > 1 && (
+                <div style={{ borderTop: '1px solid #252525', paddingTop: 10 }}>
+                  <div style={{ color: '#8b8b8b', fontSize: '0.68rem', marginBottom: 7 }}>
+                    TARJETAS COMPATIBLES AHORA
+                  </div>
+                  <div style={{ display: 'grid', gap: 6 }}>
+                    {quote.cards.slice(0, 4).map((card, index) => (
+                      <div
+                        key={card.id}
+                        style={{
+                          display: 'grid',
+                          gridTemplateColumns: '1fr auto',
+                          gap: 8,
+                          padding: '8px 9px',
+                          borderRadius: 9,
+                          border: index === 0 ? '1px solid #777' : '1px solid #292929',
+                          background: index === 0 ? '#181818' : '#0b0b0b',
+                          fontSize: '0.72rem',
+                        }}
+                      >
+                        <div>
+                          <strong>{card.gpuName}</strong>
+                          <div style={{ color: '#777', marginTop: 2 }}>
+                            {card.gpuRamGb ? card.gpuRamGb + ' GB VRAM' : 'VRAM según disponibilidad'}
+                            {index === 0 ? ' · selección automática' : ''}
+                          </div>
+                        </div>
+                        <div style={{ textAlign: 'right' }}>
+                          <strong>~{money(card.hourlyPrice)}/h</strong>
+                          <div style={{ color: '#777', marginTop: 2 }}>
+                            tope ~{money(card.estimatedMaxCost)}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               <p style={{ margin: 0, color: '#777', fontSize: '0.72rem', lineHeight: 1.5 }}>
                 La disponibilidad puede cambiar antes de confirmar. Nayla vuelve a comprobar
