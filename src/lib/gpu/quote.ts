@@ -7,6 +7,7 @@ import {
 import {
   getVastAccountSummary,
   searchVastOffers,
+  type VastOffer,
 } from './vastApi';
 import {
   sanitizeNaylaPublicText,
@@ -17,6 +18,18 @@ import {
   createComputeSelectionId,
   findOfferByComputeSelectionId,
 } from './selection';
+
+export type NaylaComputeCard = {
+  selectionId: string;
+  gpuName: string;
+  gpuRamGb?: number;
+  hourlyPrice: number;
+  estimatedMaxCost: number;
+  available: boolean;
+  unavailableReason?: string;
+  recommended: boolean;
+  selected: boolean;
+};
 
 export type VastGpuQuote = {
   provider: 'nayla-compute';
@@ -29,15 +42,7 @@ export type VastGpuQuote = {
   hourlyPrice?: number;
   estimatedMaxCost?: number;
   selectedSelectionId?: string;
-  cards?: Array<{
-    selectionId: string;
-    gpuName: string;
-    gpuRamGb?: number;
-    hourlyPrice: number;
-    estimatedMaxCost: number;
-    recommended: boolean;
-    selected: boolean;
-  }>;
+  cards?: NaylaComputeCard[];
   maxRuntimeMinutes: number;
   bootGraceMinutes: number;
   pricingStatus: 'preview';
@@ -46,6 +51,19 @@ export type VastGpuQuote = {
     balanceUsd: null;
     status: 'coming_soon';
   };
+};
+
+type EvaluatedOffer = {
+  offer: VastOffer;
+  selectionId: string;
+  gpuName: string;
+  gpuRamGb?: number;
+  internalHourlyPrice: number;
+  internalEstimatedMaxCost: number;
+  publicHourlyPrice: number;
+  publicEstimatedMaxCost: number;
+  available: boolean;
+  unavailableReason?: string;
 };
 
 export const quoteVastGpuJob = async (
@@ -73,8 +91,7 @@ export const quoteVastGpuJob = async (
   if (!workerImage) {
     return {
       ...base,
-      reason:
-        'Esta capacidad todavía no tiene un worker GPU compatible configurado.',
+      reason: 'Esta capacidad todavía no tiene un worker GPU compatible configurado.',
     };
   }
 
@@ -82,8 +99,7 @@ export const quoteVastGpuJob = async (
   if (activeJobs >= policy.maxConcurrentJobs) {
     return {
       ...base,
-      reason:
-        'Ya existe un trabajo GPU activo. Nayla espera a que termine para proteger el saldo.',
+      reason: 'Ya existe un trabajo GPU activo. Nayla espera a que termine antes de reservar otra tarjeta.',
     };
   }
 
@@ -93,134 +109,122 @@ export const quoteVastGpuJob = async (
   ]);
 
   const quoteRuntimeMinutes = profile.maxRuntimeMinutes + policy.bootGraceMinutes;
-  const selectedOffer = findOfferByComputeSelectionId(offers, requestedSelectionId);
-  if (requestedSelectionId && !selectedOffer) {
-    return {
-      ...base,
-      cards: offers.map((candidate, index) => {
-        const candidateHourly = Number(candidate.dph_total);
-        const candidateRamMb = Number(candidate.gpu_ram);
-        const internalCandidateMax = estimatedWorstCaseCost(
-          candidateHourly,
-          quoteRuntimeMinutes,
-          policy.safetyMultiplier
-        );
-        return {
-          selectionId: createComputeSelectionId(candidate),
-          gpuName:
-            typeof candidate.gpu_name === 'string' && candidate.gpu_name.trim()
-              ? candidate.gpu_name.trim()
-              : 'GPU',
-          gpuRamGb: Number.isFinite(candidateRamMb)
-            ? Math.round((candidateRamMb / 1000) * 10) / 10
-            : undefined,
-          hourlyPrice: toNaylaComputeHourlyPrice(candidateHourly),
-          estimatedMaxCost: toNaylaComputeEstimatedPrice(
-            internalCandidateMax,
-            quoteRuntimeMinutes
-          ),
-          recommended: index === 0,
-          selected: false,
-        };
-      }),
-      reason:
-        'La tarjeta seleccionada ya no está disponible. Elige otra de la lista actualizada.',
-    };
-  }
 
-  const offer = selectedOffer || offers[0] || null;
-  const selectedSelectionId = offer ? createComputeSelectionId(offer) : undefined;
-  const cards = offers.map((candidate, index) => {
-    const candidateHourly = Number(candidate.dph_total);
-    const candidateRamMb = Number(candidate.gpu_ram);
-    const internalCandidateMax = estimatedWorstCaseCost(
-      candidateHourly,
+  const evaluated: EvaluatedOffer[] = offers.map((offer) => {
+    const internalHourlyPrice = Number(offer.dph_total);
+    const internalEstimatedMaxCost = estimatedWorstCaseCost(
+      internalHourlyPrice,
       quoteRuntimeMinutes,
       policy.safetyMultiplier
     );
-    const selectionId = createComputeSelectionId(candidate);
+
+    const gpuRamMb = Number(offer.gpu_ram);
+    const gpuRamGb = Number.isFinite(gpuRamMb)
+      ? Math.round((gpuRamMb / 1000) * 10) / 10
+      : undefined;
+
+    let unavailableReason: string | undefined;
+    if (internalHourlyPrice > profile.maxHourlyUsd) {
+      unavailableReason = 'Supera el límite por hora configurado para este tipo de trabajo.';
+    } else if (internalEstimatedMaxCost > policy.maxJobUsd) {
+      unavailableReason = 'Supera el tope de gasto configurado para un solo trabajo.';
+    } else if (account.balance - internalEstimatedMaxCost < policy.minBalanceReserveUsd) {
+      unavailableReason = 'No entra dentro del saldo protegido actual de Nayla Compute.';
+    }
+
     return {
-      selectionId,
+      offer,
+      selectionId: createComputeSelectionId(offer),
       gpuName:
-        typeof candidate.gpu_name === 'string' && candidate.gpu_name.trim()
-          ? candidate.gpu_name.trim()
+        typeof offer.gpu_name === 'string' && offer.gpu_name.trim()
+          ? offer.gpu_name.trim()
           : 'GPU',
-      gpuRamGb: Number.isFinite(candidateRamMb)
-        ? Math.round((candidateRamMb / 1000) * 10) / 10
-        : undefined,
-      hourlyPrice: toNaylaComputeHourlyPrice(candidateHourly),
-      estimatedMaxCost: toNaylaComputeEstimatedPrice(
-        internalCandidateMax,
+      gpuRamGb,
+      internalHourlyPrice,
+      internalEstimatedMaxCost,
+      publicHourlyPrice: toNaylaComputeHourlyPrice(internalHourlyPrice),
+      publicEstimatedMaxCost: toNaylaComputeEstimatedPrice(
+        internalEstimatedMaxCost,
         quoteRuntimeMinutes
       ),
-      recommended: index === 0,
-      selected: selectionId === selectedSelectionId,
+      available: !unavailableReason,
+      unavailableReason,
     };
   });
 
-  if (!offer) {
+  const recommended = evaluated.find((candidate) => candidate.available) || null;
+  const requestedOffer = requestedSelectionId
+    ? findOfferByComputeSelectionId(offers, requestedSelectionId)
+    : null;
+
+  if (requestedSelectionId && !requestedOffer) {
+    return {
+      ...base,
+      cards: evaluated.map((candidate) => ({
+        selectionId: candidate.selectionId,
+        gpuName: candidate.gpuName,
+        gpuRamGb: candidate.gpuRamGb,
+        hourlyPrice: candidate.publicHourlyPrice,
+        estimatedMaxCost: candidate.publicEstimatedMaxCost,
+        available: candidate.available,
+        unavailableReason: candidate.unavailableReason,
+        recommended: candidate.selectionId === recommended?.selectionId,
+        selected: false,
+      })),
+      reason: 'La tarjeta seleccionada ya no está disponible. Elige otra de la lista actualizada.',
+    };
+  }
+
+  const selected =
+    (requestedOffer
+      ? evaluated.find((candidate) => Number(candidate.offer.id) === Number(requestedOffer.id))
+      : null) ||
+    recommended ||
+    evaluated[0] ||
+    null;
+
+  const cards: NaylaComputeCard[] = evaluated.map((candidate) => ({
+    selectionId: candidate.selectionId,
+    gpuName: candidate.gpuName,
+    gpuRamGb: candidate.gpuRamGb,
+    hourlyPrice: candidate.publicHourlyPrice,
+    estimatedMaxCost: candidate.publicEstimatedMaxCost,
+    available: candidate.available,
+    unavailableReason: candidate.unavailableReason,
+    recommended: candidate.selectionId === recommended?.selectionId,
+    selected: candidate.selectionId === selected?.selectionId,
+  }));
+
+  if (!selected) {
     return {
       ...base,
       cards: [],
-      reason:
-        'No hay una GPU verificada disponible dentro del límite de precio actual.',
+      reason: 'No hay una GPU compatible disponible en este momento.',
     };
   }
 
-  const hourlyPrice = Number(offer.dph_total);
-  const estimatedMaxCost = estimatedWorstCaseCost(
-    hourlyPrice,
-    profile.maxRuntimeMinutes + policy.bootGraceMinutes,
-    policy.safetyMultiplier
-  );
-
-  const gpuRamMb = Number(offer.gpu_ram);
-  const gpuRamGb = Number.isFinite(gpuRamMb)
-    ? Math.round((gpuRamMb / 1000) * 10) / 10
-    : undefined;
-
-  if (estimatedMaxCost > policy.maxJobUsd) {
+  if (!selected.available) {
     return {
       ...base,
-      gpuName:
-        typeof offer.gpu_name === 'string' ? offer.gpu_name : undefined,
-      gpuRamGb,
-      selectedSelectionId,
+      gpuName: selected.gpuName,
+      gpuRamGb: selected.gpuRamGb,
+      selectedSelectionId: selected.selectionId,
       cards,
-      hourlyPrice: toNaylaComputeHourlyPrice(hourlyPrice),
-      estimatedMaxCost: toNaylaComputeEstimatedPrice(estimatedMaxCost, quoteRuntimeMinutes),
-      reason:
-        'La GPU disponible supera el tope máximo permitido para este trabajo.',
-    };
-  }
-
-  if (account.balance - estimatedMaxCost < policy.minBalanceReserveUsd) {
-    return {
-      ...base,
-      gpuName:
-        typeof offer.gpu_name === 'string' ? offer.gpu_name : undefined,
-      gpuRamGb,
-      selectedSelectionId,
-      cards,
-      hourlyPrice: toNaylaComputeHourlyPrice(hourlyPrice),
-      estimatedMaxCost: toNaylaComputeEstimatedPrice(estimatedMaxCost, quoteRuntimeMinutes),
-      reason:
-        'El trabajo no está disponible dentro de los límites protegidos de Nayla Compute.',
+      hourlyPrice: selected.publicHourlyPrice,
+      estimatedMaxCost: selected.publicEstimatedMaxCost,
+      reason: selected.unavailableReason || 'La tarjeta seleccionada no está disponible dentro de los límites actuales.',
     };
   }
 
   return {
     ...base,
     available: true,
-    gpuName:
-      typeof offer.gpu_name === 'string' ? offer.gpu_name : undefined,
-    gpuRamGb,
-    selectedSelectionId,
+    gpuName: selected.gpuName,
+    gpuRamGb: selected.gpuRamGb,
+    selectedSelectionId: selected.selectionId,
     cards,
-    hourlyPrice: toNaylaComputeHourlyPrice(hourlyPrice),
-    estimatedMaxCost: toNaylaComputeEstimatedPrice(estimatedMaxCost, quoteRuntimeMinutes),
-    reason: recipePlan
-      ? sanitizeNaylaPublicText(recipePlan.label)
-      : undefined,
+    hourlyPrice: selected.publicHourlyPrice,
+    estimatedMaxCost: selected.publicEstimatedMaxCost,
+    reason: recipePlan ? sanitizeNaylaPublicText(recipePlan.label) : undefined,
   };
 };
