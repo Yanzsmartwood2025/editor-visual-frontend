@@ -32,7 +32,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const offers = await searchVastOffers(profile, policy.offerReliabilityMin);
 
     const seen = new Set<string>();
-    const cards = offers.flatMap((offer) => {
+    const cards = offers.flatMap((offer, offerIndex) => {
       const gpuName = typeof offer.gpu_name === 'string' && offer.gpu_name.trim()
         ? offer.gpu_name.trim()
         : 'GPU';
@@ -52,7 +52,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       );
 
       return [{
-        id: String(offer.id),
+        id: 'compute-card-' + String(offerIndex + 1),
         gpuName,
         gpuRamGb: ramGb,
         naylaHourlyPriceUsd: toNaylaComputeHourlyPrice(internalHourly),
