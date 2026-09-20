@@ -323,15 +323,23 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       }
     );
 
-    const { count: renderCount, error: countError } = await renderLedger
+    const { data: existingRenders, error: countError } = await renderLedger
       .from('galeria_multimedia')
-      .select('id', { count: 'exact', head: true })
+      .select('etiqueta')
       .eq('user_id', user.uid)
       .eq('project_id', scope.projectId)
       .eq('tipo', 'video')
       .like('fuente', 'render:%');
 
     if (countError) throw countError;
+
+    const renderNumber = (existingRenders || []).reduce((max, item: any) => {
+      const match = typeof item?.etiqueta === 'string'
+        ? item.etiqueta.trim().toUpperCase().match(/^R(\d+)$/)
+        : null;
+      return match ? Math.max(max, Number(match[1]) || 0) : max;
+    }, 0) + 1;
+    const renderLabel = `R${renderNumber}`;
 
     const galleryItem = {
       id: randomUUID(),
@@ -342,10 +350,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       r2_key: data.output.r2Key,
       privacy: 'private',
       tipo: 'video',
-      nombre: `Render CPU ${(renderCount || 0) + 1}.mp4`,
+      nombre: `Nayla_Render_${renderLabel}.mp4`,
       creado_en: new Date().toISOString(),
       esOverlay: false,
-      etiqueta: `R${(renderCount || 0) + 1}`,
+      etiqueta: renderLabel,
       fuente: 'render:cpu',
       metadata: {
         width: inputProps.canvasWidth,

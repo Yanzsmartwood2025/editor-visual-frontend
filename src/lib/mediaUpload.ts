@@ -50,6 +50,20 @@ export const resolveMediaKind = (file: Pick<File, 'name' | 'type'>, fallback?: M
   return fallback || null;
 };
 
+const nextLabelNumber = (
+  items: Array<{ tipo: MediaKind; etiqueta?: string | null }>,
+  tipo: MediaKind
+) => {
+  const prefix = tipo === 'video' ? 'V' : tipo === 'foto' ? 'F' : 'A';
+  const max = items.reduce((current, item) => {
+    if (item.tipo !== tipo || typeof item.etiqueta !== 'string') return current;
+    const match = item.etiqueta.trim().toUpperCase().match(/^([FVA])(\d+)$/);
+    if (!match || match[1] !== prefix) return current;
+    return Math.max(current, Number(match[2]) || 0);
+  }, 0);
+  return max + 1;
+};
+
 const defaultExtensionForKind = (tipo: MediaKind): string => {
   if (tipo === 'foto') return 'jpg';
   if (tipo === 'video') return 'mp4';
@@ -259,11 +273,11 @@ export const uploadMediaFilesToBodega = async ({
       const tipo = resolveMediaKind(file, forcedTipo) || forcedTipo;
       if (!tipo) throw new Error(`Tipo de archivo no soportado: ${file.name}`);
 
-      const countTipo =
-        existingItems.filter((item) => item.tipo === tipo).length +
-        nuevosItems.filter((item) => item.tipo === tipo).length +
-        1;
       const inicial = tipo === 'video' ? 'V' : tipo === 'foto' ? 'F' : 'A';
+      const countTipo = nextLabelNumber(
+        [...existingItems, ...nuevosItems],
+        tipo
+      );
       const id = createMediaId();
       const extension = getExtension(file, tipo);
 

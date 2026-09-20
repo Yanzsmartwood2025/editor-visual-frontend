@@ -71,6 +71,7 @@ type NaylaChatMessage = {
   role: 'user' | 'ai';
   text: string;
   cards?: NaylaStockCard[];
+  attachments?: NaylaChannelAsset[];
   renderTask?: {
     requestId?: string;
     status: 'preparing' | 'rendering' | 'saving' | 'completed' | 'failed';
@@ -313,6 +314,7 @@ export default function NaylaCore() {
   const [isPlaying, setIsPlaying] = useState(false);
   const [mediaActivaUrl, setMediaActivaUrl] = useState<string | null>(null);
   const [videoResultadoUrl, setVideoResultadoUrl] = useState<string | null>(null);
+  const [videoResultadoNombre, setVideoResultadoNombre] = useState<string | null>(null);
   const [videoMetadata, setVideoMetadata] = useState({ width: 1080, height: 1920 });
   const [isScriptRunning, setIsScriptRunning] = useState(false);
 
@@ -383,15 +385,10 @@ export default function NaylaCore() {
         const newIndex = items.findIndex(i => i.id === over.id);
         const newArray = arrayMove(items, oldIndex, newIndex);
 
-        const contadores: Record<string, number> = { V: 0, F: 0, A: 0 };
-        const renumerado = newArray.map((clip) => {
-          const inicial = clip.tipo === 'video' ? 'V' : clip.tipo === 'foto' ? 'F' : 'A';
-          contadores[inicial]++;
-          return { ...clip, etiqueta: `${inicial}${contadores[inicial]}` };
-        });
-
-        sincronizarLineaDeTiempo(renumerado);
-        return renumerado;
+        // F1/V1/A1 identifican al archivo, no su posición en el timeline.
+        // Reordenar clips nunca debe cambiar la identidad del medio.
+        sincronizarLineaDeTiempo(newArray);
+        return newArray;
       });
     }
   };
@@ -527,6 +524,7 @@ export default function NaylaCore() {
   const openRenderResult = (task: NonNullable<NaylaChatMessage['renderTask']>) => {
     if (!task.outputUrl) return;
     setVideoResultadoUrl(task.outputUrl);
+    setVideoResultadoNombre(task.galleryItem?.nombre || 'Nayla_Render.mp4');
     setMediaActivaUrl(task.outputUrl);
     setClipSeleccionado(null);
     setIsPlaying(false);
@@ -1240,6 +1238,7 @@ export default function NaylaCore() {
         setVideoResultadoUrl(outputUrl);
 
         const renderItem = data.galleryItem as MediaItem | undefined;
+        setVideoResultadoNombre(renderItem?.nombre || 'Nayla_Render.mp4');
         if (renderItem) {
           setGaleriaMultimedia(prev =>
             prev.some(item => item.id === renderItem.id)
@@ -1603,12 +1602,14 @@ export default function NaylaCore() {
 
     const currentSession = session || await getFirebaseSession();
     if (!currentSession) return showAlert('Debes iniciar sesión para subir archivos.');
+    if (!activeThreadId) return showAlert('Abre un chat antes de subir archivos.');
 
     setChannelUploadingKind(kind);
     try {
+      let uploadedAssets: NaylaChannelAsset[] = [];
+
       if (kind === 'modelo3d') {
         const nextAssets = [...modelos3d];
-        const uploadedIds: string[] = [];
 
         for (const file of Array.from(files)) {
           const saved = await uploadModel3DToBoveda({
@@ -1617,15 +1618,20 @@ export default function NaylaCore() {
             existingItems: nextAssets,
             fuente: 'chat:canal-3d',
             projectId: activeProjectId,
-            threadId: activeThreadId || undefined,
+            threadId: activeThreadId,
           });
           nextAssets.push(saved);
-          uploadedIds.push(saved.id);
+          uploadedAssets.push({
+            id: saved.id,
+            tipo: 'modelo3d',
+            nombre: saved.nombre,
+            url: saved.url,
+            etiqueta: saved.etiqueta,
+          });
         }
 
         setModelos3d(nextAssets);
         setModelo3dActivoId((current) => current || nextAssets[0]?.id || null);
-        setChatAttachmentIds((prev) => Array.from(new Set([...prev, ...uploadedIds])));
       } else {
         const saved = await uploadMediaFilesToBodega({
           session: currentSession,
@@ -1634,14 +1640,67 @@ export default function NaylaCore() {
           forcedTipo: kind,
           fuente: `chat:canal-${kind}`,
           projectId: activeProjectId,
-          threadId: activeThreadId || undefined,
+          threadId: activeThreadId,
         });
 
         setGaleriaMultimedia((prev) => {
           const currentIds = new Set(prev.map((item) => item.id));
           return [...prev, ...saved.filter((item) => !currentIds.has(item.id))];
         });
-        setChatAttachmentIds((prev) => Array.from(new Set([...prev, ...saved.map((item) => item.id)])));
+
+        uploadedAssets = saved.map((item) => ({
+          id: item.id,
+          tipo: item.tipo as NaylaChannelKind,
+          nombre: item.nombre,
+          url: item.url,
+          etiqueta: item.etiqueta,
+        }));
+      }
+
+      const uploadedIds = uploadedAssets.map((item) => item.id);
+      setChatAttachmentIds((prev) => Array.from(new Set([...prev, ...uploadedIds])));
+
+      if (uploadedIds.length) {
+        const response = await fetch('/api/chat/messages', {
+          method: 'POST',
+          headers: firebaseHeaders(currentSession, { 'Content-Type': 'application/json' }),
+          body: JSON.stringify({
+            projectId: activeProjectId,
+            threadId: activeThreadId,
+            attachmentIds: uploadedIds,
+          }),
+        });
+        const payload = await response.json().catch(() => ({}));
+
+        const persistedAttachments = Array.isArray(payload?.message?.attachments)
+          ? payload.message.attachments.map((item: any) => ({
+              id: String(item.id),
+              tipo: item.tipo as NaylaChannelKind,
+              nombre: String(item.nombre || item.etiqueta || 'Archivo'),
+              url: typeof item.url === 'string' ? item.url : undefined,
+              etiqueta: typeof item.etiqueta === 'string' ? item.etiqueta : undefined,
+            }))
+          : uploadedAssets;
+
+        if (response.ok) {
+          setChatMessages((prev) => [
+            ...prev,
+            {
+              role: 'user',
+              text: String(payload?.message?.content || ''),
+              attachments: persistedAttachments,
+            },
+          ]);
+        } else {
+          setChatMessages((prev) => [
+            ...prev,
+            {
+              role: 'user',
+              text: '',
+              attachments: uploadedAssets,
+            },
+          ]);
+        }
       }
     } catch (error: any) {
       console.error('Error subiendo desde canal del chat:', error);
@@ -2228,6 +2287,15 @@ export default function NaylaCore() {
       .map((message) => ({
         role: message.role === 'user' ? 'user' as const : 'ai' as const,
         text: String(message.content || ''),
+        attachments: Array.isArray(message.attachments)
+          ? message.attachments.map((item: any) => ({
+              id: String(item.id),
+              tipo: item.tipo as NaylaChannelKind,
+              nombre: String(item.nombre || item.etiqueta || 'Archivo'),
+              url: typeof item.url === 'string' ? item.url : undefined,
+              etiqueta: typeof item.etiqueta === 'string' ? item.etiqueta : undefined,
+            }))
+          : undefined,
         actionPlan: message.action && typeof message.action === 'object'
           ? {
               action: String(message.action.action || 'ACTION'),
@@ -2724,7 +2792,20 @@ export default function NaylaCore() {
     if (calidad) setCalidadExportacion(calidad);
     const url = videoResultadoUrl || mediaActivaUrl;
     if (!url) return showAlert('No hay ningún video cargado para descargar.');
-    const a = document.createElement('a'); a.href = url; a.download = `Nayla_Export_${exportQuality}_${Date.now()}.mp4`; a.click();
+
+    const matchingItem = galeriaMultimedia.find((item) => item.url === url);
+    const preferredName =
+      (videoResultadoUrl ? videoResultadoNombre : null) ||
+      matchingItem?.nombre ||
+      `Nayla_Export_${exportQuality}.mp4`;
+    const cleanName = preferredName.toLowerCase().endsWith('.mp4')
+      ? preferredName
+      : `${preferredName.replace(/\.[a-z0-9]+$/i, '')}.mp4`;
+
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = cleanName;
+    a.click();
   };
 
 
@@ -2793,7 +2874,15 @@ export default function NaylaCore() {
       // Para resolver el race condition limpiamente:
       // Usaremos el contador local actual que viene de galeriaMultimedia que React mantiene durante este closure
       // sumado con el `index` de la llamada Promise.all(), garantizando no colisionar IDs.
-      const actualCount = galeriaMultimedia.filter(item => item.tipo === resolvedTipo).length + index + 1;
+      const labelPrefix = resolvedTipo === 'video' ? 'V' : resolvedTipo === 'audio' ? 'A' : 'F';
+      const maxExistingLabel = galeriaMultimedia.reduce((max, item) => {
+        if (item.tipo !== resolvedTipo || typeof item.etiqueta !== 'string') return max;
+        const match = item.etiqueta.trim().toUpperCase().match(
+          new RegExp('^' + labelPrefix + '(\\d+)$')
+        );
+        return match ? Math.max(max, Number(match[1]) || 0) : max;
+      }, 0);
+      const actualCount = maxExistingLabel + index + 1;
 
       let nombreBase = `Meta_Video_${actualCount}.mp4`;
       let etiquetaBase = `V${actualCount}`;
@@ -3282,8 +3371,13 @@ if (!session) {
           <div style={{ position: 'relative' }}>
             <button
               onClick={() => {
-                setIsDownloadMenuOpen(!isDownloadMenuOpen);
                 setIsUserMenuOpen(false);
+                if (videoResultadoUrl) {
+                  setIsDownloadMenuOpen(false);
+                  handleDescargar();
+                  return;
+                }
+                setIsDownloadMenuOpen(!isDownloadMenuOpen);
               }}
               className="neon-btn nav-btn"
               style={{ padding: '6px 12px', fontSize: '0.65rem', display: 'flex', alignItems: 'center', gap: '6px', backgroundColor: '#111' }}
@@ -3865,7 +3959,13 @@ if (!session) {
                             onClick={() => {
                               setMediaActivaUrl(item.url);
                               setClipSeleccionado(item.id);
-                              setVideoResultadoUrl(null);
+                              if (item.tipo === 'video' && String(item.fuente || '').startsWith('render:')) {
+                                setVideoResultadoUrl(item.url);
+                                setVideoResultadoNombre(item.nombre);
+                              } else {
+                                setVideoResultadoUrl(null);
+                                setVideoResultadoNombre(null);
+                              }
                               if (item.tipo === 'video' && playerRef.current) {
                                 const playPromise = playerRef.current.play();
                                 if (playPromise !== undefined) playPromise.catch(() => {});
@@ -4318,7 +4418,80 @@ if (!session) {
                   fontSize: '0.95rem',
                   lineHeight: '1.5'
                 }}>
-                  <CopyableChatText text={msg.text} />
+                  {msg.text ? <CopyableChatText text={msg.text} /> : null}
+                  {msg.attachments?.length ? (
+                    <div style={{
+                      display: 'grid',
+                      gridTemplateColumns: msg.attachments.length > 1 ? 'repeat(2, minmax(0, 1fr))' : '1fr',
+                      gap: 8,
+                      marginTop: msg.text ? 9 : 0,
+                    }}>
+                      {msg.attachments.map((asset) => (
+                        <div
+                          key={asset.id}
+                          style={{
+                            minWidth: 0,
+                            border: '1px solid #343434',
+                            borderRadius: 11,
+                            overflow: 'hidden',
+                            background: '#090909',
+                          }}
+                        >
+                          {asset.tipo === 'foto' && asset.url ? (
+                            <img
+                              src={asset.url}
+                              alt={asset.nombre}
+                              style={{ width: '100%', height: 92, objectFit: 'cover', display: 'block', background: '#000' }}
+                            />
+                          ) : asset.tipo === 'video' && asset.url ? (
+                            <video
+                              src={asset.url}
+                              muted
+                              playsInline
+                              preload="metadata"
+                              style={{ width: '100%', height: 92, objectFit: 'cover', display: 'block', background: '#000' }}
+                            />
+                          ) : (
+                            <div style={{
+                              height: 72,
+                              display: 'grid',
+                              placeItems: 'center',
+                              background: '#070707',
+                              color: '#d8d8d8',
+                              fontSize: 22,
+                            }}>
+                              {asset.tipo === 'audio' ? '♪' : '◇'}
+                            </div>
+                          )}
+                          <div style={{ padding: '7px 8px', minWidth: 0 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                              <span style={{
+                                flex: '0 0 auto',
+                                border: '1px solid #555',
+                                borderRadius: 6,
+                                padding: '1px 5px',
+                                fontSize: '0.62rem',
+                                fontWeight: 850,
+                                color: '#fff',
+                              }}>
+                                {asset.etiqueta || '—'}
+                              </span>
+                              <span style={{
+                                minWidth: 0,
+                                overflow: 'hidden',
+                                textOverflow: 'ellipsis',
+                                whiteSpace: 'nowrap',
+                                color: '#aaa',
+                                fontSize: '0.66rem',
+                              }}>
+                                {asset.nombre}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
                   {msg.renderTask && (
                     <div style={{
                       marginTop: 10,
@@ -4421,8 +4594,10 @@ if (!session) {
                             gap: 8,
                             padding: '9px 10px',
                           }}>
-                            <span style={{ fontSize: '0.73rem', fontWeight: 750 }}>Resultado listo</span>
-                            <span style={{ color: '#888', fontSize: '0.67rem' }}>Guardado · Toca para abrir</span>
+                            <span style={{ minWidth: 0, fontSize: '0.73rem', fontWeight: 750, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              {msg.renderTask.galleryItem?.nombre || 'Nayla_Render.mp4'}
+                            </span>
+                            <span style={{ flex: '0 0 auto', color: '#888', fontSize: '0.67rem' }}>Bóveda · Abrir</span>
                           </div>
                         </button>
                       )}
