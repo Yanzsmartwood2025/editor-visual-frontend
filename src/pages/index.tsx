@@ -62,6 +62,11 @@ type NaylaChatMessage = {
     action: string;
     status?: string;
     providers?: { id: string; label: string }[];
+    gpuJobId?: string;
+    gpuName?: string | null;
+    hourlyPrice?: number | null;
+    estimatedMaxCost?: number | null;
+    runtimeCostEstimate?: number | null;
   };
 };
 
@@ -285,6 +290,109 @@ export default function NaylaCore() {
   const [chatMessages, setChatMessages] = useState<NaylaChatMessage[]>([]);
   const [chatProcessing, setChatProcessing] = useState(false);
   const [stockImportingId, setStockImportingId] = useState<string | null>(null);
+
+  useEffect(() => {
+    const activeJobIds = Array.from(new Set(
+      chatMessages
+        .map((message) => message.actionPlan?.gpuJobId)
+        .filter((id): id is string => Boolean(id))
+    ));
+    if (!activeJobIds.length || !session) return;
+
+    const terminal = new Set(['completed', 'failed', 'expired']);
+    const pendingIds = activeJobIds.filter((id) => {
+      const message = [...chatMessages].reverse().find((item) => item.actionPlan?.gpuJobId === id);
+      return !terminal.has(message?.actionPlan?.status || '');
+    });
+    if (!pendingIds.length) return;
+
+    let cancelled = false;
+    let running = false;
+
+    const refresh = async () => {
+      if (running || cancelled) return;
+      running = true;
+      try {
+        const currentSession = session || await getFirebaseSession();
+        if (!currentSession) return;
+
+        for (const jobId of pendingIds) {
+          const response = await fetch('/api/gpu/jobs?id=' + encodeURIComponent(jobId), {
+            headers: firebaseHeaders(currentSession),
+          });
+          if (!response.ok) continue;
+          const payload = await response.json();
+          const job = payload?.job;
+          if (!job || cancelled) continue;
+
+          if (job.galleryItem) {
+            if (job.galleryItem.tipo === 'modelo3d') {
+              setModelos3d((prev) =>
+                prev.some((item) => item.id === job.galleryItem.id)
+                  ? prev
+                  : [...prev, job.galleryItem]
+              );
+              setModelo3dActivoId((current) => current || job.galleryItem.id);
+            } else if (['foto', 'video', 'audio'].includes(job.galleryItem.tipo)) {
+              setGaleriaMultimedia((prev) =>
+                prev.some((item) => item.id === job.galleryItem.id)
+                  ? prev
+                  : [...prev, job.galleryItem]
+              );
+            }
+          }
+
+          setChatMessages((prev) => prev.map((message) => {
+            if (message.actionPlan?.gpuJobId !== jobId) return message;
+
+            let text = message.text;
+            if (job.status === 'completed') {
+              text = job.galleryItem
+                ? 'Trabajo GPU completado. El resultado ya está guardado en la Bóveda.'
+                : 'Prueba GPU completada. La instancia fue cerrada correctamente.';
+            } else if (job.status === 'failed') {
+              text = 'El trabajo GPU falló y Nayla cerró la máquina. ' + (job.error || '');
+            } else if (job.status === 'expired') {
+              text = 'El tiempo máximo de la GPU venció. Nayla destruyó la instancia para proteger el saldo.';
+            } else if (job.status === 'cleanup_pending') {
+              text = job.galleryItem
+                ? 'El resultado está listo. Nayla está terminando de destruir la instancia GPU.'
+                : 'El trabajo terminó, pero la GPU sigue en limpieza automática.';
+            } else if (job.status === 'processing') {
+              text = 'La GPU está procesando el trabajo.';
+            } else if (job.status === 'booting' || job.status === 'renting') {
+              text = 'Nayla está preparando la GPU Vast.ai.';
+            }
+
+            return {
+              ...message,
+              text,
+              actionPlan: {
+                ...message.actionPlan,
+                status: job.status,
+                gpuName: job.gpuName ?? message.actionPlan.gpuName,
+                hourlyPrice: job.hourlyPrice ?? message.actionPlan.hourlyPrice,
+                estimatedMaxCost: job.estimatedMaxCost ?? message.actionPlan.estimatedMaxCost,
+                runtimeCostEstimate: job.runtimeCostEstimate ?? message.actionPlan.runtimeCostEstimate,
+              },
+            };
+          }));
+        }
+      } catch (error) {
+        console.warn('No se pudo actualizar el estado GPU:', error);
+      } finally {
+        running = false;
+      }
+    };
+
+    void refresh();
+    const timer = window.setInterval(refresh, 5000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [chatMessages, session]);
+
   const toolsOverlayRef = useRef<HTMLDivElement>(null);
   const chatOverlayRef = useRef<HTMLDivElement>(null);
   const lastFocusedElementRef = useRef<HTMLElement | null>(null);
@@ -906,11 +1014,18 @@ export default function NaylaCore() {
         ? 'Voy a armar el timeline con los medios existentes.'
         : 'Acción preparada.');
 
-      const actionPlan = data.status === 'planned'
+      const actionPlan = (data.status === 'planned' || data.gpuJobId)
         ? {
             action: data.action,
             status: data.status,
-            providers: Array.isArray(data.availableProviders) ? data.availableProviders : [],
+            providers: data.gpuJobId
+              ? [{ id: 'vast', label: 'Vast.ai' }]
+              : (Array.isArray(data.availableProviders) ? data.availableProviders : []),
+            gpuJobId: data.gpuJobId,
+            gpuName: data.job?.gpuName ?? null,
+            hourlyPrice: data.job?.hourlyPrice ?? null,
+            estimatedMaxCost: data.job?.estimatedMaxCost ?? null,
+            runtimeCostEstimate: data.job?.runtimeCostEstimate ?? null,
           }
         : undefined;
 
@@ -3124,9 +3239,24 @@ if (!session) {
                       </div>
                       <div style={{ color: '#999', marginTop: '4px', fontSize: '0.78rem' }}>
                         {msg.actionPlan.providers?.length
-                          ? `Proveedor disponible: ${msg.actionPlan.providers.map(p => p.label).join(', ')}`
+                          ? `Proveedor: ${msg.actionPlan.providers.map(p => p.label).join(', ')}`
                           : 'Proveedor pendiente de configuración.'}
                       </div>
+                      {msg.actionPlan.gpuJobId && (
+                        <div style={{ marginTop: '7px', display: 'grid', gap: '3px', color: '#777', fontSize: '0.7rem' }}>
+                          <span>Estado: {String(msg.actionPlan.status || 'queued').toUpperCase()}</span>
+                          {msg.actionPlan.gpuName && <span>GPU: {msg.actionPlan.gpuName}</span>}
+                          {Number.isFinite(msg.actionPlan.hourlyPrice) && (
+                            <span>Tarifa: ~${Number(msg.actionPlan.hourlyPrice).toFixed(3)}/h</span>
+                          )}
+                          {Number.isFinite(msg.actionPlan.estimatedMaxCost) && (
+                            <span>Tope estimado del trabajo: ~${Number(msg.actionPlan.estimatedMaxCost).toFixed(3)}</span>
+                          )}
+                          {Number.isFinite(msg.actionPlan.runtimeCostEstimate) && (
+                            <span>Uso estimado: ~${Number(msg.actionPlan.runtimeCostEstimate).toFixed(4)}</span>
+                          )}
+                        </div>
+                      )}
                     </div>
                   )}
                   {msg.cards?.length ? (
