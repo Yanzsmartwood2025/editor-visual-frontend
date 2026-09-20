@@ -3,16 +3,37 @@ export type MediaCapability =
   | 'stock_video'
   | 'stock_audio'
   | 'image_generation'
+  | 'image_editing'
+  | 'image_to_image'
   | 'video_generation'
+  | 'image_to_video'
+  | 'audio_generation'
   | 'tts'
+  | 'speech_to_text'
   | 'voice_clone'
+  | 'voice_design'
+  | 'voice_change'
+  | 'voice_isolation'
+  | 'dubbing'
+  | 'text_to_dialogue'
   | 'music_generation'
   | 'sound_effects'
-  | 'speech_to_text'
+  | 'forced_alignment'
+  | 'pronunciation_dictionary'
+  | 'voice_agent'
   | 'gpu_processing'
+  | 'custom_model_inference'
   | '3d_generation'
+  | '3d_multiview'
+  | '3d_texturing'
+  | '3d_conversion'
+  | '3d_segmentation'
+  | '3d_mesh_completion'
+  | '3d_decimation'
+  | '3d_rig_check'
   | '3d_rigging'
-  | '3d_animation';
+  | '3d_animation'
+  | '3d_retargeting';
 
 export type MediaProviderId =
   | 'pexels'
@@ -34,6 +55,26 @@ export type ProviderBillingModel =
   | 'subscription'
   | 'infrastructure'
   | 'mixed';
+
+export type CapabilityUiGroup =
+  | 'search'
+  | 'image'
+  | 'video'
+  | 'audio'
+  | 'voice'
+  | 'agents'
+  | '3d'
+  | 'gpu';
+
+export type CapabilityDefinition = {
+  id: MediaCapability;
+  label: string;
+  group: CapabilityUiGroup;
+  description: string;
+  iconKey: string;
+  billable: boolean;
+  requiresConsent?: boolean;
+};
 
 export type ProviderDefinition = {
   id: MediaProviderId;

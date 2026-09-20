@@ -30,6 +30,35 @@ type SubtitleItem = { id: string; texto: string; inicioSec: number; finSec: numb
 type LogoItem = { id: string; url: string; x: number; y: number; scale: number; opacity: number; inicioSec?: number; finSec?: number; fadeIn?: number; fadeOut?: number; };
 type ExpandedSurface = 'tools' | 'chat' | null;
 
+type NaylaStockCard = {
+  id: string;
+  provider: 'pexels' | 'pixabay' | 'openverse';
+  kind: 'image' | 'video' | 'audio';
+  title: string;
+  sourceUrl: string;
+  previewUrl?: string;
+  mediaUrl?: string;
+  creator?: string;
+  creatorUrl?: string;
+  width?: number;
+  height?: number;
+  durationSeconds?: number;
+  licenseName?: string;
+  licenseUrl?: string;
+  attribution?: string;
+};
+
+type NaylaChatMessage = {
+  role: 'user' | 'ai';
+  text: string;
+  cards?: NaylaStockCard[];
+  actionPlan?: {
+    action: string;
+    status?: string;
+    providers?: { id: string; label: string }[];
+  };
+};
+
 type MarcoConfig = {
   posicion: 'derecha' | 'izquierda' | 'abajo' | 'arriba' | 'derecha+abajo' | 'derecha+arriba' | 'izquierda+abajo' | 'izquierda+arriba';
   grosor: number;
@@ -244,8 +273,9 @@ export default function NaylaCore() {
   // Nayla Chat States
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [chatInput, setChatInput] = useState('');
-  const [chatMessages, setChatMessages] = useState<{role: 'user' | 'ai', text: string}[]>([]);
+  const [chatMessages, setChatMessages] = useState<NaylaChatMessage[]>([]);
   const [chatProcessing, setChatProcessing] = useState(false);
+  const [stockImportingId, setStockImportingId] = useState<string | null>(null);
   const toolsOverlayRef = useRef<HTMLDivElement>(null);
   const chatOverlayRef = useRef<HTMLDivElement>(null);
   const lastFocusedElementRef = useRef<HTMLElement | null>(null);
@@ -681,20 +711,128 @@ export default function NaylaCore() {
     }
   };
 
+  const stockKindToMediaKind = (kind: NaylaStockCard['kind']): MediaItem['tipo'] =>
+    kind === 'image' ? 'foto' : kind === 'video' ? 'video' : 'audio';
+
+  const stockFileExtension = (contentType: string, card: NaylaStockCard) => {
+    const normalized = (contentType || '').toLowerCase();
+    if (normalized.includes('jpeg')) return 'jpg';
+    if (normalized.includes('png')) return 'png';
+    if (normalized.includes('webp')) return 'webp';
+    if (normalized.includes('mp4')) return 'mp4';
+    if (normalized.includes('webm')) return 'webm';
+    if (normalized.includes('wav')) return 'wav';
+    if (normalized.includes('ogg')) return 'ogg';
+    if (normalized.includes('mpeg') || normalized.includes('mp3')) return 'mp3';
+    const urlExtension = card.mediaUrl?.split('?')[0].split('.').pop()?.toLowerCase();
+    if (urlExtension && /^[a-z0-9]{2,5}$/.test(urlExtension)) return urlExtension;
+    return card.kind === 'image' ? 'jpg' : card.kind === 'video' ? 'mp4' : 'mp3';
+  };
+
+  const importStockCard = async (card: NaylaStockCard, addToTimeline: boolean) => {
+    if (!card.mediaUrl) throw new Error('Este resultado no tiene un archivo importable.');
+    const currentSession = session || await getFirebaseSession();
+    if (!currentSession) throw new Error('Debes iniciar sesión para guardar medios.');
+
+    setStockImportingId(card.id);
+    try {
+      const existing = galeriaMultimedia.find(item =>
+        item.metadata?.sourceUrl === card.sourceUrl &&
+        item.metadata?.sourceProvider === card.provider
+      );
+
+      let savedItem = existing;
+      if (!savedItem) {
+        let sourceResponse: Response;
+        try {
+          sourceResponse = await fetch(card.mediaUrl);
+        } catch {
+          throw new Error('El proveedor bloqueó la descarga directa desde el navegador. Prueba otro resultado.');
+        }
+        if (!sourceResponse.ok) {
+          throw new Error(`No se pudo descargar el medio del proveedor (HTTP ${sourceResponse.status}).`);
+        }
+
+        const blob = await sourceResponse.blob();
+        const tipo = stockKindToMediaKind(card.kind);
+        const fallbackContentType = tipo === 'foto' ? 'image/jpeg' : tipo === 'video' ? 'video/mp4' : 'audio/mpeg';
+        const contentType = blob.type || fallbackContentType;
+        const extension = stockFileExtension(contentType, card);
+        const safeProvider = card.provider.replace(/[^a-z0-9_-]/gi, '');
+        const safeId = card.id.replace(/[^a-z0-9_-]/gi, '-').slice(-80);
+        const file = new File([blob], `${safeProvider}-${safeId}.${extension}`, { type: contentType });
+
+        const saved = await uploadMediaFilesToBodega({
+          session: currentSession,
+          files: [file],
+          existingItems: galeriaMultimedia,
+          forcedTipo: tipo,
+          fuente: `stock:${card.provider}`,
+          metadataExtra: {
+            sourceProvider: card.provider,
+            sourceUrl: card.sourceUrl,
+            creator: card.creator,
+            creatorUrl: card.creatorUrl,
+            licenseName: card.licenseName,
+            licenseUrl: card.licenseUrl,
+            attribution: card.attribution,
+          },
+        });
+
+        savedItem = saved[0];
+        if (!savedItem) throw new Error('La Bóveda no devolvió el medio importado.');
+        setGaleriaMultimedia(prev => prev.some(item => item.id === savedItem!.id) ? prev : [...prev, savedItem!]);
+      }
+
+      if (addToTimeline && savedItem) {
+        const alreadyInTimeline = lineaDeTiempo.some(item => item.mediaId === savedItem!.id);
+        if (!alreadyInTimeline) {
+          const timelineItem: TimelineItem = {
+            id: `stock-timeline-${Date.now()}`,
+            mediaId: savedItem.id,
+            tipo: savedItem.tipo,
+            nombre: savedItem.nombre,
+            etiqueta: savedItem.etiqueta,
+            url: savedItem.url,
+            durationInSeconds: savedItem.tipo === 'foto' ? 5 : savedItem.metadata?.durationInSeconds,
+            originalDurationInSeconds: savedItem.tipo === 'foto' ? 5 : savedItem.metadata?.durationInSeconds,
+            metadata: savedItem.metadata,
+          };
+          const next = await validarTimelineParaRender([...lineaDeTiempo, timelineItem]);
+          setLineaDeTiempo(next);
+          sincronizarLineaDeTiempo(next);
+          setClipSeleccionado(timelineItem.id);
+          if (savedItem.tipo !== 'audio') {
+            setMediaActivaUrl(savedItem.url);
+            adoptarFormatoVisual(savedItem.metadata);
+          }
+        }
+        showAlert('Medio guardado en la Bóveda y añadido al timeline.');
+      } else {
+        showAlert(existing ? 'Ese medio ya estaba guardado en la Bóveda.' : 'Medio guardado en la Bóveda.');
+      }
+    } finally {
+      setStockImportingId(null);
+    }
+  };
+
   const sendNaylaMessage = async () => {
-    if (!chatInput.trim()) return;
-    const newMessages = [...chatMessages, { role: 'user', text: chatInput }];
-    setChatMessages(newMessages as any);
+    const message = chatInput.trim();
+    if (!message) return;
+    const newMessages: NaylaChatMessage[] = [...chatMessages, { role: 'user', text: message }];
+    setChatMessages(newMessages);
     setChatInput('');
     setChatProcessing(true);
 
     try {
-      // Usamos el nuevo endpoint universal de chat
+      const currentSession = session || await getFirebaseSession();
+      if (!currentSession) throw new Error('Debes iniciar sesión para hablar con Nayla.');
+
       const res = await fetch('/api/chat', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: firebaseHeaders(currentSession, { 'Content-Type': 'application/json' }),
         body: JSON.stringify({
-           message: chatInput,
+           message,
            history: chatMessages.map(m => ({ role: m.role === 'user' ? 'user' : 'assistant', content: m.text })),
            provider: selectedAiProvider,
            mediaLibrary: galeriaMultimedia.map(item => ({
@@ -715,19 +853,37 @@ export default function NaylaCore() {
            }))
         })
       });
-      let data;
+
+      const raw = await res.text();
+      let data: any = {};
       try {
-        data = await res.json();
-      } catch (err) {
-        throw new Error('Error de conexión o respuesta inválida del servidor (Probablemente faltan variables de entorno para DB).');
+        data = raw ? JSON.parse(raw) : {};
+      } catch {
+        throw new Error(`El servidor devolvió una respuesta inválida (HTTP ${res.status}).`);
       }
 
       if (!res.ok || data.error) {
         throw new Error(data.error || 'Error en la respuesta del servidor');
       }
 
-      const aiText = data.text || (data.action === 'BUILD_TIMELINE' ? 'Voy a armar el timeline con los medios existentes.' : 'Sin respuesta de texto.');
-      setChatMessages(prev => [...prev, { role: 'ai', text: aiText }]);
+      const aiText = data.text || (data.action === 'BUILD_TIMELINE'
+        ? 'Voy a armar el timeline con los medios existentes.'
+        : 'Acción preparada.');
+
+      const actionPlan = data.status === 'planned'
+        ? {
+            action: data.action,
+            status: data.status,
+            providers: Array.isArray(data.availableProviders) ? data.availableProviders : [],
+          }
+        : undefined;
+
+      setChatMessages(prev => [...prev, {
+        role: 'ai',
+        text: aiText,
+        cards: data.action === 'SEARCH_MEDIA' && Array.isArray(data.results) ? data.results : undefined,
+        actionPlan,
+      }]);
 
       if (data.action === 'BUILD_TIMELINE') {
         await ejecutarBuildTimeline(data);
@@ -2768,7 +2924,70 @@ if (!session) {
                   fontSize: '0.95rem',
                   lineHeight: '1.5'
                 }}>
-                  {msg.text}
+                  <div>{msg.text}</div>
+                  {msg.actionPlan && (
+                    <div style={{ marginTop: '10px', padding: '10px', border: '1px solid #2b2b2b', borderRadius: '10px', backgroundColor: '#080808' }}>
+                      <div style={{ color: '#00ffcc', fontSize: '0.78rem', fontWeight: 700, letterSpacing: '0.04em' }}>
+                        {msg.actionPlan.action.replaceAll('_', ' ')}
+                      </div>
+                      <div style={{ color: '#999', marginTop: '4px', fontSize: '0.78rem' }}>
+                        {msg.actionPlan.providers?.length
+                          ? `Proveedor disponible: ${msg.actionPlan.providers.map(p => p.label).join(', ')}`
+                          : 'Proveedor pendiente de configuración.'}
+                      </div>
+                    </div>
+                  )}
+                  {msg.cards?.length ? (
+                    <div style={{ marginTop: '10px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                      {msg.cards.map((card) => (
+                        <div key={card.id} style={{ border: '1px solid #2b2b2b', borderRadius: '12px', overflow: 'hidden', backgroundColor: '#080808' }}>
+                          {card.previewUrl && (
+                            <img
+                              src={card.previewUrl}
+                              alt={card.title || 'Resultado de Nayla'}
+                              loading="lazy"
+                              style={{ width: '100%', maxHeight: '190px', objectFit: 'cover', display: 'block' }}
+                            />
+                          )}
+                          <div style={{ padding: '10px' }}>
+                            <div style={{ fontWeight: 700, fontSize: '0.82rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              {card.title || `${card.provider} ${card.kind}`}
+                            </div>
+                            <div style={{ color: '#888', fontSize: '0.72rem', marginTop: '3px' }}>
+                              {card.provider.toUpperCase()}{card.creator ? ` · ${card.creator}` : ''}{card.durationSeconds ? ` · ${Math.round(card.durationSeconds)}s` : ''}
+                            </div>
+                            {card.licenseName && (
+                              <div style={{ color: '#666', fontSize: '0.68rem', marginTop: '3px' }}>
+                                {card.licenseName}
+                              </div>
+                            )}
+                            <div style={{ display: 'flex', gap: '6px', marginTop: '9px', flexWrap: 'wrap' }}>
+                              <button
+                                onClick={() => window.open(card.sourceUrl, '_blank', 'noopener,noreferrer')}
+                                style={{ padding: '6px 9px', borderRadius: '7px', border: '1px solid #333', background: '#111', color: '#ddd', fontSize: '0.7rem', cursor: 'pointer' }}
+                              >
+                                VER
+                              </button>
+                              <button
+                                onClick={() => importStockCard(card, false).catch((error) => showAlert(error.message || 'No se pudo guardar.'))}
+                                disabled={stockImportingId === card.id || !card.mediaUrl}
+                                style={{ padding: '6px 9px', borderRadius: '7px', border: '1px solid #333', background: '#151515', color: '#fff', fontSize: '0.7rem', cursor: stockImportingId === card.id ? 'wait' : 'pointer', opacity: !card.mediaUrl ? 0.45 : 1 }}
+                              >
+                                {stockImportingId === card.id ? 'GUARDANDO…' : 'GUARDAR'}
+                              </button>
+                              <button
+                                onClick={() => importStockCard(card, true).catch((error) => showAlert(error.message || 'No se pudo usar.'))}
+                                disabled={stockImportingId === card.id || !card.mediaUrl}
+                                style={{ padding: '6px 9px', borderRadius: '7px', border: 'none', background: '#00cc66', color: '#000', fontWeight: 700, fontSize: '0.7rem', cursor: stockImportingId === card.id ? 'wait' : 'pointer', opacity: !card.mediaUrl ? 0.45 : 1 }}
+                              >
+                                USAR
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
                 </div>
               ))
             )}
