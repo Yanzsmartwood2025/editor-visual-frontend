@@ -6,5 +6,10 @@
       "**": false,
       "main": true
     }
+  },
+  "functions": {
+    "src/pages/api/render.ts": {
+      "maxDuration": 300
+    }
   }
 }
