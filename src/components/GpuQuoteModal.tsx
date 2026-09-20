@@ -1,5 +1,3 @@
-import React from 'react';
-
 export type GpuQuoteView = {
   provider: 'vast';
   workload: string;
