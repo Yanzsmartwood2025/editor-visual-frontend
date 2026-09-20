@@ -14,6 +14,9 @@ export type GpuRecipePlan = {
 const TRIPOSR_IMAGE =
   'pytorch/pytorch:2.4.0-cuda12.4-cudnn9-devel';
 
+const ACE_STEP_IMAGE =
+  'ghcr.io/ace-step/ace-step-1.5:0.1.8';
+
 const buildTripoSrBootstrap = () =>
   [
     'set -eu',
@@ -21,6 +24,22 @@ const buildTripoSrBootstrap = () =>
     'python - <<\'PY\'',
     'import urllib.request',
     'url = "https://raw.githubusercontent.com/Yanzsmartwood2025/editor-visual-frontend/main/gpu-workers/triposr/run-job.sh"',
+    'destination = "/opt/nayla/run-job"',
+    'with urllib.request.urlopen(url, timeout=30) as response:',
+    '    data = response.read()',
+    'with open(destination, "wb") as handle:',
+    '    handle.write(data)',
+    'PY',
+    'chmod +x /opt/nayla/run-job',
+  ].join('\n');
+
+const buildAceStepBootstrap = () =>
+  [
+    'set -eu',
+    'mkdir -p /opt/nayla',
+    'python - <<\'PY\'',
+    'import urllib.request',
+    'url = "https://raw.githubusercontent.com/Yanzsmartwood2025/editor-visual-frontend/main/gpu-workers/acestep/run-job.sh"',
     'destination = "/opt/nayla/run-job"',
     'with urllib.request.urlopen(url, timeout=30) as response:',
     '    data = response.read()',
@@ -56,6 +75,28 @@ export const getGpuRecipePlan = (
     };
   }
 
+  if (workload === 'audio' && recipe === 'ace-step-music') {
+    return {
+      id: 'ace-step-music',
+      workload: 'audio',
+      label: 'ACE-Step 1.5 Music',
+      workerImage: ACE_STEP_IMAGE,
+      profile: {
+        workload: 'audio',
+        minGpuRamGb: 8,
+        diskGb: 35,
+        maxHourlyUsd: 0.30,
+        maxRuntimeMinutes: 25,
+        outputExtension: 'wav',
+        outputContentType: 'audio/wav',
+        workerImage: ACE_STEP_IMAGE,
+      },
+      bootstrapScript: buildAceStepBootstrap(),
+      minInputs: 0,
+      maxInputs: 0,
+    };
+  }
+
   return null;
 };
 
@@ -64,11 +105,26 @@ export const validateRecipeInputs = (
   inputUrls: string[]
 ) => {
   if (inputUrls.length < plan.minInputs || inputUrls.length > plan.maxInputs) {
+    if (plan.minInputs === 0 && plan.maxInputs === 0) {
+      throw new Error(plan.label + ' no acepta archivos de entrada.');
+    }
+
+    if (plan.minInputs === plan.maxInputs) {
+      throw new Error(
+        plan.label +
+          ' requiere exactamente ' +
+          plan.minInputs +
+          (plan.minInputs === 1 ? ' archivo de entrada.' : ' archivos de entrada.')
+      );
+    }
+
     throw new Error(
       plan.label +
-        ' requiere exactamente ' +
+        ' requiere entre ' +
         plan.minInputs +
-        ' archivo de entrada.'
+        ' y ' +
+        plan.maxInputs +
+        ' archivos de entrada.'
     );
   }
 
