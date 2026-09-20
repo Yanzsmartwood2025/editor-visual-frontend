@@ -38,11 +38,12 @@ type SystemCatalog = {
 };
 
 type ComputeCard = {
-  id: string;
+  selectionId: string;
   gpuName: string;
   gpuRamGb: number | null;
   naylaHourlyPriceUsd: number;
   naylaEstimatedMaxUsd: number;
+  recommended: boolean;
 };
 
 const workloadLabels: Record<'image' | 'video' | 'audio' | '3d', string> = {
@@ -271,7 +272,7 @@ export function NaylaEngineBar({
                   <div style={{ display: 'grid', gap: 7, marginTop: 10 }}>
                     {cards.map((card) => (
                       <div
-                        key={card.id}
+                        key={card.selectionId}
                         style={{
                           display: 'grid',
                           gridTemplateColumns: '1fr auto',
@@ -286,14 +287,15 @@ export function NaylaEngineBar({
                           <div style={{ fontSize: '0.78rem', fontWeight: 750 }}>{card.gpuName}</div>
                           <div style={{ color: '#777', fontSize: '0.68rem', marginTop: 3 }}>
                             {card.gpuRamGb ? card.gpuRamGb + ' GB VRAM' : 'VRAM según disponibilidad'}
+                            {card.recommended ? ' · Nayla recomienda' : ''}
                           </div>
                         </div>
                         <div style={{ textAlign: 'right' }}>
                           <div style={{ fontSize: '0.76rem', fontWeight: 750 }}>
-                            ~$${card.naylaHourlyPriceUsd.toFixed(3)}/h
+                            ~${card.naylaHourlyPriceUsd.toFixed(3)}/h
                           </div>
                           <div style={{ color: '#777', fontSize: '0.65rem', marginTop: 3 }}>
-                            tope ~$${card.naylaEstimatedMaxUsd.toFixed(3)}
+                            tope ~${card.naylaEstimatedMaxUsd.toFixed(3)}
                           </div>
                         </div>
                       </div>
