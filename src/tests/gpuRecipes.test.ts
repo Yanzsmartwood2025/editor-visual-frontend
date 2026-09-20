@@ -20,6 +20,25 @@ describe('GPU recipes', () => {
     expect(getGpuRecipePlan('video', 'triposr-image-to-3d')).toBeNull();
   });
 
+  it('enables ACE-Step music with a pinned official worker image', () => {
+    const plan = getGpuRecipePlan('audio', 'ace-step-music');
+
+    expect(plan).not.toBeNull();
+    expect(plan?.workerImage).toBe('ghcr.io/ace-step/ace-step-1.5:0.1.8');
+    expect(plan?.profile.minGpuRamGb).toBe(8);
+    expect(plan?.profile.diskGb).toBe(35);
+    expect(plan?.profile.outputExtension).toBe('wav');
+    expect(plan?.profile.outputContentType).toBe('audio/wav');
+    expect(plan?.minInputs).toBe(0);
+    expect(plan?.maxInputs).toBe(0);
+    expect(buildRecipeBootstrap(plan!)).toContain('/opt/nayla/run-job');
+
+    expect(() => validateRecipeInputs(plan!, [])).not.toThrow();
+    expect(() =>
+      validateRecipeInputs(plan!, ['https://cdn.example/input.wav'])
+    ).toThrow('no acepta archivos');
+  });
+
   it('never lets a recipe relax the global hourly price cap', () => {
     const original = process.env.VAST_MAX_HOURLY_USD;
     process.env.VAST_MAX_HOURLY_USD = '0.20';
