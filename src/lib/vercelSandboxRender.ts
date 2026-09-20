@@ -37,7 +37,10 @@ const getBundle = async () => {
  * Bundles the Remotion entry point, renders it in an isolated Vercel Sandbox,
  * then copies the resulting media file to Cloudflare R2.
  */
-export async function startVercelSandboxRender(inputProps: unknown, ownerId?: string) {
+export async function startVercelSandboxRender(
+  inputProps: unknown,
+  scope: { ownerId: string; projectId: string; threadId?: string }
+) {
   const props = inputPropsToRecord(inputProps);
   const { addBundleToSandbox, createSandbox, renderMediaOnVercel } = await import('@remotion/vercel').catch(() => {
     throw new Error('El adaptador @remotion/vercel no está instalado en este entorno. Instálalo durante el despliegue de Vercel Sandbox.');
@@ -62,13 +65,21 @@ export async function startVercelSandboxRender(inputProps: unknown, ownerId?: st
       throw new Error(`Vercel Sandbox no produjo el archivo de render: ${sandboxFilePath}`);
     }
 
-    const ownerPrefix = ownerId || 'anonymous';
-    const key = `${ownerPrefix}/renders/${randomUUID()}.mp4`;
+    const threadSegment = scope.threadId ? `threads/${scope.threadId}` : 'shared';
+    const key =
+      `${scope.ownerId}/projects/${scope.projectId}/${threadSegment}/renders/` +
+      `${randomUUID()}.mp4`;
     const stored = await uploadR2Object(key, new Uint8Array(file), contentType);
 
     return {
       status: 'completed' as const,
-      output: stored,
+      output: {
+        key: stored.key,
+        r2Key: stored.key,
+        storageUrl: stored.privateUrl,
+        url: stored.readUrl,
+        privacy: 'private' as const,
+      },
       contentType,
     };
   } finally {
