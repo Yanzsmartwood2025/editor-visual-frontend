@@ -646,7 +646,9 @@ Si una petición combina pasos, elige la PRIMERA acción necesaria. El resultado
           threadId: scope.threadId || null,
         });
       } catch (error) {
-        const actionMessage = error instanceof Error ? error.message : 'La acción de Nayla no pudo ejecutarse.';
+        const actionMessage = sanitizeNaylaPublicText(
+          error instanceof Error ? error.message : 'La acción de Nayla no pudo ejecutarse.'
+        );
         return res.status(502).json({
           error: actionMessage,
           action: action.action,
@@ -676,8 +678,9 @@ Si una petición combina pasos, elige la PRIMERA acción necesaria. El resultado
     });
   } catch (error: any) {
     console.error('[chat.ts] Error general:', error);
-    const message = error?.message || 'Internal server error';
-    const status = message.includes('no pertenece') || message.includes('no existe') ? 403 : 500;
+    const rawMessage = error?.message || 'Error interno de Nayla.';
+    const message = sanitizeNaylaPublicText(rawMessage);
+    const status = rawMessage.includes('no pertenece') || rawMessage.includes('no existe') ? 403 : 500;
     return res.status(status).json({ error: message });
   }
 }
