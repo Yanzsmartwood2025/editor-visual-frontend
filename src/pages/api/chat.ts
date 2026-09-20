@@ -190,10 +190,10 @@ const executeValidatedAction = async (
       mediaJobId: mediaJob.id,
       engine: 'nayla-cloud' as const,
       requiresConfirmation: true,
-      executionReady: false,
+      executionReady: true,
       text:
-        `Nayla Cloud clasificó la tarea como ${mediaJob.domain} y la registró de forma privada en este proyecto. ` +
-        'La ejecución se habilitará de forma independiente antes de usar créditos.',
+        `Nayla Cloud preparó la tarea de ${mediaJob.domain}. ` +
+        'Confirma para iniciar la generación; el resultado quedará guardado en la Bóveda privada.',
     };
   }
 

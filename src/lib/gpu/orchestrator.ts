@@ -33,6 +33,7 @@ import {
   toNaylaComputeEstimatedPrice,
   toNaylaComputeHourlyPrice,
 } from '../naylaSystemCatalog';
+import { findOfferByComputeSelectionId } from './selection';
 
 export type GpuJobInput = {
   workload: GpuWorkload;
@@ -40,6 +41,7 @@ export type GpuJobInput = {
   prompt?: string;
   inputUrls?: string[];
   options?: Record<string, unknown>;
+  computeSelectionId?: string;
 };
 
 const tokenHash = (token: string) =>
@@ -266,11 +268,12 @@ export const startVastGpuJob = async ({
     searchVastOffers(profile, policy.offerReliabilityMin),
   ]);
 
-  const offer = offers[0];
+  const offer = findOfferByComputeSelectionId(offers, input.computeSelectionId);
   if (!offer) {
     throw new Error(
-      'No encontré una GPU verificada dentro del tope de $' +
-      profile.maxHourlyUsd.toFixed(2) + '/h para ' + input.workload + '.'
+      input.computeSelectionId
+        ? 'La GPU seleccionada ya no está disponible. Vuelve a cotizar y elige otra tarjeta.'
+        : 'No encontré una GPU compatible para ' + input.workload + '.'
     );
   }
 
@@ -281,9 +284,16 @@ export const startVastGpuJob = async ({
     policy.safetyMultiplier
   );
 
+  if (hourlyPrice > profile.maxHourlyUsd) {
+    throw new Error(
+      'La GPU seleccionada supera el límite por hora configurado para este tipo de trabajo. ' +
+      'No se reservó ninguna máquina.'
+    );
+  }
+
   if (estimatedMaxCost > policy.maxJobUsd) {
     throw new Error(
-      'La GPU más barata excede el límite por trabajo ($' +
+      'La GPU seleccionada excede el límite por trabajo ($' +
       estimatedMaxCost.toFixed(3) + ' > $' + policy.maxJobUsd.toFixed(2) +
       '). No se alquiló ninguna máquina.'
     );
@@ -322,6 +332,7 @@ export const startVastGpuJob = async ({
         prompt: input.prompt || null,
         inputUrls: input.inputUrls || [],
         options: input.options || {},
+        computeSelectionId: input.computeSelectionId || null,
       },
       profile: {
         minGpuRamGb: profile.minGpuRamGb,

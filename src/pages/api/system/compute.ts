@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { requireFirebaseUser } from '../../../lib/firebaseAdmin';
 import { getGpuBudgetPolicy, getGpuProfile, estimatedWorstCaseCost } from '../../../lib/gpu/profiles';
 import { searchVastOffers } from '../../../lib/gpu/vastApi';
+import { createComputeSelectionId } from '../../../lib/gpu/selection';
 import {
   toNaylaComputeEstimatedPrice,
   toNaylaComputeHourlyPrice,
@@ -31,28 +32,21 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const policy = getGpuBudgetPolicy();
     const offers = await searchVastOffers(profile, policy.offerReliabilityMin);
 
-    const seen = new Set<string>();
-    const cards = offers.flatMap((offer, offerIndex) => {
+    const cards = offers.map((offer, offerIndex) => {
       const gpuName = typeof offer.gpu_name === 'string' && offer.gpu_name.trim()
         ? offer.gpu_name.trim()
         : 'GPU';
       const ramMb = Number(offer.gpu_ram);
       const ramGb = Number.isFinite(ramMb) ? Math.round((ramMb / 1000) * 10) / 10 : null;
       const internalHourly = Number(offer.dph_total);
-      if (!Number.isFinite(internalHourly)) return [];
-
-      const key = gpuName + ':' + String(ramGb || '');
-      if (seen.has(key)) return [];
-      seen.add(key);
-
       const internalEstimate = estimatedWorstCaseCost(
         internalHourly,
         profile.maxRuntimeMinutes + policy.bootGraceMinutes,
         policy.safetyMultiplier
       );
 
-      return [{
-        id: 'compute-card-' + String(offerIndex + 1),
+      return {
+        selectionId: createComputeSelectionId(offer),
         gpuName,
         gpuRamGb: ramGb,
         naylaHourlyPriceUsd: toNaylaComputeHourlyPrice(internalHourly),
@@ -60,8 +54,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           internalEstimate,
           profile.maxRuntimeMinutes + policy.bootGraceMinutes
         ),
-      }];
-    }).slice(0, 6);
+        recommended: offerIndex === 0,
+      };
+    });
 
     res.setHeader('Cache-Control', 'no-store, max-age=0');
     return res.status(200).json({

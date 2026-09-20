@@ -59,7 +59,7 @@ describe('Vast API adapter', () => {
     expect(account).toEqual({ id: 8, balance: 3.25, credit: undefined, rawBalance: 3.25 });
   });
 
-  it('searches only verified on-demand offers inside the GPU caps', async () => {
+  it('searches all compatible verified on-demand offers without hiding cards by price', async () => {
     process.env.VAST_API_KEY = 'vast-secret';
     let receivedBody: any;
 
@@ -83,7 +83,8 @@ describe('Vast API adapter', () => {
     expect(receivedBody.rented).toEqual({ eq: false });
     expect(receivedBody.type).toBe('on-demand');
     expect(receivedBody.gpu_ram).toEqual({ gte: 24000 });
-    expect(receivedBody.dph_total).toEqual({ lte: profile.maxHourlyUsd });
+    expect(receivedBody.dph_total).toBeUndefined();
+    expect(receivedBody.limit).toBeUndefined();
     expect(receivedBody.reliability).toEqual({ gte: 0.96 });
     expect(offers.map((offer) => offer.id)).toEqual([1, 2]);
   });

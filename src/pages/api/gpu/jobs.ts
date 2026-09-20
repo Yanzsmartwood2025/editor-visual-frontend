@@ -44,6 +44,7 @@ const createSchema = z.object({
   prompt: z.string().max(5000).optional(),
   inputUrls: z.array(safeUrl).max(12).optional(),
   options: z.record(z.string(), z.unknown()).optional(),
+  computeSelectionId: z.string().min(20).max(128).optional(),
 });
 
 const querySchema = z.object({
