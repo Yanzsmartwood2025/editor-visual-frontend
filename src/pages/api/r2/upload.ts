@@ -31,7 +31,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     // the format used by the previous bucket and lets the delete endpoint use it directly.
     const key = `${user.uid}/${mediaId}.${extension}`;
     const stored = await uploadR2Object(key, new Uint8Array(await readFile(file.filepath)), file.mimetype || 'application/octet-stream');
-    return res.status(201).json(stored);
+    return res.status(201).json({
+      key: stored.key,
+      r2Key: stored.key,
+      url: stored.readUrl,
+      storageUrl: stored.privateUrl,
+      privacy: 'private',
+    });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'No se pudo subir el archivo.';
     const status = message.includes('token') || message.includes('Bearer') || message.includes('Firebase') ? 401 : 500;
