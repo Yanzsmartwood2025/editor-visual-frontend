@@ -43,3 +43,6 @@ out/
 *.log
 *.orig
 /header_screenshot.png
+
+# generated Remotion production bundle
+/.remotion/

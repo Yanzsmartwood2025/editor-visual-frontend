@@ -4,10 +4,11 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build": "npm run build:remotion && next build",
     "start": "next start",
     "lint": "eslint .",
-    "test": "vitest run"
+    "test": "vitest run",
+    "build:remotion": "node scripts/build-remotion.mjs"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.0.0",
