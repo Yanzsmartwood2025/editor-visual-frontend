@@ -127,10 +127,12 @@ export const toNaylaComputeHourlyPrice = (internalHourlyUsd: number): number => 
 };
 
 export const toNaylaComputeEstimatedPrice = (
-  internalEstimatedUsd: number
+  internalEstimatedUsd: number,
+  estimatedRuntimeMinutes = 0
 ): number => {
-  const { multiplier } = getNaylaComputePricingPolicy();
-  return Math.ceil(internalEstimatedUsd * multiplier * 1000) / 1000;
+  const { multiplier, fixedHourlyUsd } = getNaylaComputePricingPolicy();
+  const fixedPart = fixedHourlyUsd * (Math.max(0, estimatedRuntimeMinutes) / 60);
+  return Math.ceil((internalEstimatedUsd * multiplier + fixedPart) * 1000) / 1000;
 };
 
 export const getNaylaPublicSystemCatalog = () => ({
