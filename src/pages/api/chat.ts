@@ -7,6 +7,7 @@ import {
   getNaylaPublicSystemCatalog,
   sanitizeNaylaPublicText,
 } from '../../lib/naylaSystemCatalog';
+import { REMOTION_CPU_PUBLIC_CATALOG } from '../../lib/remotionEffects';
 import { searchStockMedia } from '../../lib/mediaProviders/stock';
 import {
   getAvailableProvidersForAction,
@@ -26,20 +27,7 @@ import {
   resolveOwnedWorkspaceScope,
 } from '../../lib/workspaceStore';
 
-const availableEffectsCatalog = {
-  transiciones: {
-    campo: 'transitionType',
-    valores: ['fade', 'wipe', 'slide', 'zoom'],
-  },
-  filtros: {
-    campo: 'efecto',
-    valores: ['grayscale', 'sepia', 'vintage', 'blur', 'ken-burns', 'pan', 'rotate'],
-  },
-  overlays: {
-    campo: 'overlay',
-    valores: ['vignette', 'film-grain', 'light-leak'],
-  },
-};
+
 
 export const config = {
   api: {
@@ -411,9 +399,12 @@ REGLAS DE SEGURIDAD Y EJECUCIÓN:
 - Solo puedes usar capacidades que aparecen en el catálogo seguro de este prompt.
 - Nunca menciones marcas, empresas, proveedores externos, nombres internos de recetas ni infraestructura de terceros al usuario. Habla únicamente de Nayla Cloud, Nayla Compute y Nayla Energy.
 - Nunca reveles precios internos, saldo de infraestructura, márgenes ni costos de origen. Solo usa precios Nayla devueltos por el servidor.
-- Si MODO_MOTOR=cloud, usa GENERATE_IMAGE / GENERATE_VIDEO / GENERATE_AUDIO / GENERATE_3D y no uses RUN_GPU_JOB.
-- Si MODO_MOTOR=compute, usa RUN_GPU_JOB para generación pesada, con workload acorde a image/video/audio/3d.
-- Si MODO_MOTOR=auto, usa Nayla Cloud por defecto y Nayla Compute solo cuando el usuario pida GPU/Compute/proceso local pesado o cuando una capacidad requiera worker propio.
+- La edición y composición con medios existentes se hace por defecto con BUILD_TIMELINE y Nayla Render CPU (Remotion + Vercel Sandbox). No alquiles GPU para una edición normal.
+- Si el usuario pide crear/editar/montar/renderizar un video con fotos, videos o audios que ya están en el proyecto, usa BUILD_TIMELINE. Si pide el archivo final, usa "render": true.
+- El usuario no necesita conocer nombres técnicos de efectos. Traduce expresiones como "cinematográfico", "movimiento 3D", "suave", "dinámico", "acercamiento" o "película" a controles permitidos del catálogo Remotion CPU.
+- Si MODO_MOTOR=cloud, usa GENERATE_IMAGE / GENERATE_VIDEO / GENERATE_AUDIO / GENERATE_3D solo cuando haga falta CREAR contenido nuevo; la edición de contenido existente sigue siendo BUILD_TIMELINE.
+- Si MODO_MOTOR=compute, usa RUN_GPU_JOB para generación pesada, con workload acorde a image/video/audio/3d. BUILD_TIMELINE sigue siendo CPU salvo que el usuario pida explícitamente una edición GPU en una fase compatible.
+- Si MODO_MOTOR=auto, usa BUILD_TIMELINE para edición normal, Nayla Cloud para generar contenido nuevo y Nayla Compute solo cuando el usuario pida GPU/Compute/proceso local pesado o una capacidad requiera worker propio.
 - Los trabajos de Nayla Compute tienen presupuesto, lease y cierre automático. No inventes precios ni afirmes que se reservó una GPU si el servidor no lo confirmó.
 - Ninguna generación externa pagada se considera ejecutada solo porque exista un proveedor: primero se registra el trabajo y el servidor controla su adaptador.
 - Clonación/cambio de voz requiere una muestra autorizada y consentimiento del titular.
@@ -504,7 +495,7 @@ Siempre cotiza primero y requiere confirmación humana.
 }
 Solo una imagen. No usar para texto→3D ni multivista.
 
-7) Construir timeline:
+7) Editar/componer con Remotion CPU:
 {
   "action": "BUILD_TIMELINE",
   "assets": [
@@ -512,19 +503,31 @@ Solo una imagen. No usar para texto→3D ni multivista.
       "type": "foto",
       "source": "url",
       "url": "https://...",
-      "efecto": "vintage",
+      "durationInSeconds": 4,
+      "efecto": "parallax-3d",
       "transitionType": "fade",
       "transitionDuration": 0.5,
-      "fadeIn": 0.5,
-      "fadeOut": 0.5
+      "fadeIn": 0.4,
+      "fadeOut": 0.4,
+      "overlay": "vignette",
+      "overlayIntensity": 0.35
+    },
+    {
+      "type": "audio",
+      "source": "url",
+      "url": "https://...",
+      "volume": 0.75,
+      "fadeIn": 0.8,
+      "fadeOut": 1.2
     }
   ],
   "render": true
 }
 
 Usa type únicamente "foto", "video" o "audio". source únicamente "url".
-Efectos disponibles:
-${JSON.stringify(availableEffectsCatalog)}
+Copia URLs exactas del proyecto. Para una orden sencilla decide tú los parámetros sin pedir nombres técnicos.
+Catálogo Remotion CPU:
+${JSON.stringify(REMOTION_CPU_PUBLIC_CATALOG)}
 
 CATÁLOGO DE CAPACIDADES:
 ${JSON.stringify(capabilitySummary)}
