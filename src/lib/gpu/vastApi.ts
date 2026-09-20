@@ -115,12 +115,14 @@ export const createVastInstance = async ({
   diskGb,
   label,
   onstart,
+  env = {},
 }: {
   offerId: number;
   image: string;
   diskGb: number;
   label: string;
   onstart: string;
+  env?: Record<string, string>;
 }) => {
   const payload = await vastRequest<Record<string, unknown>>(`/asks/${offerId}/`, {
     method: 'PUT',
@@ -134,7 +136,7 @@ export const createVastInstance = async ({
       cancel_unavail: true,
       runtype: 'args',
       args: ['sleep', 'infinity'],
-      env: {},
+      env,
     }),
   });
 
