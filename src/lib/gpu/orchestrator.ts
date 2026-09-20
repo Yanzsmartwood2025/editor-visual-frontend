@@ -284,6 +284,13 @@ export const startVastGpuJob = async ({
     policy.safetyMultiplier
   );
 
+  if (hourlyPrice > profile.maxHourlyUsd) {
+    throw new Error(
+      'La GPU seleccionada supera el límite por hora configurado para este tipo de trabajo. ' +
+      'No se reservó ninguna máquina.'
+    );
+  }
+
   if (estimatedMaxCost > policy.maxJobUsd) {
     throw new Error(
       'La GPU seleccionada excede el límite por trabajo (
