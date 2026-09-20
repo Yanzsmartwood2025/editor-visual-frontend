@@ -798,7 +798,7 @@ export default function NaylaCore() {
             originalDurationInSeconds: savedItem.tipo === 'foto' ? 5 : savedItem.metadata?.durationInSeconds,
             metadata: savedItem.metadata,
           };
-          const next = [...lineaDeTiempo, timelineItem];
+          const next = await validarTimelineParaRender([...lineaDeTiempo, timelineItem]);
           setLineaDeTiempo(next);
           sincronizarLineaDeTiempo(next);
           setClipSeleccionado(timelineItem.id);
