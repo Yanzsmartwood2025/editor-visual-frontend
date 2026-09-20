@@ -44,6 +44,10 @@ type TimelineItem = { id: string; mediaId: string; tipo: 'foto' | 'video' | 'aud
 type SubtitleItem = { id: string; texto: string; inicioSec: number; finSec: number; };
 type LogoItem = { id: string; url: string; x: number; y: number; scale: number; opacity: number; inicioSec?: number; finSec?: number; fadeIn?: number; fadeOut?: number; };
 type ExpandedSurface = 'tools' | 'chat' | null;
+type NaylaProjectDialog =
+  | { type: 'new' }
+  | { type: 'delete'; projectId: string; projectName: string }
+  | null;
 
 type NaylaStockCard = {
   id: string;
@@ -246,6 +250,9 @@ export default function NaylaCore() {
   const [iaFotosPrompt, setIaFotosPrompt] = useState('');
 
   const [customAlertMsg, setCustomAlertMsg] = useState<string | null>(null);
+  const [projectDialog, setProjectDialog] = useState<NaylaProjectDialog>(null);
+  const [projectDialogBusy, setProjectDialogBusy] = useState(false);
+  const [newProjectName, setNewProjectName] = useState('Nuevo proyecto');
 
   const showAlert = (msg: string) => {
     setCustomAlertMsg(msg);
@@ -1504,10 +1511,15 @@ export default function NaylaCore() {
     }
   };
 
-  const crearNuevoProyecto = async () => {
-    const requestedName = window.prompt('Nombre del nuevo proyecto:', 'Nuevo proyecto');
-    if (requestedName === null) return;
-    const name = requestedName.trim() || 'Nuevo proyecto';
+  const crearNuevoProyecto = () => {
+    setNewProjectName('Nuevo proyecto');
+    setProjectDialog({ type: 'new' });
+    setProjectMenuOpen(false);
+  };
+
+  const confirmarNuevoProyecto = async () => {
+    const name = newProjectName.trim() || 'Nuevo proyecto';
+    setProjectDialogBusy(true);
 
     try {
       const currentSession = session || await getFirebaseSession();
@@ -1525,18 +1537,28 @@ export default function NaylaCore() {
 
       setProjects((prev) => [payload.project!, ...prev.filter((project) => project.id !== payload.project!.id)]);
       await cargarProyectoActivo(payload.project.id, currentSession);
-      setProjectMenuOpen(false);
+      setProjectDialog(null);
     } catch (error: any) {
       showAlert(error?.message || 'No se pudo crear el proyecto.');
+    } finally {
+      setProjectDialogBusy(false);
     }
   };
 
-  const eliminarProyectoActivo = async () => {
+  const eliminarProyectoActivo = () => {
     if (!activeProject) return;
-    const confirmed = window.confirm(
-      `¿Eliminar el proyecto “${activeProject.name}”?\n\nSe eliminarán sus chats y los archivos privados guardados para este proyecto.`
-    );
-    if (!confirmed) return;
+    setProjectDialog({
+      type: 'delete',
+      projectId: activeProject.id,
+      projectName: activeProject.name,
+    });
+    setProjectMenuOpen(false);
+  };
+
+  const confirmarEliminarProyectoActivo = async () => {
+    if (!projectDialog || projectDialog.type !== 'delete') return;
+    const target = projectDialog;
+    setProjectDialogBusy(true);
 
     try {
       const currentSession = session || await getFirebaseSession();
@@ -1545,7 +1567,7 @@ export default function NaylaCore() {
       const response = await fetch('/api/projects', {
         method: 'DELETE',
         headers: firebaseHeaders(currentSession, { 'Content-Type': 'application/json' }),
-        body: JSON.stringify({ id: activeProject.id }),
+        body: JSON.stringify({ id: target.projectId }),
       });
       const payload = await response.json().catch(() => ({})) as {
         deleted?: { name?: string; r2DeleteFailures?: number };
@@ -1553,16 +1575,18 @@ export default function NaylaCore() {
       };
       if (!response.ok) throw new Error(payload.error || 'No se pudo eliminar el proyecto.');
 
-      setProjectMenuOpen(false);
+      setProjectDialog(null);
       setChatMessages([]);
       setChatAttachmentIds([]);
       await cargarDatosUsuario(currentSession.user.id);
 
       if (payload.deleted?.r2DeleteFailures) {
-        showAlert('El proyecto fue eliminado, pero algunos objetos de almacenamiento necesitarán limpieza posterior.');
+        showAlert('El proyecto fue eliminado, pero algunos archivos necesitarán limpieza posterior.');
       }
     } catch (error: any) {
       showAlert(error?.message || 'No se pudo eliminar el proyecto.');
+    } finally {
+      setProjectDialogBusy(false);
     }
   };
 
@@ -4673,6 +4697,143 @@ if (!session) {
         }}
         onConfirm={(selectionId) => void confirmGpuQuote(selectionId)}
       />
+
+{projectDialog && (
+        <div
+          data-no-edge-swipe
+          style={{
+            position: 'fixed',
+            inset: 0,
+            backgroundColor: 'rgba(0,0,0,0.82)',
+            zIndex: 100000,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: 18,
+            boxSizing: 'border-box',
+          }}
+          onPointerDown={(event) => {
+            if (event.target === event.currentTarget && !projectDialogBusy) setProjectDialog(null);
+          }}
+        >
+          <div style={{
+            width: 'min(420px, 100%)',
+            background: '#0b0b0b',
+            border: '1px solid #3a3a3a',
+            borderRadius: 18,
+            padding: '20px 18px 18px',
+            color: '#fff',
+            boxShadow: '0 24px 70px rgba(0,0,0,0.72)',
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+              <div style={{ fontSize: '1rem', fontWeight: 800, letterSpacing: '0.04em' }}>
+                {projectDialog.type === 'new' ? 'NUEVO PROYECTO' : 'ELIMINAR PROYECTO'}
+              </div>
+              <button
+                type="button"
+                aria-label="Cerrar"
+                disabled={projectDialogBusy}
+                onClick={() => setProjectDialog(null)}
+                style={{
+                  border: 'none',
+                  background: 'transparent',
+                  color: '#fff',
+                  fontSize: 24,
+                  width: 28,
+                  height: 28,
+                  padding: 0,
+                  display: 'grid',
+                  placeItems: 'center',
+                  cursor: projectDialogBusy ? 'wait' : 'pointer',
+                  opacity: projectDialogBusy ? 0.4 : 1,
+                }}
+              >
+                ×
+              </button>
+            </div>
+
+            {projectDialog.type === 'new' ? (
+              <>
+                <div style={{ color: '#8d8d8d', fontSize: '0.78rem', marginTop: 10 }}>
+                  Ponle un nombre para organizar chats, medios y resultados.
+                </div>
+                <input
+                  autoFocus
+                  value={newProjectName}
+                  disabled={projectDialogBusy}
+                  onChange={(event) => setNewProjectName(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter' && !projectDialogBusy) void confirmarNuevoProyecto();
+                  }}
+                  style={{
+                    width: '100%',
+                    marginTop: 14,
+                    padding: '12px 13px',
+                    boxSizing: 'border-box',
+                    borderRadius: 10,
+                    border: '1px solid #353535',
+                    background: '#111',
+                    color: '#fff',
+                    outline: 'none',
+                    fontSize: '0.92rem',
+                  }}
+                />
+              </>
+            ) : (
+              <>
+                <div style={{ marginTop: 14, fontSize: '0.92rem', lineHeight: 1.45 }}>
+                  ¿Eliminar <strong>{projectDialog.projectName}</strong>?
+                </div>
+                <div style={{ color: '#8d8d8d', fontSize: '0.76rem', lineHeight: 1.45, marginTop: 8 }}>
+                  También se eliminarán sus chats y archivos privados guardados para este proyecto.
+                </div>
+              </>
+            )}
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 18 }}>
+              <button
+                type="button"
+                disabled={projectDialogBusy}
+                onClick={() => setProjectDialog(null)}
+                style={{
+                  border: '1px solid #333',
+                  borderRadius: 10,
+                  background: '#111',
+                  color: '#ddd',
+                  padding: '9px 13px',
+                  fontWeight: 700,
+                  cursor: projectDialogBusy ? 'wait' : 'pointer',
+                }}
+              >
+                CANCELAR
+              </button>
+              <button
+                type="button"
+                disabled={projectDialogBusy}
+                onClick={() => void (projectDialog.type === 'new'
+                  ? confirmarNuevoProyecto()
+                  : confirmarEliminarProyectoActivo())}
+                style={{
+                  border: '1px solid #eee',
+                  borderRadius: 10,
+                  background: '#f2f2f2',
+                  color: '#050505',
+                  padding: '9px 14px',
+                  fontWeight: 850,
+                  cursor: projectDialogBusy ? 'wait' : 'pointer',
+                  opacity: projectDialogBusy ? 0.6 : 1,
+                }}
+              >
+                {projectDialogBusy
+                  ? 'PROCESANDO…'
+                  : projectDialog.type === 'new'
+                    ? 'CREAR'
+                    : 'ELIMINAR'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
 {customAlertMsg && (
         <div style={{
