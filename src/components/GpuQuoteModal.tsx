@@ -18,12 +18,18 @@ export type GpuQuoteView = {
 export function GpuQuoteModal({
   quote,
   sourceName,
+  title = 'Imagen → 3D',
+  description,
+  confirmLabel = 'CONFIRMAR Y CREAR 3D',
   confirming,
   onCancel,
   onConfirm,
 }: {
   quote: GpuQuoteView | null;
   sourceName?: string;
+  title?: string;
+  description?: string;
+  confirmLabel?: string;
   confirming?: boolean;
   onCancel: () => void;
   onConfirm: () => void;
@@ -64,13 +70,13 @@ export function GpuQuoteModal({
             GPU BAJO DEMANDA
           </div>
           <h3 style={{ margin: '6px 0 0', fontSize: '1.15rem' }}>
-            Imagen → 3D
+            {title}
           </h3>
           <div style={{ marginTop: 6, color: '#999', fontSize: '0.78rem', lineHeight: 1.45 }}>
             {sourceName ? (
               <>Entrada: <strong style={{ color: '#ddd' }}>{sourceName}</strong></>
             ) : (
-              'Conversión 3D con Vast.ai'
+              description || 'Proceso con GPU Vast.ai'
             )}
           </div>
         </div>
@@ -163,7 +169,7 @@ export function GpuQuoteModal({
                 cursor: confirming ? 'wait' : 'pointer',
               }}
             >
-              {confirming ? 'ALQUILANDO…' : 'CONFIRMAR Y CREAR 3D'}
+              {confirming ? 'ALQUILANDO…' : confirmLabel}
             </button>
           )}
         </div>
