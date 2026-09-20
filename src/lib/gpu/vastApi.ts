@@ -77,7 +77,10 @@ export const getVastAccountSummary = async () => {
   };
 };
 
-export const searchVastOffers = async (profile: GpuProfile): Promise<VastOffer[]> => {
+export const searchVastOffers = async (
+  profile: GpuProfile,
+  minReliability = 0.95
+): Promise<VastOffer[]> => {
   const body = {
     verified: { eq: true },
     external: { eq: false },
@@ -88,7 +91,7 @@ export const searchVastOffers = async (profile: GpuProfile): Promise<VastOffer[]
     gpu_ram: { gte: profile.minGpuRamGb * 1000 },
     disk_space: { gte: profile.diskGb },
     dph_total: { lte: profile.maxHourlyUsd },
-    reliability: { gte: 0.95 },
+    reliability: { gte: minReliability },
     order: [
       ['dph_total', 'asc'],
       ['reliability', 'desc'],
