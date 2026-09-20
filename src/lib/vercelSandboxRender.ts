@@ -22,19 +22,40 @@ const inputPropsToRecord = (inputProps: unknown): Record<string, unknown> => {
  * Bundling at runtime is intentionally avoided: @remotion/bundler depends on
  * native Rspack bindings which should not be loaded by the deployed API function.
  */
+export type NaylaRenderProgress = {
+  stage: 'preparing' | 'rendering' | 'saving' | 'completed';
+  phase: string;
+  progress: number;
+};
+
 export async function startVercelSandboxRender(
   inputProps: unknown,
-  scope: { ownerId: string; projectId: string; threadId?: string }
+  scope: { ownerId: string; projectId: string; threadId?: string },
+  onProgress?: (update: NaylaRenderProgress) => Promise<void> | void
 ) {
   const props = inputPropsToRecord(inputProps);
   const { addBundleToSandbox, createSandbox, renderMediaOnVercel } = await import('@remotion/vercel').catch(() => {
     throw new Error('El adaptador @remotion/vercel no está instalado en este entorno. Instálalo durante el despliegue de Vercel Sandbox.');
   });
 
+  const emitProgress = async (update: NaylaRenderProgress) => {
+    if (!onProgress) return;
+    try {
+      await onProgress({
+        ...update,
+        progress: Math.max(0, Math.min(1, Number(update.progress) || 0)),
+      });
+    } catch (error) {
+      console.warn('No se pudo registrar el progreso de Nayla Render:', error);
+    }
+  };
+
   const startedAt = Date.now();
   const bundleStartedAt = Date.now();
   const bundleDir = BUNDLE_DIR;
   const bundleMs = Date.now() - bundleStartedAt;
+
+  await emitProgress({ stage: 'preparing', phase: 'Preparando edición', progress: 0.03 });
 
   const sandboxStartedAt = Date.now();
   const sandbox = await createSandbox({
@@ -43,11 +64,14 @@ export async function startVercelSandboxRender(
   });
   const sandboxCreateMs = Date.now() - sandboxStartedAt;
 
+  await emitProgress({ stage: 'preparing', phase: 'Preparando motor de edición', progress: 0.08 });
+
   let lastProgress = 0;
   const renderStartedAt = Date.now();
 
   try {
     await addBundleToSandbox({ sandbox, bundleDir });
+    await emitProgress({ stage: 'preparing', phase: 'Organizando medios', progress: 0.12 });
 
     const { sandboxFilePath, contentType } = await renderMediaOnVercel({
       sandbox,
@@ -61,9 +85,26 @@ export async function startVercelSandboxRender(
       onProgress: async (update: any) => {
         const overall = Number(update?.overallProgress ?? update?.progress?.progress ?? 0);
         if (Number.isFinite(overall)) lastProgress = Math.max(lastProgress, overall);
+
+        const stage = String(update?.stage || '');
+        const phase =
+          stage === 'opening-browser'
+            ? 'Preparando render'
+            : stage === 'selecting-composition'
+              ? 'Organizando fotogramas'
+              : stage === 'render-progress'
+                ? 'Procesando fotogramas'
+                : 'Procesando video';
+
+        await emitProgress({
+          stage: stage === 'render-progress' ? 'rendering' : 'preparing',
+          phase,
+          progress: Math.max(0.12, Math.min(0.9, Number.isFinite(overall) ? overall : lastProgress)),
+        });
       },
     });
     const renderMs = Date.now() - renderStartedAt;
+    await emitProgress({ stage: 'saving', phase: 'Preparando archivo final', progress: 0.93 });
 
     const readStartedAt = Date.now();
     const file = await sandbox.readFileToBuffer({ path: sandboxFilePath });
@@ -76,9 +117,12 @@ export async function startVercelSandboxRender(
     const key =
       `${scope.ownerId}/projects/${scope.projectId}/${threadSegment}/renders/` +
       `${randomUUID()}.mp4`;
+    await emitProgress({ stage: 'saving', phase: 'Guardando resultado', progress: 0.97 });
+
     const uploadStartedAt = Date.now();
     const stored = await uploadR2Object(key, new Uint8Array(file), contentType);
     const uploadMs = Date.now() - uploadStartedAt;
+    await emitProgress({ stage: 'completed', phase: 'Resultado listo', progress: 1 });
     const totalMs = Date.now() - startedAt;
 
     return {
