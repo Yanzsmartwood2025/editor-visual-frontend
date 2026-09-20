@@ -1,9 +1,101 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { requireFirebaseUser } from '../../lib/firebaseAdmin';
+import { createR2PresignedGetUrl, createR2StorageUrl } from '../../lib/r2';
 import {
   getWorkspaceSupabaseAdmin,
   resolveOwnedWorkspaceScope,
 } from '../../lib/workspaceStore';
+
+const mediaIdsFromTimeline = (timeline: unknown[]) =>
+  Array.from(new Set(
+    timeline
+      .map((item) => (
+        item && typeof item === 'object' && 'mediaId' in item
+          ? String((item as { mediaId?: unknown }).mediaId || '')
+          : ''
+      ))
+      .filter(Boolean)
+  ));
+
+const getProjectMediaMap = async ({
+  userId,
+  projectId,
+  mediaIds,
+}: {
+  userId: string;
+  projectId: string;
+  mediaIds: string[];
+}) => {
+  if (!mediaIds.length) return new Map<string, Record<string, any>>();
+  const supabase = getWorkspaceSupabaseAdmin();
+  const { data, error } = await supabase
+    .from('galeria_multimedia')
+    .select('id, url, r2_key')
+    .eq('user_id', userId)
+    .eq('project_id', projectId)
+    .in('id', mediaIds);
+
+  if (error) throw error;
+  return new Map((data || []).map((item) => [item.id as string, item as Record<string, any>]));
+};
+
+const hydrateTimeline = async ({
+  userId,
+  projectId,
+  timeline,
+}: {
+  userId: string;
+  projectId: string;
+  timeline: unknown[];
+}) => {
+  const mediaMap = await getProjectMediaMap({
+    userId,
+    projectId,
+    mediaIds: mediaIdsFromTimeline(timeline),
+  });
+
+  return timeline.map((raw) => {
+    if (!raw || typeof raw !== 'object') return raw;
+    const item = raw as Record<string, any>;
+    const media = typeof item.mediaId === 'string' ? mediaMap.get(item.mediaId) : undefined;
+    if (!media) return item;
+
+    return {
+      ...item,
+      url: media.r2_key
+        ? createR2PresignedGetUrl({ key: media.r2_key, expiresIn: 3600 }).url
+        : media.url,
+    };
+  });
+};
+
+const canonicalizeTimeline = async ({
+  userId,
+  projectId,
+  timeline,
+}: {
+  userId: string;
+  projectId: string;
+  timeline: unknown[];
+}) => {
+  const mediaMap = await getProjectMediaMap({
+    userId,
+    projectId,
+    mediaIds: mediaIdsFromTimeline(timeline),
+  });
+
+  return timeline.map((raw) => {
+    if (!raw || typeof raw !== 'object') return raw;
+    const item = raw as Record<string, any>;
+    const media = typeof item.mediaId === 'string' ? mediaMap.get(item.mediaId) : undefined;
+    if (!media?.r2_key) return item;
+
+    return {
+      ...item,
+      url: createR2StorageUrl(media.r2_key),
+    };
+  });
+};
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   try {
@@ -30,10 +122,17 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       if (error) throw error;
       if (!data) return res.status(404).json({ error: 'Proyecto no encontrado.' });
 
+      const timeline = Array.isArray(data.linea_de_tiempo) ? data.linea_de_tiempo : [];
+      const hydratedTimeline = await hydrateTimeline({
+        userId: user.uid,
+        projectId: data.id,
+        timeline,
+      });
+
       return res.status(200).json({
         projectId: data.id,
         data: {
-          linea_de_tiempo: data.linea_de_tiempo || [],
+          linea_de_tiempo: hydratedTimeline,
           updated_at: data.updated_at,
         },
       });
@@ -50,11 +149,17 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         projectId: typeof projectId === 'string' ? projectId : undefined,
       });
 
+      const canonicalTimeline = await canonicalizeTimeline({
+        userId: user.uid,
+        projectId: scope.projectId,
+        timeline: linea_de_tiempo,
+      });
+
       const updatedAt = new Date().toISOString();
       const { data, error } = await supabase
         .from('editor_projects')
         .update({
-          linea_de_tiempo,
+          linea_de_tiempo: canonicalTimeline,
           updated_at: updatedAt,
         })
         .eq('id', scope.projectId)
