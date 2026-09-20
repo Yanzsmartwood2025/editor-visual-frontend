@@ -176,21 +176,21 @@ export function NaylaEngineBar({
           onClick={() => togglePanel('cloud')}
           style={buttonStyle(mode === 'cloud')}
         >
-          {compact ? '☁ Cloud' : 'NAYLA CLOUD'}
+          {compact ? '○ Cloud' : 'NAYLA CLOUD'}
         </button>
         <button
           type="button"
           onClick={() => togglePanel('compute')}
           style={buttonStyle(mode === 'compute')}
         >
-          {compact ? '⚡ Potencia' : 'NAYLA COMPUTE'}
+          {compact ? '△ Potencia' : 'NAYLA COMPUTE'}
         </button>
         <button
           type="button"
           onClick={() => togglePanel('energy')}
           style={buttonStyle(false)}
         >
-          {compact ? '◌ Energy' : energyLabel.toUpperCase()}
+          {compact ? '◇ Energy' : energyLabel.toUpperCase()}
         </button>
       </div>
 
