@@ -403,9 +403,15 @@ export const startMediaJobForUser = async ({
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Error desconocido';
       errors.push(`${provider}: ${message}`);
-      if (!(error instanceof UnsupportedCloudExecutionError)) {
-        console.warn('[nayla-cloud] Falló una ruta antes de iniciar el trabajo:', provider, error);
+      if (error instanceof UnsupportedCloudExecutionError) {
+        continue;
       }
+
+      // Once a real provider request was attempted we do not cascade to another
+      // paid route: an ambiguous network/provider failure could otherwise
+      // create two billable generations.
+      console.warn('[nayla-cloud] La ruta elegida falló; se detiene para evitar doble gasto:', provider, error);
+      break;
     }
   }
 
