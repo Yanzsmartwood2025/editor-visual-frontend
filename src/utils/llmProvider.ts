@@ -45,9 +45,13 @@ export class GroqProvider implements LLMProvider {
 
     messages.push({ role: 'user', content });
 
+    const model = images && images.length > 0
+      ? (process.env.GROQ_VISION_MODEL || 'qwen/qwen3.8-27b')
+      : this.model;
+
     const completion = await this.client.chat.completions.create({
       messages,
-      model: this.model,
+      model,
     });
 
     return completion.choices[0]?.message?.content || '';
