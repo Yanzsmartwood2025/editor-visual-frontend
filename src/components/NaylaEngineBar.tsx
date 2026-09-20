@@ -43,6 +43,8 @@ type ComputeCard = {
   gpuRamGb: number | null;
   naylaHourlyPriceUsd: number;
   naylaEstimatedMaxUsd: number;
+  available: boolean;
+  unavailableReason?: string;
   recommended: boolean;
 };
 
@@ -281,6 +283,7 @@ export function NaylaEngineBar({
                           border: '1px solid #292929',
                           borderRadius: 10,
                           background: '#0c0c0c',
+                          opacity: card.available ? 1 : 0.68,
                         }}
                       >
                         <div>
@@ -289,6 +292,11 @@ export function NaylaEngineBar({
                             {card.gpuRamGb ? card.gpuRamGb + ' GB VRAM' : 'VRAM según disponibilidad'}
                             {card.recommended ? ' · Nayla recomienda' : ''}
                           </div>
+                          {!card.available && card.unavailableReason && (
+                            <div style={{ color: '#666', fontSize: '0.64rem', marginTop: 3, lineHeight: 1.35 }}>
+                              {card.unavailableReason}
+                            </div>
+                          )}
                         </div>
                         <div style={{ textAlign: 'right' }}>
                           <div style={{ fontSize: '0.76rem', fontWeight: 750 }}>
