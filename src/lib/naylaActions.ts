@@ -94,7 +94,7 @@ export const naylaActionSchema = z.discriminatedUnion('action', [
     prompt: z.string().max(3000).optional(),
     inputUrls: z.array(urlSchema).max(20).optional(),
     options: z.object({
-      duration: z.number().min(5).max(90).optional(),
+      duration: z.number().min(10).max(90).optional(),
       instrumental: z.boolean().optional(),
       lyrics: z.string().max(10000).optional(),
     }).strict().optional(),
