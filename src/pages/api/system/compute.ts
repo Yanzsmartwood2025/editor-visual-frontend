@@ -56,7 +56,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         gpuName,
         gpuRamGb: ramGb,
         naylaHourlyPriceUsd: toNaylaComputeHourlyPrice(internalHourly),
-        naylaEstimatedMaxUsd: toNaylaComputeEstimatedPrice(internalEstimate),
+        naylaEstimatedMaxUsd: toNaylaComputeEstimatedPrice(
+          internalEstimate,
+          profile.maxRuntimeMinutes + policy.bootGraceMinutes
+        ),
       }];
     }).slice(0, 6);
 
