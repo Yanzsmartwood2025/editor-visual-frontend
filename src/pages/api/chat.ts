@@ -152,6 +152,7 @@ const executeValidatedAction = async (
       ...action,
       projectId: context.projectId,
       threadId: context.threadId || null,
+      text: 'Timeline preparado con los medios del proyecto activo.',
     };
   }
 
