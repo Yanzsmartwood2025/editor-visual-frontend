@@ -1,7 +1,5 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
-import { createClient } from '@supabase/supabase-js';
 import { z } from 'zod';
-import { executeWithApiKey } from '../../utils/apiKeyManager';
 import { GroqProvider, MistralProvider } from '../../utils/llmProvider';
 import { requireFirebaseUser } from '../../lib/firebaseAdmin';
 import { MEDIA_CAPABILITY_CATALOG } from '../../lib/mediaProviders/capabilities';
@@ -16,14 +14,14 @@ import { startVastGpuJob } from '../../lib/gpu/orchestrator';
 import { quoteVastGpuJob } from '../../lib/gpu/quote';
 import { resolveRequestPublicBaseUrl } from '../../lib/gpu/requestUrl';
 import type { GpuWorkload } from '../../lib/gpu/profiles';
-
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
-const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY || supabaseKey;
-
-const supabaseAdmin = supabaseUrl && supabaseServiceRoleKey
-  ? createClient(supabaseUrl, supabaseServiceRoleKey)
-  : null;
+import { createMediaJobPlan } from '../../lib/mediaJobs';
+import { createR2PresignedGetUrl } from '../../lib/r2';
+import {
+  getOwnedMediaForUser,
+  insertChatMessageForUser,
+  listThreadMessagesForUser,
+  resolveOwnedWorkspaceScope,
+} from '../../lib/workspaceStore';
 
 const availableEffectsCatalog = {
   transiciones: {
@@ -53,20 +51,25 @@ const historyItemSchema = z.object({
   content: z.string().max(12000),
 });
 
+const mediaLibraryItemSchema = z.object({
+  id: z.string().optional(),
+  tipo: z.enum(['foto', 'video', 'audio', 'modelo3d']),
+  url: z.string().url(),
+  nombre: z.string().max(500).optional(),
+  etiqueta: z.string().max(100).optional(),
+  fuente: z.string().max(100).optional(),
+  metadata: z.record(z.string(), z.unknown()).optional(),
+});
+
 const requestSchema = z.object({
   message: z.string().trim().min(1, 'Falta el parámetro requerido o está vacío: message').max(12000),
   images: z.array(z.string().max(4_000_000)).max(4).optional(),
   history: z.array(historyItemSchema).max(30).optional(),
   provider: z.enum(['groq', 'mistral']).optional().default('groq'),
-  mediaLibrary: z.array(z.object({
-    id: z.string().optional(),
-    tipo: z.enum(['foto', 'video', 'audio']),
-    url: z.string().url(),
-    nombre: z.string().max(500).optional(),
-    etiqueta: z.string().max(100).optional(),
-    fuente: z.string().max(100).optional(),
-    metadata: z.record(z.string(), z.unknown()).optional(),
-  })).max(500).optional(),
+  projectId: z.string().uuid().optional(),
+  threadId: z.string().uuid().optional(),
+  attachmentIds: z.array(z.string().uuid()).max(12).optional(),
+  mediaLibrary: z.array(mediaLibraryItemSchema).max(500).optional(),
   currentTimeline: z.array(z.object({
     id: z.string().optional(),
     tipo: z.enum(['foto', 'video', 'audio']),
@@ -97,12 +100,14 @@ const describeActionPlan = (action: NaylaAction) => {
     requiresConfirmation: generationActionNames.has(action.action),
     availableProviders: providers,
     text: providers.length
-      ? `Preparé la tarea. Puedo enrutarla por: ${providers.map((item) => item.label).join(', ')}. La ejecución de esta capacidad se habilitará en el adaptador correspondiente sin exponer la API key.`
+      ? `Preparé la tarea y puedo enrutarla por: ${providers.map((item) => item.label).join(', ')}.`
       : 'Preparé la tarea, pero no hay un proveedor configurado para esa capacidad todavía.',
   };
 };
 
-const inferGpuWorkload = (action: Extract<NaylaAction, { action: 'RUN_GPU_JOB' }>): GpuWorkload | null => {
+const inferGpuWorkload = (
+  action: Extract<NaylaAction, { action: 'RUN_GPU_JOB' }>
+): GpuWorkload | null => {
   if (action.workload) return action.workload;
 
   const normalized = action.jobType.toLowerCase();
@@ -116,7 +121,13 @@ const inferGpuWorkload = (action: Extract<NaylaAction, { action: 'RUN_GPU_JOB' }
 
 const executeValidatedAction = async (
   action: NaylaAction,
-  context: { userId: string; appBaseUrl: string }
+  context: {
+    userId: string;
+    projectId: string;
+    threadId?: string;
+    attachmentIds: string[];
+    appBaseUrl: string;
+  }
 ) => {
   if (action.action === 'SEARCH_MEDIA') {
     const search = await searchStockMedia({
@@ -137,18 +148,82 @@ const executeValidatedAction = async (
   }
 
   if (action.action === 'BUILD_TIMELINE') {
-    return action;
+    return {
+      ...action,
+      projectId: context.projectId,
+      threadId: context.threadId || null,
+    };
+  }
+
+  if (
+    action.action === 'GENERATE_IMAGE' ||
+    action.action === 'GENERATE_VIDEO' ||
+    action.action === 'GENERATE_AUDIO' ||
+    action.action === 'GENERATE_3D'
+  ) {
+    const base = describeActionPlan(action);
+    const mediaJob = await createMediaJobPlan({
+      userId: context.userId,
+      projectId: context.projectId,
+      threadId: context.threadId,
+      action,
+      attachmentIds: context.attachmentIds,
+    });
+
+    if (!mediaJob || mediaJob.status === 'unconfigured') {
+      return {
+        ...base,
+        projectId: context.projectId,
+        threadId: context.threadId || null,
+        text: 'La tarea quedó clasificada, pero no hay un proveedor configurado para ejecutarla.',
+      };
+    }
+
+    return {
+      ...base,
+      status: 'awaiting_confirmation' as const,
+      projectId: context.projectId,
+      threadId: context.threadId || null,
+      mediaJobId: mediaJob.id,
+      selectedProvider: mediaJob.provider,
+      availableProviders: mediaJob.providers,
+      requiresConfirmation: true,
+      executionReady: false,
+      text:
+        `La tarea quedó separada como ${mediaJob.domain} y registrada de forma privada en el proyecto. ` +
+        `Proveedor seleccionado: ${mediaJob.provider?.label}. El adaptador de ejecución se habilitará por separado antes de gastar créditos.`,
+    };
   }
 
   if (action.action === 'RUN_GPU_JOB') {
     if (action.provider === 'runpod') {
-      return describeActionPlan(action);
+      const base = describeActionPlan(action);
+      const mediaJob = await createMediaJobPlan({
+        userId: context.userId,
+        projectId: context.projectId,
+        threadId: context.threadId,
+        action,
+        attachmentIds: context.attachmentIds,
+      });
+      return {
+        ...base,
+        projectId: context.projectId,
+        threadId: context.threadId || null,
+        mediaJobId: mediaJob?.id || null,
+        selectedProvider: mediaJob?.provider || null,
+        status: mediaJob?.id ? 'awaiting_confirmation' as const : base.status,
+        text: mediaJob?.id
+          ? 'RunPod quedó registrado como trabajo GPU privado. Su adaptador se activará por separado antes de ejecutar gasto.'
+          : base.text,
+      };
     }
 
     const workload = inferGpuWorkload(action);
     if (!workload) {
       return {
         ...describeActionPlan(action),
+        projectId: context.projectId,
+        threadId: context.threadId || null,
         text: 'Preparé la tarea GPU, pero necesito clasificarla como image, video, audio, 3d o probe antes de alquilar una máquina.',
       };
     }
@@ -167,11 +242,17 @@ const executeValidatedAction = async (
         ...action,
         workload,
         provider: 'vast' as const,
+        projectId: context.projectId,
+        threadId: context.threadId || null,
         status: 'awaiting_confirmation' as const,
         executionReady: quote.available,
         requiresConfirmation: true,
         quote,
-        pendingGpuRequest: gpuInput,
+        pendingGpuRequest: {
+          ...gpuInput,
+          projectId: context.projectId,
+          threadId: context.threadId,
+        },
         text: quote.available
           ? 'Encontré una GPU Vast.ai dentro del presupuesto. Revisa el costo y confirma antes de alquilarla.'
           : (quote.reason || 'No hay una GPU disponible dentro de los límites de seguridad.'),
@@ -180,6 +261,8 @@ const executeValidatedAction = async (
 
     const job = await startVastGpuJob({
       userId: context.userId,
+      projectId: context.projectId,
+      threadId: context.threadId,
       input: gpuInput,
       appBaseUrl: context.appBaseUrl,
     });
@@ -188,17 +271,52 @@ const executeValidatedAction = async (
       ...action,
       workload,
       provider: 'vast' as const,
+      projectId: context.projectId,
+      threadId: context.threadId || null,
       gpuJobId: job.id,
       status: job.status,
       executionReady: true,
       requiresConfirmation: false,
       job,
       text:
-        'GPU Vast.ai iniciada con límite de gasto y vencimiento automático. Nayla guardará el resultado en R2/Bóveda y destruirá la instancia al terminar.',
+        'GPU Vast.ai iniciada con límite de gasto y vencimiento automático. La salida quedará dentro de este proyecto/chat en R2 y la instancia se destruirá al terminar.',
     };
   }
 
   return describeActionPlan(action);
+};
+
+const executeDirectLlm = async ({
+  provider,
+  prompt,
+  images,
+  systemPrompt,
+}: {
+  provider: 'groq' | 'mistral';
+  prompt: string;
+  images?: string[];
+  systemPrompt: string;
+}) => {
+  const groqKey = process.env.GROQ_API_KEY?.trim();
+  const mistralKey = process.env.MISTRAL_API_KEY?.trim();
+
+  const groq = async () => {
+    if (!groqKey) throw new Error('GROQ_API_KEY no está configurada en Vercel.');
+    return new GroqProvider(groqKey, 'dialog').generateText(prompt, images, systemPrompt);
+  };
+
+  const mistral = async () => {
+    if (!mistralKey) throw new Error('MISTRAL_API_KEY no está configurada en Vercel.');
+    return new MistralProvider(mistralKey, 'dialog').generateText(prompt, images, systemPrompt);
+  };
+
+  if (!groqKey && !mistralKey) {
+    throw new Error('No hay ninguna clave LLM de servidor configurada en Vercel.');
+  }
+
+  return provider === 'mistral'
+    ? mistral().catch(async () => groq())
+    : groq().catch(async () => mistral());
 };
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
@@ -221,7 +339,76 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       });
     }
 
-    const { message, images, history, provider, mediaLibrary, currentTimeline } = parsedBody.data;
+    const {
+      message,
+      images,
+      history,
+      provider,
+      projectId,
+      threadId,
+      attachmentIds = [],
+      mediaLibrary,
+      currentTimeline,
+    } = parsedBody.data;
+
+    const scope = await resolveOwnedWorkspaceScope({
+      userId: firebaseUser.uid,
+      projectId,
+      threadId,
+    });
+
+    const ownedAttachments = attachmentIds.length
+      ? await getOwnedMediaForUser({
+          userId: firebaseUser.uid,
+          mediaIds: attachmentIds,
+          projectId: scope.projectId,
+        })
+      : [];
+
+    if (ownedAttachments.length !== new Set(attachmentIds).size) {
+      return res.status(403).json({
+        error: 'Uno o más adjuntos no pertenecen al usuario/proyecto activo.',
+      });
+    }
+
+    const attachments = ownedAttachments.map((item: Record<string, any>) => ({
+      id: item.id as string,
+      tipo: item.tipo as 'foto' | 'video' | 'audio' | 'modelo3d',
+      nombre: item.nombre as string,
+      etiqueta: item.etiqueta as string | undefined,
+      fuente: item.fuente as string | undefined,
+      metadata: item.metadata || {},
+      url: item.r2_key
+        ? createR2PresignedGetUrl({ key: item.r2_key, expiresIn: 3600 }).url
+        : item.url,
+    }));
+
+    let persistedHistory: Array<{ role: 'user' | 'assistant'; content: string }> = [];
+    if (scope.threadId) {
+      const stored = await listThreadMessagesForUser({
+        userId: firebaseUser.uid,
+        threadId: scope.threadId,
+        limit: 30,
+      });
+      persistedHistory = stored.messages
+        .filter((item: Record<string, any>) => item.role === 'user' || item.role === 'assistant')
+        .map((item: Record<string, any>) => ({
+          role: item.role as 'user' | 'assistant',
+          content: String(item.content || ''),
+        }));
+
+      await insertChatMessageForUser({
+        userId: firebaseUser.uid,
+        projectId: scope.projectId,
+        threadId: scope.threadId,
+        role: 'user',
+        content: message,
+        attachmentIds,
+        metadata: {
+          attachmentTypes: attachments.map((item) => item.tipo),
+        },
+      });
+    }
 
     const providerSummary = getConfiguredProviderSummary();
     const capabilitySummary = MEDIA_CAPABILITY_CATALOG.map((item) => ({
@@ -235,14 +422,19 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 Eres Nayla, orquestadora de IA para un editor multimedia basado en Remotion.
 
 REGLAS DE SEGURIDAD Y EJECUCIÓN:
-- Nunca pidas, muestres, inventes ni repitas API keys, tokens o secretos.
+- Nunca pidas, muestres, inventes ni repitas API keys, tokens, claves R2 ni secretos.
+- Todo trabajo pertenece al usuario y al proyecto activo. No mezcles archivos ni contexto entre proyectos/chats.
+- Los adjuntos ya fueron validados por el servidor. Usa solo sus URLs temporales exactas y nunca inventes URLs.
+- Clasifica adjuntos así: foto→imagen, video→video, audio→audio/voz/transcripción, modelo3d→3D.
+- Si el usuario pide analizar o transformar un adjunto, usa primero la acción correspondiente a su tipo.
 - Solo puedes usar proveedores y capacidades que aparecen en el catálogo seguro de este prompt.
-- Si el usuario no elige proveedor, omite "provider": el servidor elegirá uno configurado.
-- Usa RUN_GPU_JOB solo cuando el usuario pida explícitamente Vast/GPU/modelo propio/proceso local pesado, o cuando la tarea requiera un worker GPU propio. Para generación normal usa GENERATE_IMAGE / GENERATE_VIDEO / GENERATE_AUDIO / GENERATE_3D.
-- Los trabajos Vast tienen presupuesto, lease y destrucción automática. No inventes precios ni prometas que una GPU fue alquilada: el servidor lo decide.
-- No afirmes que una generación pagada terminó. Tu trabajo es devolver una acción validada; el servidor decide si la ejecuta.
-- Clonación/cambio de voz debe tratarse como una función que requiere una muestra autorizada y consentimiento del titular.
-- No inventes URLs. Para BUILD_TIMELINE copia solo URLs presentes en mediaLibrary/currentTimeline.
+- Si el usuario no elige proveedor, omite "provider": el servidor seleccionará uno configurado.
+- Usa RUN_GPU_JOB solo si el usuario pide explícitamente Vast/GPU/modelo propio/proceso local pesado, o si la tarea requiere un worker GPU propio.
+- Para generación normal usa GENERATE_IMAGE / GENERATE_VIDEO / GENERATE_AUDIO / GENERATE_3D.
+- Los trabajos Vast tienen presupuesto, lease y destrucción automática. No inventes precios ni afirmes que se alquiló una GPU si el servidor no lo confirmó.
+- Ninguna generación externa pagada se considera ejecutada solo porque exista un proveedor: primero se registra el trabajo y el servidor controla su adaptador.
+- Clonación/cambio de voz requiere una muestra autorizada y consentimiento del titular.
+- Para BUILD_TIMELINE copia solo URLs presentes en adjuntos, mediaLibrary o currentTimeline.
 - Para una petición ejecutable responde ÚNICAMENTE JSON válido, sin markdown ni texto adicional.
 - Para conversación normal responde texto normal.
 
@@ -262,9 +454,8 @@ providers opcional: ["pexels","pixabay","openverse"].
 {
   "action": "GENERATE_IMAGE",
   "prompt": "descripción",
-  "sourceImageUrl": "https://..." 
+  "sourceImageUrl": "https://..."
 }
-sourceImageUrl es opcional.
 
 3) Generar video:
 {
@@ -272,7 +463,6 @@ sourceImageUrl es opcional.
   "prompt": "descripción",
   "sourceImageUrl": "https://..."
 }
-sourceImageUrl es opcional.
 
 4) Audio/voz:
 {
@@ -284,9 +474,8 @@ sourceImageUrl es opcional.
   "voiceId": "opcional",
   "targetLanguage": "opcional"
 }
-mode puede ser: tts, music, sound_effects, speech_to_text, voice_clone, voice_design,
+mode: tts, music, sound_effects, speech_to_text, voice_clone, voice_design,
 voice_change, voice_isolation, dubbing, text_to_dialogue, forced_alignment.
-Incluye solo los campos necesarios.
 
 5) 3D:
 {
@@ -298,7 +487,7 @@ Incluye solo los campos necesarios.
 }
 mode: text_to_3d, image_to_3d, multiview_to_3d, texture, optimize, rig, animate, retarget.
 
-6) GPU propia / Vast:
+6) GPU propia:
 {
   "action": "RUN_GPU_JOB",
   "provider": "vast",
@@ -307,11 +496,10 @@ mode: text_to_3d, image_to_3d, multiview_to_3d, texture, optimize, rig, animate,
   "prompt": "opcional",
   "inputUrls": ["https://..."]
 }
-workload debe ser: "probe" | "image" | "video" | "audio" | "3d".
-"probe" sirve únicamente para probar que la máquina GPU puede arrancar y apagarse correctamente.
+workload: "probe" | "image" | "video" | "audio" | "3d".
 
 RECETAS GPU PROPIAS HABILITADAS:
-- Para generar música con nuestra GPU Vast usa exactamente:
+- Música ACE-Step:
 {
   "action": "RUN_GPU_JOB",
   "provider": "vast",
@@ -323,10 +511,10 @@ RECETAS GPU PROPIAS HABILITADAS:
     "instrumental": true
   }
 }
-La duración permitida en Nayla es de 10 a 90 segundos. Si el usuario entrega letra autorizada, puedes usar "lyrics" y poner "instrumental": false.
-Esta acción SIEMPRE se cotiza primero y requiere confirmación humana antes de alquilar GPU.
+Duración: 10–90 segundos. Con letra autorizada se puede usar "lyrics" e "instrumental": false.
+Siempre cotiza primero y requiere confirmación humana.
 
-- Para convertir UNA imagen existente en un GLB con nuestra GPU usa exactamente:
+- Una imagen existente a GLB con TripoSR:
 {
   "action": "RUN_GPU_JOB",
   "provider": "vast",
@@ -334,9 +522,9 @@ Esta acción SIEMPRE se cotiza primero y requiere confirmación humana antes de 
   "jobType": "triposr-image-to-3d",
   "inputUrls": ["URL HTTPS exacta de la imagen existente"]
 }
-No uses esta receta para texto→3D ni multivista. No inventes la URL.
+Solo una imagen. No usar para texto→3D ni multivista.
 
-7) Construir timeline con medios existentes:
+7) Construir timeline:
 {
   "action": "BUILD_TIMELINE",
   "assets": [
@@ -367,9 +555,23 @@ ${JSON.stringify(providerSummary)}
 Si una petición combina pasos, elige la PRIMERA acción necesaria. El resultado volverá al chat y el siguiente turno puede continuar el flujo.
 `;
 
+    const mergedLibrary = [
+      ...(mediaLibrary || []),
+      ...attachments.filter((attachment) =>
+        !mediaLibrary?.some((item) => item.id && item.id === attachment.id)
+      ),
+    ];
+
     const executionContext = [
-      mediaLibrary?.length
-        ? `Medios disponibles en orden:\n${mediaLibrary.map((item, index) =>
+      `Proyecto activo: ${scope.projectId}.`,
+      scope.threadId ? `Chat activo: ${scope.threadId}.` : 'Chat persistente: todavía no seleccionado.',
+      attachments.length
+        ? `Adjuntos privados del mensaje:\n${attachments.map((item, index) =>
+            `${index + 1}. id=${item.id}; tipo=${item.tipo}; url=${item.url}; nombre=${item.nombre || ''}; etiqueta=${item.etiqueta || ''}`
+          ).join('\n')}`
+        : 'Adjuntos privados del mensaje: ninguno.',
+      mergedLibrary.length
+        ? `Medios disponibles en el proyecto:\n${mergedLibrary.map((item, index) =>
             `${index + 1}. tipo=${item.tipo}; url=${item.url}; nombre=${item.nombre || ''}; etiqueta=${item.etiqueta || ''}; fuente=${item.fuente || ''}`
           ).join('\n')}`
         : 'Medios disponibles: ninguno.',
@@ -380,8 +582,9 @@ Si una petición combina pasos, elige la PRIMERA acción necesaria. El resultado
         : 'Timeline actual: vacío.',
     ].join('\n\n');
 
-    const historyText = history?.length
-      ? history.map((msg) => `${msg.role}: ${msg.content}`).join('\n')
+    const effectiveHistory = scope.threadId ? persistedHistory : (history || []);
+    const historyText = effectiveHistory.length
+      ? effectiveHistory.map((msg) => `${msg.role}: ${msg.content}`).join('\n')
       : '';
 
     const fullPrompt = [
@@ -390,46 +593,23 @@ Si una petición combina pasos, elige la PRIMERA acción necesaria. El resultado
       `Usuario: ${message}`,
     ].filter(Boolean).join('\n\n');
 
-    const executeGroq = async (apiKey: string) => {
-      const groqProvider = new GroqProvider(apiKey, 'dialog');
-      return await groqProvider.generateText(fullPrompt, images, systemPrompt);
-    };
-
-    const executeMistral = async (apiKey: string) => {
-      const mistralProvider = new MistralProvider(apiKey, 'dialog');
-      return await mistralProvider.generateText(fullPrompt, images, systemPrompt);
-    };
-
-    const executeDirectOrPool = async (
-      providerName: 'groq' | 'mistral',
-      directApiKey: string | undefined,
-      executor: (apiKey: string) => Promise<string>
-    ) => {
-      if (directApiKey?.trim()) {
-        return await executor(directApiKey.trim());
-      }
-
-      if (!supabaseAdmin) {
-        throw new Error(`No hay ${providerName.toUpperCase()}_API_KEY configurada en Vercel y tampoco hay conexión al pool temporal de llaves.`);
-      }
-
-      return await executeWithApiKey(supabaseAdmin, providerName, executor);
-    };
-
-    const executeGroqDirectOrPool = () =>
-      executeDirectOrPool('groq', process.env.GROQ_API_KEY, executeGroq);
-    const executeMistralDirectOrPool = () =>
-      executeDirectOrPool('mistral', process.env.MISTRAL_API_KEY, executeMistral);
+    const attachedImageUrls = attachments
+      .filter((item) => item.tipo === 'foto')
+      .map((item) => item.url);
+    const visionImages = [...(images || []), ...attachedImageUrls].slice(0, 4);
 
     let responseText = '';
     try {
-      responseText = provider === 'mistral'
-        ? await executeMistralDirectOrPool().catch(async () => executeGroqDirectOrPool())
-        : await executeGroqDirectOrPool().catch(async () => executeMistralDirectOrPool());
+      responseText = await executeDirectLlm({
+        provider,
+        prompt: fullPrompt,
+        images: visionImages,
+        systemPrompt,
+      });
     } catch (error: any) {
-      console.error('[chat.ts] Todos los proveedores fallaron:', error);
+      console.error('[chat.ts] Todos los proveedores LLM de Vercel fallaron:', error);
       return res.status(500).json({
-        error: error.message || 'Error al generar la respuesta. Ambos proveedores fallaron o están al límite.',
+        error: error.message || 'Error al generar la respuesta. Los proveedores LLM fallaron o están al límite.',
       });
     }
 
@@ -438,18 +618,60 @@ Si una petición combina pasos, elige la PRIMERA acción necesaria. El resultado
       try {
         const executed = await executeValidatedAction(action, {
           userId: firebaseUser.uid,
+          projectId: scope.projectId,
+          threadId: scope.threadId,
+          attachmentIds,
           appBaseUrl: resolveRequestPublicBaseUrl(req),
         });
-        return res.status(200).json(executed);
+
+        if (scope.threadId) {
+          await insertChatMessageForUser({
+            userId: firebaseUser.uid,
+            projectId: scope.projectId,
+            threadId: scope.threadId,
+            role: 'assistant',
+            content: typeof executed.text === 'string' ? executed.text : 'Acción preparada.',
+            action: executed as Record<string, unknown>,
+            metadata: { responseType: 'action' },
+          });
+        }
+
+        return res.status(200).json({
+          ...executed,
+          projectId: scope.projectId,
+          threadId: scope.threadId || null,
+        });
       } catch (error) {
-        const message = error instanceof Error ? error.message : 'La acción de Nayla no pudo ejecutarse.';
-        return res.status(502).json({ error: message, action: action.action });
+        const actionMessage = error instanceof Error ? error.message : 'La acción de Nayla no pudo ejecutarse.';
+        return res.status(502).json({
+          error: actionMessage,
+          action: action.action,
+          projectId: scope.projectId,
+          threadId: scope.threadId || null,
+        });
       }
     }
 
-    return res.status(200).json({ text: responseText });
+    if (scope.threadId) {
+      await insertChatMessageForUser({
+        userId: firebaseUser.uid,
+        projectId: scope.projectId,
+        threadId: scope.threadId,
+        role: 'assistant',
+        content: responseText,
+        metadata: { responseType: 'text' },
+      });
+    }
+
+    return res.status(200).json({
+      text: responseText,
+      projectId: scope.projectId,
+      threadId: scope.threadId || null,
+    });
   } catch (error: any) {
     console.error('[chat.ts] Error general:', error);
-    return res.status(500).json({ error: error.message || 'Internal server error' });
+    const message = error?.message || 'Internal server error';
+    const status = message.includes('no pertenece') || message.includes('no existe') ? 403 : 500;
+    return res.status(status).json({ error: message });
   }
 }
