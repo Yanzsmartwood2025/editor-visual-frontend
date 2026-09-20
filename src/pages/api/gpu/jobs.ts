@@ -6,6 +6,7 @@ import {
   startVastGpuJob,
 } from '../../../lib/gpu/orchestrator';
 import { resolveRequestPublicBaseUrl } from '../../../lib/gpu/requestUrl';
+import { resolveOwnedWorkspaceScope } from '../../../lib/workspaceStore';
 
 const safeUrl = z.string().url().max(4000).refine((value) => {
   try {
@@ -35,6 +36,8 @@ const safeUrl = z.string().url().max(4000).refine((value) => {
 }, 'Las entradas GPU deben usar una URL HTTPS pública.');
 
 const createSchema = z.object({
+  projectId: z.string().uuid().optional(),
+  threadId: z.string().uuid().optional(),
   workload: z.enum(['probe', 'image', 'video', 'audio', '3d']),
   recipe: z.string().trim().min(1).max(120).regex(/^[a-zA-Z0-9._:-]+$/).optional(),
   prompt: z.string().max(5000).optional(),
@@ -85,9 +88,17 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
 
   try {
+    const scope = await resolveOwnedWorkspaceScope({
+      userId: user.uid,
+      projectId: parsed.data.projectId,
+      threadId: parsed.data.threadId,
+    });
+    const { projectId: _projectId, threadId: _threadId, ...gpuInput } = parsed.data;
     const job = await startVastGpuJob({
       userId: user.uid,
-      input: parsed.data,
+      projectId: scope.projectId,
+      threadId: scope.threadId,
+      input: gpuInput,
       appBaseUrl: resolveRequestPublicBaseUrl(req),
     });
 
