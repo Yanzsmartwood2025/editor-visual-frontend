@@ -177,6 +177,32 @@ export const deleteProjectForUser = async ({
   if (projectError) throw projectError;
   if (!project) throw new Error('Proyecto no encontrado.');
 
+  const [{ data: gpuJobs, error: gpuJobsError }, { data: renderJobs, error: renderJobsError }] = await Promise.all([
+    supabase
+      .from('gpu_jobs')
+      .select('id, status')
+      .eq('user_id', userId)
+      .eq('project_id', projectId),
+    supabase
+      .from('render_requests')
+      .select('id, status')
+      .eq('user_id', userId)
+      .eq('project_id', projectId),
+  ]);
+
+  if (gpuJobsError) throw gpuJobsError;
+  if (renderJobsError) throw renderJobsError;
+
+  const terminalGpuStates = new Set(['completed', 'failed', 'expired', 'cancelled']);
+  const activeGpuJobs = (gpuJobs || []).filter((job) => !terminalGpuStates.has(String(job.status || '').toLowerCase()));
+  const activeRenderJobs = (renderJobs || []).filter((job) =>
+    ['started', 'queued', 'running', 'processing'].includes(String(job.status || '').toLowerCase())
+  );
+
+  if (activeGpuJobs.length || activeRenderJobs.length) {
+    throw new Error('Este proyecto tiene un proceso activo. Espera a que termine o cancélalo antes de eliminar el proyecto.');
+  }
+
   const { data: media, error: mediaError } = await supabase
     .from('galeria_multimedia')
     .select('id, r2_key')
