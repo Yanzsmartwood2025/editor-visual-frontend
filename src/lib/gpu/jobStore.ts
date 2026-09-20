@@ -144,7 +144,6 @@ export const listExpiredGpuJobs = async (limit = 20): Promise<GpuJobRow[]> => {
     .from('gpu_jobs')
     .select('*')
     .in('status', [...ACTIVE_GPU_STATUSES])
-    .not('instance_id', 'is', null)
     .lt('lease_expires_at', new Date().toISOString())
     .order('lease_expires_at', { ascending: true })
     .limit(limit);
