@@ -14,7 +14,15 @@ const MAX_RENDERS_PER_WINDOW = 6;
 
 class RenderValidationError extends Error {}
 
-const validateInputProps = (inputProps: unknown) => {
+type ValidatedRenderProps = Record<string, unknown> & {
+  timeline: any[];
+  subtitles?: any[];
+  logos?: any[];
+  canvasWidth: number;
+  canvasHeight: number;
+};
+
+const validateInputProps = (inputProps: unknown): ValidatedRenderProps => {
   if (!inputProps || typeof inputProps !== 'object' || Array.isArray(inputProps)) {
     throw new RenderValidationError('inputProps debe ser un objeto.');
   }
@@ -66,9 +74,10 @@ const validateInputProps = (inputProps: unknown) => {
 
   return {
     ...props,
+    timeline: props.timeline as any[],
     canvasWidth,
     canvasHeight,
-  };
+  } as ValidatedRenderProps;
 };
 
 const reserveRenderSlot = async ({
