@@ -1,5 +1,5 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
-import { cleanupExpiredVastJobs } from '../../../lib/gpu/orchestrator';
+import { cleanupExpiredComputeJobs } from '../../../lib/gpu/orchestrator';
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== 'GET' && req.method !== 'POST') {
@@ -7,7 +7,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
 
   try {
-    const result = await cleanupExpiredVastJobs();
+    const result = await cleanupExpiredComputeJobs();
     res.setHeader('Cache-Control', 'no-store, max-age=0');
     return res.status(200).json({ ok: true, ...result });
   } catch (error) {
