@@ -545,6 +545,12 @@ export default function SocialHub({ session, projectId, results }: Props) {
                     <div style={{ fontSize: 9, color: '#bbb', lineHeight: 1.45, marginTop: 4 }}>{String(message)}</div>
                     <div style={{ display: 'flex', gap: 5, marginTop: 7 }}>
                       <input value={replying[id] || ''} onChange={(event) => setReplying((prev) => ({ ...prev, [id]: event.target.value }))} placeholder="Responder…" style={{ flex: 1, minWidth: 0, background: '#0a0a0a', color: '#ddd', border: '1px solid #242424', borderRadius: 8, padding: 6, fontSize: 9 }} />
+                      <button
+                        onClick={() => void suggestReply(comment, id, author)}
+                        disabled={busy === 'suggest-' + id}
+                        title="Pedir a Nayla una respuesta"
+                        style={{ ...tinyButton(false), padding: '5px 7px', fontSize: 8 }}
+                      >{busy === 'suggest-' + id ? '…' : 'N'}</button>
                       <button onClick={() => void sendReply(comment)} style={{ ...tinyButton(false), padding: '5px 7px' }}>↗</button>
                     </div>
                   </div>
@@ -561,14 +567,77 @@ export default function SocialHub({ session, projectId, results }: Props) {
               {accounts.map((account: any) => <option key={account.id} value={account.id}>{account.platform} · {account.display_name || account.handle || account.username || 'Cuenta'}</option>)}
             </select>
             <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 6 }}>
-              {conversations.slice(0, 12).map((conversation: any, index: number) => (
-                <div key={conversation._id || conversation.id || index} style={{ padding: 8, borderRadius: 9, background: 'rgba(255,255,255,.025)' }}>
-                  <div style={{ fontSize: 9, fontWeight: 850 }}>{conversation.participant?.name || conversation.participantName || conversation.username || 'Conversación'}</div>
-                  <div style={{ fontSize: 8.5, color: '#888', marginTop: 3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{conversation.lastMessage?.text || conversation.lastMessage || conversation.preview || 'Abrir conversación'}</div>
-                </div>
-              ))}
+              {conversations.slice(0, 12).map((conversation: any, index: number) => {
+                const conversationId = String(conversation._id || conversation.id || index);
+                const active = String(inboxConversation?._id || inboxConversation?.id || '') === conversationId;
+                return (
+                  <button
+                    key={conversationId}
+                    onClick={() => void openInboxConversation(conversation)}
+                    style={{
+                      textAlign: 'left',
+                      padding: 8,
+                      borderRadius: 9,
+                      border: active ? '1px solid rgba(255,255,255,.24)' : '1px solid rgba(255,255,255,.045)',
+                      background: active ? 'rgba(255,255,255,.075)' : 'rgba(255,255,255,.025)',
+                      color: '#ddd',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    <div style={{ fontSize: 9, fontWeight: 850 }}>{conversation.participant?.name || conversation.participantName || conversation.username || 'Conversación'}</div>
+                    <div style={{ fontSize: 8.5, color: '#888', marginTop: 3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{conversation.lastMessage?.text || conversation.lastMessage || conversation.preview || 'Abrir conversación'}</div>
+                  </button>
+                );
+              })}
               {inboxAccount && !conversations.length && busy !== 'inbox' && <div style={{ color: '#666', fontSize: 9 }}>No hay conversaciones disponibles para esta ruta/cuenta.</div>}
             </div>
+
+            {inboxConversation && (
+              <div style={{ marginTop: 10, borderTop: '1px solid rgba(255,255,255,.07)', paddingTop: 9 }}>
+                <div style={{ fontSize: 9, fontWeight: 900, marginBottom: 7 }}>
+                  {inboxConversation.participant?.name || inboxConversation.participantName || inboxConversation.username || 'Conversación'}
+                </div>
+                <div style={{ maxHeight: 230, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 6, paddingRight: 2 }}>
+                  {inboxMessages.map((message: any, index: number) => {
+                    const text = String(message.message || message.text || message.content || '');
+                    const outbound = message.direction === 'outbound' || message.isFromMe === true || message.fromMe === true;
+                    return (
+                      <div
+                        key={message.id || message._id || index}
+                        style={{
+                          alignSelf: outbound ? 'flex-end' : 'flex-start',
+                          maxWidth: '88%',
+                          padding: '7px 8px',
+                          borderRadius: 10,
+                          background: outbound ? 'rgba(255,255,255,.1)' : 'rgba(255,255,255,.035)',
+                          fontSize: 9,
+                          color: '#ccc',
+                          lineHeight: 1.4,
+                        }}
+                      >
+                        {text || 'Mensaje multimedia'}
+                      </div>
+                    );
+                  })}
+                  {!inboxMessages.length && busy !== 'messages' && <div style={{ color: '#666', fontSize: 9 }}>Sin mensajes visibles.</div>}
+                </div>
+                <div style={{ display: 'flex', gap: 5, marginTop: 8 }}>
+                  <input
+                    value={messageDraft}
+                    onChange={(event) => setMessageDraft(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter' && !event.shiftKey) {
+                        event.preventDefault();
+                        void sendInboxMessage();
+                      }
+                    }}
+                    placeholder="Responder mensaje…"
+                    style={{ flex: 1, minWidth: 0, background: '#0a0a0a', color: '#ddd', border: '1px solid #242424', borderRadius: 8, padding: 7, fontSize: 9 }}
+                  />
+                  <button disabled={busy === 'send-message'} onClick={() => void sendInboxMessage()} style={{ ...tinyButton(false), padding: '6px 8px' }}>↗</button>
+                </div>
+              </div>
+            )}
           </div>
         </>
       )}
