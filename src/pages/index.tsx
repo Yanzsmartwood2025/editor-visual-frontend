@@ -2291,6 +2291,130 @@ export default function NaylaCore() {
     }
   };
 
+  const ejecutarRemoveVideoBackground = async (
+    actionData: any,
+    scope: { projectId: string; threadId: string }
+  ) => {
+    const currentSession = session || await getFirebaseSession();
+    if (!currentSession) throw new Error('Debes iniciar sesión para quitar el fondo.');
+
+    const label = String(actionData?.label || '').trim().toUpperCase();
+    const source = galeriaMultimedia.find(
+      (item) => item.tipo === 'video' && item.etiqueta?.trim().toUpperCase() === label
+    );
+    if (!source) {
+      throw new Error(`No encontré el video ${label || 'solicitado'} en la Bóveda de este proyecto.`);
+    }
+
+    const sourceUrl = typeof actionData?.url === 'string' && actionData.url
+      ? actionData.url
+      : source.url;
+    const model = actionData?.model === 'ben2-base' ? 'ben2-base' : 'modnet';
+    const quality = ['medium', 'high', 'very-high'].includes(actionData?.quality)
+      ? actionData.quality
+      : 'high';
+    const keepAudio = actionData?.keepAudio !== false;
+
+    setToolMessage('PREPARANDO SEPARACIÓN DE FONDO…');
+
+    const {
+      canUseVideoMatting,
+      separateVideoLayers,
+    } = await import('@remotion/video-matting');
+
+    const support = await canUseVideoMatting({ model });
+    if (!support.supported) {
+      throw new Error(
+        model === 'ben2-base'
+          ? 'Este dispositivo no tiene el soporte WebGPU avanzado necesario para el recorte general. Prueba el modo ligero para personas.'
+          : 'Este dispositivo o navegador no tiene WebGPU disponible para quitar el fondo localmente.'
+      );
+    }
+
+    let lastShownProgress = -10;
+    let result: any = null;
+
+    try {
+      result = await separateVideoLayers({
+        src: sourceUrl,
+        model,
+        audio: keepAudio ? 'foreground' : 'none',
+        videoBitrate: quality,
+        onProgress: (progress: any) => {
+          if (progress?.stage === 'finalizing') {
+            setToolMessage('FINALIZANDO VIDEO TRANSPARENTE…');
+            return;
+          }
+          const value = Number(progress?.progress);
+          if (!Number.isFinite(value)) return;
+          const percent = Math.max(0, Math.min(100, Math.round(value * 100)));
+          if (percent >= lastShownProgress + 5 || percent === 100) {
+            lastShownProgress = percent;
+            setToolMessage(`QUITANDO FONDO… ${percent}%`);
+          }
+        },
+      });
+
+      const foregroundBlob = await result.foreground.getBlob();
+      const baseName = String(source.nombre || label || 'video')
+        .replace(/\.[^.]+$/, '')
+        .replace(/[^a-zA-Z0-9_-]+/g, '_')
+        .replace(/^_+|_+$/g, '')
+        .slice(0, 80) || 'video';
+
+      const transparentFile = new File(
+        [foregroundBlob],
+        `${baseName}_sin_fondo.webm`,
+        { type: foregroundBlob.type || 'video/webm' }
+      );
+
+      setToolMessage('GUARDANDO RESULTADO EN LA BÓVEDA…');
+      const saved = await uploadMediaFilesToBodega({
+        session: currentSession,
+        files: [transparentFile],
+        existingItems: galeriaMultimedia,
+        forcedTipo: 'video',
+        fuente: 'background-removal',
+        metadataExtra: {
+          backgroundRemoved: true,
+          backgroundRemovalModel: model,
+          sourceMediaId: source.id,
+          sourceLabel: source.etiqueta,
+        },
+        projectId: scope.projectId,
+        threadId: scope.threadId,
+      });
+
+      const output = saved[0];
+      if (!output) throw new Error('Nayla terminó el recorte pero no pudo guardar el resultado.');
+
+      setGaleriaMultimedia((prev) => {
+        const ids = new Set(prev.map((item) => item.id));
+        return [...prev, ...saved.filter((item) => !ids.has(item.id))];
+      });
+      setMediaActivaUrl(output.url);
+      setClipSeleccionado(output.id);
+      setMainNav('boveda');
+      setChatMessages((prev) => [
+        ...prev,
+        {
+          role: 'ai',
+          text: `Listo. Quité el fondo de ${label} y guardé el resultado transparente como ${output.etiqueta} en la Bóveda.`,
+        },
+      ]);
+
+      return output;
+    } finally {
+      setToolMessage(null);
+      if (result) {
+        await Promise.allSettled([
+          result.base?.dispose?.(),
+          result.foreground?.dispose?.(),
+        ]);
+      }
+    }
+  };
+
   const sendNaylaMessage = async (messageOverride?: string) => {
     const message = (messageOverride ?? chatInput).trim();
     if (!message) return;
@@ -2438,6 +2562,11 @@ export default function NaylaCore() {
         } else {
           await ejecutarBuildTimeline(data, executionScope);
         }
+      } else if (data.action === 'REMOVE_VIDEO_BACKGROUND') {
+        await ejecutarRemoveVideoBackground(data, {
+          projectId: messageProjectId,
+          threadId: messageThreadId,
+        });
       }
     } catch (error: any) {
       console.error(error);
