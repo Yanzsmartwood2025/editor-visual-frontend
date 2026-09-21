@@ -55,7 +55,7 @@ export const isSocialActivityReviewRequest = (message: string) => {
   if (!text) return false;
 
   const socialObject =
-    /\b(comentarios?|mensajes?|notificaciones?|actividad|inbox|dm|dms|metricas?|estadisticas?|vistas?|alcance|interacciones?|redes?|seguidores?|impresiones?)\b/.test(text);
+    /\b(comentarios?|comentaron|mensajes?|notificaciones?|actividad|inbox|dm|dms|metricas?|estadisticas?|vistas?|alcance|interacciones?|redes?|seguidores?|impresiones?|escribieron|dijeron)\b/.test(text);
 
   if (!socialObject) return false;
 
@@ -70,7 +70,7 @@ export const isSocialActivityReviewRequest = (message: string) => {
   return asksToInspect || directSocialRequest;
 };
 
-const reviewScope = (message: string): ReviewScope => {
+export const getSocialActivityReviewScope = (message: string): ReviewScope => {
   const text = normalize(message);
 
   const mentionsComments =
@@ -406,7 +406,7 @@ const loadUploadPostMessages = async ({
   username: string;
 }) => {
   if (account.platform !== 'instagram') {
-    return { conversations: 0, messages: 0, inbound: 0, unavailable: true };
+    return { conversations: 0, messages: 0, inbound: 0, samples: [] as ActivitySample[], unavailable: true };
   }
 
   const payload = await listUploadPostConversations({
@@ -584,7 +584,7 @@ export const reviewConnectedSocialActivity = async ({
   projectId: string;
   message: string;
 }) => {
-  const scope = reviewScope(message);
+  const scope = getSocialActivityReviewScope(message);
   const supabase = getWorkspaceSupabaseAdmin();
   const profile = await ensureSocialProfile(userId, projectId);
 
