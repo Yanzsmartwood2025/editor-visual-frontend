@@ -66,7 +66,7 @@ export class MistralProvider implements LLMProvider {
     this.client = new Mistral({ apiKey });
 
     if (role === 'dialog') {
-      this.model = process.env.MISTRAL_DIALOG_MODEL || process.env.MISTRAL_MODEL || 'mistral-large-latest';
+      this.model = process.env.MISTRAL_DIALOG_MODEL || process.env.MISTRAL_MODEL || 'mistral-small-latest';
     } else {
       this.model = process.env.MISTRAL_CODE_MODEL || process.env.MISTRAL_MODEL || 'codestral-latest';
     }
