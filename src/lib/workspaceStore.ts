@@ -452,6 +452,36 @@ export const getOwnedMediaForUser = async ({
 };
 
 
+export const getRecentOwnedMediaForUser = async ({
+  userId,
+  projectId,
+  tipo,
+  limit = 20,
+}: {
+  userId: string;
+  projectId: string;
+  tipo?: 'foto' | 'video' | 'audio' | 'modelo3d';
+  limit?: number;
+}) => {
+  const supabase = getWorkspaceSupabaseAdmin();
+
+  let query = supabase
+    .from('galeria_multimedia')
+    .select('*')
+    .eq('user_id', userId)
+    .eq('project_id', projectId)
+    .order('created_at', { ascending: false })
+    .limit(Math.max(1, Math.min(limit, 250)));
+
+  if (tipo) query = query.eq('tipo', tipo);
+
+  const { data, error } = await query;
+  if (error) throw error;
+
+  return (data || []).reverse();
+};
+
+
 export const getOwnedMediaByLabelsForUser = async ({
   userId,
   projectId,
