@@ -23,6 +23,11 @@ export type LogoMetricItem = {
   finSec?: number;
 };
 
+export type TitleMetricItem = {
+  start?: number;
+  end?: number;
+};
+
 export type VisualTimelineMetric<T extends TimelineMetricItem = TimelineMetricItem> = T & {
   durationInFrames: number;
   delayInFrames: number;
@@ -139,7 +144,8 @@ export const getCompositionDurationInFrames = (
   timeline: TimelineMetricItem[],
   fps: number,
   subtitles: SubtitleMetricItem[] = [],
-  logos: LogoMetricItem[] = []
+  logos: LogoMetricItem[] = [],
+  titles: TitleMetricItem[] = []
 ): number => {
   const visualMetrics = buildVisualTimelineMetrics(timeline, fps);
   const visualEnd = visualMetrics.reduce(
@@ -164,5 +170,10 @@ export const getCompositionDurationInFrames = (
     return Math.max(max, Math.round(Math.max(0, safeNumber(item.finSec, 0)) * fps));
   }, 0);
 
-  return Math.max(1, visualEnd, audioEnd, subtitleEnd, logoEnd);
+  const titleEnd = titles.reduce((max, item) => {
+    const end = Math.max(0, safeNumber(item.end, safeNumber(item.start, 0)));
+    return Math.max(max, Math.round(end * fps));
+  }, 0);
+
+  return Math.max(1, visualEnd, audioEnd, subtitleEnd, logoEnd, titleEnd);
 };
