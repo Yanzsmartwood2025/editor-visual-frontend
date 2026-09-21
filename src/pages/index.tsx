@@ -1406,7 +1406,18 @@ export default function NaylaCore() {
       const tipo = asset.type === 'image' ? 'foto' : asset.type;
       if (!url || !['foto', 'video', 'audio'].includes(tipo) || asset.source !== 'url') return;
 
-      const mediaExistente = galeriaMultimedia.find(item => item.url === url && item.tipo === tipo);
+      const mediaExistente = galeriaMultimedia.find((item) => {
+        if (item.tipo !== tipo) return false;
+        if (item.url === url) return true;
+
+        try {
+          const current = new URL(item.url);
+          const incoming = new URL(url);
+          return current.origin + current.pathname === incoming.origin + incoming.pathname;
+        } catch {
+          return false;
+        }
+      });
       const mediaId = mediaExistente?.id || `nayla-url-${Date.now()}-${index}`;
       const etiqueta = mediaExistente?.etiqueta || `${tipo === 'foto' ? 'F' : tipo === 'audio' ? 'A' : 'V'}_IA_${index + 1}`;
       const nombre = mediaExistente?.nombre || `Nayla ${tipo} ${index + 1}`;
