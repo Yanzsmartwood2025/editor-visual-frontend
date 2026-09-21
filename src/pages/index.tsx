@@ -41,7 +41,14 @@ const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 type Rect = { id: string; x: number; y: number; width: number; height: number };
 type MediaItem = { id: string; url: string; tipo: 'foto' | 'video' | 'audio'; nombre: string; creado_en: string; esOverlay: boolean; etiqueta: string; fuente?: string; metadata?: MediaMetadata; r2_key?: string | null; project_id?: string | null; thread_id?: string | null; privacy?: 'private' | 'public' };
-type TimelineItem = { id: string; mediaId: string; tipo: 'foto' | 'video' | 'audio'; nombre: string; etiqueta: string; url: string; durationInSeconds?: number; originalDurationInSeconds?: number; volume?: number; fadeIn?: number; fadeOut?: number; scale?: number; delay?: number; startFrom?: number; trimBefore?: number; trimAfter?: number; loop?: boolean; playbackRate?: number; transitionDuration?: number; transitionType?: 'fade' | 'none' | 'wipe' | 'slide' | 'zoom'; efecto?: string; brightness?: number; contrast?: number; saturation?: number; overlay?: string; overlayIntensity?: number; metadata?: MediaMetadata; };
+type TimelineProfessionalEffect = {
+  type: 'chromatic-aberration' | 'color-correction' | 'glow' | 'pixelate' | 'zoom-blur' | 'vignette' | 'light-leak';
+  intensity?: number;
+  color?: string;
+  angle?: number;
+  seed?: number;
+};
+type TimelineItem = { id: string; mediaId: string; tipo: 'foto' | 'video' | 'audio'; nombre: string; etiqueta: string; url: string; durationInSeconds?: number; originalDurationInSeconds?: number; volume?: number; fadeIn?: number; fadeOut?: number; scale?: number; delay?: number; startFrom?: number; trimBefore?: number; trimAfter?: number; loop?: boolean; playbackRate?: number; transitionDuration?: number; transitionType?: 'fade' | 'none' | 'wipe' | 'slide' | 'zoom' | 'film-burn' | 'blur-slide' | 'cross-zoom' | 'dreamy-zoom' | 'linear-blur' | 'push-cut'; efecto?: string; brightness?: number; contrast?: number; saturation?: number; overlay?: string; overlayIntensity?: number; professionalEffects?: TimelineProfessionalEffect[]; motionBlur?: { shutterAngle?: number; samples?: number }; metadata?: MediaMetadata; };
 type SubtitleItem = { id: string; texto: string; inicioSec: number; finSec: number; };
 type LogoItem = { id: string; url: string; x: number; y: number; scale: number; opacity: number; inicioSec?: number; finSec?: number; fadeIn?: number; fadeOut?: number; };
 type ExpandedSurface = 'tools' | 'chat' | null;
@@ -1527,7 +1534,13 @@ export default function NaylaCore() {
         ...(Number.isFinite(Number(asset.contrast)) ? { contrast: Number(asset.contrast) } : {}),
         ...(Number.isFinite(Number(asset.saturation)) ? { saturation: Number(asset.saturation) } : {}),
         ...(typeof asset.overlay === 'string' ? { overlay: asset.overlay } : {}),
-        ...(Number.isFinite(Number(asset.overlayIntensity)) ? { overlayIntensity: Number(asset.overlayIntensity) } : {})
+        ...(Number.isFinite(Number(asset.overlayIntensity)) ? { overlayIntensity: Number(asset.overlayIntensity) } : {}),
+        ...(Array.isArray(asset.professionalEffects) && asset.professionalEffects.length
+          ? { professionalEffects: asset.professionalEffects }
+          : {}),
+        ...(asset.motionBlur && typeof asset.motionBlur === 'object'
+          ? { motionBlur: asset.motionBlur }
+          : {})
       });
     });
 
