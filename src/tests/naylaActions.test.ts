@@ -213,4 +213,99 @@ describe('Nayla action contracts', () => {
     });
   });
 
+  it('accepts professional Remotion effects, advanced transitions and dynamic subtitles', () => {
+    const action = parseNaylaAction(JSON.stringify({
+      action: 'BUILD_TIMELINE',
+      assets: [
+        {
+          type: 'video',
+          source: 'url',
+          url: 'https://cdn.example/video.mp4',
+          durationInSeconds: 6,
+          transitionType: 'film-burn',
+          transitionDuration: 0.55,
+          effects: [
+            { type: 'cinematic-grade', intensity: 0.7 },
+            { type: 'chromatic-aberration', intensity: 0.25 },
+          ],
+        },
+        {
+          type: 'foto',
+          source: 'url',
+          url: 'https://cdn.example/photo.jpg',
+          durationInSeconds: 4,
+          transitionType: 'cross-zoom',
+          transitionDuration: 0.4,
+          efecto: 'parallax-3d',
+        },
+      ],
+      subtitles: [
+        {
+          text: 'La ciudad despierta',
+          start: 0,
+          end: 2.4,
+          style: 'tiktok',
+          position: 'bottom',
+          fontSize: 46,
+        },
+      ],
+      render: true,
+    }));
+
+    expect(action).not.toBeNull();
+    expect(action).toMatchObject({
+      action: 'BUILD_TIMELINE',
+      render: true,
+      assets: [
+        expect.objectContaining({
+          transitionType: 'film-burn',
+          effects: [
+            { type: 'cinematic-grade', intensity: 0.7 },
+            { type: 'chromatic-aberration', intensity: 0.25 },
+          ],
+        }),
+        expect.objectContaining({
+          transitionType: 'cross-zoom',
+          efecto: 'parallax-3d',
+        }),
+      ],
+      subtitles: [
+        expect.objectContaining({
+          text: 'La ciudad despierta',
+          style: 'tiktok',
+          position: 'bottom',
+        }),
+      ],
+    });
+  });
+
+  it('rejects unsupported professional effect and subtitle styles', () => {
+    expect(parseNaylaAction(JSON.stringify({
+      action: 'BUILD_TIMELINE',
+      assets: [{
+        type: 'video',
+        source: 'url',
+        url: 'https://cdn.example/video.mp4',
+        effects: [{ type: 'not-a-real-effect', intensity: 0.5 }],
+      }],
+      render: true,
+    }))).toBeNull();
+
+    expect(parseNaylaAction(JSON.stringify({
+      action: 'BUILD_TIMELINE',
+      assets: [{
+        type: 'foto',
+        source: 'url',
+        url: 'https://cdn.example/photo.jpg',
+      }],
+      subtitles: [{
+        text: 'Texto',
+        start: 0,
+        end: 1,
+        style: 'unknown-style',
+      }],
+      render: true,
+    }))).toBeNull();
+  });
+
 });
