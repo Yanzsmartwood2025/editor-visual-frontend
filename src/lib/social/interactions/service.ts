@@ -41,6 +41,25 @@ export const recordSocialInteraction = async ({
 }) => {
   const supabase = getWorkspaceSupabaseAdmin();
 
+  const { data: existing, error: existingError } = await supabase
+    .from('social_interactions')
+    .select('*')
+    .eq('account_id', account.id)
+    .eq('channel', channel)
+    .eq('source_id', sourceId)
+    .maybeSingle();
+
+  if (existingError) throw existingError;
+
+  if (existing) {
+    return {
+      interaction: existing,
+      person: { id: existing.person_id },
+      identity: { id: existing.identity_id },
+      created: false,
+    };
+  }
+
   const { person, identity } = await resolveSocialPerson({
     userId,
     projectId,
@@ -89,5 +108,5 @@ export const recordSocialInteraction = async ({
       .eq('id', interaction.id);
   }
 
-  return { interaction, person, identity };
+  return { interaction, person, identity, created: true };
 };
