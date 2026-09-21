@@ -1,5 +1,6 @@
 import React, { useMemo } from 'react';
 import { AbsoluteFill, Sequence, CanvasImage, useVideoConfig, useCurrentFrame, interpolate, Img, Loop } from 'remotion';
+import { createTikTokStyleCaptions, type Caption } from '@remotion/captions';
 import { Audio, Video } from '@remotion/media';
 import { CameraMotionBlur } from '@remotion/motion-blur';
 import {
@@ -34,7 +35,22 @@ type ProfessionalEffect = {
   seed?: number;
 };
 type TimelineItem = { id: string; mediaId: string; tipo: 'foto' | 'video' | 'audio'; nombre: string; etiqueta: string; url: string; durationInSeconds?: number; originalDurationInSeconds?: number; volume?: number; fadeIn?: number; fadeOut?: number; scale?: number; delay?: number; startFrom?: number; trimBefore?: number; trimAfter?: number; loop?: boolean; playbackRate?: number; transitionDuration?: number; transitionType?: 'fade' | 'none' | 'wipe' | 'slide' | 'zoom' | 'film-burn' | 'blur-slide' | 'cross-zoom' | 'dreamy-zoom' | 'linear-blur' | 'push-cut'; efecto?: string; brightness?: number; contrast?: number; saturation?: number; overlay?: string; overlayIntensity?: number; professionalEffects?: ProfessionalEffect[]; motionBlur?: { shutterAngle?: number; samples?: number }; };
-type SubtitleItem = { id: string; texto: string; inicioSec: number; finSec: number; };
+type SubtitleWord = { text: string; startSec: number; endSec: number };
+type SubtitleItem = {
+  id: string;
+  texto: string;
+  inicioSec: number;
+  finSec: number;
+  style?: 'clean' | 'cinematic' | 'tiktok' | 'karaoke' | 'minimal';
+  position?: 'top' | 'center' | 'bottom';
+  fontSize?: number;
+  color?: string;
+  activeColor?: string;
+  backgroundColor?: string;
+  uppercase?: boolean;
+  maxWidth?: number;
+  words?: SubtitleWord[];
+};
 type LogoItem = { id: string; url: string; x: number; y: number; scale: number; opacity: number; inicioSec?: number; finSec?: number; fadeIn?: number; fadeOut?: number; };
 
 interface MainCompositionProps {
@@ -358,6 +374,145 @@ const ProfessionalVideo: React.FC<{
   );
 };
 
+const makeCaptionTokens = (subtitle: SubtitleItem): Caption[] => {
+  const durationMs = Math.max(1, (subtitle.finSec - subtitle.inicioSec) * 1000);
+  const explicitWords = (subtitle.words || [])
+    .filter((word) => word.text && word.endSec > word.startSec)
+    .map((word, index, all) => ({
+      text: (index === 0 ? '' : ' ') + word.text,
+      startMs: Math.max(0, (word.startSec - subtitle.inicioSec) * 1000),
+      endMs: Math.max(1, (word.endSec - subtitle.inicioSec) * 1000),
+      timestampMs: null,
+      confidence: null,
+      pageBreakAfter: index === all.length - 1,
+    } satisfies Caption));
+
+  if (explicitWords.length) return explicitWords;
+
+  const words = subtitle.texto.trim().split(/\s+/).filter(Boolean);
+  if (!words.length) return [];
+
+  const step = durationMs / words.length;
+  return words.map((word, index) => ({
+    text: (index === 0 ? '' : ' ') + word,
+    startMs: index * step,
+    endMs: Math.min(durationMs, (index + 1) * step),
+    timestampMs: null,
+    confidence: null,
+    pageBreakAfter: index === words.length - 1,
+  }));
+};
+
+const ProfessionalSubtitle: React.FC<{ subtitle: SubtitleItem }> = ({ subtitle }) => {
+  const frame = useCurrentFrame();
+  const { fps, width } = useVideoConfig();
+  const style = subtitle.style || 'clean';
+  const position = subtitle.position || 'bottom';
+  const localMs = (frame / fps) * 1000;
+  const baseColor = subtitle.color || '#ffffff';
+  const activeColor = subtitle.activeColor || (style === 'tiktok' ? '#111111' : '#ffe55c');
+  const fontSize = Math.max(18, Math.min(140, subtitle.fontSize || Math.round(width * 0.048)));
+  const maxWidth = Math.max(30, Math.min(100, subtitle.maxWidth || 84));
+  const text = subtitle.uppercase ? subtitle.texto.toUpperCase() : subtitle.texto;
+  const useWordTiming = style === 'tiktok' || style === 'karaoke';
+
+  const pages = useMemo(() => {
+    if (!useWordTiming) return [];
+    const captions = makeCaptionTokens({ ...subtitle, texto: text });
+    if (!captions.length) return [];
+    return createTikTokStyleCaptions({
+      captions,
+      combineTokensWithinMilliseconds: style === 'tiktok' ? 1300 : 2200,
+      breakOnSilenceAfterMilliseconds: 700,
+    }).pages;
+  }, [style, subtitle, text, useWordTiming]);
+
+  const page = pages.find((candidate) =>
+    localMs >= candidate.startMs &&
+    localMs <= candidate.startMs + candidate.durationMs + 80
+  ) || pages[0];
+
+  const justifyContent =
+    position === 'top' ? 'flex-start' :
+    position === 'center' ? 'center' :
+    'flex-end';
+
+  const paddingTop = position === 'top' ? '9%' : 0;
+  const paddingBottom = position === 'bottom' ? '9%' : 0;
+  const background =
+    subtitle.backgroundColor ??
+    (style === 'minimal' || style === 'cinematic' || style === 'karaoke'
+      ? 'transparent'
+      : 'rgba(0,0,0,0.72)');
+
+  const baseBoxStyle: React.CSSProperties = {
+    maxWidth: `${maxWidth}%`,
+    color: baseColor,
+    fontSize,
+    fontFamily: 'Arial, Helvetica, sans-serif',
+    fontWeight: style === 'tiktok' ? 900 : 750,
+    lineHeight: 1.15,
+    textAlign: 'center',
+    letterSpacing: style === 'cinematic' ? '0.025em' : 0,
+    textShadow: style === 'minimal'
+      ? '0 2px 12px rgba(0,0,0,0.9)'
+      : '0 2px 8px rgba(0,0,0,0.75)',
+    background,
+    padding: background === 'transparent' ? '4px 8px' : '10px 18px',
+    borderRadius: style === 'tiktok' ? 12 : 10,
+    boxSizing: 'border-box',
+  };
+
+  return (
+    <AbsoluteFill
+      style={{
+        pointerEvents: 'none',
+        justifyContent,
+        alignItems: 'center',
+        paddingTop,
+        paddingBottom,
+      }}
+    >
+      <div style={baseBoxStyle}>
+        {useWordTiming && page ? (
+          page.tokens.map((token, index) => {
+            const active = localMs >= token.fromMs && localMs < token.toMs;
+            const tokenText = subtitle.uppercase ? token.text.toUpperCase() : token.text;
+            const tokenStyle: React.CSSProperties = style === 'tiktok'
+              ? {
+                  display: 'inline-block',
+                  margin: '2px 3px',
+                  padding: '2px 6px',
+                  borderRadius: 7,
+                  background: active ? (subtitle.activeColor || '#ffe55c') : 'rgba(255,255,255,0.94)',
+                  color: active ? activeColor : '#111111',
+                  transform: active ? 'scale(1.08)' : 'scale(1)',
+                  transformOrigin: 'center',
+                }
+              : {
+                  display: 'inline',
+                  color: active ? activeColor : baseColor,
+                  fontWeight: active ? 900 : 700,
+                  textShadow: active
+                    ? `0 0 16px ${activeColor}, 0 2px 8px rgba(0,0,0,0.9)`
+                    : '0 2px 8px rgba(0,0,0,0.85)',
+                };
+
+            return (
+              <React.Fragment key={`${token.fromMs}-${index}`}>
+                {index > 0 && style !== 'tiktok' ? ' ' : null}
+                <span style={tokenStyle}>{tokenText.trim()}</span>
+              </React.Fragment>
+            );
+          })
+        ) : (
+          text
+        )}
+      </div>
+    </AbsoluteFill>
+  );
+};
+
 const LogoWithFades: React.FC<{ logo: LogoItem, durationInFrames: number, fps: number }> = ({ logo, durationInFrames, fps }) => {
   const frame = useCurrentFrame();
 
@@ -632,35 +787,17 @@ export const MainComposition: React.FC<MainCompositionProps> = ({ timeline, subt
           </Sequence>
       )}
 
-      {/* Subtitles Overlay */}
-      {subtitles.map(sub => {
-         const fromFrame = Math.round(sub.inicioSec * fps);
-         const duration = Math.round((sub.finSec - sub.inicioSec) * fps);
-         if (duration <= 0) return null;
+      {/* Professional captions overlay */}
+      {subtitles.map((sub) => {
+        const fromFrame = Math.round(sub.inicioSec * fps);
+        const duration = Math.round((sub.finSec - sub.inicioSec) * fps);
+        if (duration <= 0) return null;
 
-         return (
-            <Sequence key={sub.id} from={fromFrame} durationInFrames={duration}>
-              <AbsoluteFill style={{
-                justifyContent: 'flex-end',
-                alignItems: 'center',
-                paddingBottom: '10%',
-              }}>
-                <div style={{
-                  backgroundColor: 'rgba(0, 0, 0, 0.7)',
-                  color: 'white',
-                  padding: '10px 20px',
-                  borderRadius: '10px',
-                  fontSize: '40px',
-                  fontFamily: 'sans-serif',
-                  textAlign: 'center',
-                  maxWidth: '80%',
-                  textShadow: '2px 2px 4px rgba(0,0,0,0.5)'
-                }}>
-                  {sub.texto}
-                </div>
-              </AbsoluteFill>
-            </Sequence>
-         )
+        return (
+          <Sequence key={sub.id} from={fromFrame} durationInFrames={duration}>
+            <ProfessionalSubtitle subtitle={sub} />
+          </Sequence>
+        );
       })}
 
       {/* Global Logos Overlay */}
