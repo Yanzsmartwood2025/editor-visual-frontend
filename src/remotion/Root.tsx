@@ -37,6 +37,7 @@ const defaultProps = {
   titles: [],
   threeScenes: [],
   vectorAnimations: [],
+  skiaGraphics: [],
   logos: []
 };
 
@@ -66,7 +67,8 @@ export const RemotionRoot: React.FC = () => {
     defaultProps.logos,
     defaultProps.titles,
     defaultProps.threeScenes,
-    defaultProps.vectorAnimations
+    defaultProps.vectorAnimations,
+    defaultProps.skiaGraphics
   );
 
   return (
@@ -88,6 +90,7 @@ export const RemotionRoot: React.FC = () => {
           const titles = Array.isArray(typedProps.titles) ? typedProps.titles : [];
           const threeScenes = Array.isArray(typedProps.threeScenes) ? typedProps.threeScenes : [];
           const vectorAnimations = Array.isArray(typedProps.vectorAnimations) ? typedProps.vectorAnimations : [];
+          const skiaGraphics = Array.isArray(typedProps.skiaGraphics) ? typedProps.skiaGraphics : [];
 
           return {
             durationInFrames: getCompositionDurationInFrames(
@@ -97,7 +100,8 @@ export const RemotionRoot: React.FC = () => {
               logos as any[],
               titles as any[],
               threeScenes as any[],
-              vectorAnimations as any[]
+              vectorAnimations as any[],
+              skiaGraphics as any[]
             ),
             width,
             height,
