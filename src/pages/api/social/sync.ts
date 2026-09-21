@@ -2,7 +2,7 @@ import type { NextApiRequest, NextApiResponse } from 'next';
 import { requireSocialUser } from '../../../lib/social/http';
 import { syncSocialAccounts } from '../../../lib/social/sync';
 import { getSocialOverview } from '../../../lib/social/store';
-import { socialProviderStatuses } from '../../../lib/social/types';
+import { socialProviderStatuses } from '../../../lib/social/serverStatus';
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Usa POST.' });
