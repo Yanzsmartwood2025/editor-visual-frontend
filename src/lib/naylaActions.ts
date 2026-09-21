@@ -113,6 +113,14 @@ const buildTimelineAssetSchema = z.object({
   }).strict().refine((motion) => Boolean(motion.enter || motion.exit), {
     message: 'GSAP motion requiere enter o exit.',
   }).optional(),
+  proceduralMotion: z.object({
+    preset: z.enum(['particles', 'orbit', 'pulse-grid', 'starfield']),
+    intensity: z.number().min(0).max(1).optional().default(0.5),
+    speed: z.number().min(0.1).max(4).optional().default(1),
+    seed: z.number().int().min(-100000).max(100000).optional().default(17),
+    color: z.string().trim().min(1).max(64).optional().default('#ffffff'),
+    accentColor: z.string().trim().min(1).max(64).optional(),
+  }).strict().optional(),
 });
 
 export const naylaActionSchema = z.discriminatedUnion('action', [
