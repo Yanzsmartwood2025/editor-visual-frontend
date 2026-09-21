@@ -1058,7 +1058,19 @@ Si una petición combina pasos, elige la PRIMERA acción necesaria. El resultado
               : asset?.url,
           })),
         } as NaylaAction
-      : parsedAction;
+      : parsedAction?.action === 'REMOVE_VIDEO_BACKGROUND'
+        ? (() => {
+            const label = parsedAction.label.trim().toUpperCase();
+            const video = mergedLibrary.find((item: any) =>
+              item.tipo === 'video' &&
+              typeof item.etiqueta === 'string' &&
+              item.etiqueta.trim().toUpperCase() === label
+            );
+            return video?.url
+              ? ({ ...parsedAction, label, url: video.url } as NaylaAction)
+              : null;
+          })()
+        : parsedAction;
 
     if (action && actionNeedsConsultativeApproval(action) && !executionConfirmed) {
       let planningText = sanitizeNaylaPublicText(responseText);
