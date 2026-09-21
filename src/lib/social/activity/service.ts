@@ -300,10 +300,11 @@ const loadUploadPostComments = async ({
   const mediaPayload = await listUploadPostMedia({
     username,
     platform: account.platform,
-    limit: 12,
+    limit: 30,
   });
-  const media = extractMedia(mediaPayload).slice(0, 8);
+  const media = extractMedia(mediaPayload).slice(0, 20);
   let comments = 0;
+  const samples: ActivitySample[] = [];
 
   for (const post of media) {
     try {
@@ -324,12 +325,17 @@ const loadUploadPostComments = async ({
         payload,
       });
       comments += cached.length;
+
+      for (const comment of extractSocialComments(payload)) {
+        const sample = commentSample(comment);
+        if (sample && samples.length < 20) samples.push(sample);
+      }
     } catch {
       // A single post should not abort the rest of the account scan.
     }
   }
 
-  return { comments, inspectedPosts: media.length };
+  return { comments, inspectedPosts: media.length, samples };
 };
 
 const loadZernioComments = async ({
@@ -355,6 +361,7 @@ const loadZernioComments = async ({
   if (error) throw error;
 
   let comments = 0;
+  const samples: ActivitySample[] = [];
   for (const target of targets || []) {
     try {
       const postId = String(target.provider_post_id || '');
@@ -374,12 +381,17 @@ const loadZernioComments = async ({
         payload,
       });
       comments += cached.length;
+
+      for (const comment of extractSocialComments(payload)) {
+        const sample = commentSample(comment);
+        if (sample && samples.length < 20) samples.push(sample);
+      }
     } catch {
       // Continue scanning other known posts.
     }
   }
 
-  return { comments, inspectedPosts: (targets || []).length };
+  return { comments, inspectedPosts: (targets || []).length, samples };
 };
 
 const loadUploadPostMessages = async ({
