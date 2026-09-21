@@ -24,7 +24,18 @@ const buildTimelineAssetSchema = z.object({
   trimAfter: z.number().min(0).max(3600).optional(),
   loop: z.boolean().optional(),
   playbackRate: z.number().min(0.1).max(4).optional(),
-  transitionType: z.enum(['fade', 'wipe', 'slide', 'zoom']).optional(),
+  transitionType: z.enum([
+    'fade',
+    'wipe',
+    'slide',
+    'zoom',
+    'blur-slide',
+    'cross-zoom',
+    'dreamy-zoom',
+    'film-burn',
+    'linear-blur',
+    'push-cut',
+  ]).optional(),
   transitionDuration: z.number().min(0).max(10).optional(),
   efecto: z.enum([
     'none',
@@ -50,12 +61,34 @@ const buildTimelineAssetSchema = z.object({
   saturation: z.number().min(0).max(4).optional(),
   overlay: z.enum(['none', 'vignette', 'film-grain', 'light-leak', 'letterbox']).optional(),
   overlayIntensity: z.number().min(0).max(1).optional(),
+  effects: z.array(z.object({
+    type: z.enum([
+      'chromatic-aberration',
+      'pro-glow',
+      'zoom-blur',
+      'pixelate',
+      'duotone',
+      'cinematic-grade',
+      'pro-vignette',
+    ]),
+    intensity: z.number().min(0).max(1).optional().default(0.5),
+  })).max(4).optional(),
 });
 
 export const naylaActionSchema = z.discriminatedUnion('action', [
   z.object({
     action: z.literal('BUILD_TIMELINE'),
     assets: z.array(buildTimelineAssetSchema).min(1).max(250),
+    subtitles: z.array(z.object({
+      text: z.string().trim().min(1).max(1200),
+      start: z.number().min(0).max(7200),
+      end: z.number().min(0).max(7200),
+      style: z.enum(['clean', 'cinematic', 'tiktok', 'karaoke']).optional().default('clean'),
+      position: z.enum(['top', 'center', 'bottom']).optional().default('bottom'),
+      fontSize: z.number().min(20).max(120).optional(),
+    }).refine((item) => item.end > item.start, {
+      message: 'El final del subtítulo debe ser posterior al inicio.',
+    })).max(300).optional(),
     render: z.boolean().optional().default(false),
   }),
   z.object({
