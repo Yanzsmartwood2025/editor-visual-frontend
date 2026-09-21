@@ -3,9 +3,8 @@ const SHARE_DB_VERSION = 1;
 const SHARE_STORE_NAME = 'pending-shares';
 const SHARE_PENDING_TTL_MS = 24 * 60 * 60 * 1000;
 
-const APP_SHELL_CACHE = 'nayla-app-shell-v1';
+const APP_SHELL_CACHE = 'nayla-static-v2';
 const APP_SHELL_ASSETS = [
-  '/',
   '/manifest.json',
   '/assets/imagenes/icon-192x192.png',
   '/assets/imagenes/icon-512x512.png',
@@ -131,8 +130,18 @@ self.addEventListener('fetch', (event) => {
 
   if (event.request.mode === 'navigate') {
     event.respondWith(
-      fetch(event.request).catch(() => caches.match('/'))
+      fetch(event.request, { cache: 'no-store' }).catch(() =>
+        new Response(
+          '<!doctype html><html lang="es"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><body style="margin:0;background:#050505;color:#fff;font-family:Arial,sans-serif;display:grid;place-items:center;min-height:100vh"><div style="padding:24px;text-align:center"><strong>NAYLA necesita conexión</strong><p style="color:#999">Vuelve a intentarlo cuando tengas internet.</p></div></body></html>',
+          { status: 503, headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' } }
+        )
+      )
     );
+    return;
+  }
+
+  if (url.origin === self.location.origin && url.pathname.startsWith('/_next/')) {
+    event.respondWith(fetch(event.request));
     return;
   }
 
