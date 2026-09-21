@@ -28,6 +28,22 @@ describe('timeline metrics', () => {
     expect(getCompositionDurationInFrames(timeline, 30, [{ inicioSec: 0, finSec: 12 }])).toBe(360);
   });
 
+  it('extends the composition for GSAP motion titles', () => {
+    const timeline = [
+      { tipo: 'foto' as const, durationInSeconds: 4 },
+    ];
+
+    expect(
+      getCompositionDurationInFrames(
+        timeline,
+        30,
+        [],
+        [],
+        [{ start: 0.5, end: 7 }]
+      )
+    ).toBe(210);
+  });
+
   it('caps transitions so they cannot exceed adjacent clips', () => {
     const timeline = [
       { tipo: 'video' as const, durationInSeconds: 1 },
