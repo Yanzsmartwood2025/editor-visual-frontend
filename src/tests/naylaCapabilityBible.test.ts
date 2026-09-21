@@ -22,6 +22,13 @@ describe('Nayla capability bible', () => {
     expect(matches.find((item) => item.id === 'motion-depth')?.status).toBe('ready');
   });
 
+  it('marks local browser background removal as ready', () => {
+    expect(NAYLA_CAPABILITY_BIBLE.find((item) => item.id === 'background-removal')?.status).toBe('ready');
+    expect(
+      findNaylaCapabilityMatches('quita el fondo del video V1 y deja solo a la persona').map((item) => item.id)
+    ).toContain('background-removal');
+  });
+
   it('recognizes captions and background removal from everyday Spanish', () => {
     expect(findNaylaCapabilityMatches('quiero sacar subtítulos palabra por palabra').map((item) => item.id))
       .toContain('captions-professional');
