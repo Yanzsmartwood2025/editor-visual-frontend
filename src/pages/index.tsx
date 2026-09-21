@@ -49,7 +49,7 @@ type TimelineProfessionalEffect = {
   seed?: number;
 };
 type TimelineItem = { id: string; mediaId: string; tipo: 'foto' | 'video' | 'audio'; nombre: string; etiqueta: string; url: string; durationInSeconds?: number; originalDurationInSeconds?: number; volume?: number; fadeIn?: number; fadeOut?: number; scale?: number; delay?: number; startFrom?: number; trimBefore?: number; trimAfter?: number; loop?: boolean; playbackRate?: number; transitionDuration?: number; transitionType?: 'fade' | 'none' | 'wipe' | 'slide' | 'zoom' | 'film-burn' | 'blur-slide' | 'cross-zoom' | 'dreamy-zoom' | 'linear-blur' | 'push-cut'; efecto?: string; brightness?: number; contrast?: number; saturation?: number; overlay?: string; overlayIntensity?: number; professionalEffects?: TimelineProfessionalEffect[]; motionBlur?: { shutterAngle?: number; samples?: number }; metadata?: MediaMetadata; };
-type SubtitleItem = { id: string; texto: string; inicioSec: number; finSec: number; };
+type SubtitleItem = { id: string; texto: string; inicioSec: number; finSec: number; style?: 'clean' | 'cinematic' | 'tiktok' | 'karaoke'; position?: 'top' | 'center' | 'bottom'; fontSize?: number; };
 type LogoItem = { id: string; url: string; x: number; y: number; scale: number; opacity: number; inicioSec?: number; finSec?: number; fadeIn?: number; fadeOut?: number; };
 type ExpandedSurface = 'tools' | 'chat' | null;
 type NaylaProjectDialog =
@@ -1269,7 +1269,8 @@ export default function NaylaCore() {
     timeline: TimelineItem[],
     qualityOverride?: string,
     ratioOverride?: string,
-    scopeOverride?: { projectId?: string | null; threadId?: string | null }
+    scopeOverride?: { projectId?: string | null; threadId?: string | null },
+    subtitlesOverride?: SubtitleItem[]
   ) => {
     const renderProjectId = scopeOverride?.projectId ?? activeProjectId;
     const renderThreadId = scopeOverride?.threadId ?? activeThreadId;
@@ -1280,7 +1281,8 @@ export default function NaylaCore() {
     const exportQuality = qualityOverride || calidadExportacion;
     const renderRatio = ratioOverride || canvasRatio;
     const canvas = getCanvasDimensionsFromRatio(renderRatio, exportQuality);
-    const durationInFrames = getCompositionDurationInFrames(lineaValidada, 30, subtitulos, logos);
+    const renderSubtitles = subtitlesOverride ?? subtitulos;
+    const durationInFrames = getCompositionDurationInFrames(lineaValidada, 30, renderSubtitles, logos);
     const requestId = createRenderRequestId();
 
     if (!renderThreadId || activeThreadIdRef.current === renderThreadId) {
@@ -1297,7 +1299,7 @@ export default function NaylaCore() {
 
     const inputProps = {
       timeline: lineaValidada,
-      subtitles: subtitulos,
+      subtitles: renderSubtitles,
       logos: logos,
       canvasRatio: renderRatio,
       canvasWidth: canvas.width,
@@ -1547,6 +1549,33 @@ export default function NaylaCore() {
     if (nextTimeline.length === 0) throw new Error('Nayla no devolvió URLs válidas para armar el timeline.');
 
     const timelineValidado = await validarTimelineParaRender(nextTimeline);
+    const hasSubtitleDirective = Array.isArray(actionData.subtitles);
+    const actionSubtitles: SubtitleItem[] = hasSubtitleDirective
+      ? actionData.subtitles
+          .filter((sub: any) =>
+            sub &&
+            typeof sub.text === 'string' &&
+            Number.isFinite(Number(sub.start)) &&
+            Number.isFinite(Number(sub.end)) &&
+            Number(sub.end) > Number(sub.start)
+          )
+          .slice(0, 300)
+          .map((sub: any, index: number) => ({
+            id: `nayla-sub-${Date.now()}-${index}`,
+            texto: sub.text.trim(),
+            inicioSec: Math.max(0, Number(sub.start)),
+            finSec: Math.max(0, Number(sub.end)),
+            style: ['clean', 'cinematic', 'tiktok', 'karaoke'].includes(sub.style)
+              ? sub.style
+              : 'clean',
+            position: ['top', 'center', 'bottom'].includes(sub.position)
+              ? sub.position
+              : 'bottom',
+            ...(Number.isFinite(Number(sub.fontSize))
+              ? { fontSize: Math.max(20, Math.min(120, Number(sub.fontSize))) }
+              : {}),
+          }))
+      : subtitulos;
     const targetThreadId = scopeOverride?.threadId ?? activeThreadId;
     const stillInOriginChat = !targetThreadId || activeThreadIdRef.current === targetThreadId;
 
@@ -1559,6 +1588,9 @@ export default function NaylaCore() {
       setVideoResultadoNombre(null);
       setVideoResultadoEtiqueta(null);
       setRects([]);
+      if (hasSubtitleDirective) {
+        setSubtitulos(actionSubtitles);
+      }
     }
 
     const primerVisual = timelineValidado.find(item => item.tipo === 'video' || item.tipo === 'foto');
@@ -1569,7 +1601,13 @@ export default function NaylaCore() {
     }
 
     if (actionData.render === true) {
-      await solicitarRenderTimeline(timelineValidado, undefined, formatoDetectado, scopeOverride);
+      await solicitarRenderTimeline(
+        timelineValidado,
+        undefined,
+        formatoDetectado,
+        scopeOverride,
+        hasSubtitleDirective ? actionSubtitles : undefined
+      );
     } else {
       showAlert('Nayla armó el timeline con los medios existentes.');
     }
