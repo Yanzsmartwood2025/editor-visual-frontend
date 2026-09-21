@@ -1576,6 +1576,81 @@ export default function NaylaCore() {
     }
   };
 
+  const seleccionarChatDesdeHistorial = async (threadId: string) => {
+    if (!threadId || threadId === activeThreadId) {
+      setProjectMenuOpen(false);
+      return;
+    }
+
+    try {
+      const currentSession = session || await getFirebaseSession();
+      if (!currentSession) throw new Error('Debes iniciar sesión para abrir el chat.');
+
+      setActiveThreadId(threadId);
+      setChatAttachmentIds([]);
+      setVideoResultadoUrl(null);
+      setVideoResultadoNombre(null);
+      setVideoResultadoEtiqueta(null);
+      setIsPlaying(false);
+      await cargarMensajesDelChat(currentSession, threadId);
+      setProjectMenuOpen(false);
+    } catch (error: any) {
+      showAlert(error?.message || 'No se pudo abrir el chat.');
+    }
+  };
+
+  const renombrarChat = async (threadId: string, title: string) => {
+    const cleanTitle = title.trim();
+    if (!threadId || !cleanTitle) return;
+
+    try {
+      const currentSession = session || await getFirebaseSession();
+      if (!currentSession) throw new Error('Debes iniciar sesión para renombrar el chat.');
+
+      const response = await fetch('/api/chat/threads', {
+        method: 'PATCH',
+        headers: firebaseHeaders(currentSession, { 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ id: threadId, title: cleanTitle }),
+      });
+      const payload = await response.json().catch(() => ({})) as { thread?: any; error?: string };
+      if (!response.ok || !payload.thread) {
+        throw new Error(payload.error || 'No se pudo cambiar el nombre del chat.');
+      }
+
+      setChatThreads((prev) =>
+        prev.map((thread) => thread.id === threadId ? payload.thread : thread)
+      );
+    } catch (error: any) {
+      showAlert(error?.message || 'No se pudo cambiar el nombre del chat.');
+    }
+  };
+
+  const renombrarProyecto = async (projectId: string, name: string) => {
+    const cleanName = name.trim();
+    if (!projectId || !cleanName) return;
+
+    try {
+      const currentSession = session || await getFirebaseSession();
+      if (!currentSession) throw new Error('Debes iniciar sesión para renombrar el proyecto.');
+
+      const response = await fetch('/api/projects', {
+        method: 'PATCH',
+        headers: firebaseHeaders(currentSession, { 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ id: projectId, name: cleanName }),
+      });
+      const payload = await response.json().catch(() => ({})) as { project?: NaylaProject; error?: string };
+      if (!response.ok || !payload.project) {
+        throw new Error(payload.error || 'No se pudo cambiar el nombre del proyecto.');
+      }
+
+      setProjects((prev) =>
+        prev.map((project) => project.id === projectId ? payload.project! : project)
+      );
+    } catch (error: any) {
+      showAlert(error?.message || 'No se pudo cambiar el nombre del proyecto.');
+    }
+  };
+
   const crearNuevoChat = async () => {
     if (!activeProjectId) return showAlert('Primero selecciona un proyecto.');
 
@@ -1600,6 +1675,10 @@ export default function NaylaCore() {
       setActiveThreadId(payload.thread.id);
       setChatMessages([]);
       setChatAttachmentIds([]);
+      setVideoResultadoUrl(null);
+      setVideoResultadoNombre(null);
+      setVideoResultadoEtiqueta(null);
+      setIsPlaying(false);
       setProjectMenuOpen(false);
     } catch (error: any) {
       showAlert(error?.message || 'No se pudo crear el chat.');
