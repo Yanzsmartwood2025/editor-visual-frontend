@@ -58,21 +58,24 @@ export const createUploadPostConnectUrl = async ({
   await ensureUploadPostProfile(username);
   const network = getSocialNetwork(platform);
   if (!network?.uploadPostConnect) throw new Error(`${network?.label || platform} no usa conexión OAuth en Ruta A.`);
-  const payload = await request('/api/uploadposts/users/generate-jwt', {
-    method: 'POST',
-    body: JSON.stringify({
-      username,
-      redirect_url: redirectUrl,
-      platforms: [network.uploadPostConnect],
-      show_calendar: false,
-      language: 'es',
-      connect_title: 'Conecta tu cuenta a Nayla',
-      connect_description: 'Autoriza esta red para publicar, medir resultados y gestionar actividad desde Nayla.',
-      redirect_button_text: 'Volver a Nayla',
-    }),
-  });
-  if (!payload?.access_url) throw new Error('Ruta A no devolvió una URL de conexión.');
-  return String(payload.access_url);
+
+  // Headless Connect API: Nayla owns the UI. The user goes directly from
+  // Nayla to the social network's official OAuth consent screen.
+  const payload = await request(
+    `/api/uploadposts/oauth/${encodeURIComponent(network.uploadPostConnect)}/start`,
+    {
+      method: 'POST',
+      body: JSON.stringify({
+        profile: username,
+        redirect_url: redirectUrl,
+      }),
+    }
+  );
+
+  if (!payload?.authorize_url) {
+    throw new Error('La red social no devolvió una URL de autorización.');
+  }
+  return String(payload.authorize_url);
 };
 
 const accountFromUploadPost = (
