@@ -1,6 +1,24 @@
 import React, { useMemo } from 'react';
-import { AbsoluteFill, Sequence, Video, Audio, useVideoConfig, useCurrentFrame, interpolate, Img, Loop } from 'remotion';
-import { TransitionSeries, linearTiming } from '@remotion/transitions';
+import { AbsoluteFill, Sequence, useVideoConfig, useCurrentFrame, interpolate, Img, Loop } from 'remotion';
+import { Video, Audio } from '@remotion/media';
+import { createTikTokStyleCaptions, type Caption } from '@remotion/captions';
+import { chromaticAberration } from '@remotion/effects/chromatic-aberration';
+import { glow } from '@remotion/effects/glow';
+import { zoomBlur } from '@remotion/effects/zoom-blur';
+import { pixelate } from '@remotion/effects/pixelate';
+import { duotone } from '@remotion/effects/duotone';
+import { colorCorrection } from '@remotion/effects/color-correction';
+import { vignette } from '@remotion/effects/vignette';
+import {
+  TransitionSeries,
+  linearTiming,
+  blurSlide,
+  crossZoom,
+  dreamyZoom,
+  filmBurn,
+  linearBlur,
+  pushCut,
+} from '@remotion/transitions';
 import { fade } from '@remotion/transitions/fade';
 import { wipe } from '@remotion/transitions/wipe';
 import { slide } from '@remotion/transitions/slide';
@@ -8,8 +26,12 @@ import { zoomInOut } from '@remotion/transitions/zoom-in-out';
 import { buildVisualTimelineMetrics, getCompositionDurationInFrames, getItemDelayInFrames, getItemDurationInFrames } from '../lib/timelineMetrics';
 
 // Interfaces based on main file
-type TimelineItem = { id: string; mediaId: string; tipo: 'foto' | 'video' | 'audio'; nombre: string; etiqueta: string; url: string; durationInSeconds?: number; originalDurationInSeconds?: number; volume?: number; fadeIn?: number; fadeOut?: number; scale?: number; delay?: number; startFrom?: number; trimBefore?: number; trimAfter?: number; loop?: boolean; playbackRate?: number; transitionDuration?: number; transitionType?: 'fade' | 'none' | 'wipe' | 'slide' | 'zoom'; efecto?: string; brightness?: number; contrast?: number; saturation?: number; overlay?: string; overlayIntensity?: number; };
-type SubtitleItem = { id: string; texto: string; inicioSec: number; finSec: number; };
+type ProfessionalEffect = {
+  type: 'chromatic-aberration' | 'pro-glow' | 'zoom-blur' | 'pixelate' | 'duotone' | 'cinematic-grade' | 'pro-vignette';
+  intensity?: number;
+};
+type TimelineItem = { id: string; mediaId: string; tipo: 'foto' | 'video' | 'audio'; nombre: string; etiqueta: string; url: string; durationInSeconds?: number; originalDurationInSeconds?: number; volume?: number; fadeIn?: number; fadeOut?: number; scale?: number; delay?: number; startFrom?: number; trimBefore?: number; trimAfter?: number; loop?: boolean; playbackRate?: number; transitionDuration?: number; transitionType?: 'fade' | 'none' | 'wipe' | 'slide' | 'zoom' | 'blur-slide' | 'cross-zoom' | 'dreamy-zoom' | 'film-burn' | 'linear-blur' | 'push-cut'; efecto?: string; brightness?: number; contrast?: number; saturation?: number; overlay?: string; overlayIntensity?: number; effects?: ProfessionalEffect[]; };
+type SubtitleItem = { id: string; texto: string; inicioSec: number; finSec: number; style?: 'clean' | 'cinematic' | 'tiktok' | 'karaoke'; position?: 'top' | 'center' | 'bottom'; fontSize?: number; };
 type LogoItem = { id: string; url: string; x: number; y: number; scale: number; opacity: number; inicioSec?: number; finSec?: number; fadeIn?: number; fadeOut?: number; };
 
 interface MainCompositionProps {
@@ -108,6 +130,71 @@ const getFilterStyle = (clip: TimelineItem): string | undefined => {
 };
 
 
+
+const clamp01 = (value: unknown, fallback = 0.5) => {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return fallback;
+  return Math.max(0, Math.min(1, number));
+};
+
+const getProfessionalEffects = (clip: TimelineItem): any[] => {
+  if (clip.tipo !== 'video' || !Array.isArray(clip.effects) || clip.effects.length === 0) {
+    return [];
+  }
+
+  return clip.effects.slice(0, 4).map((effect) => {
+    const intensity = clamp01(effect.intensity);
+
+    switch (effect.type) {
+      case 'chromatic-aberration':
+        return chromaticAberration({
+          amount: 3 + intensity * 17,
+          angle: 0,
+        });
+      case 'pro-glow':
+        return glow({
+          radius: 8 + intensity * 30,
+          intensity: 0.4 + intensity * 1.6,
+          threshold: 0.2 + (1 - intensity) * 0.25,
+        });
+      case 'zoom-blur':
+        return zoomBlur({
+          amount: 8 + intensity * 58,
+          center: [0.5, 0.5],
+          samples: 24,
+        });
+      case 'pixelate':
+        return pixelate({
+          blockSize: Math.max(2, Math.round(3 + intensity * 30)),
+        });
+      case 'duotone':
+        return duotone({
+          darkColor: '#080808',
+          lightColor: '#f1f1f1',
+          threshold: 0.35 + intensity * 0.2,
+        });
+      case 'cinematic-grade':
+        return colorCorrection({
+          exposure: 0.06 * intensity,
+          contrast: 1 + 0.3 * intensity,
+          shadows: 0.08 * intensity,
+          highlights: -0.16 * intensity,
+          temperature: 0.08 * intensity,
+          saturation: 1 + 0.08 * intensity,
+          vibrance: 0.25 * intensity,
+        });
+      case 'pro-vignette':
+        return vignette({
+          amount: 0.2 + 0.7 * intensity,
+          radius: 0.7 - 0.18 * intensity,
+          feather: 0.35,
+          color: '#000000',
+        });
+      default:
+        return null;
+    }
+  }).filter(Boolean);
+};
 
 const getVisualMotionTransform = (
   clip: TimelineItem,
@@ -305,6 +392,119 @@ const AnimatedVolume: React.FC<{ clip: TimelineItem, durationInFrames: number, r
   return <>{render(currentVolume)}</>;
 };
 
+const DynamicSubtitle: React.FC<{ subtitle: SubtitleItem }> = ({ subtitle }) => {
+  const frame = useCurrentFrame();
+  const { fps } = useVideoConfig();
+  const style = subtitle.style || 'clean';
+  const position = subtitle.position || 'bottom';
+  const fontSize = subtitle.fontSize || (style === 'cinematic' ? 46 : 42);
+
+  const durationMs = Math.max(1, (subtitle.finSec - subtitle.inicioSec) * 1000);
+  const words = subtitle.texto.trim().split(/\s+/).filter(Boolean);
+  const captions: Caption[] = words.map((word, index) => {
+    const startMs = (durationMs * index) / Math.max(1, words.length);
+    const endMs = (durationMs * (index + 1)) / Math.max(1, words.length);
+    return {
+      text: (index === 0 ? '' : ' ') + word,
+      startMs,
+      endMs,
+      timestampMs: (startMs + endMs) / 2,
+      confidence: null,
+    };
+  });
+
+  const combineMs =
+    style === 'karaoke'
+      ? Math.min(1800, durationMs)
+      : style === 'tiktok'
+        ? Math.min(1200, durationMs)
+        : durationMs + 1;
+
+  const pages = createTikTokStyleCaptions({
+    captions,
+    combineTokensWithinMilliseconds: combineMs,
+    breakOnSilenceAfterMilliseconds: 900,
+  }).pages;
+
+  const currentMs = (frame / fps) * 1000;
+  const page = pages.find((item) => currentMs >= item.startMs && currentMs < item.startMs + item.durationMs) || pages[0];
+  if (!page) return null;
+
+  const activeIndex = page.tokens.findIndex((token) => currentMs >= token.fromMs && currentMs < token.toMs);
+
+  const justifyContent =
+    position === 'top' ? 'flex-start' : position === 'center' ? 'center' : 'flex-end';
+  const verticalPadding =
+    position === 'top' ? '10%' : position === 'bottom' ? '10%' : 0;
+
+  const shellStyle: React.CSSProperties =
+    style === 'cinematic'
+      ? {
+          backgroundColor: 'rgba(0,0,0,0.55)',
+          color: '#fff',
+          borderRadius: 10,
+          padding: '10px 18px',
+          textShadow: '0 2px 8px rgba(0,0,0,0.85)',
+          letterSpacing: '0.02em',
+        }
+      : style === 'clean'
+        ? {
+            color: '#fff',
+            textShadow: '0 2px 8px rgba(0,0,0,0.9), 0 0 2px #000',
+          }
+        : {
+            color: '#fff',
+            textShadow: '0 2px 7px rgba(0,0,0,0.9)',
+            fontWeight: 900,
+          };
+
+  return (
+    <AbsoluteFill
+      style={{
+        justifyContent,
+        alignItems: 'center',
+        paddingTop: verticalPadding,
+        paddingBottom: verticalPadding,
+        pointerEvents: 'none',
+      }}
+    >
+      <div
+        style={{
+          ...shellStyle,
+          maxWidth: '86%',
+          textAlign: 'center',
+          fontSize,
+          fontFamily: 'Arial, Helvetica, sans-serif',
+          lineHeight: 1.16,
+        }}
+      >
+        {page.tokens.map((token, index) => {
+          const active = index === activeIndex && (style === 'tiktok' || style === 'karaoke');
+          return (
+            <span
+              key={token.fromMs + '-' + index}
+              style={{
+                display: 'inline-block',
+                whiteSpace: 'pre',
+                padding: active ? '2px 5px' : '2px 1px',
+                margin: active ? '0 1px' : 0,
+                borderRadius: active ? 6 : 0,
+                background: active
+                  ? (style === 'karaoke' ? 'rgba(255,255,255,0.92)' : 'rgba(255,255,255,0.18)')
+                  : 'transparent',
+                color: active && style === 'karaoke' ? '#080808' : '#fff',
+                transform: active ? 'scale(1.07)' : 'scale(1)',
+              }}
+            >
+              {token.text}
+            </span>
+          );
+        })}
+      </div>
+    </AbsoluteFill>
+  );
+};
+
 export const MainComposition: React.FC<MainCompositionProps> = ({ timeline, subtitles = [], logos = [], settings = {} }) => {
   const { fps } = useVideoConfig();
 
@@ -366,7 +566,10 @@ export const MainComposition: React.FC<MainCompositionProps> = ({ timeline, subt
                         trimAfter={clip.trimAfter !== undefined ? Math.round(clip.trimAfter * fps) : undefined}
                         loop={clip.loop}
                         playbackRate={clip.playbackRate || 1}
-                        style={{ width: '100%', height: '100%', objectFit: 'contain', filter: getFilterStyle(clip) }}
+                        objectFit="contain"
+                        effects={getProfessionalEffects(clip)}
+                        requestInit={{ cache: 'no-store' }}
+                        style={{ width: '100%', height: '100%', filter: getFilterStyle(clip) }}
                       />
                     )} />
                   </AnimatedVisualFrame>
@@ -398,7 +601,9 @@ export const MainComposition: React.FC<MainCompositionProps> = ({ timeline, subt
                         <Loop durationInFrames={150}>
                             <Video
                                 src="https://assets.mixkit.co/videos/48011/48011-720.mp4"
-                                style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                                objectFit="cover"
+                                muted
+                                style={{ width: '100%', height: '100%' }}
                             />
                         </Loop>
                     </AbsoluteFill>
@@ -435,6 +640,12 @@ export const MainComposition: React.FC<MainCompositionProps> = ({ timeline, subt
              if (nextClip.transitionType === 'wipe') presentation = wipe();
              else if (nextClip.transitionType === 'slide') presentation = slide();
              else if (nextClip.transitionType === 'zoom') presentation = zoomInOut({});
+             else if (nextClip.transitionType === 'blur-slide') presentation = blurSlide({ blur: 0.35 });
+             else if (nextClip.transitionType === 'cross-zoom') presentation = crossZoom({ strength: 0.32 });
+             else if (nextClip.transitionType === 'dreamy-zoom') presentation = dreamyZoom({ rotation: 4, scale: 1.14 });
+             else if (nextClip.transitionType === 'film-burn') presentation = filmBurn({ seed: 2.31 });
+             else if (nextClip.transitionType === 'linear-blur') presentation = linearBlur({ intensity: 0.08 });
+             else if (nextClip.transitionType === 'push-cut') presentation = pushCut({ flashOpacity: 0.15, flashFrames: 2 });
 
              elements.push(
                <TransitionSeries.Transition
@@ -486,27 +697,9 @@ export const MainComposition: React.FC<MainCompositionProps> = ({ timeline, subt
 
          return (
             <Sequence key={sub.id} from={fromFrame} durationInFrames={duration}>
-              <AbsoluteFill style={{
-                justifyContent: 'flex-end',
-                alignItems: 'center',
-                paddingBottom: '10%',
-              }}>
-                <div style={{
-                  backgroundColor: 'rgba(0, 0, 0, 0.7)',
-                  color: 'white',
-                  padding: '10px 20px',
-                  borderRadius: '10px',
-                  fontSize: '40px',
-                  fontFamily: 'sans-serif',
-                  textAlign: 'center',
-                  maxWidth: '80%',
-                  textShadow: '2px 2px 4px rgba(0,0,0,0.5)'
-                }}>
-                  {sub.texto}
-                </div>
-              </AbsoluteFill>
+              <DynamicSubtitle subtitle={sub} />
             </Sequence>
-         )
+         );
       })}
 
       {/* Global Logos Overlay */}
