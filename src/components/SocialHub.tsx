@@ -621,6 +621,8 @@ export default function SocialHub({ session, projectId, results, onClose }: Prop
         body: JSON.stringify({
           projectId,
           platform: commentSource.platform || 'social',
+          accountId: commentSource.accountId,
+          commentId,
           authorName: author,
           commentText,
         }),
