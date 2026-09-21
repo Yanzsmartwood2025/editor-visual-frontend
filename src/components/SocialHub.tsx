@@ -635,6 +635,24 @@ export default function SocialHub({ session, projectId, results, onClose }: Prop
     }
   };
 
+  const openSocialTab = (nextTab: 'inicio' | 'publicar' | 'inbox' | 'metricas' | 'ajustes') => {
+    setTab(nextTab);
+    setNotice('');
+
+    if (nextTab === 'inbox' && !commentAccount) {
+      const account = accounts.find((item: any) =>
+        item.status === 'connected' &&
+        (!Array.isArray(item.capabilities) || item.capabilities.includes('comments'))
+      );
+      if (account) void fetchCommentMedia(account.id);
+    }
+
+    if (nextTab === 'metricas' && !analyticsAccount) {
+      const account = accounts.find((item: any) => item.status === 'connected');
+      if (account) void fetchAnalytics(account.id);
+    }
+  };
+
   if (!projectId) {
     return <div style={{ ...panel, padding: 14, color: '#888', fontSize: 11 }}>Selecciona un proyecto para abrir REDES.</div>;
   }
@@ -723,7 +741,7 @@ export default function SocialHub({ session, projectId, results, onClose }: Prop
           ['metricas', 'Datos'],
           ['ajustes', 'IA'],
         ].map(([id, label]) => (
-          <button key={id} onClick={() => setTab(id as any)} style={{ ...tinyButton(tab === id), padding: '7px 2px', fontSize: 9 }}>
+          <button key={id} onClick={() => openSocialTab(id as any)} style={{ ...tinyButton(tab === id), padding: '7px 2px', fontSize: 9 }}>
             {label}
           </button>
         ))}
