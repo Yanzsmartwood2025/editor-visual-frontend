@@ -1,7 +1,8 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import type { FirebaseSession } from '../lib/firebaseClient';
 import { firebaseHeaders } from '../lib/apiClient';
 import { SOCIAL_NETWORKS } from '../lib/social/types';
+import { cleanNaylaChatText } from '../lib/naylaText';
 
 type ResultMedia = {
   id: string;
@@ -299,6 +300,9 @@ export default function SocialHub({ session, projectId, results, onClose }: Prop
     simpleOnly: true,
     instructions: '',
   });
+  const [naylaSettingsOpen, setNaylaSettingsOpen] = useState(false);
+  const [naylaSettingsSnapshot, setNaylaSettingsSnapshot] = useState<any>(null);
+  const socialChatEndRef = useRef<HTMLDivElement | null>(null);
 
   const api = async (path: string, init: RequestInit = {}) => {
     const response = await fetch(path, {
@@ -339,6 +343,14 @@ export default function SocialHub({ session, projectId, results, onClose }: Prop
   useEffect(() => {
     void load(false);
   }, [projectId, session?.user?.id]);
+
+  useEffect(() => {
+    if (tab !== 'ajustes') return;
+    const frame = window.requestAnimationFrame(() => {
+      socialChatEndRef.current?.scrollIntoView({ block: 'end', behavior: 'smooth' });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [tab, socialChatMessages.length, busy]);
 
   useEffect(() => {
     if (typeof window === 'undefined' || !projectId || !session) return;
@@ -635,22 +647,6 @@ export default function SocialHub({ session, projectId, results, onClose }: Prop
     }
   };
 
-  const savePolicy = async () => {
-    if (!projectId) return;
-    setBusy('policy');
-    try {
-      await api('/api/social/policy', {
-        method: 'POST',
-        body: JSON.stringify({ projectId, ...policy }),
-      });
-      setNotice('Reglas de Nayla guardadas.');
-    } catch (error) {
-      setNotice(error instanceof Error ? error.message : 'No se pudieron guardar las reglas.');
-    } finally {
-      setBusy('');
-    }
-  };
-
   const loadSocialIntelligence = async () => {
     if (!projectId || socialIntelligenceLoaded) return;
     setBusy('nayla-load');
@@ -703,6 +699,9 @@ export default function SocialHub({ session, projectId, results, onClose }: Prop
       if (payload.message) {
         setSocialChatMessages((prev) => [...prev, payload.message]);
       }
+      if (typeof payload.activityReview?.peopleCount === 'number') {
+        setKnownPeopleCount(payload.activityReview.peopleCount);
+      }
     } catch (error) {
       setNotice(error instanceof Error ? error.message : 'Nayla no pudo responder.');
     } finally {
@@ -710,12 +709,29 @@ export default function SocialHub({ session, projectId, results, onClose }: Prop
     }
   };
 
-  const saveAutomationRule = async () => {
-    if (!projectId) return;
-    setBusy('automation');
+  const openNaylaSettings = () => {
+    setNaylaSettingsSnapshot({
+      policy: { ...policy },
+      automationRule: { ...automationRule },
+    });
+    setNaylaSettingsOpen(true);
+  };
+
+  const cancelNaylaSettings = () => {
+    if (naylaSettingsSnapshot) {
+      setPolicy({ ...naylaSettingsSnapshot.policy });
+      setAutomationRule({ ...naylaSettingsSnapshot.automationRule });
+    }
+    setNaylaSettingsSnapshot(null);
+    setNaylaSettingsOpen(false);
+  };
+
+  const saveNaylaSettings = async () => {
+    if (!projectId || busy === 'nayla-settings') return;
+    setBusy('nayla-settings');
 
     try {
-      const payload = await api('/api/social/automation/rules', {
+      const automationPayload = await api('/api/social/automation/rules', {
         method: 'POST',
         body: JSON.stringify({
           projectId,
@@ -730,28 +746,35 @@ export default function SocialHub({ session, projectId, results, onClose }: Prop
         }),
       });
 
-      if (payload.rule) {
+      const nextPolicy = automationRule.enabled && policy.mode !== 'auto'
+        ? { ...policy, mode: 'auto' }
+        : { ...policy };
+
+      await api('/api/social/policy', {
+        method: 'POST',
+        body: JSON.stringify({ projectId, ...nextPolicy }),
+      });
+
+      if (automationPayload.rule) {
         setAutomationRule((prev) => ({
           ...prev,
-          enabled: Boolean(payload.rule.enabled),
-          channel: payload.rule.channel || prev.channel,
+          enabled: Boolean(automationPayload.rule.enabled),
+          channel: automationPayload.rule.channel || prev.channel,
+          minDelayHours: Number(automationPayload.rule.min_delay_minutes || 180) / 60,
+          maxDelayHours: Number(automationPayload.rule.max_delay_minutes || 240) / 60,
+          dailyReplyLimit: Number(automationPayload.rule.daily_reply_limit || 20),
+          personCooldownHours: Number(automationPayload.rule.person_cooldown_minutes || 180) / 60,
+          simpleOnly: automationPayload.rule.simple_only !== false,
+          instructions: automationPayload.rule.instructions || '',
         }));
       }
 
-      if (automationRule.enabled && policy.mode !== 'auto') {
-        const nextPolicy = { ...policy, mode: 'auto' };
-        await api('/api/social/policy', {
-          method: 'POST',
-          body: JSON.stringify({ projectId, ...nextPolicy }),
-        });
-        setPolicy(nextPolicy);
-      }
-
-      setNotice(automationRule.enabled
-        ? 'Automatización activa. Nayla responderá solo lo permitido dentro del rango configurado.'
-        : 'Automatización desactivada.');
+      setPolicy(nextPolicy);
+      setNaylaSettingsSnapshot(null);
+      setNaylaSettingsOpen(false);
+      setNotice('Configuración de Nayla guardada.');
     } catch (error) {
-      setNotice(error instanceof Error ? error.message : 'No se pudo guardar la automatización.');
+      setNotice(error instanceof Error ? error.message : 'No se pudo guardar la configuración de Nayla.');
     } finally {
       setBusy('');
     }
@@ -792,12 +815,12 @@ export default function SocialHub({ session, projectId, results, onClose }: Prop
         width: '100dvw',
         height: '100dvh',
         boxSizing: 'border-box',
-        overflowY: 'auto',
+        overflowY: tab === 'ajustes' ? 'hidden' : 'auto',
         overscrollBehavior: 'contain',
         display: 'flex',
         flexDirection: 'column',
         gap: 12,
-        padding: '14px 14px 34px',
+        padding: tab === 'ajustes' ? '14px 14px max(12px, env(safe-area-inset-bottom))' : '14px 14px 34px',
         background: '#050505',
         color: '#fff',
       }}
@@ -867,7 +890,7 @@ export default function SocialHub({ session, projectId, results, onClose }: Prop
           ['metricas', 'Datos'],
           ['ajustes', 'Nayla'],
         ].map(([id, label]) => (
-          <button key={id} onClick={() => openSocialTab(id as any)} style={{ ...tinyButton(tab === id), padding: '7px 2px', fontSize: 9 }}>
+          <button key={id} onClick={() => openSocialTab(id as any)} style={{ ...tinyButton(tab === id), padding: '8px 2px', fontSize: 10.5 }}>
             {label}
           </button>
         ))}
@@ -1186,36 +1209,58 @@ export default function SocialHub({ session, projectId, results, onClose }: Prop
       )}
 
       {tab === 'ajustes' && (
-        <>
-          <div style={{ ...panel, padding: 10, display: 'flex', flexDirection: 'column', minHeight: '54dvh' }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-              <div>
-                <div style={{ fontSize: 11, fontWeight: 950 }}>NAYLA SOCIAL</div>
-                <div style={{ fontSize: 8.5, color: '#777', marginTop: 3 }}>
-                  {knownPeopleCount} persona{knownPeopleCount === 1 ? '' : 's'} en memoria · habla con Nayla sobre tu comunidad
+        <div style={{ flex: 1, minHeight: 0, display: 'flex', position: 'relative' }}>
+          <div
+            style={{
+              ...panel,
+              flex: 1,
+              minHeight: 0,
+              width: '100%',
+              padding: 12,
+              display: 'flex',
+              flexDirection: 'column',
+              borderRadius: 18,
+              overflow: 'hidden',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontSize: 15, fontWeight: 950, letterSpacing: '.2px' }}>NAYLA SOCIAL</div>
+                <div style={{ fontSize: 10.5, color: '#777', marginTop: 3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {knownPeopleCount} persona{knownPeopleCount === 1 ? '' : 's'} en memoria · comunidad conectada
                 </div>
               </div>
-              {busy === 'nayla-load' && <span style={{ color: '#777', fontSize: 10 }}>…</span>}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                {busy === 'nayla-load' && <span style={{ color: '#777', fontSize: 12 }}>…</span>}
+                <button
+                  type="button"
+                  onClick={() => openSocialTab('metricas')}
+                  style={{ ...tinyButton(false), padding: '7px 10px', fontSize: 9.5 }}
+                >
+                  DATOS
+                </button>
+              </div>
             </div>
 
             <div
               style={{
                 flex: 1,
-                minHeight: 320,
-                maxHeight: '58dvh',
+                minHeight: 0,
                 overflowY: 'auto',
+                overscrollBehavior: 'contain',
                 marginTop: 10,
-                padding: '10px 2px',
+                padding: '12px 2px 8px',
                 display: 'flex',
                 flexDirection: 'column',
-                gap: 8,
+                gap: 10,
                 borderTop: '1px solid rgba(255,255,255,.06)',
                 borderBottom: '1px solid rgba(255,255,255,.06)',
+                scrollbarWidth: 'thin',
               }}
             >
               {!socialChatMessages.length && busy !== 'nayla-load' && (
-                <div style={{ margin: 'auto', maxWidth: 420, textAlign: 'center', color: '#666', fontSize: 10, lineHeight: 1.6, padding: 18 }}>
-                  Puedes preguntarme qué pasó hoy, quién suele comentar, qué recuerdo de una persona, qué mensajes requieren atención o pedirme ideas para mejorar la comunidad.
+                <div style={{ margin: 'auto', maxWidth: 480, textAlign: 'center', color: '#777', fontSize: 13, lineHeight: 1.6, padding: 22 }}>
+                  Háblame como lo harías con una persona. Puedo revisar la actividad de tus cuentas conectadas, organizar comentarios y mensajes, consultar métricas y preparar acciones para que tú las confirmes.
                 </div>
               )}
 
@@ -1226,30 +1271,51 @@ export default function SocialHub({ session, projectId, results, onClose }: Prop
                     key={message.id || index}
                     style={{
                       alignSelf: isUser ? 'flex-end' : 'flex-start',
-                      width: isUser ? 'auto' : '94%',
-                      maxWidth: '94%',
-                      padding: '9px 10px',
-                      borderRadius: isUser ? '13px 13px 3px 13px' : '13px 13px 13px 3px',
-                      background: isUser ? 'rgba(255,255,255,.11)' : 'rgba(255,255,255,.035)',
-                      border: '1px solid rgba(255,255,255,.06)',
-                      color: '#ddd',
-                      fontSize: 10,
+                      width: isUser ? 'auto' : '96%',
+                      maxWidth: isUser ? '88%' : '96%',
+                      padding: isUser ? '10px 12px' : '11px 12px',
+                      borderRadius: isUser ? '17px 17px 4px 17px' : '17px 17px 17px 4px',
+                      background: isUser ? 'rgba(255,255,255,.12)' : 'rgba(255,255,255,.035)',
+                      border: '1px solid rgba(255,255,255,.07)',
+                      color: '#e5e5e5',
+                      fontSize: 14,
                       lineHeight: 1.55,
                       whiteSpace: 'pre-wrap',
                       overflowWrap: 'anywhere',
                     }}
                   >
-                    {message.content}
+                    {isUser ? message.content : cleanNaylaChatText(String(message.content || ''))}
                   </div>
                 );
               })}
 
               {busy === 'nayla-chat' && (
-                <div style={{ alignSelf: 'flex-start', padding: '8px 10px', color: '#777', fontSize: 10 }}>Nayla está pensando…</div>
+                <div style={{ alignSelf: 'flex-start', padding: '9px 11px', color: '#777', fontSize: 12 }}>
+                  Nayla está revisando…
+                </div>
               )}
+              <div ref={socialChatEndRef} />
             </div>
 
-            <div style={{ display: 'flex', alignItems: 'flex-end', gap: 6, marginTop: 9 }}>
+            <div style={{ display: 'flex', alignItems: 'flex-end', gap: 7, marginTop: 10 }}>
+              <button
+                type="button"
+                aria-label="Abrir opciones de Nayla"
+                title="Opciones de Nayla"
+                onClick={openNaylaSettings}
+                style={{
+                  ...tinyButton(false),
+                  width: 48,
+                  height: 48,
+                  padding: 0,
+                  borderRadius: 15,
+                  fontSize: 25,
+                  fontWeight: 350,
+                  flex: '0 0 auto',
+                }}
+              >
+                +
+              </button>
               <textarea
                 value={socialChatDraft}
                 onChange={(event) => setSocialChatDraft(event.target.value)}
@@ -1260,188 +1326,254 @@ export default function SocialHub({ session, projectId, results, onClose }: Prop
                   }
                 }}
                 placeholder="Habla con Nayla…"
-                rows={2}
+                rows={1}
                 style={{
                   flex: 1,
                   resize: 'none',
-                  minHeight: 46,
-                  maxHeight: 120,
+                  minHeight: 48,
+                  maxHeight: 128,
+                  boxSizing: 'border-box',
                   background: '#090909',
                   color: '#eee',
-                  border: '1px solid #272727',
-                  borderRadius: 12,
-                  padding: '9px 10px',
-                  fontSize: 10,
+                  border: '1px solid rgba(255,255,255,.18)',
+                  borderRadius: 15,
+                  padding: '12px 13px',
+                  fontSize: 14,
                   lineHeight: 1.45,
+                  outline: 'none',
                 }}
               />
               <button
                 type="button"
                 disabled={!socialChatDraft.trim() || busy === 'nayla-chat'}
                 onClick={() => void sendSocialChat()}
-                style={{ ...tinyButton(true), width: 42, height: 42, padding: 0, fontSize: 18 }}
+                style={{ ...tinyButton(true), width: 48, height: 48, padding: 0, borderRadius: 15, fontSize: 22, flex: '0 0 auto' }}
               >
                 ↑
               </button>
             </div>
           </div>
 
-          <div style={{ ...panel, padding: 10, display: 'flex', flexDirection: 'column', gap: 9 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
-              <div>
-                <div style={{ fontSize: 10, fontWeight: 900 }}>RESPUESTAS CON RELOJ</div>
-                <div style={{ fontSize: 8.5, color: '#777', marginTop: 3 }}>Cola segura con retraso, límites y revisión de temas delicados.</div>
-              </div>
+          {naylaSettingsOpen && (
+            <>
               <button
                 type="button"
-                onClick={() => setAutomationRule((prev) => ({ ...prev, enabled: !prev.enabled }))}
+                aria-label="Cerrar opciones"
+                onClick={cancelNaylaSettings}
                 style={{
-                  width: 44,
-                  height: 25,
-                  borderRadius: 999,
-                  border: '1px solid rgba(255,255,255,.18)',
-                  background: automationRule.enabled ? 'rgba(255,255,255,.2)' : '#0a0a0a',
-                  padding: 2,
-                  cursor: 'pointer',
+                  position: 'fixed',
+                  inset: 0,
+                  zIndex: 9992,
+                  border: 0,
+                  background: 'rgba(0,0,0,.68)',
+                  backdropFilter: 'blur(4px)',
+                  WebkitBackdropFilter: 'blur(4px)',
+                  padding: 0,
+                }}
+              />
+              <div
+                style={{
+                  position: 'fixed',
+                  left: 12,
+                  right: 12,
+                  bottom: 'max(12px, env(safe-area-inset-bottom))',
+                  zIndex: 9994,
+                  maxHeight: '80dvh',
+                  overflowY: 'auto',
+                  borderRadius: 20,
+                  border: '1px solid rgba(255,255,255,.16)',
+                  background: '#0a0a0a',
+                  boxShadow: '0 -12px 48px rgba(0,0,0,.7)',
+                  padding: 14,
                 }}
               >
-                <span
+                <div
                   style={{
-                    display: 'block',
-                    width: 19,
-                    height: 19,
-                    borderRadius: '50%',
-                    background: automationRule.enabled ? '#fff' : '#555',
-                    transform: automationRule.enabled ? 'translateX(17px)' : 'translateX(0)',
-                    transition: 'transform .18s ease',
+                    position: 'sticky',
+                    top: -14,
+                    zIndex: 2,
+                    margin: '-14px -14px 12px',
+                    padding: '13px 14px 11px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: 10,
+                    background: 'rgba(10,10,10,.97)',
+                    borderBottom: '1px solid rgba(255,255,255,.07)',
                   }}
-                />
-              </button>
-            </div>
-
-            <NaylaSelect
-              value={automationRule.channel}
-              placeholder="Dónde puede responder"
-              onChange={(value) => setAutomationRule((prev) => ({ ...prev, channel: value }))}
-              options={[
-                { value: 'comments', label: 'Comentarios', subtitle: 'Respuestas públicas' },
-                { value: 'dms', label: 'Mensajes privados', subtitle: 'Solo donde la red lo permita' },
-                { value: 'both', label: 'Comentarios + mensajes', subtitle: 'Según capacidades de cada cuenta' },
-              ]}
-            />
-
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,minmax(0,1fr))', gap: 7 }}>
-              <label style={{ padding: 8, borderRadius: 10, background: 'rgba(255,255,255,.025)', color: '#777', fontSize: 8.5 }}>
-                ESPERAR MÍNIMO
-                <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 5 }}>
-                  <input
-                    type="number"
-                    min="0"
-                    max="720"
-                    step="0.5"
-                    value={automationRule.minDelayHours}
-                    onChange={(event) => setAutomationRule((prev) => ({ ...prev, minDelayHours: Number(event.target.value) }))}
-                    style={{ width: '100%', background: '#090909', color: '#fff', border: '1px solid #272727', borderRadius: 8, padding: 7, fontSize: 10 }}
-                  />
-                  <span>h</span>
+                >
+                  <div>
+                    <div style={{ fontSize: 14, fontWeight: 950 }}>OPCIONES DE NAYLA</div>
+                    <div style={{ fontSize: 10, color: '#777', marginTop: 2 }}>Automatización y forma de responder</div>
+                  </div>
+                  <button
+                    type="button"
+                    aria-label="Cancelar cambios"
+                    onClick={cancelNaylaSettings}
+                    style={{ border: 0, background: 'transparent', color: '#ddd', fontSize: 27, lineHeight: 1, padding: 4, cursor: 'pointer' }}
+                  >
+                    ×
+                  </button>
                 </div>
-              </label>
-              <label style={{ padding: 8, borderRadius: 10, background: 'rgba(255,255,255,.025)', color: '#777', fontSize: 8.5 }}>
-                ESPERAR MÁXIMO
-                <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 5 }}>
-                  <input
-                    type="number"
-                    min="0"
-                    max="720"
-                    step="0.5"
-                    value={automationRule.maxDelayHours}
-                    onChange={(event) => setAutomationRule((prev) => ({ ...prev, maxDelayHours: Number(event.target.value) }))}
-                    style={{ width: '100%', background: '#090909', color: '#fff', border: '1px solid #272727', borderRadius: 8, padding: 7, fontSize: 10 }}
-                  />
-                  <span>h</span>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                  <div style={{ ...panel, padding: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
+                      <div>
+                        <div style={{ fontSize: 12, fontWeight: 900 }}>RESPUESTAS CON RELOJ</div>
+                        <div style={{ fontSize: 10, color: '#777', marginTop: 3 }}>Nayla espera el tiempo configurado y evita temas delicados.</div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setAutomationRule((prev) => ({ ...prev, enabled: !prev.enabled }))}
+                        style={{
+                          width: 50,
+                          height: 29,
+                          borderRadius: 999,
+                          border: '1px solid rgba(255,255,255,.18)',
+                          background: automationRule.enabled ? 'rgba(255,255,255,.2)' : '#050505',
+                          padding: 3,
+                          cursor: 'pointer',
+                          flex: '0 0 auto',
+                        }}
+                      >
+                        <span
+                          style={{
+                            display: 'block',
+                            width: 21,
+                            height: 21,
+                            borderRadius: '50%',
+                            background: automationRule.enabled ? '#fff' : '#555',
+                            transform: automationRule.enabled ? 'translateX(20px)' : 'translateX(0)',
+                            transition: 'transform .18s ease',
+                          }}
+                        />
+                      </button>
+                    </div>
+
+                    <NaylaSelect
+                      value={automationRule.channel}
+                      placeholder="Dónde puede responder"
+                      onChange={(value) => setAutomationRule((prev) => ({ ...prev, channel: value }))}
+                      options={[
+                        { value: 'comments', label: 'Comentarios', subtitle: 'Respuestas públicas' },
+                        { value: 'dms', label: 'Mensajes privados', subtitle: 'Solo donde la red lo permita' },
+                        { value: 'both', label: 'Comentarios + mensajes', subtitle: 'Según capacidades de cada cuenta' },
+                      ]}
+                    />
+
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,minmax(0,1fr))', gap: 8 }}>
+                      <label style={{ padding: 9, borderRadius: 11, background: 'rgba(255,255,255,.025)', color: '#777', fontSize: 10 }}>
+                        ESPERAR MÍNIMO
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 6 }}>
+                          <input
+                            type="number"
+                            min="0"
+                            max="720"
+                            step="0.5"
+                            value={automationRule.minDelayHours}
+                            onChange={(event) => setAutomationRule((prev) => ({ ...prev, minDelayHours: Number(event.target.value) }))}
+                            style={{ width: '100%', background: '#050505', color: '#fff', border: '1px solid #272727', borderRadius: 9, padding: 8, fontSize: 12 }}
+                          />
+                          <span>h</span>
+                        </div>
+                      </label>
+                      <label style={{ padding: 9, borderRadius: 11, background: 'rgba(255,255,255,.025)', color: '#777', fontSize: 10 }}>
+                        ESPERAR MÁXIMO
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 6 }}>
+                          <input
+                            type="number"
+                            min="0"
+                            max="720"
+                            step="0.5"
+                            value={automationRule.maxDelayHours}
+                            onChange={(event) => setAutomationRule((prev) => ({ ...prev, maxDelayHours: Number(event.target.value) }))}
+                            style={{ width: '100%', background: '#050505', color: '#fff', border: '1px solid #272727', borderRadius: 9, padding: 8, fontSize: 12 }}
+                          />
+                          <span>h</span>
+                        </div>
+                      </label>
+                      <label style={{ padding: 9, borderRadius: 11, background: 'rgba(255,255,255,.025)', color: '#777', fontSize: 10 }}>
+                        MÁXIMO / DÍA
+                        <input
+                          type="number"
+                          min="1"
+                          max="500"
+                          value={automationRule.dailyReplyLimit}
+                          onChange={(event) => setAutomationRule((prev) => ({ ...prev, dailyReplyLimit: Number(event.target.value) }))}
+                          style={{ width: '100%', boxSizing: 'border-box', marginTop: 6, background: '#050505', color: '#fff', border: '1px solid #272727', borderRadius: 9, padding: 8, fontSize: 12 }}
+                        />
+                      </label>
+                      <label style={{ padding: 9, borderRadius: 11, background: 'rgba(255,255,255,.025)', color: '#777', fontSize: 10 }}>
+                        PAUSA / PERSONA
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 6 }}>
+                          <input
+                            type="number"
+                            min="0"
+                            max="720"
+                            step="0.5"
+                            value={automationRule.personCooldownHours}
+                            onChange={(event) => setAutomationRule((prev) => ({ ...prev, personCooldownHours: Number(event.target.value) }))}
+                            style={{ width: '100%', background: '#050505', color: '#fff', border: '1px solid #272727', borderRadius: 9, padding: 8, fontSize: 12 }}
+                          />
+                          <span>h</span>
+                        </div>
+                      </label>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => setAutomationRule((prev) => ({ ...prev, simpleOnly: !prev.simpleOnly }))}
+                      style={{ ...tinyButton(automationRule.simpleOnly), width: '100%', textAlign: 'left', lineHeight: 1.45, fontSize: 10.5 }}
+                    >
+                      {automationRule.simpleOnly ? '✓ ' : ''}Solo responder automáticamente mensajes simples
+                    </button>
+
+                    <textarea
+                      value={automationRule.instructions}
+                      onChange={(event) => setAutomationRule((prev) => ({ ...prev, instructions: event.target.value }))}
+                      placeholder="Reglas extra para las respuestas automáticas…"
+                      rows={3}
+                      style={{ resize: 'vertical', background: '#050505', color: '#ddd', border: '1px solid #272727', borderRadius: 10, padding: 10, fontSize: 11.5, lineHeight: 1.45 }}
+                    />
+                    <div style={{ color: '#6f6f6f', fontSize: 9.5, lineHeight: 1.45 }}>
+                      Quejas, precios, reembolsos y temas delicados quedan para aprobación.
+                    </div>
+                  </div>
+
+                  <div style={{ ...panel, padding: 12, display: 'flex', flexDirection: 'column', gap: 9 }}>
+                    <div>
+                      <div style={{ fontSize: 12, fontWeight: 900 }}>PERSONALIDAD DE NAYLA</div>
+                      <div style={{ fontSize: 10, color: '#777', marginTop: 3 }}>Estas reglas se aplican a sugerencias y respuestas automáticas.</div>
+                    </div>
+                    <input
+                      value={policy.tone}
+                      onChange={(event) => setPolicy((prev) => ({ ...prev, tone: event.target.value }))}
+                      placeholder="Tono de respuesta"
+                      style={{ background: '#050505', color: '#eee', border: '1px solid #272727', borderRadius: 10, padding: 10, fontSize: 11.5 }}
+                    />
+                    <textarea
+                      value={policy.instructions}
+                      onChange={(event) => setPolicy((prev) => ({ ...prev, instructions: event.target.value }))}
+                      placeholder="Ej.: cercana, no discutir; si preguntan algo delicado, pedirme aprobación."
+                      rows={4}
+                      style={{ resize: 'vertical', background: '#050505', color: '#ddd', border: '1px solid #272727', borderRadius: 10, padding: 10, fontSize: 11.5, lineHeight: 1.45 }}
+                    />
+                  </div>
+
+                  <button
+                    type="button"
+                    disabled={busy === 'nayla-settings'}
+                    onClick={() => void saveNaylaSettings()}
+                    style={{ ...tinyButton(true), width: '100%', minHeight: 48, padding: 11, borderRadius: 14, fontSize: 12 }}
+                  >
+                    {busy === 'nayla-settings' ? 'GUARDANDO…' : 'ACEPTAR'}
+                  </button>
                 </div>
-              </label>
-              <label style={{ padding: 8, borderRadius: 10, background: 'rgba(255,255,255,.025)', color: '#777', fontSize: 8.5 }}>
-                MÁXIMO / DÍA
-                <input
-                  type="number"
-                  min="1"
-                  max="500"
-                  value={automationRule.dailyReplyLimit}
-                  onChange={(event) => setAutomationRule((prev) => ({ ...prev, dailyReplyLimit: Number(event.target.value) }))}
-                  style={{ width: '100%', boxSizing: 'border-box', marginTop: 5, background: '#090909', color: '#fff', border: '1px solid #272727', borderRadius: 8, padding: 7, fontSize: 10 }}
-                />
-              </label>
-              <label style={{ padding: 8, borderRadius: 10, background: 'rgba(255,255,255,.025)', color: '#777', fontSize: 8.5 }}>
-                PAUSA POR PERSONA
-                <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 5 }}>
-                  <input
-                    type="number"
-                    min="0"
-                    max="720"
-                    step="0.5"
-                    value={automationRule.personCooldownHours}
-                    onChange={(event) => setAutomationRule((prev) => ({ ...prev, personCooldownHours: Number(event.target.value) }))}
-                    style={{ width: '100%', background: '#090909', color: '#fff', border: '1px solid #272727', borderRadius: 8, padding: 7, fontSize: 10 }}
-                  />
-                  <span>h</span>
-                </div>
-              </label>
-            </div>
-
-            <button
-              type="button"
-              onClick={() => setAutomationRule((prev) => ({ ...prev, simpleOnly: !prev.simpleOnly }))}
-              style={{
-                ...tinyButton(automationRule.simpleOnly),
-                textAlign: 'left',
-                width: '100%',
-                lineHeight: 1.4,
-              }}
-            >
-              {automationRule.simpleOnly ? '✓ ' : ''}Solo responder automáticamente mensajes simples
-            </button>
-
-            <textarea
-              value={automationRule.instructions}
-              onChange={(event) => setAutomationRule((prev) => ({ ...prev, instructions: event.target.value }))}
-              placeholder="Reglas extra para las respuestas automáticas…"
-              rows={3}
-              style={{ resize: 'vertical', background: '#090909', color: '#ddd', border: '1px solid #272727', borderRadius: 9, padding: 8, fontSize: 9, lineHeight: 1.45 }}
-            />
-
-            <div style={{ color: '#686868', fontSize: 8.5, lineHeight: 1.45 }}>
-              Quejas, precios, reembolsos y temas delicados quedan para aprobación aunque el reloj esté activo.
-            </div>
-
-            <button type="button" onClick={() => void saveAutomationRule()} style={{ ...tinyButton(true), width: '100%', padding: 9 }}>
-              {busy === 'automation' ? 'GUARDANDO…' : 'GUARDAR AUTOMATIZACIÓN'}
-            </button>
-          </div>
-
-          <div style={{ ...panel, padding: 10, display: 'flex', flexDirection: 'column', gap: 8 }}>
-            <div>
-              <div style={{ fontSize: 10, fontWeight: 900 }}>PERSONALIDAD DE NAYLA</div>
-              <div style={{ fontSize: 8.5, color: '#777', marginTop: 3 }}>Estas reglas se aplican a sugerencias y respuestas automáticas.</div>
-            </div>
-            <input
-              value={policy.tone}
-              onChange={(event) => setPolicy((prev) => ({ ...prev, tone: event.target.value }))}
-              placeholder="Tono de respuesta"
-              style={{ background: '#090909', color: '#eee', border: '1px solid #272727', borderRadius: 9, padding: 8, fontSize: 9 }}
-            />
-            <textarea
-              value={policy.instructions}
-              onChange={(event) => setPolicy((prev) => ({ ...prev, instructions: event.target.value }))}
-              placeholder="Ej.: cercana, no discutir; si preguntan algo delicado, pedirme aprobación."
-              rows={4}
-              style={{ resize: 'vertical', background: '#090909', color: '#ddd', border: '1px solid #272727', borderRadius: 9, padding: 8, fontSize: 9, lineHeight: 1.45 }}
-            />
-            <button type="button" onClick={() => void savePolicy()} style={{ ...tinyButton(false), width: '100%' }}>
-              {busy === 'policy' ? 'GUARDANDO…' : 'GUARDAR PERSONALIDAD'}
-            </button>
-          </div>
-        </>
+              </div>
+            </>
+          )}
+        </div>
       )}
     </div>
   );

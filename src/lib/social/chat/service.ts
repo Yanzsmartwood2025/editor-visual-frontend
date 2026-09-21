@@ -3,6 +3,11 @@ import { generateSocialText } from '../ai/generate';
 import { ensureSocialProfile } from '../store';
 import { isUniversalNaylaConfirmation } from '../../naylaPlanConfirmation';
 import { executePendingSocialPlan, planSocialCommand } from './actions';
+import { cleanNaylaChatText } from '../../naylaText';
+import {
+  isSocialActivityReviewRequest,
+  reviewConnectedSocialActivity,
+} from '../activity/service';
 
 export const getOrCreateSocialChatThread = async ({
   userId,
@@ -187,6 +192,43 @@ export const replyInSocialChat = async ({
     return { thread, message: assistantMessage, execution };
   }
 
+  if (isSocialActivityReviewRequest(message)) {
+    const review = await reviewConnectedSocialActivity({
+      userId,
+      projectId,
+      message,
+    });
+
+    const { data: assistantMessage, error: assistantError } = await supabase
+      .from('social_nayla_messages')
+      .insert({
+        thread_id: thread.id,
+        user_id: userId,
+        project_id: projectId,
+        role: 'assistant',
+        content: review.text,
+        metadata: {
+          responseType: 'activity_review',
+          peopleCount: review.peopleCount,
+          scope: review.scope,
+          platforms: review.activity.map((item) => item.platform),
+          comments: review.activity.reduce((sum, item) => sum + item.comments, 0),
+          inboundMessages: review.activity.reduce((sum, item) => sum + item.inboundMessages, 0),
+        },
+      })
+      .select('*')
+      .single();
+
+    if (assistantError) throw assistantError;
+
+    await supabase
+      .from('social_nayla_threads')
+      .update({ updated_at: new Date().toISOString() })
+      .eq('id', thread.id);
+
+    return { thread, message: assistantMessage, activityReview: review };
+  }
+
   const planned = await planSocialCommand({
     userId,
     projectId,
@@ -241,6 +283,9 @@ export const replyInSocialChat = async ({
     'Usa únicamente el contexto suministrado; no inventes recuerdos ni unas identidades de diferentes redes por coincidencia de nombre.',
     'Cuando cites lo que sabes de una persona, diferencia hechos recordados de inferencias.',
     'Si el usuario pide una acción social ejecutable, el planificador la interceptará antes de llegar aquí. Para acciones no disponibles, explica brevemente el siguiente paso.',
+    'Si las cuentas ya están conectadas, nunca pidas al usuario URLs, IDs de videos, IDs de publicaciones ni enlaces para revisar su propia actividad. Nayla debe usar los datos conectados cuando esa capacidad exista.',
+    'No uses Markdown visible: nada de **, asteriscos, backticks, encabezados con # ni tablas.',
+    'Evita cuestionarios largos y listas rígidas. Habla de forma natural, limpia y directa.',
     'Responde en español natural salvo que el usuario pida otro idioma.',
     'Sé concreta y útil. No expongas nombres internos de proveedores.',
   ].join('\n');
@@ -260,7 +305,9 @@ export const replyInSocialChat = async ({
     'Responde al último mensaje del usuario.',
   ].join('\n');
 
-  const answer = await generateSocialText({ prompt, systemPrompt });
+  const rawAnswer = await generateSocialText({ prompt, systemPrompt });
+  const answer = cleanNaylaChatText(rawAnswer) ||
+    'Puedo ayudarte desde las cuentas conectadas. Dime qué quieres revisar o qué acción quieres preparar.';
 
   const { data: assistantMessage, error: assistantError } = await supabase
     .from('social_nayla_messages')
