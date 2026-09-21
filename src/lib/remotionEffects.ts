@@ -54,6 +54,13 @@ export const REMOTION_CPU_EFFECTS = {
     shutterAngle: { min: 0, max: 360, recommended: [90, 180] },
     samples: { min: 2, max: 8, recommended: [4, 5, 6] },
   },
+  captions: {
+    supported: true,
+    styles: ['clean', 'cinematic', 'tiktok', 'karaoke'] as const,
+    positions: ['top', 'center', 'bottom'] as const,
+    fontSize: { min: 20, max: 120 },
+    maxItemsPerRender: 300,
+  },
 };
 
 export const REMOTION_CPU_PUBLIC_CATALOG = {
@@ -65,6 +72,7 @@ export const REMOTION_CPU_PUBLIC_CATALOG = {
   overlays: REMOTION_CPU_EFFECTS.overlays,
   professionalEffects: REMOTION_CPU_EFFECTS.professionalEffects,
   motionBlur: REMOTION_CPU_EFFECTS.motionBlur,
+  captions: REMOTION_CPU_EFFECTS.captions,
   controls: [
     'duración por clip',
     'volumen',
@@ -77,5 +85,6 @@ export const REMOTION_CPU_PUBLIC_CATALOG = {
     'contraste',
     'saturación',
     'hasta 6 efectos profesionales encadenados por clip',
+    'subtítulos sincronizados con estilos clean, cinematic, tiktok y karaoke',
   ],
 };

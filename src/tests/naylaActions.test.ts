@@ -220,6 +220,67 @@ describe('Nayla action contracts', () => {
     });
   });
 
+  it('accepts professional caption plans and rejects invalid timing', () => {
+    const valid = parseNaylaAction(JSON.stringify({
+      action: 'BUILD_TIMELINE',
+      assets: [
+        {
+          type: 'foto',
+          source: 'url',
+          url: 'https://cdn.example/photo.jpg',
+          durationInSeconds: 5,
+        },
+      ],
+      subtitles: [
+        {
+          text: 'Una línea limpia',
+          start: 0,
+          end: 2.5,
+          style: 'cinematic',
+          position: 'bottom',
+          fontSize: 48,
+        },
+        {
+          text: 'Palabra activa',
+          start: 2.5,
+          end: 5,
+          style: 'karaoke',
+          position: 'center',
+        },
+      ],
+      render: true,
+    }));
+
+    expect(valid).not.toBeNull();
+    expect(valid).toMatchObject({
+      action: 'BUILD_TIMELINE',
+      subtitles: [
+        expect.objectContaining({ style: 'cinematic', position: 'bottom', fontSize: 48 }),
+        expect.objectContaining({ style: 'karaoke', position: 'center' }),
+      ],
+    });
+
+    const invalid = parseNaylaAction(JSON.stringify({
+      action: 'BUILD_TIMELINE',
+      assets: [
+        {
+          type: 'foto',
+          source: 'url',
+          url: 'https://cdn.example/photo.jpg',
+        },
+      ],
+      subtitles: [
+        {
+          text: 'Tiempo inválido',
+          start: 4,
+          end: 2,
+        },
+      ],
+    }));
+
+    expect(invalid).toBeNull();
+  });
+
   it('accepts explicit none values emitted by Nayla for simple timeline edits', () => {
     const action = parseNaylaAction(JSON.stringify({
       action: 'BUILD_TIMELINE',

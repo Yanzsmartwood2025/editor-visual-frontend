@@ -86,6 +86,16 @@ export const naylaActionSchema = z.discriminatedUnion('action', [
   z.object({
     action: z.literal('BUILD_TIMELINE'),
     assets: z.array(buildTimelineAssetSchema).min(1).max(250),
+    subtitles: z.array(z.object({
+      text: z.string().trim().min(1).max(1200),
+      start: z.number().min(0).max(7200),
+      end: z.number().min(0).max(7200),
+      style: z.enum(['clean', 'cinematic', 'tiktok', 'karaoke']).optional().default('clean'),
+      position: z.enum(['top', 'center', 'bottom']).optional().default('bottom'),
+      fontSize: z.number().min(20).max(120).optional(),
+    }).refine((item) => item.end > item.start, {
+      message: 'El final del subtítulo debe ser posterior al inicio.',
+    })).max(300).optional(),
     render: z.boolean().optional().default(false),
   }),
   z.object({

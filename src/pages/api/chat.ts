@@ -764,6 +764,16 @@ Solo una imagen. No usar para texto→3D ni multivista.
       "fadeOut": 1.2
     }
   ],
+  "subtitles": [
+    {
+      "text": "Texto del subtítulo",
+      "start": 0,
+      "end": 3.5,
+      "style": "cinematic",
+      "position": "bottom",
+      "fontSize": 46
+    }
+  ],
   "render": true
 }
 
@@ -772,6 +782,11 @@ Copia URLs exactas del proyecto. Para una orden sencilla decide tú los parámet
 Puedes encadenar hasta 6 professionalEffects por clip. Usa solo los nombres publicados en el catálogo Remotion CPU.
 motionBlur es opcional y debe reservarse para movimientos donde aporte valor; 5 muestras y 180 grados es un punto de partida equilibrado.
 Las transiciones avanzadas disponibles incluyen film-burn, blur-slide, cross-zoom, dreamy-zoom, linear-blur y push-cut.
+subtitles es opcional. Cada subtítulo usa text, start, end, style, position y fontSize.
+style puede ser clean, cinematic, tiktok o karaoke. position puede ser top, center o bottom.
+Si el usuario pide subtítulos normales y no especifica estilo, elige clean o cinematic según el tono del plan.
+Para contenido social con palabra destacada usa tiktok. Para letra o lectura palabra a palabra usa karaoke.
+Si el usuario pide quitar todos los subtítulos de un plan, usa "subtitles": [].
 Catálogo Remotion CPU:
 ${JSON.stringify(REMOTION_CPU_PUBLIC_CATALOG)}
 
