@@ -45,7 +45,7 @@ describe('Nayla Cloud executors', () => {
 
   it('can prepare a queued image job without making a paid test call in CI', async () => {
     process.env.FAL_KEY = 'fal-test-secret';
-    const fetchMock = vi.fn(async () =>
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) =>
       new Response(JSON.stringify({
         request_id: 'req_test_123',
         status_url: 'https://queue.fal.run/model/requests/req_test_123/status',

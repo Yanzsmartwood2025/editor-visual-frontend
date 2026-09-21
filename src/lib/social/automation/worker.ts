@@ -225,14 +225,24 @@ export const processDueAutomationJobs = async (limit = 20) => {
         }
       }
 
+      const respondedAt = new Date().toISOString();
       await markQueue(job.id, {
         status: 'sent',
         suggested_reply: suggested,
         provider_response: providerResponse || {},
-        executed_at: new Date().toISOString(),
+        executed_at: respondedAt,
         last_error: null,
       });
-      await supabase.from('social_interactions').update({ automation_state: 'processed' }).eq('id', job.interaction_id);
+      await supabase
+        .from('social_interactions')
+        .update({
+          automation_state: 'processed',
+          response_state: 'responded',
+          responded_at: respondedAt,
+          response_text: suggested,
+          response_source: 'automation',
+        })
+        .eq('id', job.interaction_id);
 
       await addRun(job, 'auto_reply', 'sent', {
         category: job.category,

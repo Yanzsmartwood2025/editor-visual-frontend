@@ -1,6 +1,8 @@
 import { getWorkspaceSupabaseAdmin } from '../../workspaceStore';
 import { generateSocialText } from '../ai/generate';
 import { ensureSocialProfile } from '../store';
+import { isUniversalNaylaConfirmation } from '../../naylaPlanConfirmation';
+import { executePendingSocialPlan, planSocialCommand } from './actions';
 
 export const getOrCreateSocialChatThread = async ({
   userId,
@@ -150,6 +152,77 @@ export const replyInSocialChat = async ({
     content: message,
   });
 
+  if (isUniversalNaylaConfirmation(message)) {
+    const execution = await executePendingSocialPlan({
+      userId,
+      projectId,
+      threadId: thread.id,
+    });
+
+    const { data: assistantMessage, error: assistantError } = await supabase
+      .from('social_nayla_messages')
+      .insert({
+        thread_id: thread.id,
+        user_id: userId,
+        project_id: projectId,
+        role: 'assistant',
+        content: execution.text,
+        metadata: {
+          responseType: execution.found ? 'action_result' : 'text',
+          completed: execution.found ? execution.completed : 0,
+          skipped: execution.found ? execution.skipped : 0,
+          failed: execution.found ? execution.failed : 0,
+        },
+      })
+      .select('*')
+      .single();
+
+    if (assistantError) throw assistantError;
+
+    await supabase
+      .from('social_nayla_threads')
+      .update({ updated_at: new Date().toISOString() })
+      .eq('id', thread.id);
+
+    return { thread, message: assistantMessage, execution };
+  }
+
+  const planned = await planSocialCommand({
+    userId,
+    projectId,
+    threadId: thread.id,
+    message,
+  });
+
+  if (planned) {
+    const { data: assistantMessage, error: assistantError } = await supabase
+      .from('social_nayla_messages')
+      .insert({
+        thread_id: thread.id,
+        user_id: userId,
+        project_id: projectId,
+        role: 'assistant',
+        content: planned.text,
+        metadata: {
+          responseType: planned.kind === 'plan' ? 'action_plan' : 'text',
+          planId: planned.kind === 'plan' ? planned.planId : null,
+          actionCount: planned.kind === 'plan' ? planned.count : 0,
+          requiresConfirmation: planned.kind === 'plan',
+        },
+      })
+      .select('*')
+      .single();
+
+    if (assistantError) throw assistantError;
+
+    await supabase
+      .from('social_nayla_threads')
+      .update({ updated_at: new Date().toISOString() })
+      .eq('id', thread.id);
+
+    return { thread, message: assistantMessage, plan: planned };
+  }
+
   const [{ data: history, error: historyError }, context] = await Promise.all([
     supabase
       .from('social_nayla_messages')
@@ -167,7 +240,7 @@ export const replyInSocialChat = async ({
     'No eres únicamente una vendedora. Ayudas a entender personas, comunidad, contenido, relaciones, mensajes, comentarios, oportunidades, riesgos y estrategia.',
     'Usa únicamente el contexto suministrado; no inventes recuerdos ni unas identidades de diferentes redes por coincidencia de nombre.',
     'Cuando cites lo que sabes de una persona, diferencia hechos recordados de inferencias.',
-    'Si el usuario pide una acción que todavía requiere aprobación o una capacidad no disponible, explícalo brevemente y propone el siguiente paso.',
+    'Si el usuario pide una acción social ejecutable, el planificador la interceptará antes de llegar aquí. Para acciones no disponibles, explica brevemente el siguiente paso.',
     'Responde en español natural salvo que el usuario pida otro idioma.',
     'Sé concreta y útil. No expongas nombres internos de proveedores.',
   ].join('\n');

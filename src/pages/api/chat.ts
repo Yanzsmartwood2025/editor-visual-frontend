@@ -20,7 +20,7 @@ import type { GpuWorkload } from '../../lib/gpu/profiles';
 import { createMediaJobPlan } from '../../lib/mediaJobs';
 import { createR2PresignedGetUrl } from '../../lib/r2';
 import { canStartGpuCompute, getNaylaExecutionPolicyPrompt } from '../../lib/naylaExecutionPolicy';
-import { assistantRequestsPlanConfirmation } from '../../lib/naylaPlanConfirmation';
+import { assistantRequestsPlanConfirmation, isUniversalNaylaConfirmation } from '../../lib/naylaPlanConfirmation';
 import {
   getOwnedMediaByLabelsForUser,
   getOwnedMediaForUser,
@@ -129,8 +129,8 @@ const hasExplicitPlanConfirmation = (
   if (!text) return false;
 
   return (
-    /^(si|ok|okay|dale|adelante|listo|perfecto|correcto)(\b|$)/.test(text) ||
-    /\b(hazlo|hazlo asi|procede|continua con el plan|sigue con el plan|aplica el plan|ejecuta el plan|confirmo|acepto|renderiza ahora|envialo|manda adelante|adelante con el plan)\b/.test(text)
+    isUniversalNaylaConfirmation(message) ||
+    /\b(hazlo asi|renderiza ahora)\b/.test(text)
   );
 };
 
