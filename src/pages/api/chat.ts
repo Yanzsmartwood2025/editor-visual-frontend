@@ -1179,13 +1179,21 @@ Si una petición combina pasos, elige la PRIMERA acción necesaria. El resultado
         });
 
         if (scope.threadId) {
+          const persistedExecuted = { ...(executed as Record<string, unknown>) };
+          if (
+            executed.action === 'REMOVE_VIDEO_BACKGROUND' ||
+            executed.action === 'CREATE_AUTO_CAPTIONS'
+          ) {
+            delete persistedExecuted.url;
+          }
+
           await insertChatMessageForUser({
             userId: firebaseUser.uid,
             projectId: scope.projectId,
             threadId: scope.threadId,
             role: 'assistant',
             content: typeof executed.text === 'string' ? executed.text : 'Acción preparada.',
-            action: executed as Record<string, unknown>,
+            action: persistedExecuted,
             metadata: { responseType: 'action' },
           });
         }
