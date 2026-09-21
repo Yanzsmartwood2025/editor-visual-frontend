@@ -25,6 +25,7 @@ import { zoomBlur } from '@remotion/effects/zoom-blur';
 import { vignette } from '@remotion/effects/vignette';
 import { lightLeak } from '@remotion/effects/light-leak';
 import { buildVisualTimelineMetrics, getCompositionDurationInFrames, getItemDelayInFrames, getItemDurationInFrames } from '../lib/timelineMetrics';
+import { NaylaGsapTitle, type NaylaMotionTitle } from './NaylaGsapTitle';
 
 // Interfaces based on main file
 type ProfessionalEffect = {
@@ -43,6 +44,7 @@ interface MainCompositionProps {
   canvasRatio: string;
   logos?: LogoItem[];
   subtitles?: SubtitleItem[];
+  titles?: NaylaMotionTitle[];
   settings?: {
     fadeOutFinal?: number;
   };
@@ -569,7 +571,7 @@ const DynamicSubtitle: React.FC<{ subtitle: SubtitleItem }> = ({ subtitle }) => 
   );
 };
 
-export const MainComposition: React.FC<MainCompositionProps> = ({ timeline, subtitles = [], logos = [], settings = {} }) => {
+export const MainComposition: React.FC<MainCompositionProps> = ({ timeline, subtitles = [], titles = [], logos = [], settings = {} }) => {
   const { fps } = useVideoConfig();
 
   // We filter out videos and photos to build the main visual sequence
@@ -591,7 +593,8 @@ export const MainComposition: React.FC<MainCompositionProps> = ({ timeline, subt
     timeline,
     fps,
     subtitles,
-    logos
+    logos,
+    titles
   );
 
   // Verify Audio Clips as well
@@ -745,6 +748,19 @@ export const MainComposition: React.FC<MainCompositionProps> = ({ timeline, subt
              </AbsoluteFill>
           </Sequence>
       )}
+
+      {/* GSAP Motion Titles */}
+      {titles.map((title) => {
+        const fromFrame = Math.round(Math.max(0, title.start) * fps);
+        const duration = Math.round(Math.max(0, title.end - title.start) * fps);
+        if (duration <= 0) return null;
+
+        return (
+          <Sequence key={title.id} from={fromFrame} durationInFrames={duration}>
+            <NaylaGsapTitle title={title} durationInFrames={duration} />
+          </Sequence>
+        );
+      })}
 
       {/* Subtitles Overlay */}
       {subtitles.map(sub => {

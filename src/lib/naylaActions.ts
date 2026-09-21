@@ -96,6 +96,27 @@ export const naylaActionSchema = z.discriminatedUnion('action', [
     }).refine((item) => item.end > item.start, {
       message: 'El final del subtítulo debe ser posterior al inicio.',
     })).max(300).optional(),
+    titles: z.array(z.object({
+      text: z.string().trim().min(1).max(500),
+      start: z.number().min(0).max(7200),
+      end: z.number().min(0).max(7200),
+      style: z.enum(['clean', 'cinematic', 'neon', 'minimal']).optional().default('clean'),
+      animation: z.enum([
+        'fade-up',
+        'slide-left',
+        'slide-right',
+        'pop',
+        'zoom-in',
+        'word-rise',
+        'lower-third',
+      ]).optional().default('fade-up'),
+      position: z.enum(['top', 'center', 'bottom']).optional().default('center'),
+      fontSize: z.number().min(24).max(180).optional(),
+      color: z.string().trim().min(1).max(64).optional(),
+      accentColor: z.string().trim().min(1).max(64).optional(),
+    }).refine((item) => item.end > item.start, {
+      message: 'El final del título debe ser posterior al inicio.',
+    })).max(80).optional(),
     render: z.boolean().optional().default(false),
   }),
   z.object({

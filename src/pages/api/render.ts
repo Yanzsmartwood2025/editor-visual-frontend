@@ -20,6 +20,7 @@ type ValidatedRenderProps = Record<string, unknown> & {
   timeline: any[];
   subtitles?: any[];
   logos?: any[];
+  titles?: any[];
   canvasWidth: number;
   canvasHeight: number;
 };
@@ -40,11 +41,13 @@ const validateInputProps = (inputProps: unknown): ValidatedRenderProps => {
   const fps = 30;
   const subtitles = Array.isArray(props.subtitles) ? props.subtitles : [];
   const logos = Array.isArray(props.logos) ? props.logos : [];
+  const titles = Array.isArray(props.titles) ? props.titles : [];
   const durationInFrames = getCompositionDurationInFrames(
     props.timeline as any[],
     fps,
     subtitles as any[],
-    logos as any[]
+    logos as any[],
+    titles as any[]
   );
   const durationInSeconds = durationInFrames / fps;
 
@@ -470,7 +473,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       inputProps.timeline as any[],
       30,
       Array.isArray(inputProps.subtitles) ? inputProps.subtitles as any[] : [],
-      Array.isArray(inputProps.logos) ? inputProps.logos as any[] : []
+      Array.isArray(inputProps.logos) ? inputProps.logos as any[] : [],
+      Array.isArray(inputProps.titles) ? inputProps.titles as any[] : []
     );
     const durationInSeconds = durationInFrames / 30;
 
