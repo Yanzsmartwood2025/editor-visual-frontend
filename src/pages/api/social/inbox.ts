@@ -5,6 +5,7 @@ import { ensureSocialProfile, getSocialAccountForUser, recordSocialUsage } from 
 import { listUploadPostConversations, sendUploadPostDm } from '../../../lib/social/providers/uploadPost';
 import { listZernioConversations, listZernioMessages, sendZernioMessage } from '../../../lib/social/providers/zernio';
 import { cancelPendingAutomation } from '../../../lib/social/automation/service';
+import { getWorkspaceSupabaseAdmin } from '../../../lib/workspaceStore';
 
 const sendSchema = z.object({
   projectId: z.string().uuid(),
@@ -138,6 +139,22 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           conversationId: parsed.data.conversationId,
           reason: 'El usuario respondió manualmente esta conversación.',
         });
+
+        const supabase = getWorkspaceSupabaseAdmin();
+        await supabase
+          .from('social_interactions')
+          .update({
+            response_state: 'responded',
+            responded_at: new Date().toISOString(),
+            response_text: parsed.data.message,
+            response_source: 'manual',
+            automation_state: 'processed',
+          })
+          .eq('account_id', account.id)
+          .eq('channel', 'dm')
+          .eq('direction', 'inbound')
+          .eq('provider_conversation_id', parsed.data.conversationId)
+          .in('response_state', ['unanswered', 'planned']);
       }
 
       await recordSocialUsage({
