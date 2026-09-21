@@ -238,6 +238,16 @@ export const naylaActionSchema = z.discriminatedUnion('action', [
     quality: z.enum(['medium', 'high', 'very-high']).optional().default('high'),
   }),
   z.object({
+    action: z.literal('CREATE_AUTO_CAPTIONS'),
+    label: z.string().trim().regex(/^[VA]\d+$/i),
+    url: urlSchema.optional(),
+    language: z.string().trim().min(2).max(30).optional().default('es'),
+    model: z.enum(['tiny', 'base']).optional().default('base'),
+    style: z.enum(['clean', 'cinematic', 'tiktok', 'karaoke']).optional().default('clean'),
+    position: z.enum(['top', 'center', 'bottom']).optional().default('bottom'),
+    fontSize: z.number().min(20).max(120).optional(),
+  }),
+  z.object({
     action: z.literal('SEARCH_MEDIA'),
     query: z.string().trim().min(1).max(200),
     kind: z.enum(['image', 'video', 'audio']),
@@ -383,6 +393,8 @@ export const capabilityForNaylaAction = (action: NaylaAction): MediaCapability |
     case 'BUILD_TIMELINE':
       return null;
     case 'REMOVE_VIDEO_BACKGROUND':
+      return null;
+    case 'CREATE_AUTO_CAPTIONS':
       return null;
   }
 };
