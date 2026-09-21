@@ -1,10 +1,9 @@
-import React, { useEffect, useMemo, useRef } from 'react';
+import React, { useEffect, useMemo } from 'react';
 import { AbsoluteFill, useCurrentFrame, useVideoConfig } from 'remotion';
 import { ThreeCanvas } from '@remotion/three';
-import { useFrame, useLoader } from '@react-three/fiber';
+import { useLoader } from '@react-three/fiber';
 import {
   AnimationMixer,
-  Group,
   LoopRepeat,
   MathUtils,
   type Object3D,
@@ -34,7 +33,6 @@ export type NaylaThreeScene = {
 const SceneModel: React.FC<{ scene: NaylaThreeScene }> = ({ scene }) => {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
-  const groupRef = useRef<Group>(null);
   const gltf = useLoader(GLTFLoader, scene.url);
 
   const clonedScene = useMemo(
@@ -61,54 +59,52 @@ const SceneModel: React.FC<{ scene: NaylaThreeScene }> = ({ scene }) => {
     return animations[0] || null;
   }, [gltf.animations, scene.animationName]);
 
-  useEffect(() => {
-    if (!selectedAnimation) return;
+  const animationAction = useMemo(() => {
+    if (!selectedAnimation) return null;
     const action = mixer.clipAction(selectedAnimation);
     action.setLoop(LoopRepeat, Infinity);
+    action.enabled = true;
+    action.paused = false;
     action.play();
-
-    return () => {
-      action.stop();
-      mixer.stopAllAction();
-    };
+    return action;
   }, [mixer, selectedAnimation]);
 
-  useFrame(() => {
-    const group = groupRef.current;
-    if (!group) return;
+  useEffect(() => {
+    return () => {
+      animationAction?.stop();
+      mixer.stopAllAction();
+    };
+  }, [animationAction, mixer]);
 
-    const baseRotation = scene.rotation || {};
-    const seconds = frame / fps;
-    const rotationSpeed = Number.isFinite(Number(scene.rotationSpeed))
-      ? Number(scene.rotationSpeed)
-      : 24;
-
-    group.rotation.set(
-      MathUtils.degToRad(Number(baseRotation.x) || 0),
-      MathUtils.degToRad(Number(baseRotation.y) || 0) +
-        (scene.autoRotate === false ? 0 : MathUtils.degToRad(rotationSpeed * seconds)),
-      MathUtils.degToRad(Number(baseRotation.z) || 0)
-    );
-
-    if (selectedAnimation) {
-      const clipDuration = Math.max(0.001, selectedAnimation.duration || 0.001);
-      mixer.setTime(seconds % clipDuration);
-    }
-
+  const seconds = frame / fps;
+  if (animationAction && selectedAnimation) {
+    const clipDuration = Math.max(0.001, selectedAnimation.duration || 0.001);
+    mixer.setTime(seconds % clipDuration);
     clonedScene.updateMatrixWorld(true);
-  });
+  }
 
   const scale = Math.max(0.02, Math.min(30, Number(scene.modelScale) || 1));
   const position = scene.position || {};
+  const baseRotation = scene.rotation || {};
+  const rotationSpeed = Number.isFinite(Number(scene.rotationSpeed))
+    ? Number(scene.rotationSpeed)
+    : 24;
+  const rotationY =
+    MathUtils.degToRad(Number(baseRotation.y) || 0) +
+    (scene.autoRotate === false ? 0 : MathUtils.degToRad(rotationSpeed * seconds));
 
   return (
     <group
-      ref={groupRef}
       scale={[scale, scale, scale]}
       position={[
         Number(position.x) || 0,
         Number(position.y) || 0,
         Number(position.z) || 0,
+      ]}
+      rotation={[
+        MathUtils.degToRad(Number(baseRotation.x) || 0),
+        rotationY,
+        MathUtils.degToRad(Number(baseRotation.z) || 0),
       ]}
     >
       <primitive object={clonedScene} />
