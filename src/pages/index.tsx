@@ -4646,10 +4646,15 @@ if (!session) {
             open={projectMenuOpen}
             projects={projects}
             activeProjectId={activeProjectId}
+            threads={chatThreads}
+            activeThreadId={activeThreadId}
             assets={chatChannelAssets}
             attachedIds={chatAttachmentIds}
             uploadingKind={channelUploadingKind}
             onSelectProject={(projectId) => void seleccionarProyectoDesdeChat(projectId)}
+            onSelectThread={(threadId) => void seleccionarChatDesdeHistorial(threadId)}
+            onRenameThread={(threadId, title) => void renombrarChat(threadId, title)}
+            onRenameProject={(projectId, name) => void renombrarProyecto(projectId, name)}
             onNewChat={() => void crearNuevoChat()}
             onNewProject={() => void crearNuevoProyecto()}
             onUpload={(kind, files) => void subirArchivosDesdeCanal(kind, files)}
