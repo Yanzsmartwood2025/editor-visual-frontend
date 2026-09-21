@@ -906,7 +906,7 @@ Si el usuario pide quitar todas las animaciones vectoriales, usa "vectorAnimatio
 skiaGraphics es opcional para gráficos avanzados generados directamente por el motor Skia, sin archivo externo.
 Presets: glow-orb para un orbe luminoso, rings para anillos, energy-pulse para pulsos de energía y spotlights para focos luminosos en movimiento.
 Cada gráfico usa preset, start, end, x, y, scale, opacity, color, accentColor, intensity y speed.
-Usa Skia cuando el usuario pida brillo gráfico, orbes, anillos, pulsos, luces abstractas, máscaras o composición gráfica avanzada; no lo confundas con partículas procedurales simples.
+Usa Skia cuando el usuario pida brillo gráfico, orbes, anillos, pulsos, luces abstractas o composición gráfica avanzada; no prometas máscaras arbitrarias todavía y no lo confundas con partículas procedurales simples.
 assets puede ser [] si threeScenes, vectorAnimations o skiaGraphics contienen al menos un elemento válido.
 Si el usuario pide quitar los gráficos Skia, usa "skiaGraphics": [] acompañado por otro contenido válido.
 Catálogo Remotion CPU:
