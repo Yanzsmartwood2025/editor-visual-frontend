@@ -104,7 +104,7 @@ export const publishZernioVideo = async ({
         platform: getSocialNetwork(platform)?.zernio || platform,
         accountId,
         ...(platform === 'youtube'
-          ? { platformSpecificData: { youtube: { title: (title || 'Nayla').slice(0, 100), description: caption || '' } } }
+          ? { platformSpecificData: { title: (title || 'Nayla').slice(0, 100), visibility: 'public' } }
           : {}),
       })),
       publishNow: true,
