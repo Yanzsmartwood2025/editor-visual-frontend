@@ -110,7 +110,7 @@ const hasPriorNaylaPlan = (
     .some((item) => {
       if (item.role !== 'assistant') return false;
       const text = normalizePlanningText(item.content);
-      return /\b(plan|te recomiendo|propongo|podemos usar|podemos combinar|mi recomendacion|si te parece|cuando me confirmes|si quieres lo preparo|quedaria asi)\b/.test(text);
+      return /\b(plan|te recomiendo|propongo|podemos usar|podemos combinar|mi recomendacion|te parece|si te parece|cuando confirmes|cuando me confirmes|si quieres lo preparo|quedaria asi|generare la timeline|generare el video)\b/.test(text);
     });
 
 const hasExplicitPlanConfirmation = (
