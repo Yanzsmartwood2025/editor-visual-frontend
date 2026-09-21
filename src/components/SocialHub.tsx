@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import type { FirebaseSession } from '../lib/firebaseClient';
 import { firebaseHeaders } from '../lib/apiClient';
-import { SOCIAL_NETWORKS, type SocialPlatform } from '../lib/social/types';
+import { SOCIAL_NETWORKS } from '../lib/social/types';
 
 type ResultMedia = {
   id: string;
