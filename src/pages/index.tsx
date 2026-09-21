@@ -49,7 +49,22 @@ type TimelineProfessionalEffect = {
   seed?: number;
 };
 type TimelineItem = { id: string; mediaId: string; tipo: 'foto' | 'video' | 'audio'; nombre: string; etiqueta: string; url: string; durationInSeconds?: number; originalDurationInSeconds?: number; volume?: number; fadeIn?: number; fadeOut?: number; scale?: number; delay?: number; startFrom?: number; trimBefore?: number; trimAfter?: number; loop?: boolean; playbackRate?: number; transitionDuration?: number; transitionType?: 'fade' | 'none' | 'wipe' | 'slide' | 'zoom' | 'film-burn' | 'blur-slide' | 'cross-zoom' | 'dreamy-zoom' | 'linear-blur' | 'push-cut'; efecto?: string; brightness?: number; contrast?: number; saturation?: number; overlay?: string; overlayIntensity?: number; professionalEffects?: TimelineProfessionalEffect[]; motionBlur?: { shutterAngle?: number; samples?: number }; metadata?: MediaMetadata; };
-type SubtitleItem = { id: string; texto: string; inicioSec: number; finSec: number; };
+type SubtitleWord = { text: string; startSec: number; endSec: number };
+type SubtitleItem = {
+  id: string;
+  texto: string;
+  inicioSec: number;
+  finSec: number;
+  style?: 'clean' | 'cinematic' | 'tiktok' | 'karaoke' | 'minimal';
+  position?: 'top' | 'center' | 'bottom';
+  fontSize?: number;
+  color?: string;
+  activeColor?: string;
+  backgroundColor?: string;
+  uppercase?: boolean;
+  maxWidth?: number;
+  words?: SubtitleWord[];
+};
 type LogoItem = { id: string; url: string; x: number; y: number; scale: number; opacity: number; inicioSec?: number; finSec?: number; fadeIn?: number; fadeOut?: number; };
 type ExpandedSurface = 'tools' | 'chat' | null;
 type NaylaProjectDialog =
@@ -1269,7 +1284,8 @@ export default function NaylaCore() {
     timeline: TimelineItem[],
     qualityOverride?: string,
     ratioOverride?: string,
-    scopeOverride?: { projectId?: string | null; threadId?: string | null }
+    scopeOverride?: { projectId?: string | null; threadId?: string | null },
+    subtitlesOverride?: SubtitleItem[]
   ) => {
     const renderProjectId = scopeOverride?.projectId ?? activeProjectId;
     const renderThreadId = scopeOverride?.threadId ?? activeThreadId;
@@ -1280,7 +1296,8 @@ export default function NaylaCore() {
     const exportQuality = qualityOverride || calidadExportacion;
     const renderRatio = ratioOverride || canvasRatio;
     const canvas = getCanvasDimensionsFromRatio(renderRatio, exportQuality);
-    const durationInFrames = getCompositionDurationInFrames(lineaValidada, 30, subtitulos, logos);
+    const renderSubtitles = subtitlesOverride ?? subtitulos;
+    const durationInFrames = getCompositionDurationInFrames(lineaValidada, 30, renderSubtitles, logos);
     const requestId = createRenderRequestId();
 
     if (!renderThreadId || activeThreadIdRef.current === renderThreadId) {
@@ -1297,7 +1314,7 @@ export default function NaylaCore() {
 
     const inputProps = {
       timeline: lineaValidada,
-      subtitles: subtitulos,
+      subtitles: renderSubtitles,
       logos: logos,
       canvasRatio: renderRatio,
       canvasWidth: canvas.width,
@@ -1561,6 +1578,51 @@ export default function NaylaCore() {
       setRects([]);
     }
 
+    const plannedSubtitles: SubtitleItem[] = Array.isArray(actionData.subtitles)
+      ? actionData.subtitles
+          .map((sub: any, index: number) => {
+            const inicioSec = Number(sub.startSec);
+            const finSec = Number(sub.endSec);
+            if (!Number.isFinite(inicioSec) || !Number.isFinite(finSec) || finSec <= inicioSec) return null;
+
+            return {
+              id: `nayla-subtitle-${Date.now()}-${index}`,
+              texto: String(sub.text || '').trim(),
+              inicioSec,
+              finSec,
+              style: sub.style,
+              position: sub.position,
+              fontSize: Number.isFinite(Number(sub.fontSize)) ? Number(sub.fontSize) : undefined,
+              color: typeof sub.color === 'string' ? sub.color : undefined,
+              activeColor: typeof sub.activeColor === 'string' ? sub.activeColor : undefined,
+              backgroundColor: typeof sub.backgroundColor === 'string' ? sub.backgroundColor : undefined,
+              uppercase: typeof sub.uppercase === 'boolean' ? sub.uppercase : undefined,
+              maxWidth: Number.isFinite(Number(sub.maxWidth)) ? Number(sub.maxWidth) : undefined,
+              words: Array.isArray(sub.words)
+                ? sub.words
+                    .map((word: any) => ({
+                      text: String(word.text || '').trim(),
+                      startSec: Number(word.startSec),
+                      endSec: Number(word.endSec),
+                    }))
+                    .filter((word: SubtitleWord) =>
+                      Boolean(word.text) &&
+                      Number.isFinite(word.startSec) &&
+                      Number.isFinite(word.endSec) &&
+                      word.endSec > word.startSec
+                    )
+                : undefined,
+            } as SubtitleItem;
+          })
+          .filter((sub: SubtitleItem | null): sub is SubtitleItem => Boolean(sub?.texto))
+      : [];
+
+    if (stillInOriginChat) {
+      if (plannedSubtitles.length) setSubtitulos(plannedSubtitles);
+      else if (Array.isArray(actionData.subtitles)) setSubtitulos([]);
+    }
+
+    const renderSubtitles = Array.isArray(actionData.subtitles) ? plannedSubtitles : undefined;
     const primerVisual = timelineValidado.find(item => item.tipo === 'video' || item.tipo === 'foto');
     const formatoDetectado = primerVisual?.metadata?.aspectRatioLabel;
 
@@ -1569,7 +1631,7 @@ export default function NaylaCore() {
     }
 
     if (actionData.render === true) {
-      await solicitarRenderTimeline(timelineValidado, undefined, formatoDetectado, scopeOverride);
+      await solicitarRenderTimeline(timelineValidado, undefined, formatoDetectado, scopeOverride, renderSubtitles);
     } else {
       showAlert('Nayla armó el timeline con los medios existentes.');
     }
