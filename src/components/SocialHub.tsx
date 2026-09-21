@@ -100,6 +100,9 @@ export default function SocialHub({ session, projectId, results }: Props) {
   const [analytics, setAnalytics] = useState<any>(null);
   const [inboxAccount, setInboxAccount] = useState('');
   const [conversations, setConversations] = useState<any[]>([]);
+  const [inboxConversation, setInboxConversation] = useState<any>(null);
+  const [inboxMessages, setInboxMessages] = useState<any[]>([]);
+  const [messageDraft, setMessageDraft] = useState('');
   const [policy, setPolicy] = useState({ mode: 'suggest', tone: 'amable, cercano y profesional', language: 'auto', instructions: '' });
 
   const api = async (path: string, init: RequestInit = {}) => {
@@ -277,6 +280,9 @@ export default function SocialHub({ session, projectId, results }: Props) {
   const fetchInbox = async (accountId: string) => {
     if (!projectId) return;
     setInboxAccount(accountId);
+    setInboxConversation(null);
+    setInboxMessages([]);
+    setMessageDraft('');
     setBusy('inbox');
     try {
       const payload = await api(`/api/social/inbox?projectId=${encodeURIComponent(projectId)}&accountId=${encodeURIComponent(accountId)}`);
@@ -284,6 +290,78 @@ export default function SocialHub({ session, projectId, results }: Props) {
       if (payload.notice) setNotice(payload.notice);
     } catch (error) {
       setNotice(error instanceof Error ? error.message : 'No se pudo abrir el Inbox.');
+    } finally {
+      setBusy('');
+    }
+  };
+
+  const openInboxConversation = async (conversation: any) => {
+    if (!projectId || !inboxAccount) return;
+    const conversationId = String(conversation?.id || conversation?._id || '');
+    if (!conversationId) return;
+    setInboxConversation(conversation);
+    setBusy('messages');
+    try {
+      const payload = await api(
+        `/api/social/inbox?projectId=${encodeURIComponent(projectId)}&accountId=${encodeURIComponent(inboxAccount)}&conversationId=${encodeURIComponent(conversationId)}`
+      );
+      setInboxMessages(payload.messages || conversation.messages || []);
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : 'No se pudo abrir la conversación.');
+    } finally {
+      setBusy('');
+    }
+  };
+
+  const sendInboxMessage = async () => {
+    if (!projectId || !inboxAccount || !inboxConversation || !messageDraft.trim()) return;
+    const conversationId = String(inboxConversation?.id || inboxConversation?._id || '');
+    const recipientId = String(inboxConversation?.participantId || inboxConversation?.participant?.id || '');
+    const text = messageDraft.trim();
+    setBusy('send-message');
+    try {
+      await api('/api/social/inbox', {
+        method: 'POST',
+        body: JSON.stringify({
+          projectId,
+          accountId: inboxAccount,
+          conversationId: conversationId || undefined,
+          recipientId: recipientId || undefined,
+          message: text,
+        }),
+      });
+      setInboxMessages((prev) => [
+        ...prev,
+        { id: `local-${Date.now()}`, message: text, text, direction: 'outbound', createdTime: new Date().toISOString() },
+      ]);
+      setMessageDraft('');
+      setNotice('Mensaje enviado.');
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : 'No se pudo enviar el mensaje.');
+    } finally {
+      setBusy('');
+    }
+  };
+
+  const suggestReply = async (comment: any, commentId: string, author: string) => {
+    if (!projectId || !commentTarget) return;
+    const target = recentTargets.find((item: any) => item.id === commentTarget);
+    const commentText = String(comment.message || comment.text || comment.content || '').trim();
+    if (!commentText) return;
+    setBusy('suggest-' + commentId);
+    try {
+      const payload = await api('/api/social/suggest', {
+        method: 'POST',
+        body: JSON.stringify({
+          projectId,
+          platform: target?.platform || 'social',
+          authorName: author,
+          commentText,
+        }),
+      });
+      setReplying((prev) => ({ ...prev, [commentId]: payload.suggestion || '' }));
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : 'Nayla no pudo sugerir una respuesta.');
     } finally {
       setBusy('');
     }
