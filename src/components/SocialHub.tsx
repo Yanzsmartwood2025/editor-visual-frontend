@@ -439,14 +439,49 @@ export default function SocialHub({ session, projectId, results, onClose }: Prop
     }
   };
 
-  const fetchComments = async (targetId: string) => {
-    if (!projectId) return;
-    setBusy('comments');
+  const fetchCommentMedia = async (accountId: string) => {
+    if (!projectId || !accountId) return;
+    setCommentAccount(accountId);
+    setCommentTarget('');
+    setCommentSource(null);
+    setLiveComments([]);
+    setBusy('comment-media');
     try {
-      const payload = await api(`/api/social/comments?projectId=${encodeURIComponent(projectId)}&targetId=${encodeURIComponent(targetId)}`);
-      setCommentTarget(targetId);
+      const payload = await api(`/api/social/media?projectId=${encodeURIComponent(projectId)}&accountId=${encodeURIComponent(accountId)}`);
+      setCommentMedia(payload.media || []);
+      if (payload.notice) setNotice(payload.notice);
+    } catch (error) {
+      setCommentMedia([]);
+      setNotice(error instanceof Error ? error.message : 'No se pudieron traer las publicaciones de esta cuenta.');
+    } finally {
+      setBusy('');
+    }
+  };
+
+  const fetchComments = async (mediaId: string) => {
+    if (!projectId || !commentAccount || !mediaId) return;
+    const media = commentMedia.find((item: any) => String(item.id) === String(mediaId));
+    if (!media) return;
+
+    setBusy('comments');
+    setCommentTarget(String(media.id));
+    setCommentSource({
+      accountId: commentAccount,
+      postId: String(media.id),
+      postUrl: media.permalink || null,
+      platform: accounts.find((account: any) => account.id === commentAccount)?.platform || 'social',
+    });
+    try {
+      const params = new URLSearchParams({
+        projectId,
+        accountId: commentAccount,
+        postId: String(media.id),
+      });
+      if (media.permalink) params.set('postUrl', String(media.permalink));
+      const payload = await api('/api/social/comments?' + params.toString());
       setLiveComments(payload.comments || []);
     } catch (error) {
+      setLiveComments([]);
       setNotice(error instanceof Error ? error.message : 'No se pudieron traer comentarios.');
     } finally {
       setBusy('');
@@ -454,7 +489,7 @@ export default function SocialHub({ session, projectId, results, onClose }: Prop
   };
 
   const sendReply = async (comment: any) => {
-    if (!projectId || !commentTarget) return;
+    if (!projectId || !commentSource?.accountId || !commentSource?.postId) return;
     const commentId = String(comment.id || comment.comment_id || comment.commentId || '');
     const message = replying[commentId]?.trim();
     if (!message) return;
@@ -462,7 +497,14 @@ export default function SocialHub({ session, projectId, results, onClose }: Prop
     try {
       await api('/api/social/comments', {
         method: 'POST',
-        body: JSON.stringify({ projectId, targetId: commentTarget, commentId, message }),
+        body: JSON.stringify({
+          projectId,
+          accountId: commentSource.accountId,
+          postId: commentSource.postId,
+          postUrl: commentSource.postUrl || undefined,
+          commentId,
+          message,
+        }),
       });
       setReplying((prev) => ({ ...prev, [commentId]: '' }));
       setNotice('Respuesta publicada.');
@@ -490,6 +532,7 @@ export default function SocialHub({ session, projectId, results, onClose }: Prop
   const fetchInbox = async (accountId: string) => {
     if (!projectId) return;
     setInboxAccount(accountId);
+    setInboxNotice('');
     setInboxConversation(null);
     setInboxMessages([]);
     setMessageDraft('');
@@ -497,7 +540,7 @@ export default function SocialHub({ session, projectId, results, onClose }: Prop
     try {
       const payload = await api(`/api/social/inbox?projectId=${encodeURIComponent(projectId)}&accountId=${encodeURIComponent(accountId)}`);
       setConversations(payload.conversations || []);
-      if (payload.notice) setNotice(payload.notice);
+      setInboxNotice(payload.notice || '');
     } catch (error) {
       setNotice(error instanceof Error ? error.message : 'No se pudo abrir el Inbox.');
     } finally {
@@ -554,8 +597,7 @@ export default function SocialHub({ session, projectId, results, onClose }: Prop
   };
 
   const suggestReply = async (comment: any, commentId: string, author: string) => {
-    if (!projectId || !commentTarget) return;
-    const target = recentTargets.find((item: any) => item.id === commentTarget);
+    if (!projectId || !commentSource) return;
     const commentText = String(comment.message || comment.text || comment.content || '').trim();
     if (!commentText) return;
     setBusy('suggest-' + commentId);
@@ -564,7 +606,7 @@ export default function SocialHub({ session, projectId, results, onClose }: Prop
         method: 'POST',
         body: JSON.stringify({
           projectId,
-          platform: target?.platform || 'social',
+          platform: commentSource.platform || 'social',
           authorName: author,
           commentText,
         }),
