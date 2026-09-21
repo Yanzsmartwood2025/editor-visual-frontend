@@ -4553,6 +4553,7 @@ if (!session) {
                         setMainNav(tool.id);
                         setIsSubPanelOpen(true);
                         setSubTool(SUB_TOOLS[tool.id]?.[0]?.id || null);
+                        setToolMessage(null);
                       }
                     }}
                   >
@@ -4929,6 +4930,30 @@ if (!session) {
                         </button>
                       </div>
                     )}
+                  </div>
+                ) : mainNav === 'redes' ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 14, padding: '10px 4px' }}>
+                    <div style={{ fontSize: '0.78rem', fontWeight: 850, letterSpacing: '0.8px', color: '#fff' }}>
+                      REDES SOCIALES
+                    </div>
+                    <div style={{ fontSize: '0.72rem', lineHeight: 1.6, color: '#a3a3a3' }}>
+                      Módulo reservado para publicar los resultados de Nayla directamente en redes sociales después de generar un video.
+                    </div>
+                    <div style={{ border: '1px solid #2a2a2a', borderRadius: 12, padding: 12, background: '#080808', color: '#777', fontSize: '0.68rem' }}>
+                      Próximamente: cuentas conectadas, selección de R1/R2, título, descripción y publicación.
+                    </div>
+                  </div>
+                ) : mainNav === 'play' ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 14, padding: '10px 4px' }}>
+                    <div style={{ fontSize: '0.78rem', fontWeight: 850, letterSpacing: '0.8px', color: '#fff' }}>
+                      NAYLA PLAY
+                    </div>
+                    <div style={{ fontSize: '0.72rem', lineHeight: 1.6, color: '#a3a3a3' }}>
+                      Módulo reservado para sesiones de videojuegos por GPU bajo demanda. Permanece separado del editor y de los renders normales.
+                    </div>
+                    <div style={{ border: '1px solid #2a2a2a', borderRadius: 12, padding: 12, background: '#080808', color: '#777', fontSize: '0.68rem' }}>
+                      Próximamente: biblioteca del usuario, cotización de GPU, sesión de juego y cierre automático.
+                    </div>
                   </div>
                 ) : (
                   /* GALERÍA DE MEDIOS (BÓVEDA / BUSCAR) */
