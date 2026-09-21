@@ -346,6 +346,60 @@ describe('Nayla action contracts', () => {
     expect(invalid).toBeNull();
   });
 
+  it('accepts real GLB scenes by stable M labels and supports 3D-only renders', () => {
+    const action = parseNaylaAction(JSON.stringify({
+      action: 'BUILD_TIMELINE',
+      assets: [],
+      threeScenes: [
+        {
+          label: 'M1',
+          start: 0,
+          end: 8,
+          modelScale: 1.2,
+          autoRotate: true,
+          rotationSpeed: 30,
+          cameraDistance: 5.5,
+          cameraFov: 40,
+          lighting: 'dramatic',
+          backgroundColor: '#000000',
+        },
+      ],
+      render: true,
+    }));
+
+    expect(action).not.toBeNull();
+    expect(action).toMatchObject({
+      action: 'BUILD_TIMELINE',
+      assets: [],
+      threeScenes: [
+        expect.objectContaining({
+          label: 'M1',
+          lighting: 'dramatic',
+          autoRotate: true,
+        }),
+      ],
+    });
+
+    expect(parseNaylaAction(JSON.stringify({
+      action: 'BUILD_TIMELINE',
+      assets: [],
+      threeScenes: [],
+      render: true,
+    }))).toBeNull();
+
+    expect(parseNaylaAction(JSON.stringify({
+      action: 'BUILD_TIMELINE',
+      assets: [],
+      threeScenes: [
+        {
+          label: 'F1',
+          start: 0,
+          end: 4,
+        },
+      ],
+    }))).toBeNull();
+  });
+
   it('accepts explicit none values emitted by Nayla for simple timeline edits', () => {
     const action = parseNaylaAction(JSON.stringify({
       action: 'BUILD_TIMELINE',
