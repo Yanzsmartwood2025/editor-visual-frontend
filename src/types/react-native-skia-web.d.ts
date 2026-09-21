@@ -1,7 +1,7 @@
 declare module 'react-native' {
   import type * as React from 'react';
   export type NodeHandle = number;
-  export type ViewComponent = React.ComponentType<ViewProps>;
+  export const ViewComponent: React.ComponentType<ViewProps>;
   export type LayoutChangeEvent = {
     nativeEvent: {
       layout: { x: number; y: number; width: number; height: number };
