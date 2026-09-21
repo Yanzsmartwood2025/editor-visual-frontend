@@ -488,6 +488,98 @@ export default function NaylaCore() {
       return Boolean(renderActive || actionActive);
     });
 
+  const activeRenderPollKey = chatMessages
+    .map((message) => {
+      const task = message.renderTask;
+      if (!task?.requestId || ['completed', 'failed', 'cancelled'].includes(task.status)) return '';
+      return task.requestId + ':' + task.status;
+    })
+    .filter(Boolean)
+    .join('|');
+
+  useEffect(() => {
+    const requestIds = Array.from(new Set(
+      chatMessages
+        .map((message) => message.renderTask)
+        .filter((task): task is NonNullable<NaylaChatMessage['renderTask']> =>
+          Boolean(task?.requestId) && !['completed', 'failed', 'cancelled'].includes(task!.status)
+        )
+        .map((task) => task.requestId!)
+    ));
+
+    if (!requestIds.length || !session || !activeThreadId) return;
+
+    let cancelled = false;
+    let running = false;
+
+    const refresh = async () => {
+      if (cancelled || running) return;
+      running = true;
+      try {
+        const currentSession = session || await getFirebaseSession();
+        if (!currentSession) return;
+
+        for (const requestId of requestIds) {
+          const response = await fetch('/api/render?id=' + encodeURIComponent(requestId), {
+            headers: firebaseHeaders(currentSession),
+            cache: 'no-store',
+          });
+          if (!response.ok) continue;
+          const payload = await response.json().catch(() => ({}));
+          if (cancelled || activeThreadIdRef.current !== activeThreadId) return;
+
+          const usage = payload?.usage || {};
+          const serverStatus = String(payload?.status || 'started');
+          const stage = String(usage.stage || 'preparing');
+          const status: NonNullable<NaylaChatMessage['renderTask']>['status'] =
+            serverStatus === 'completed'
+              ? 'completed'
+              : serverStatus === 'failed'
+                ? 'failed'
+                : serverStatus === 'cancelled'
+                  ? 'cancelled'
+                  : stage === 'saving'
+                    ? 'saving'
+                    : stage === 'rendering'
+                      ? 'rendering'
+                      : 'preparing';
+
+          const galleryItem = payload?.galleryItem as MediaItem | undefined;
+          if (galleryItem) {
+            setGaleriaMultimedia((prev) =>
+              prev.some((item) => item.id === galleryItem.id)
+                ? prev
+                : [...prev, galleryItem]
+            );
+          }
+
+          updateRenderTask(requestId, {
+            requestId,
+            status,
+            phase: String(usage.phase || (status === 'completed' ? 'Resultado listo' : 'Procesando')),
+            progress: status === 'completed'
+              ? 1
+              : Math.max(0, Math.min(1, Number(usage.progress) || 0)),
+            framesDone: Number.isFinite(Number(usage.framesDone)) ? Number(usage.framesDone) : undefined,
+            framesTotal: Number.isFinite(Number(usage.framesTotal)) ? Number(usage.framesTotal) : undefined,
+            outputUrl: galleryItem?.url || undefined,
+            galleryItem: galleryItem || undefined,
+            error: payload?.error || null,
+          });
+        }
+      } finally {
+        running = false;
+      }
+    };
+
+    void refresh();
+    const timer = window.setInterval(refresh, 1000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [activeRenderPollKey, session, activeThreadId]);
+
   const cancelRenderTask = async (task: NonNullable<NaylaChatMessage['renderTask']>) => {
     if (!task.requestId || ['completed', 'failed', 'cancelled'].includes(task.status)) return;
 
