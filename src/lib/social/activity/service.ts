@@ -532,23 +532,45 @@ const formatActivity = (activity: AccountActivity[], scope: ReviewScope) => {
 
   for (const item of activity) {
     const details: string[] = [];
-    if (scope.comments) details.push(`${item.comments} comentario${item.comments === 1 ? '' : 's'} visible${item.comments === 1 ? '' : 's'}`);
+    if (scope.comments) details.push(`${item.comments} comentario${item.comments === 1 ? '' : 's'} reciente${item.comments === 1 ? '' : 's'}`);
     if (scope.messages) details.push(`${item.inboundMessages} mensaje${item.inboundMessages === 1 ? '' : 's'} entrante${item.inboundMessages === 1 ? '' : 's'}`);
     if (scope.metrics && item.metrics.length) {
-      details.push(item.metrics.slice(0, 3).map((metric) => `${metric.label}: ${metric.value}`).join(' · '));
+      details.push(item.metrics.slice(0, 4).map((metric) => `${metric.label}: ${metric.value}`).join(' · '));
     }
 
     lines.push('');
     lines.push(item.label);
     lines.push(details.length ? details.join(' · ') : 'Sin actividad compatible visible en esta conexión.');
+
+    if (scope.comments && item.commentSamples.length) {
+      lines.push('Comentarios recientes:');
+      for (const sample of item.commentSamples.slice(0, 12)) {
+        lines.push(`${sample.author}: ${sample.text}`);
+      }
+      if (item.comments > 12) lines.push(`Y ${item.comments - 12} comentarios más guardados en Nayla.`);
+    }
+
+    if (scope.messages && item.messageSamples.length) {
+      lines.push('Mensajes recientes:');
+      for (const sample of item.messageSamples.slice(0, 10)) {
+        lines.push(`${sample.author}: ${sample.text}`);
+      }
+      if (item.inboundMessages > 10) lines.push(`Y ${item.inboundMessages - 10} mensajes más guardados en Nayla.`);
+    }
+
     for (const note of item.notes.slice(0, 2)) lines.push(note);
   }
 
   lines.push('');
-  if (scope.comments || scope.messages) {
+  if (scope.comments && scope.messages) {
     lines.push(`Total encontrado: ${totalComments} comentarios y ${totalInbound} mensajes entrantes.`);
+  } else if (scope.comments) {
+    lines.push(`Total encontrado: ${totalComments} comentarios recientes disponibles.`);
+  } else if (scope.messages) {
+    lines.push(`Total encontrado: ${totalInbound} mensajes entrantes disponibles.`);
   }
-  lines.push('Ya guardé la actividad nueva para que Nayla pueda reconocer a las personas y trabajar con esos comentarios o mensajes.');
+
+  lines.push('La actividad encontrada quedó guardada para que puedas pedirme respuestas o preguntar por una persona después.');
 
   return cleanNaylaChatText(lines.join('\n'));
 };
