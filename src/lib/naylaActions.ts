@@ -158,6 +158,21 @@ export const naylaActionSchema = z.discriminatedUnion('action', [
     }).refine((item) => item.end > item.start, {
       message: 'El final del título debe ser posterior al inicio.',
     })).max(80).optional(),
+    skiaGraphics: z.array(z.object({
+      preset: z.enum(['glow-orb', 'rings', 'energy-pulse', 'spotlights']),
+      start: z.number().min(0).max(7200),
+      end: z.number().min(0).max(7200),
+      x: z.number().min(-50).max(50).optional().default(0),
+      y: z.number().min(-50).max(50).optional().default(0),
+      scale: z.number().min(0.05).max(4).optional().default(1),
+      opacity: z.number().min(0).max(1).optional().default(1),
+      color: z.string().trim().min(1).max(64).optional().default('#ffffff'),
+      accentColor: z.string().trim().min(1).max(64).optional().default('#7dd3fc'),
+      intensity: z.number().min(0).max(1).optional().default(0.6),
+      speed: z.number().min(0.1).max(4).optional().default(1),
+    }).refine((item) => item.end > item.start, {
+      message: 'El final del gráfico Skia debe ser posterior al inicio.',
+    })).max(40).optional(),
     vectorAnimations: z.array(z.object({
       kind: z.enum(['lottie', 'rive']),
       url: urlSchema,
@@ -302,7 +317,8 @@ export const parseNaylaAction = (raw: string): NaylaAction | null => {
       parsed.data.action === 'BUILD_TIMELINE' &&
       parsed.data.assets.length === 0 &&
       (!parsed.data.threeScenes || parsed.data.threeScenes.length === 0) &&
-      (!parsed.data.vectorAnimations || parsed.data.vectorAnimations.length === 0)
+      (!parsed.data.vectorAnimations || parsed.data.vectorAnimations.length === 0) &&
+      (!parsed.data.skiaGraphics || parsed.data.skiaGraphics.length === 0)
     ) {
       return null;
     }
