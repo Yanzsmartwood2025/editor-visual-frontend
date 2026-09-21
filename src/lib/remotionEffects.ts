@@ -69,6 +69,24 @@ export const REMOTION_CPU_EFFECTS = {
     fontSize: { min: 24, max: 180 },
     maxItemsPerRender: 80,
   },
+  three: {
+    supported: true,
+    input: 'GLB',
+    labels: 'M1, M2, ...',
+    lighting: ['studio', 'soft', 'dramatic'] as const,
+    controls: [
+      'scale',
+      'position x/y/z',
+      'rotation x/y/z',
+      'auto rotation',
+      'rotation speed',
+      'camera distance',
+      'camera field of view',
+      'GLB animation name',
+      'background color',
+    ] as const,
+    maxScenesPerRender: 24,
+  },
 };
 
 export const REMOTION_CPU_PUBLIC_CATALOG = {
@@ -82,6 +100,7 @@ export const REMOTION_CPU_PUBLIC_CATALOG = {
   motionBlur: REMOTION_CPU_EFFECTS.motionBlur,
   captions: REMOTION_CPU_EFFECTS.captions,
   motionTitles: REMOTION_CPU_EFFECTS.motionTitles,
+  three: REMOTION_CPU_EFFECTS.three,
   controls: [
     'duración por clip',
     'volumen',
@@ -96,5 +115,6 @@ export const REMOTION_CPU_PUBLIC_CATALOG = {
     'hasta 6 efectos profesionales encadenados por clip',
     'subtítulos sincronizados con estilos clean, cinematic, tiktok y karaoke',
     'títulos y lower thirds animados por frame con GSAP',
+    'escenas GLB 3D reales con cámara, luces, rotación y animación interna',
   ],
 };
