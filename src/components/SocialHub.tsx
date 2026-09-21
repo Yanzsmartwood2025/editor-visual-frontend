@@ -140,7 +140,7 @@ export default function SocialHub({ session, projectId, results }: Props) {
 
   useEffect(() => {
     void load(false);
-  }, [projectId, session?.uid]);
+  }, [projectId, session?.user?.id]);
 
   useEffect(() => {
     if (typeof window === 'undefined' || !projectId || !session) return;
@@ -159,7 +159,7 @@ export default function SocialHub({ session, projectId, results }: Props) {
       window.history.replaceState({}, '', window.location.pathname + (query ? '?' + query : '') + window.location.hash);
       setNotice('Cuenta conectada. Nayla ya puede verla.');
     })();
-  }, [projectId, session?.uid]);
+  }, [projectId, session?.user?.id]);
 
   const accounts = data?.accounts || [];
   const connectedPlatforms = useMemo(() => new Set(accounts.filter((a: any) => a.status === 'connected').map((a: any) => a.platform)), [accounts]);
