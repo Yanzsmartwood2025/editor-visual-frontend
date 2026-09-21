@@ -20,6 +20,7 @@ import type { GpuWorkload } from '../../lib/gpu/profiles';
 import { createMediaJobPlan } from '../../lib/mediaJobs';
 import { createR2PresignedGetUrl } from '../../lib/r2';
 import { canStartGpuCompute, getNaylaExecutionPolicyPrompt } from '../../lib/naylaExecutionPolicy';
+import { assistantRequestsPlanConfirmation } from '../../lib/naylaPlanConfirmation';
 import {
   getOwnedMediaByLabelsForUser,
   getOwnedMediaForUser,
@@ -112,7 +113,10 @@ const hasPriorNaylaPlan = (
     .some((item) => {
       if (item.role !== 'assistant') return false;
       const text = normalizePlanningText(item.content);
-      return /\b(plan|te recomiendo|propongo|podemos usar|podemos combinar|mi recomendacion|te parece|si te parece|cuando confirmes|cuando me confirmes|si quieres lo preparo|quedaria asi|generare la timeline|generare el video)\b/.test(text);
+      return (
+        /\b(plan|te recomiendo|propongo|podemos usar|podemos combinar|mi recomendacion|te parece|si te parece|cuando confirmes|cuando me confirmes|si quieres lo preparo|quedaria asi|generare la timeline|generare el video)\b/.test(text) ||
+        assistantRequestsPlanConfirmation(item.content)
+      );
     });
 
 const hasExplicitPlanConfirmation = (
@@ -159,7 +163,10 @@ const findLastAssistantPlan = (
     .find((item) => {
       if (item.role !== 'assistant') return false;
       const text = normalizePlanningText(item.content);
-      return /\b(plan|te recomiendo|propongo|quedaria|cuando confirmes|cuando me confirmes|si te parece|generare la timeline|generare el video)\b/.test(text);
+      return (
+        /\b(plan|te recomiendo|propongo|quedaria|cuando confirmes|cuando me confirmes|si te parece|generare la timeline|generare el video)\b/.test(text) ||
+        assistantRequestsPlanConfirmation(item.content)
+      );
     })?.content || '';
 
 const actionNeedsConsultativeApproval = (action: NaylaAction) =>
