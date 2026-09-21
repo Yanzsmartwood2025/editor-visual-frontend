@@ -1,6 +1,7 @@
 // @ts-nocheck
 /* eslint-disable */
 import React, { useState, useEffect, useRef } from 'react';
+import { cleanNaylaChatText } from '../lib/naylaText';
 import Head from 'next/head';
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
 import { arrayMove, SortableContext, horizontalListSortingStrategy } from '@dnd-kit/sortable';
@@ -111,7 +112,7 @@ const ICONOS_POS: Record<string, string> = { derecha: '→', izquierda: '←', a
 
 
 
-const SelectableChatText: React.FC<{ text: string }> = ({ text }) => (
+const SelectableChatText: React.FC<{ text: string; clean?: boolean }> = ({ text, clean = false }) => (
   <div
     data-no-edge-swipe
     style={{
@@ -127,7 +128,7 @@ const SelectableChatText: React.FC<{ text: string }> = ({ text }) => (
       lineHeight: 1.55,
     }}
   >
-    {text}
+    {clean ? cleanNaylaChatText(text) : text}
   </div>
 );
 
@@ -4937,7 +4938,7 @@ if (!session) {
                   fontSize: '0.95rem',
                   lineHeight: '1.55'
                 }}>
-                  {msg.text ? <SelectableChatText text={msg.text} /> : null}
+                  {msg.text ? <SelectableChatText text={msg.text} clean={msg.role === 'ai'} /> : null}
                   {msg.attachments?.length ? (
                     <div style={{
                       display: 'grid',
