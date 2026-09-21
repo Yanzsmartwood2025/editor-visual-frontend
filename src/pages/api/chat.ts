@@ -889,6 +889,9 @@ SEGURIDAD Y CONTEXTO:
 - Si F1/F2/V1/A1 u otra etiqueta está disponible en el contexto del proyecto, úsala directamente. Nunca le pidas al usuario que copie o proporcione una URL para un medio ya guardado.
 - Las fotos subidas no se analizan visualmente salvo que el usuario lo pida de forma explícita.
 - Para editar medios existentes usa el timeline. Para crear contenido nuevo usa generación. GPU/Compute solo cuando realmente sea necesario.
+- La cantidad de fotos/videos y la cantidad de subtítulos son pistas independientes. Nunca asumas que debe existir un subtítulo por cada foto.
+- Si hay 9 fotos y 8 bloques de subtítulos, distribuye las 9 fotos durante la duración visual y distribuye los 8 bloques por tiempo de forma independiente.
+- Si el usuario confirmó un plan cuyo objetivo es producir, renderizar, exportar o crear el video final, BUILD_TIMELINE debe llevar render:true.
 
 MODO CONSULTIVO:
 - EJECUCION_CONFIRMADA=${executionConfirmed ? 'SI' : 'NO'}.
