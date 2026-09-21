@@ -1018,23 +1018,53 @@ Si una petición combina pasos, elige la PRIMERA acción necesaria. El resultado
     const visionImages = visionCandidateUrls.slice(0, 3);
     const visionWasTruncated = visionCandidateUrls.length > visionImages.length;
 
+    const recentPromptHistory = effectiveHistory.slice(-8);
+    const labelReferenceText = [
+      message,
+      ...recentPromptHistory
+        .filter((item) => item.role === 'user')
+        .map((item) => item.content),
+    ].join('\n');
+    const referencedLabels = new Set(getOrderedMediaLabels(labelReferenceText));
+    const promptMediaItems = referencedLabels.size
+      ? mergedLibrary.filter((item: any) =>
+          typeof item.etiqueta === 'string' &&
+          referencedLabels.has(item.etiqueta.trim().toUpperCase())
+        )
+      : attachments.length
+        ? attachments
+        : mergedLibrary
+            .filter((item: any) => typeof item.etiqueta === 'string' && item.etiqueta.trim())
+            .slice(0, 12);
+    const availablePromptLabels = new Set(
+      promptMediaItems
+        .map((item: any) => typeof item.etiqueta === 'string' ? item.etiqueta.trim().toUpperCase() : '')
+        .filter(Boolean)
+    );
+    const missingReferencedLabels = Array.from(referencedLabels)
+      .filter((label) => !availablePromptLabels.has(label));
+
+    const promptMediaSummary = promptMediaItems.length
+      ? promptMediaItems.map((item: any, index: number) => {
+          const label = typeof item.etiqueta === 'string' && item.etiqueta.trim()
+            ? item.etiqueta.trim().toUpperCase()
+            : `item-${index + 1}`;
+          const base = `${label}: tipo=${item.tipo}; nombre=${item.nombre || ''}`;
+          return executionConfirmed ? `${base}; url=${item.url}` : base;
+        }).join('\n')
+      : 'ninguno';
+
     const executionContext = [
       `Proyecto activo: ${scope.projectId}.`,
       scope.threadId ? `Chat activo: ${scope.threadId}.` : 'Chat persistente: todavía no seleccionado.',
-      attachments.length
-        ? `Adjuntos privados del mensaje:\n${attachments.map((item, index) =>
-            `${index + 1}. id=${item.id}; tipo=${item.tipo}; url=${item.url}; nombre=${item.nombre || ''}; etiqueta=${item.etiqueta || ''}`
-          ).join('\n')}`
-        : 'Adjuntos privados del mensaje: ninguno.',
-      mergedLibrary.length
-        ? `Medios disponibles en el proyecto:\n${mergedLibrary.map((item, index) =>
-            `${index + 1}. tipo=${item.tipo}; url=${item.url}; nombre=${item.nombre || ''}; etiqueta=${item.etiqueta || ''}; fuente=${item.fuente || ''}`
-          ).join('\n')}`
-        : 'Medios disponibles: ninguno.',
+      `Medios relevantes para este turno:\n${promptMediaSummary}`,
+      missingReferencedLabels.length
+        ? `Etiquetas solicitadas que no existen o no están disponibles: ${missingReferencedLabels.join(', ')}. No inventes sustitutos.`
+        : 'No hay etiquetas solicitadas ausentes.',
       currentTimeline?.length
-        ? `Timeline actual:\n${currentTimeline.map((item, index) =>
-            `${index + 1}. tipo=${item.tipo}; url=${item.url}; nombre=${item.nombre || ''}; etiqueta=${item.etiqueta || ''}`
-          ).join('\n')}`
+        ? `Timeline actual: ${currentTimeline.slice(0, 20).map((item) =>
+            `${item.etiqueta || '?'}:${item.tipo}`
+          ).join(', ')}`
         : 'Timeline actual: vacío.',
       visualIntent
         ? (
@@ -1042,11 +1072,13 @@ Si una petición combina pasos, elige la PRIMERA acción necesaria. El resultado
               ? `Visión solicitada explícitamente: se cargaron ${visionImages.length} foto(s) para análisis visual.${visionWasTruncated ? ' Hay más fotos referenciadas que el límite visual actual; no afirmes haber inspeccionado las que no fueron cargadas.' : ''}`
               : 'Visión solicitada explícitamente, pero no se encontró una foto válida con esa referencia. No inventes contenido visual.'
           )
-        : 'Visión NO solicitada. No inspecciones píxeles ni describas el contenido de fotos. Para editar, ordenar, cortar o renderizar usa únicamente etiquetas, URLs, tipos y las instrucciones del usuario.',
+        : 'Visión NO solicitada. No describas el contenido visual de las fotos; usa etiquetas y metadatos.',
     ].join('\n\n');
 
-    const historyText = effectiveHistory.length
-      ? effectiveHistory.map((msg) => `${msg.role}: ${msg.content}`).join('\n')
+    const historyText = recentPromptHistory.length
+      ? recentPromptHistory
+          .map((msg) => `${msg.role}: ${msg.content.slice(0, 2500)}`)
+          .join('\n')
       : '';
 
     const fullPrompt = [
@@ -1055,13 +1087,72 @@ Si una petición combina pasos, elige la PRIMERA acción necesaria. El resultado
       `Usuario: ${message}`,
     ].filter(Boolean).join('\n\n');
 
+    const compactSystemPrompt = `
+Eres Nayla, una editora multimedia consultiva. Entiende lenguaje cotidiano y recomienda soluciones usando solo capacidades reales del editor.
+
+SEGURIDAD Y CONTEXTO:
+- Nunca muestres secretos, API keys, proveedores externos, infraestructura interna ni URLs que no vengan del contexto.
+- F1/F2... son fotos; V1/V2... videos; A1/A2... audios; M1/M2... modelos 3D.
+- Nunca sustituyas una etiqueta inexistente por otro archivo. Si falta una etiqueta, dilo y no emitas una acción inventada.
+- Las fotos subidas no se analizan visualmente salvo que el usuario lo pida de forma explícita.
+- Para editar medios existentes usa el timeline. Para crear contenido nuevo usa generación. GPU/Compute solo cuando realmente sea necesario.
+
+MODO CONSULTIVO:
+- EJECUCION_CONFIRMADA=${executionConfirmed ? 'SI' : 'NO'}.
+- Si es NO, conversa primero: explica un plan breve, concreto y natural. No emitas JSON ejecutable.
+- Si es SI, el usuario está confirmando un plan previo. Responde únicamente con un JSON válido de una acción.
+- No digas que algo está procesando, renderizando o guardándose hasta que el servidor lo confirme.
+- Si la petición es vaga, tradúcela tú a controles apropiados y recomienda 1 a 4 recursos útiles.
+- Usa texto limpio: sin Markdown visible, sin asteriscos, backticks, tablas ni nombres técnicos internos innecesarios.
+
+CAPACIDADES RELEVANTES PARA ESTE TURNO:
+${JSON.stringify(intentMatches.map((item) => ({
+  id: item.id,
+  label: item.label,
+  description: item.description,
+  status: item.status,
+  usefulFor: item.usefulFor,
+})))}
+
+ACCIONES:
+1. BUILD_TIMELINE para editar fotos, videos o audio existentes.
+Formato mínimo:
+{"action":"BUILD_TIMELINE","assets":[{"type":"foto","source":"url","url":"URL_EXACTA","durationInSeconds":3}],"render":true}
+Cada asset puede usar efecto, transitionType, transitionDuration, fadeIn, fadeOut, overlay, overlayIntensity, professionalEffects, motionBlur, gsapMotion y proceduralMotion.
+Efectos suaves recomendados para fotos: ken-burns o cinematic. Transiciones suaves: fade. Transiciones avanzadas disponibles: film-burn, blur-slide, cross-zoom, dreamy-zoom, linear-blur y push-cut.
+Overlays comunes: vignette. professionalEffects puede incluir color-correction y glow con intensidad moderada.
+También puedes usar subtitles, titles, skiaGraphics, vectorAnimations y threeScenes si el plan confirmado realmente los requiere.
+Para M1/M2 usa threeScenes y la etiqueta exacta; para una foto que solo debe parecer 3D usa profundidad/parallax, no una escena GLB.
+
+2. REMOVE_VIDEO_BACKGROUND:
+{"action":"REMOVE_VIDEO_BACKGROUND","label":"V1","model":"modnet","keepAudio":true,"quality":"high"}
+
+3. CREATE_AUTO_CAPTIONS:
+{"action":"CREATE_AUTO_CAPTIONS","label":"V1","language":"es","model":"base","style":"tiktok","position":"bottom","fontSize":48}
+
+4. SEARCH_MEDIA:
+{"action":"SEARCH_MEDIA","query":"descripción","kind":"image","limit":6}
+
+5. Generación nueva:
+{"action":"GENERATE_IMAGE","prompt":"descripción"}
+{"action":"GENERATE_VIDEO","prompt":"descripción"}
+{"action":"GENERATE_AUDIO","mode":"tts","text":"texto"}
+{"action":"GENERATE_3D","mode":"image_to_3d","inputUrl":"URL_EXACTA"}
+
+6. RUN_GPU_JOB solo para trabajo pesado que lo requiera:
+{"action":"RUN_GPU_JOB","workload":"video","jobType":"proceso","inputUrls":["URL_EXACTA"]}
+
+Para acciones con medios existentes usa únicamente las URLs exactas incluidas en el contexto del turno.
+MODO_MOTOR=${engineMode}
+`;
+
     let responseText = '';
     try {
       responseText = await executeDirectLlm({
         provider,
         prompt: fullPrompt,
         images: visionImages,
-        systemPrompt,
+        systemPrompt: compactSystemPrompt,
       });
     } catch (error: any) {
       console.error('[chat.ts] Todos los motores IA de Nayla fallaron:', error);
