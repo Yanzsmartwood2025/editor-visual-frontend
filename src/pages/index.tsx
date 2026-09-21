@@ -4193,6 +4193,7 @@ if (!session) {
             )}
 
             {videoResultadoUrl ? (
+              <>
               <button
                 type="button"
                 onClick={(e) => {
@@ -4260,6 +4261,7 @@ if (!session) {
               >
                 EDITAR
               </button>
+              </>
             ) : (
             <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
               <SortableContext items={pistaVideo.map(c => c.id)} strategy={horizontalListSortingStrategy}>
@@ -4273,6 +4275,8 @@ if (!session) {
                       setClipSeleccionado(clip.id);
                       setMediaActivaUrl(clip.url);
                       setVideoResultadoUrl(null);
+                      setVideoResultadoNombre(null);
+                      setVideoResultadoEtiqueta(null);
                       if (playerRef.current) {
                         let frameCount = 0;
                         for (let i = 0; i < lineaDeTiempo.length; i++) {
@@ -4290,6 +4294,7 @@ if (!session) {
             )}
           </div>
 
+          {!videoResultadoUrl && (
           <div style={{ display: 'flex', alignItems: 'center', height: '22px', overflowX: 'auto', padding: '0 50%', gap: '2px', marginTop: '4px' }} onClick={(e) => e.stopPropagation()}>
             {pistaAudio.map((clip) => (
               <div key={clip.id} onClick={() => setClipSeleccionado(clip.id)} className="audio-block neon-btn" style={{ borderColor: clipSeleccionado === clip.id ? '#fff' : '#404040' }}>
@@ -4298,6 +4303,7 @@ if (!session) {
               </div>
             ))}
           </div>
+          )}
         </div>
 
       </div>
