@@ -951,9 +951,17 @@ MODO_MOTOR=${engineMode}
     const fallbackExecutionContext = executionConfirmed
       ? [priorUserPlanInstruction, priorAssistantPlan, message].filter(Boolean).join('\n\n')
       : message;
+    const confirmedTimelineContext = executionConfirmed
+      ? [userPlanningContext, priorAssistantPlan, message].filter(Boolean).join('\n\n')
+      : message;
+    const subtitleBlocks = extractSubtitleBlocks(userPlanningContext);
+    const requestedTimelineSeconds = getRequestedTimelineSeconds(userPlanningContext);
+    const confirmedTimelineShouldRender =
+      executionConfirmed && timelinePlanRequestsRender(confirmedTimelineContext);
+
     const deterministicConfirmedAction =
       executionConfirmed && isBarePlanConfirmation(message)
-        ? buildLabelTimelineFallback(fallbackExecutionContext, mergedLibrary)
+        ? buildLabelTimelineFallback(confirmedTimelineContext, mergedLibrary)
         : null;
 
     let responseText = '';
@@ -1002,15 +1010,40 @@ MODO_MOTOR=${engineMode}
     };
 
     const action = parsedAction?.action === 'BUILD_TIMELINE'
-      ? {
-          ...parsedAction,
-          assets: parsedAction.assets.map((asset: any) => ({
+      ? (() => {
+          let assets = parsedAction.assets.map((asset: any) => ({
             ...asset,
             url: asset?.source === 'url' && typeof asset?.url === 'string'
               ? canonicalizeUrl(asset.url)
               : asset?.url,
-          })),
-        } as NaylaAction
+          }));
+
+          const photoOnly = assets.length > 0 && assets.every((asset: any) => asset.type === 'foto' || asset.type === 'image');
+          if (photoOnly && requestedTimelineSeconds && requestedTimelineSeconds > 0) {
+            const perPhoto = requestedTimelineSeconds / assets.length;
+            assets = assets.map((asset: any) => ({
+              ...asset,
+              durationInSeconds: perPhoto,
+            }));
+          }
+
+          const existingDuration = assets.reduce(
+            (sum: number, asset: any) => sum + Math.max(0, Number(asset.durationInSeconds) || 0),
+            0
+          );
+          const subtitleDuration =
+            requestedTimelineSeconds ||
+            (existingDuration > 0 ? existingDuration : Math.max(1, assets.length * 5));
+
+          return {
+            ...parsedAction,
+            assets,
+            render: Boolean(parsedAction.render || confirmedTimelineShouldRender),
+            ...(subtitleBlocks.length
+              ? { subtitles: buildEvenSubtitleTiming(subtitleBlocks, subtitleDuration) }
+              : {}),
+          } as NaylaAction;
+        })()
       : parsedAction?.action === 'REMOVE_VIDEO_BACKGROUND'
         ? (() => {
             const label = parsedAction.label.trim().toUpperCase();
