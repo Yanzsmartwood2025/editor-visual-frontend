@@ -20,10 +20,15 @@ type Props = {
   open: boolean;
   projects: NaylaProject[];
   activeProjectId: string | null;
+  threads: Array<{ id: string; title?: string; status?: string }>;
+  activeThreadId: string | null;
   assets: NaylaChannelAsset[];
   attachedIds: string[];
   uploadingKind?: NaylaChannelKind | null;
   onSelectProject: (projectId: string) => void;
+  onSelectThread: (threadId: string) => void;
+  onRenameThread: (threadId: string, title: string) => void;
+  onRenameProject: (projectId: string, name: string) => void;
   onNewChat: () => void;
   onNewProject: () => void;
   onUpload: (kind: NaylaChannelKind, files: FileList) => void;
@@ -82,6 +87,12 @@ const TrashIcon = () => (
     <path d="M4 7h16M9 7V4h6v3M7 7l1 14h8l1-14"/>
   </svg>
 );
+const EditIcon = () => (
+  <svg style={{ width: 18, height: 18 }} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+    <path d="M4 20h4l11-11-4-4L4 16z"/>
+    <path d="m13.5 6.5 4 4"/>
+  </svg>
+);
 const Chevron = ({ up = false }: { up?: boolean }) => (
   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
     <path d={up ? 'm18 15-6-6-6 6' : 'm9 18 6-6-6-6'}/>
@@ -105,10 +116,15 @@ export function NaylaProjectMenu({
   open,
   projects,
   activeProjectId,
+  threads,
+  activeThreadId,
   assets,
   attachedIds,
   uploadingKind,
   onSelectProject,
+  onSelectThread,
+  onRenameThread,
+  onRenameProject,
   onNewChat,
   onNewProject,
   onUpload,
@@ -118,6 +134,10 @@ export function NaylaProjectMenu({
 }: Props) {
   const [showProjects, setShowProjects] = useState(false);
   const [expandedChannel, setExpandedChannel] = useState<NaylaChannelKind | null>(null);
+  const [editingThreadId, setEditingThreadId] = useState<string | null>(null);
+  const [threadDraft, setThreadDraft] = useState('');
+  const [editingProject, setEditingProject] = useState(false);
+  const [projectDraft, setProjectDraft] = useState('');
   const photoRef = useRef<HTMLInputElement>(null);
   const videoRef = useRef<HTMLInputElement>(null);
   const audioRef = useRef<HTMLInputElement>(null);
@@ -132,6 +152,7 @@ export function NaylaProjectMenu({
 
   const activeProject = projects.find((project) => project.id === activeProjectId) || null;
   const activeProjects = projects.filter((project) => project.status !== 'archived');
+  const activeThreads = threads.filter((thread) => thread.status !== 'archived');
 
   const byChannel = useMemo(() => {
     const result: Record<NaylaChannelKind, NaylaChannelAsset[]> = {
@@ -227,6 +248,116 @@ export function NaylaProjectMenu({
         <button type="button" onClick={onNewChat} style={{ ...rowStyle, background: '#1b1b1b', borderColor: '#4a4a4a' }}>
           <ChatIcon /><span style={{ flex: 1 }}>Nuevo chat</span>
         </button>
+
+        <div style={{ padding: '4px 2px 0' }}>
+          <div style={{ color: '#f2f2f2', fontSize: 11, letterSpacing: '0.16em', fontWeight: 700, marginBottom: 7 }}>
+            HISTORIAL
+          </div>
+          <div style={{ display: 'grid', gap: 6 }}>
+            {activeThreads.map((thread) => {
+              const editing = editingThreadId === thread.id;
+              const active = thread.id === activeThreadId;
+
+              if (editing) {
+                return (
+                  <div key={thread.id} style={{ display: 'grid', gridTemplateColumns: '1fr auto auto', gap: 6, alignItems: 'center' }}>
+                    <input
+                      value={threadDraft}
+                      autoFocus
+                      onChange={(event) => setThreadDraft(event.target.value)}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter' && threadDraft.trim()) {
+                          onRenameThread(thread.id, threadDraft.trim());
+                          setEditingThreadId(null);
+                        }
+                        if (event.key === 'Escape') setEditingThreadId(null);
+                      }}
+                      style={{
+                        minWidth: 0,
+                        height: 36,
+                        borderRadius: 9,
+                        border: '1px solid #555',
+                        background: '#111',
+                        color: '#fff',
+                        padding: '0 10px',
+                        outline: 'none',
+                        fontSize: 13,
+                      }}
+                    />
+                    <button
+                      type="button"
+                      disabled={!threadDraft.trim()}
+                      onClick={() => {
+                        if (!threadDraft.trim()) return;
+                        onRenameThread(thread.id, threadDraft.trim());
+                        setEditingThreadId(null);
+                      }}
+                      style={{ border: '1px solid #555', borderRadius: 8, background: '#f1f1f1', color: '#050505', height: 36, padding: '0 9px', fontWeight: 750, cursor: 'pointer' }}
+                    >
+                      OK
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setEditingThreadId(null)}
+                      style={{ border: '1px solid #333', borderRadius: 8, background: '#0b0b0b', color: '#aaa', height: 36, padding: '0 9px', cursor: 'pointer' }}
+                    >
+                      ×
+                    </button>
+                  </div>
+                );
+              }
+
+              return (
+                <div key={thread.id} style={{ display: 'grid', gridTemplateColumns: '1fr 36px', gap: 6 }}>
+                  <button
+                    type="button"
+                    onClick={() => onSelectThread(thread.id)}
+                    style={{
+                      ...rowStyle,
+                      minWidth: 0,
+                      padding: '9px 10px',
+                      background: active ? '#202020' : '#0a0a0a',
+                      borderColor: active ? '#666' : '#252525',
+                    }}
+                  >
+                    <ChatIcon />
+                    <span style={{ minWidth: 0, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 13 }}>
+                      {thread.title || 'Nuevo chat'}
+                    </span>
+                    {active && <span style={{ color: '#aaa', fontSize: 10 }}>ACTUAL</span>}
+                  </button>
+                  <button
+                    type="button"
+                    aria-label="Renombrar chat"
+                    onClick={() => {
+                      setEditingThreadId(thread.id);
+                      setThreadDraft(thread.title || 'Nuevo chat');
+                    }}
+                    style={{
+                      width: 36,
+                      height: 36,
+                      alignSelf: 'center',
+                      borderRadius: 9,
+                      border: '1px solid #2d2d2d',
+                      background: '#0b0b0b',
+                      color: '#aaa',
+                      display: 'grid',
+                      placeItems: 'center',
+                      cursor: 'pointer',
+                      padding: 0,
+                    }}
+                  >
+                    <EditIcon />
+                  </button>
+                </div>
+              );
+            })}
+            {!activeThreads.length && (
+              <div style={{ color: '#666', fontSize: 12, padding: '8px 4px' }}>Todavía no hay conversaciones.</div>
+            )}
+          </div>
+        </div>
+
         <button type="button" onClick={onNewProject} style={{ ...rowStyle, border: 'none', background: 'transparent' }}>
           <FolderIcon /><span style={{ flex: 1 }}>Nuevo proyecto</span>
         </button>
@@ -369,6 +500,50 @@ export function NaylaProjectMenu({
       <div style={{ borderTop: '1px solid #303030', marginTop: 12, paddingTop: 12 }}>
         <div style={{ color: '#f2f2f2', fontSize: 12, letterSpacing: '0.18em', fontWeight: 700 }}>GESTIÓN DEL PROYECTO</div>
         <div style={{ display: 'grid', gap: 6, marginTop: 8 }}>
+          {editingProject ? (
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr auto auto', gap: 6, alignItems: 'center' }}>
+              <input
+                value={projectDraft}
+                autoFocus
+                onChange={(event) => setProjectDraft(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' && activeProject && projectDraft.trim()) {
+                    onRenameProject(activeProject.id, projectDraft.trim());
+                    setEditingProject(false);
+                  }
+                  if (event.key === 'Escape') setEditingProject(false);
+                }}
+                style={{ minWidth: 0, height: 38, borderRadius: 9, border: '1px solid #555', background: '#111', color: '#fff', padding: '0 10px', outline: 'none' }}
+              />
+              <button
+                type="button"
+                disabled={!projectDraft.trim()}
+                onClick={() => {
+                  if (!activeProject || !projectDraft.trim()) return;
+                  onRenameProject(activeProject.id, projectDraft.trim());
+                  setEditingProject(false);
+                }}
+                style={{ border: '1px solid #555', borderRadius: 8, background: '#f1f1f1', color: '#050505', height: 38, padding: '0 10px', fontWeight: 750, cursor: 'pointer' }}
+              >
+                OK
+              </button>
+              <button type="button" onClick={() => setEditingProject(false)} style={{ border: '1px solid #333', borderRadius: 8, background: '#0b0b0b', color: '#aaa', height: 38, padding: '0 10px', cursor: 'pointer' }}>×</button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              disabled={!activeProject}
+              onClick={() => {
+                if (!activeProject) return;
+                setProjectDraft(activeProject.name || 'Proyecto');
+                setEditingProject(true);
+              }}
+              style={{ ...rowStyle, border: 'none', background: 'transparent', opacity: activeProject ? 1 : 0.45 }}
+            >
+              <EditIcon /><span style={{ flex: 1 }}>Renombrar proyecto</span>
+            </button>
+          )}
+
           <button type="button" onClick={onViewProject} style={{ ...rowStyle, border: 'none', background: 'transparent' }}>
             <ListIcon /><span style={{ flex: 1 }}>Ver proyecto actual</span><Chevron />
           </button>

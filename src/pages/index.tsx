@@ -380,9 +380,14 @@ export default function NaylaCore() {
   const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
   const [chatThreads, setChatThreads] = useState<any[]>([]);
   const [activeThreadId, setActiveThreadId] = useState<string | null>(null);
+  const activeThreadIdRef = useRef<string | null>(null);
   const [projectMenuOpen, setProjectMenuOpen] = useState(false);
   const [chatAttachmentIds, setChatAttachmentIds] = useState<string[]>([]);
   const [channelUploadingKind, setChannelUploadingKind] = useState<NaylaChannelKind | null>(null);
+
+  useEffect(() => {
+    activeThreadIdRef.current = activeThreadId;
+  }, [activeThreadId]);
 
   useEffect(() => {
     const textarea = chatInputRef.current;
@@ -418,6 +423,8 @@ export default function NaylaCore() {
       }
 
       if (targetIndex === -1) {
+        if (requestId) return prev;
+
         return [
           ...prev,
           {
@@ -480,6 +487,98 @@ export default function NaylaCore() {
       );
       return Boolean(renderActive || actionActive);
     });
+
+  const activeRenderPollKey = chatMessages
+    .map((message) => {
+      const task = message.renderTask;
+      if (!task?.requestId || ['completed', 'failed', 'cancelled'].includes(task.status)) return '';
+      return task.requestId + ':' + task.status;
+    })
+    .filter(Boolean)
+    .join('|');
+
+  useEffect(() => {
+    const requestIds = Array.from(new Set(
+      chatMessages
+        .map((message) => message.renderTask)
+        .filter((task): task is NonNullable<NaylaChatMessage['renderTask']> =>
+          Boolean(task?.requestId) && !['completed', 'failed', 'cancelled'].includes(task!.status)
+        )
+        .map((task) => task.requestId!)
+    ));
+
+    if (!requestIds.length || !session || !activeThreadId) return;
+
+    let cancelled = false;
+    let running = false;
+
+    const refresh = async () => {
+      if (cancelled || running) return;
+      running = true;
+      try {
+        const currentSession = session || await getFirebaseSession();
+        if (!currentSession) return;
+
+        for (const requestId of requestIds) {
+          const response = await fetch('/api/render?id=' + encodeURIComponent(requestId), {
+            headers: firebaseHeaders(currentSession),
+            cache: 'no-store',
+          });
+          if (!response.ok) continue;
+          const payload = await response.json().catch(() => ({}));
+          if (cancelled || activeThreadIdRef.current !== activeThreadId) return;
+
+          const usage = payload?.usage || {};
+          const serverStatus = String(payload?.status || 'started');
+          const stage = String(usage.stage || 'preparing');
+          const status: NonNullable<NaylaChatMessage['renderTask']>['status'] =
+            serverStatus === 'completed'
+              ? 'completed'
+              : serverStatus === 'failed'
+                ? 'failed'
+                : serverStatus === 'cancelled'
+                  ? 'cancelled'
+                  : stage === 'saving'
+                    ? 'saving'
+                    : stage === 'rendering'
+                      ? 'rendering'
+                      : 'preparing';
+
+          const galleryItem = payload?.galleryItem as MediaItem | undefined;
+          if (galleryItem) {
+            setGaleriaMultimedia((prev) =>
+              prev.some((item) => item.id === galleryItem.id)
+                ? prev
+                : [...prev, galleryItem]
+            );
+          }
+
+          updateRenderTask(requestId, {
+            requestId,
+            status,
+            phase: String(usage.phase || (status === 'completed' ? 'Resultado listo' : 'Procesando')),
+            progress: status === 'completed'
+              ? 1
+              : Math.max(0, Math.min(1, Number(usage.progress) || 0)),
+            framesDone: Number.isFinite(Number(usage.framesDone)) ? Number(usage.framesDone) : undefined,
+            framesTotal: Number.isFinite(Number(usage.framesTotal)) ? Number(usage.framesTotal) : undefined,
+            outputUrl: galleryItem?.url || undefined,
+            galleryItem: galleryItem || undefined,
+            error: payload?.error || null,
+          });
+        }
+      } finally {
+        running = false;
+      }
+    };
+
+    void refresh();
+    const timer = window.setInterval(refresh, 1000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [activeRenderPollKey, session, activeThreadId]);
 
   const cancelRenderTask = async (task: NonNullable<NaylaChatMessage['renderTask']>) => {
     if (!task.requestId || ['completed', 'failed', 'cancelled'].includes(task.status)) return;
@@ -1092,7 +1191,14 @@ export default function NaylaCore() {
     return lineaValidada;
   };
 
-  const solicitarRenderTimeline = async (timeline: TimelineItem[], qualityOverride?: string, ratioOverride?: string) => {
+  const solicitarRenderTimeline = async (
+    timeline: TimelineItem[],
+    qualityOverride?: string,
+    ratioOverride?: string,
+    scopeOverride?: { projectId?: string | null; threadId?: string | null }
+  ) => {
+    const renderProjectId = scopeOverride?.projectId ?? activeProjectId;
+    const renderThreadId = scopeOverride?.threadId ?? activeThreadId;
     const currentSession = session || await getFirebaseSession();
     if (!currentSession) throw new Error('Debes iniciar sesión para renderizar.');
 
@@ -1103,15 +1209,17 @@ export default function NaylaCore() {
     const durationInFrames = getCompositionDurationInFrames(lineaValidada, 30, subtitulos, logos);
     const requestId = createRenderRequestId();
 
-    updateRenderTask(undefined, {
-      requestId,
-      status: 'preparing',
-      phase: 'Preparando edición',
-      progress: 0.01,
-      framesDone: 0,
-      framesTotal: durationInFrames,
-      error: null,
-    });
+    if (!renderThreadId || activeThreadIdRef.current === renderThreadId) {
+      updateRenderTask(undefined, {
+        requestId,
+        status: 'preparing',
+        phase: 'Preparando edición',
+        progress: 0.01,
+        framesDone: 0,
+        framesTotal: durationInFrames,
+        error: null,
+      });
+    }
 
     const inputProps = {
       timeline: lineaValidada,
@@ -1147,13 +1255,17 @@ export default function NaylaCore() {
                 : 'preparing';
 
       const galleryItem = payload?.galleryItem as MediaItem | undefined;
-      if (galleryItem) {
+      const stillInOriginChat = !renderThreadId || activeThreadIdRef.current === renderThreadId;
+
+      if (galleryItem && stillInOriginChat) {
         setGaleriaMultimedia((prev) =>
           prev.some((item) => item.id === galleryItem.id)
             ? prev
             : [...prev, galleryItem]
         );
       }
+
+      if (!stillInOriginChat) return;
 
       updateRenderTask(requestId, {
         requestId,
@@ -1197,8 +1309,8 @@ export default function NaylaCore() {
         body: JSON.stringify({
           requestId,
           inputProps,
-          projectId: activeProjectId || undefined,
-          threadId: activeThreadId || undefined,
+          projectId: renderProjectId || undefined,
+          threadId: renderThreadId || undefined,
         })
       });
 
@@ -1231,29 +1343,32 @@ export default function NaylaCore() {
 
       if (data.status === 'completed' && data.output?.url) {
         const outputUrl = data.output.url as string;
-        setVideoResultadoUrl(outputUrl);
-
         const renderItem = data.galleryItem as MediaItem | undefined;
-        setVideoResultadoNombre(renderItem?.nombre || 'Nayla_Render.mp4');
-        setVideoResultadoEtiqueta(renderItem?.etiqueta || 'R');
-        if (renderItem) {
-          setGaleriaMultimedia(prev =>
-            prev.some(item => item.id === renderItem.id)
-              ? prev
-              : [...prev, renderItem]
-          );
-        }
+        const stillInOriginChat = !renderThreadId || activeThreadIdRef.current === renderThreadId;
 
-        updateRenderTask(requestId, {
-          status: 'completed',
-          phase: 'Resultado listo',
-          progress: 1,
-          framesDone: durationInFrames,
-          framesTotal: durationInFrames,
-          outputUrl,
-          galleryItem: renderItem || null,
-          error: null,
-        });
+        if (stillInOriginChat) {
+          setVideoResultadoUrl(outputUrl);
+          setVideoResultadoNombre(renderItem?.nombre || 'Nayla_Render.mp4');
+          setVideoResultadoEtiqueta(renderItem?.etiqueta || 'R');
+          if (renderItem) {
+            setGaleriaMultimedia(prev =>
+              prev.some(item => item.id === renderItem.id)
+                ? prev
+                : [...prev, renderItem]
+            );
+          }
+
+          updateRenderTask(requestId, {
+            status: 'completed',
+            phase: 'Resultado listo',
+            progress: 1,
+            framesDone: durationInFrames,
+            framesTotal: durationInFrames,
+            outputUrl,
+            galleryItem: renderItem || null,
+            error: null,
+          });
+        }
 
         return data;
       }
@@ -1278,7 +1393,10 @@ export default function NaylaCore() {
     }
   };
 
-  const ejecutarBuildTimeline = async (actionData: any) => {
+  const ejecutarBuildTimeline = async (
+    actionData: any,
+    scopeOverride?: { projectId?: string | null; threadId?: string | null }
+  ) => {
     const assets = Array.isArray(actionData.assets) ? actionData.assets : [];
     if (assets.length === 0) throw new Error('BUILD_TIMELINE llegó sin assets.');
 
@@ -1288,7 +1406,18 @@ export default function NaylaCore() {
       const tipo = asset.type === 'image' ? 'foto' : asset.type;
       if (!url || !['foto', 'video', 'audio'].includes(tipo) || asset.source !== 'url') return;
 
-      const mediaExistente = galeriaMultimedia.find(item => item.url === url && item.tipo === tipo);
+      const mediaExistente = galeriaMultimedia.find((item) => {
+        if (item.tipo !== tipo) return false;
+        if (item.url === url) return true;
+
+        try {
+          const current = new URL(item.url);
+          const incoming = new URL(url);
+          return current.origin + current.pathname === incoming.origin + incoming.pathname;
+        } catch {
+          return false;
+        }
+      });
       const mediaId = mediaExistente?.id || `nayla-url-${Date.now()}-${index}`;
       const etiqueta = mediaExistente?.etiqueta || `${tipo === 'foto' ? 'F' : tipo === 'audio' ? 'A' : 'V'}_IA_${index + 1}`;
       const nombre = mediaExistente?.nombre || `Nayla ${tipo} ${index + 1}`;
@@ -1338,22 +1467,29 @@ export default function NaylaCore() {
     if (nextTimeline.length === 0) throw new Error('Nayla no devolvió URLs válidas para armar el timeline.');
 
     const timelineValidado = await validarTimelineParaRender(nextTimeline);
-    setLineaDeTiempo(timelineValidado);
-    sincronizarLineaDeTiempo(timelineValidado);
-    setClipSeleccionado(timelineValidado[0].id);
-    setMediaActivaUrl(timelineValidado[0].url);
-    setVideoResultadoUrl(null);
-    setRects([]);
+    const targetThreadId = scopeOverride?.threadId ?? activeThreadId;
+    const stillInOriginChat = !targetThreadId || activeThreadIdRef.current === targetThreadId;
+
+    if (stillInOriginChat) {
+      setLineaDeTiempo(timelineValidado);
+      sincronizarLineaDeTiempo(timelineValidado);
+      setClipSeleccionado(timelineValidado[0].id);
+      setMediaActivaUrl(timelineValidado[0].url);
+      setVideoResultadoUrl(null);
+      setVideoResultadoNombre(null);
+      setVideoResultadoEtiqueta(null);
+      setRects([]);
+    }
 
     const primerVisual = timelineValidado.find(item => item.tipo === 'video' || item.tipo === 'foto');
     const formatoDetectado = primerVisual?.metadata?.aspectRatioLabel;
 
-    if (primerVisual?.metadata) {
+    if (stillInOriginChat && primerVisual?.metadata) {
       adoptarFormatoVisual(primerVisual.metadata);
     }
 
     if (actionData.render === true) {
-      await solicitarRenderTimeline(timelineValidado, undefined, formatoDetectado);
+      await solicitarRenderTimeline(timelineValidado, undefined, formatoDetectado, scopeOverride);
     } else {
       showAlert('Nayla armó el timeline con los medios existentes.');
     }
@@ -1477,6 +1613,81 @@ export default function NaylaCore() {
     }
   };
 
+  const seleccionarChatDesdeHistorial = async (threadId: string) => {
+    if (!threadId || threadId === activeThreadId) {
+      setProjectMenuOpen(false);
+      return;
+    }
+
+    try {
+      const currentSession = session || await getFirebaseSession();
+      if (!currentSession) throw new Error('Debes iniciar sesión para abrir el chat.');
+
+      setActiveThreadId(threadId);
+      setChatAttachmentIds([]);
+      setVideoResultadoUrl(null);
+      setVideoResultadoNombre(null);
+      setVideoResultadoEtiqueta(null);
+      setIsPlaying(false);
+      await cargarMensajesDelChat(currentSession, threadId);
+      setProjectMenuOpen(false);
+    } catch (error: any) {
+      showAlert(error?.message || 'No se pudo abrir el chat.');
+    }
+  };
+
+  const renombrarChat = async (threadId: string, title: string) => {
+    const cleanTitle = title.trim();
+    if (!threadId || !cleanTitle) return;
+
+    try {
+      const currentSession = session || await getFirebaseSession();
+      if (!currentSession) throw new Error('Debes iniciar sesión para renombrar el chat.');
+
+      const response = await fetch('/api/chat/threads', {
+        method: 'PATCH',
+        headers: firebaseHeaders(currentSession, { 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ id: threadId, title: cleanTitle }),
+      });
+      const payload = await response.json().catch(() => ({})) as { thread?: any; error?: string };
+      if (!response.ok || !payload.thread) {
+        throw new Error(payload.error || 'No se pudo cambiar el nombre del chat.');
+      }
+
+      setChatThreads((prev) =>
+        prev.map((thread) => thread.id === threadId ? payload.thread : thread)
+      );
+    } catch (error: any) {
+      showAlert(error?.message || 'No se pudo cambiar el nombre del chat.');
+    }
+  };
+
+  const renombrarProyecto = async (projectId: string, name: string) => {
+    const cleanName = name.trim();
+    if (!projectId || !cleanName) return;
+
+    try {
+      const currentSession = session || await getFirebaseSession();
+      if (!currentSession) throw new Error('Debes iniciar sesión para renombrar el proyecto.');
+
+      const response = await fetch('/api/projects', {
+        method: 'PATCH',
+        headers: firebaseHeaders(currentSession, { 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ id: projectId, name: cleanName }),
+      });
+      const payload = await response.json().catch(() => ({})) as { project?: NaylaProject; error?: string };
+      if (!response.ok || !payload.project) {
+        throw new Error(payload.error || 'No se pudo cambiar el nombre del proyecto.');
+      }
+
+      setProjects((prev) =>
+        prev.map((project) => project.id === projectId ? payload.project! : project)
+      );
+    } catch (error: any) {
+      showAlert(error?.message || 'No se pudo cambiar el nombre del proyecto.');
+    }
+  };
+
   const crearNuevoChat = async () => {
     if (!activeProjectId) return showAlert('Primero selecciona un proyecto.');
 
@@ -1501,6 +1712,10 @@ export default function NaylaCore() {
       setActiveThreadId(payload.thread.id);
       setChatMessages([]);
       setChatAttachmentIds([]);
+      setVideoResultadoUrl(null);
+      setVideoResultadoNombre(null);
+      setVideoResultadoEtiqueta(null);
+      setIsPlaying(false);
       setProjectMenuOpen(false);
     } catch (error: any) {
       showAlert(error?.message || 'No se pudo crear el chat.');
@@ -1682,6 +1897,8 @@ export default function NaylaCore() {
       if (!currentSession) throw new Error('Debes iniciar sesión para hablar con Nayla.');
       if (!activeProjectId) throw new Error('Selecciona un proyecto antes de escribir a Nayla.');
       if (!activeThreadId) throw new Error('Crea o selecciona un chat antes de escribir a Nayla.');
+      const messageProjectId = activeProjectId;
+      const messageThreadId = activeThreadId;
       const attachmentIdsForMessage = [...chatAttachmentIds];
 
       const res = await fetch('/api/chat', {
@@ -1689,8 +1906,8 @@ export default function NaylaCore() {
         headers: firebaseHeaders(currentSession, { 'Content-Type': 'application/json' }),
         body: JSON.stringify({
            message,
-           projectId: activeProjectId,
-           threadId: activeThreadId,
+           projectId: messageProjectId,
+           threadId: messageThreadId,
            attachmentIds: attachmentIdsForMessage,
            history: chatMessages.map(m => ({ role: m.role === 'user' ? 'user' : 'assistant', content: m.text })),
            provider: selectedAiProvider,
@@ -1793,7 +2010,27 @@ export default function NaylaCore() {
       setChatAttachmentIds([]);
 
       if (data.action === 'BUILD_TIMELINE') {
-        await ejecutarBuildTimeline(data);
+        const executionScope = {
+          projectId: messageProjectId,
+          threadId: messageThreadId,
+        };
+
+        if (data.render === true) {
+          void ejecutarBuildTimeline(data, executionScope).catch((error: any) => {
+            console.error(error);
+            if (
+              !error?.naylaRenderHandled &&
+              activeThreadIdRef.current === messageThreadId
+            ) {
+              setChatMessages(prev => [
+                ...prev,
+                { role: 'ai', text: error?.message || 'No se pudo completar el render.' },
+              ]);
+            }
+          });
+        } else {
+          await ejecutarBuildTimeline(data, executionScope);
+        }
       }
     } catch (error: any) {
       console.error(error);
@@ -2232,16 +2469,24 @@ export default function NaylaCore() {
     currentSession: FirebaseSession,
     threadId: string
   ) => {
-    const response = await fetch('/api/chat/messages?threadId=' + encodeURIComponent(threadId) + '&limit=100', {
-      headers: firebaseHeaders(currentSession),
-    });
+    const [response, rendersResponse] = await Promise.all([
+      fetch('/api/chat/messages?threadId=' + encodeURIComponent(threadId) + '&limit=100', {
+        headers: firebaseHeaders(currentSession),
+      }),
+      fetch('/api/render?threadId=' + encodeURIComponent(threadId), {
+        headers: firebaseHeaders(currentSession),
+        cache: 'no-store',
+      }),
+    ]);
+
     const payload = await response.json().catch(() => ({})) as { messages?: any[]; error?: string };
+    const rendersPayload = await rendersResponse.json().catch(() => ({})) as { renders?: any[]; error?: string };
 
     if (!response.ok) {
       throw new Error(payload.error || 'No se pudo cargar el historial del chat.');
     }
 
-    const loaded = (payload.messages || [])
+    const loaded: NaylaChatMessage[] = (payload.messages || [])
       .filter((message) => message.role === 'user' || message.role === 'assistant')
       .map((message) => ({
         role: message.role === 'user' ? 'user' as const : 'ai' as const,
@@ -2273,6 +2518,53 @@ export default function NaylaCore() {
             }
           : undefined,
       }));
+
+    if (rendersResponse.ok) {
+      for (const render of rendersPayload.renders || []) {
+        const usage = render?.usage || {};
+        const serverStatus = String(render?.status || 'started');
+        const stage = String(usage.stage || 'preparing');
+        const renderStatus: NonNullable<NaylaChatMessage['renderTask']>['status'] =
+          serverStatus === 'completed'
+            ? 'completed'
+            : serverStatus === 'failed'
+              ? 'failed'
+              : serverStatus === 'cancelled'
+                ? 'cancelled'
+                : stage === 'saving'
+                  ? 'saving'
+                  : stage === 'rendering'
+                    ? 'rendering'
+                    : 'preparing';
+
+        loaded.push({
+          role: 'ai',
+          text: '',
+          renderTask: {
+            requestId: String(render.requestId || ''),
+            status: renderStatus,
+            phase: String(
+              usage.phase ||
+              (renderStatus === 'completed'
+                ? 'Resultado listo'
+                : renderStatus === 'failed'
+                  ? 'Procesamiento interrumpido'
+                  : renderStatus === 'cancelled'
+                    ? 'Cancelado por el usuario'
+                    : 'Preparando edición')
+            ),
+            progress: renderStatus === 'completed'
+              ? 1
+              : Math.max(0, Math.min(1, Number(usage.progress) || 0)),
+            framesDone: Number.isFinite(Number(usage.framesDone)) ? Number(usage.framesDone) : undefined,
+            framesTotal: Number.isFinite(Number(usage.framesTotal)) ? Number(usage.framesTotal) : undefined,
+            outputUrl: render?.galleryItem?.url || null,
+            galleryItem: render?.galleryItem || null,
+            error: render?.error || null,
+          },
+        });
+      }
+    }
 
     setChatMessages(loaded);
   };
@@ -4413,10 +4705,15 @@ if (!session) {
             open={projectMenuOpen}
             projects={projects}
             activeProjectId={activeProjectId}
+            threads={chatThreads}
+            activeThreadId={activeThreadId}
             assets={chatChannelAssets}
             attachedIds={chatAttachmentIds}
             uploadingKind={channelUploadingKind}
             onSelectProject={(projectId) => void seleccionarProyectoDesdeChat(projectId)}
+            onSelectThread={(threadId) => void seleccionarChatDesdeHistorial(threadId)}
+            onRenameThread={(threadId, title) => void renombrarChat(threadId, title)}
+            onRenameProject={(projectId, name) => void renombrarProyecto(projectId, name)}
             onNewChat={() => void crearNuevoChat()}
             onNewProject={() => void crearNuevoProyecto()}
             onUpload={(kind, files) => void subirArchivosDesdeCanal(kind, files)}

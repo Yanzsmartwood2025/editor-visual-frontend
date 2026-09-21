@@ -165,6 +165,17 @@ export const config = {
 };
 
 
+const safeProjectFileBase = (value: unknown) => {
+  const raw = String(value || 'Nayla').trim() || 'Nayla';
+  const normalized = raw
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-zA-Z0-9_-]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .slice(0, 80);
+  return normalized || 'Nayla';
+};
+
 const publicRenderError = (message: string) => {
   const normalized = message.toLowerCase();
   if (normalized.includes('timeout') || normalized.includes('timed out')) {
@@ -233,13 +244,90 @@ const cancelRender = async (req: NextApiRequest, res: NextApiResponse) => {
   }
 };
 
+const hydrateRenderGalleryItem = async (
+  supabase: ReturnType<typeof getWorkspaceSupabaseAdmin>,
+  userId: string,
+  galleryItemId?: string | null
+) => {
+  if (!galleryItemId) return null;
+
+  const { data: item, error } = await supabase
+    .from('galeria_multimedia')
+    .select('*')
+    .eq('id', galleryItemId)
+    .eq('user_id', userId)
+    .maybeSingle();
+
+  if (error) throw error;
+  if (!item) return null;
+
+  return {
+    ...item,
+    url: item.r2_key
+      ? createR2PresignedGetUrl({ key: item.r2_key, expiresIn: 900 }).url
+      : item.url,
+  };
+};
+
+const renderStatusPayload = async (
+  supabase: ReturnType<typeof getWorkspaceSupabaseAdmin>,
+  userId: string,
+  request: any
+) => ({
+  requestId: request.id,
+  status: request.status,
+  engine: request.engine || 'nayla-render',
+  usage: request.usage || {},
+  error: request.status === 'failed'
+    ? publicRenderError(String(request.error_message || ''))
+    : null,
+  galleryItem: await hydrateRenderGalleryItem(supabase, userId, request.gallery_item_id),
+  createdAt: request.created_at,
+  completedAt: request.completed_at,
+});
+
 const getRenderStatus = async (req: NextApiRequest, res: NextApiResponse) => {
   try {
     const user = await requireFirebaseUser(req);
     const id = typeof req.query.id === 'string' ? req.query.id : '';
-    if (!UUID_RE.test(id)) return res.status(400).json({ error: 'Identificador de trabajo inválido.' });
-
+    const threadId = typeof req.query.threadId === 'string' ? req.query.threadId : '';
     const supabase = getWorkspaceSupabaseAdmin();
+
+    res.setHeader('Cache-Control', 'private, no-store');
+
+    if (!id && threadId) {
+      if (!UUID_RE.test(threadId)) {
+        return res.status(400).json({ error: 'Identificador de chat inválido.' });
+      }
+
+      const scope = await resolveOwnedWorkspaceScope({
+        userId: user.uid,
+        threadId,
+      });
+
+      const { data: requests, error } = await supabase
+        .from('render_requests')
+        .select('id,status,engine,usage,error_message,gallery_item_id,r2_key,created_at,completed_at')
+        .eq('user_id', user.uid)
+        .eq('project_id', scope.projectId)
+        .eq('thread_id', threadId)
+        .order('created_at', { ascending: true })
+        .limit(20);
+
+      if (error) throw error;
+
+      const renders = [];
+      for (const request of requests || []) {
+        renders.push(await renderStatusPayload(supabase, user.uid, request));
+      }
+
+      return res.status(200).json({ renders });
+    }
+
+    if (!UUID_RE.test(id)) {
+      return res.status(400).json({ error: 'Identificador de trabajo inválido.' });
+    }
+
     const { data: request, error } = await supabase
       .from('render_requests')
       .select('id,status,engine,usage,error_message,gallery_item_id,r2_key,created_at,completed_at')
@@ -250,38 +338,9 @@ const getRenderStatus = async (req: NextApiRequest, res: NextApiResponse) => {
     if (error) throw error;
     if (!request) return res.status(404).json({ error: 'Trabajo no encontrado.' });
 
-    let galleryItem: any = null;
-    if (request.gallery_item_id) {
-      const { data: item, error: itemError } = await supabase
-        .from('galeria_multimedia')
-        .select('*')
-        .eq('id', request.gallery_item_id)
-        .eq('user_id', user.uid)
-        .maybeSingle();
-
-      if (itemError) throw itemError;
-      if (item) {
-        galleryItem = {
-          ...item,
-          url: item.r2_key
-            ? createR2PresignedGetUrl({ key: item.r2_key, expiresIn: 900 }).url
-            : item.url,
-        };
-      }
-    }
-
-    res.setHeader('Cache-Control', 'private, no-store');
-    return res.status(200).json({
-      requestId: request.id,
-      status: request.status,
-      engine: request.engine || 'nayla-render',
-      usage: request.usage || {},
-      error: request.status === 'failed'
-        ? publicRenderError(String(request.error_message || ''))
-        : null,
-      galleryItem,
-      completedAt: request.completed_at,
-    });
+    return res.status(200).json(
+      await renderStatusPayload(supabase, user.uid, request)
+    );
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'No se pudo consultar el trabajo.';
     const status = message.includes('token') || message.includes('Bearer') || message.includes('Firebase') ? 401 : 500;
@@ -417,6 +476,16 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }, 0) + 1;
     const renderLabel = `R${renderNumber}`;
 
+    const { data: projectRow, error: projectError } = await renderLedger
+      .from('editor_projects')
+      .select('name')
+      .eq('id', scope.projectId)
+      .eq('user_id', user.uid)
+      .maybeSingle();
+
+    if (projectError) throw projectError;
+    const projectFileBase = safeProjectFileBase(projectRow?.name);
+
     const galleryItem = {
       id: randomUUID(),
       user_id: user.uid,
@@ -426,7 +495,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       r2_key: data.output.r2Key,
       privacy: 'private',
       tipo: 'video',
-      nombre: `Nayla_Render_${renderLabel}.mp4`,
+      nombre: `${projectFileBase}_${renderLabel}.mp4`,
       creado_en: new Date().toISOString(),
       esOverlay: false,
       etiqueta: renderLabel,
