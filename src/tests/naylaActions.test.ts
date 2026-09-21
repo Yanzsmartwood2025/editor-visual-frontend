@@ -220,6 +220,54 @@ describe('Nayla action contracts', () => {
     });
   });
 
+  it('accepts GSAP motion for complete visual clips', () => {
+    const action = parseNaylaAction(JSON.stringify({
+      action: 'BUILD_TIMELINE',
+      assets: [
+        {
+          type: 'video',
+          source: 'url',
+          url: 'https://cdn.example/video.mp4',
+          durationInSeconds: 5,
+          gsapMotion: {
+            enter: 'elastic',
+            exit: 'slide-left',
+            enterDuration: 0.8,
+            exitDuration: 0.5,
+            intensity: 1.2,
+          },
+        },
+      ],
+      render: true,
+    }));
+
+    expect(action).not.toBeNull();
+    expect(action).toMatchObject({
+      action: 'BUILD_TIMELINE',
+      assets: [
+        expect.objectContaining({
+          gsapMotion: {
+            enter: 'elastic',
+            exit: 'slide-left',
+            enterDuration: 0.8,
+            exitDuration: 0.5,
+            intensity: 1.2,
+          },
+        }),
+      ],
+    });
+
+    expect(parseNaylaAction(JSON.stringify({
+      action: 'BUILD_TIMELINE',
+      assets: [{
+        type: 'foto',
+        source: 'url',
+        url: 'https://cdn.example/photo.jpg',
+        gsapMotion: { intensity: 1 },
+      }],
+    }))).toBeNull();
+  });
+
   it('accepts professional caption plans and rejects invalid timing', () => {
     const valid = parseNaylaAction(JSON.stringify({
       action: 'BUILD_TIMELINE',
