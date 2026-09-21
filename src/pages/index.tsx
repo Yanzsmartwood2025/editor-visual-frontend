@@ -1191,7 +1191,14 @@ export default function NaylaCore() {
     return lineaValidada;
   };
 
-  const solicitarRenderTimeline = async (timeline: TimelineItem[], qualityOverride?: string, ratioOverride?: string) => {
+  const solicitarRenderTimeline = async (
+    timeline: TimelineItem[],
+    qualityOverride?: string,
+    ratioOverride?: string,
+    scopeOverride?: { projectId?: string | null; threadId?: string | null }
+  ) => {
+    const renderProjectId = scopeOverride?.projectId ?? activeProjectId;
+    const renderThreadId = scopeOverride?.threadId ?? activeThreadId;
     const currentSession = session || await getFirebaseSession();
     if (!currentSession) throw new Error('Debes iniciar sesión para renderizar.');
 
@@ -1202,15 +1209,17 @@ export default function NaylaCore() {
     const durationInFrames = getCompositionDurationInFrames(lineaValidada, 30, subtitulos, logos);
     const requestId = createRenderRequestId();
 
-    updateRenderTask(undefined, {
-      requestId,
-      status: 'preparing',
-      phase: 'Preparando edición',
-      progress: 0.01,
-      framesDone: 0,
-      framesTotal: durationInFrames,
-      error: null,
-    });
+    if (!renderThreadId || activeThreadIdRef.current === renderThreadId) {
+      updateRenderTask(undefined, {
+        requestId,
+        status: 'preparing',
+        phase: 'Preparando edición',
+        progress: 0.01,
+        framesDone: 0,
+        framesTotal: durationInFrames,
+        error: null,
+      });
+    }
 
     const inputProps = {
       timeline: lineaValidada,
@@ -1246,13 +1255,17 @@ export default function NaylaCore() {
                 : 'preparing';
 
       const galleryItem = payload?.galleryItem as MediaItem | undefined;
-      if (galleryItem) {
+      const stillInOriginChat = !renderThreadId || activeThreadIdRef.current === renderThreadId;
+
+      if (galleryItem && stillInOriginChat) {
         setGaleriaMultimedia((prev) =>
           prev.some((item) => item.id === galleryItem.id)
             ? prev
             : [...prev, galleryItem]
         );
       }
+
+      if (!stillInOriginChat) return;
 
       updateRenderTask(requestId, {
         requestId,
@@ -1296,8 +1309,8 @@ export default function NaylaCore() {
         body: JSON.stringify({
           requestId,
           inputProps,
-          projectId: activeProjectId || undefined,
-          threadId: activeThreadId || undefined,
+          projectId: renderProjectId || undefined,
+          threadId: renderThreadId || undefined,
         })
       });
 
@@ -1330,29 +1343,32 @@ export default function NaylaCore() {
 
       if (data.status === 'completed' && data.output?.url) {
         const outputUrl = data.output.url as string;
-        setVideoResultadoUrl(outputUrl);
-
         const renderItem = data.galleryItem as MediaItem | undefined;
-        setVideoResultadoNombre(renderItem?.nombre || 'Nayla_Render.mp4');
-        setVideoResultadoEtiqueta(renderItem?.etiqueta || 'R');
-        if (renderItem) {
-          setGaleriaMultimedia(prev =>
-            prev.some(item => item.id === renderItem.id)
-              ? prev
-              : [...prev, renderItem]
-          );
-        }
+        const stillInOriginChat = !renderThreadId || activeThreadIdRef.current === renderThreadId;
 
-        updateRenderTask(requestId, {
-          status: 'completed',
-          phase: 'Resultado listo',
-          progress: 1,
-          framesDone: durationInFrames,
-          framesTotal: durationInFrames,
-          outputUrl,
-          galleryItem: renderItem || null,
-          error: null,
-        });
+        if (stillInOriginChat) {
+          setVideoResultadoUrl(outputUrl);
+          setVideoResultadoNombre(renderItem?.nombre || 'Nayla_Render.mp4');
+          setVideoResultadoEtiqueta(renderItem?.etiqueta || 'R');
+          if (renderItem) {
+            setGaleriaMultimedia(prev =>
+              prev.some(item => item.id === renderItem.id)
+                ? prev
+                : [...prev, renderItem]
+            );
+          }
+
+          updateRenderTask(requestId, {
+            status: 'completed',
+            phase: 'Resultado listo',
+            progress: 1,
+            framesDone: durationInFrames,
+            framesTotal: durationInFrames,
+            outputUrl,
+            galleryItem: renderItem || null,
+            error: null,
+          });
+        }
 
         return data;
       }
@@ -1377,7 +1393,10 @@ export default function NaylaCore() {
     }
   };
 
-  const ejecutarBuildTimeline = async (actionData: any) => {
+  const ejecutarBuildTimeline = async (
+    actionData: any,
+    scopeOverride?: { projectId?: string | null; threadId?: string | null }
+  ) => {
     const assets = Array.isArray(actionData.assets) ? actionData.assets : [];
     if (assets.length === 0) throw new Error('BUILD_TIMELINE llegó sin assets.');
 
@@ -1437,17 +1456,24 @@ export default function NaylaCore() {
     if (nextTimeline.length === 0) throw new Error('Nayla no devolvió URLs válidas para armar el timeline.');
 
     const timelineValidado = await validarTimelineParaRender(nextTimeline);
-    setLineaDeTiempo(timelineValidado);
-    sincronizarLineaDeTiempo(timelineValidado);
-    setClipSeleccionado(timelineValidado[0].id);
-    setMediaActivaUrl(timelineValidado[0].url);
-    setVideoResultadoUrl(null);
-    setRects([]);
+    const targetThreadId = scopeOverride?.threadId ?? activeThreadId;
+    const stillInOriginChat = !targetThreadId || activeThreadIdRef.current === targetThreadId;
+
+    if (stillInOriginChat) {
+      setLineaDeTiempo(timelineValidado);
+      sincronizarLineaDeTiempo(timelineValidado);
+      setClipSeleccionado(timelineValidado[0].id);
+      setMediaActivaUrl(timelineValidado[0].url);
+      setVideoResultadoUrl(null);
+      setVideoResultadoNombre(null);
+      setVideoResultadoEtiqueta(null);
+      setRects([]);
+    }
 
     const primerVisual = timelineValidado.find(item => item.tipo === 'video' || item.tipo === 'foto');
     const formatoDetectado = primerVisual?.metadata?.aspectRatioLabel;
 
-    if (primerVisual?.metadata) {
+    if (stillInOriginChat && primerVisual?.metadata) {
       adoptarFormatoVisual(primerVisual.metadata);
     }
 
@@ -1860,6 +1886,8 @@ export default function NaylaCore() {
       if (!currentSession) throw new Error('Debes iniciar sesión para hablar con Nayla.');
       if (!activeProjectId) throw new Error('Selecciona un proyecto antes de escribir a Nayla.');
       if (!activeThreadId) throw new Error('Crea o selecciona un chat antes de escribir a Nayla.');
+      const messageProjectId = activeProjectId;
+      const messageThreadId = activeThreadId;
       const attachmentIdsForMessage = [...chatAttachmentIds];
 
       const res = await fetch('/api/chat', {
@@ -1867,8 +1895,8 @@ export default function NaylaCore() {
         headers: firebaseHeaders(currentSession, { 'Content-Type': 'application/json' }),
         body: JSON.stringify({
            message,
-           projectId: activeProjectId,
-           threadId: activeThreadId,
+           projectId: messageProjectId,
+           threadId: messageThreadId,
            attachmentIds: attachmentIdsForMessage,
            history: chatMessages.map(m => ({ role: m.role === 'user' ? 'user' : 'assistant', content: m.text })),
            provider: selectedAiProvider,
@@ -1971,7 +1999,27 @@ export default function NaylaCore() {
       setChatAttachmentIds([]);
 
       if (data.action === 'BUILD_TIMELINE') {
-        await ejecutarBuildTimeline(data);
+        const executionScope = {
+          projectId: messageProjectId,
+          threadId: messageThreadId,
+        };
+
+        if (data.render === true) {
+          void ejecutarBuildTimeline(data, executionScope).catch((error: any) => {
+            console.error(error);
+            if (
+              !error?.naylaRenderHandled &&
+              activeThreadIdRef.current === messageThreadId
+            ) {
+              setChatMessages(prev => [
+                ...prev,
+                { role: 'ai', text: error?.message || 'No se pudo completar el render.' },
+              ]);
+            }
+          });
+        } else {
+          await ejecutarBuildTimeline(data, executionScope);
+        }
       }
     } catch (error: any) {
       console.error(error);
