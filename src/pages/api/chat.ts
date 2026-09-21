@@ -319,6 +319,18 @@ const executeValidatedAction = async (
     };
   }
 
+  if (action.action === 'REMOVE_VIDEO_BACKGROUND') {
+    return {
+      ...action,
+      label: action.label.toUpperCase(),
+      projectId: context.projectId,
+      threadId: context.threadId || null,
+      status: 'browser_ready' as const,
+      engine: 'nayla-browser' as const,
+      text: 'Separación de fondo preparada para procesarse de forma local.',
+    };
+  }
+
   if (
     action.action === 'GENERATE_IMAGE' ||
     action.action === 'GENERATE_VIDEO' ||
@@ -733,7 +745,21 @@ Siempre cotiza primero y requiere confirmación humana.
 }
 Solo una imagen. No usar para texto→3D ni multivista.
 
-7) Editar/componer con Remotion CPU:
+7) Quitar fondo de un video existente en el navegador:
+{
+  "action": "REMOVE_VIDEO_BACKGROUND",
+  "label": "V1",
+  "model": "modnet",
+  "keepAudio": true,
+  "quality": "high"
+}
+Usa siempre una etiqueta V existente del proyecto, nunca una URL inventada.
+model "modnet" es la opción recomendada para personas y es mucho más ligera.
+model "ben2-base" sirve para sujetos/objetos generales, pero es bastante más pesado y requiere mejor WebGPU.
+quality puede ser medium, high o very-high. Por defecto usa high.
+Esta acción se procesa localmente en el navegador del usuario con Nayla y guarda el sujeto transparente como un nuevo video V en la Bóveda.
+
+8) Editar/componer con Remotion CPU:
 {
   "action": "BUILD_TIMELINE",
   "assets": [
