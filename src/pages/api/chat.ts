@@ -743,12 +743,17 @@ Solo una imagen. No usar para texto→3D ni multivista.
       "url": "https://...",
       "durationInSeconds": 4,
       "efecto": "parallax-3d",
-      "transitionType": "fade",
+      "transitionType": "film-burn",
       "transitionDuration": 0.5,
       "fadeIn": 0.4,
       "fadeOut": 0.4,
       "overlay": "vignette",
-      "overlayIntensity": 0.35
+      "overlayIntensity": 0.35,
+      "professionalEffects": [
+        {"type":"color-correction","intensity":0.55},
+        {"type":"glow","intensity":0.25}
+      ],
+      "motionBlur": {"shutterAngle":180,"samples":5}
     },
     {
       "type": "audio",
@@ -764,6 +769,9 @@ Solo una imagen. No usar para texto→3D ni multivista.
 
 Usa type únicamente "foto", "video" o "audio". source únicamente "url".
 Copia URLs exactas del proyecto. Para una orden sencilla decide tú los parámetros sin pedir nombres técnicos.
+Puedes encadenar hasta 6 professionalEffects por clip. Usa solo los nombres publicados en el catálogo Remotion CPU.
+motionBlur es opcional y debe reservarse para movimientos donde aporte valor; 5 muestras y 180 grados es un punto de partida equilibrado.
+Las transiciones avanzadas disponibles incluyen film-burn, blur-slide, cross-zoom, dreamy-zoom, linear-blur y push-cut.
 Catálogo Remotion CPU:
 ${JSON.stringify(REMOTION_CPU_PUBLIC_CATALOG)}
 
