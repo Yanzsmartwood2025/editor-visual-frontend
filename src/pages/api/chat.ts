@@ -733,7 +733,7 @@ Siempre cotiza primero y requiere confirmación humana.
 }
 Solo una imagen. No usar para texto→3D ni multivista.
 
-7) Editar/componer con Remotion CPU:
+7) Editar/componer con Nayla Render:
 {
   "action": "BUILD_TIMELINE",
   "assets": [
@@ -743,12 +743,24 @@ Solo una imagen. No usar para texto→3D ni multivista.
       "url": "https://...",
       "durationInSeconds": 4,
       "efecto": "parallax-3d",
-      "transitionType": "fade",
-      "transitionDuration": 0.5,
-      "fadeIn": 0.4,
-      "fadeOut": 0.4,
+      "transitionType": "film-burn",
+      "transitionDuration": 0.55,
+      "fadeIn": 0.25,
+      "fadeOut": 0.25,
       "overlay": "vignette",
-      "overlayIntensity": 0.35
+      "overlayIntensity": 0.25
+    },
+    {
+      "type": "video",
+      "source": "url",
+      "url": "https://...",
+      "durationInSeconds": 5,
+      "transitionType": "cross-zoom",
+      "transitionDuration": 0.45,
+      "effects": [
+        {"type": "cinematic-grade", "intensity": 0.65},
+        {"type": "pro-vignette", "intensity": 0.35}
+      ]
     },
     {
       "type": "audio",
@@ -759,10 +771,23 @@ Solo una imagen. No usar para texto→3D ni multivista.
       "fadeOut": 1.2
     }
   ],
+  "subtitles": [
+    {
+      "text": "Texto del subtítulo",
+      "start": 0,
+      "end": 3.5,
+      "style": "tiktok",
+      "position": "bottom",
+      "fontSize": 44
+    }
+  ],
   "render": true
 }
 
 Usa type únicamente "foto", "video" o "audio". source únicamente "url".
+Transiciones disponibles: fade, wipe, slide, zoom, blur-slide, cross-zoom, dreamy-zoom, film-burn, linear-blur y push-cut.
+Efectos profesionales para video: chromatic-aberration, pro-glow, zoom-blur, pixelate, duotone, cinematic-grade y pro-vignette. Se pueden combinar hasta 4 por clip con intensidad de 0 a 1.
+Subtítulos: clean, cinematic, tiktok o karaoke; posición top, center o bottom.
 Copia URLs exactas del proyecto. Para una orden sencilla decide tú los parámetros sin pedir nombres técnicos.
 Catálogo Remotion CPU:
 ${JSON.stringify(REMOTION_CPU_PUBLIC_CATALOG)}
