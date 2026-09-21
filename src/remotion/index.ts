@@ -1,4 +1,4 @@
-import { LoadSkia } from '@shopify/react-native-skia/src/web/LoadSkiaWeb';
+import { LoadSkia } from '@shopify/react-native-skia/lib/module/web';
 import { registerRoot } from 'remotion';
 
 (async () => {
