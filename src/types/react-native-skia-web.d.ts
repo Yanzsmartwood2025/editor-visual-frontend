@@ -53,3 +53,32 @@ declare module 'react-native/Libraries/TurboModule/RCTExport' {
 declare module 'react-native/Libraries/Types/CodegenTypes' {
   export type WithDefault<T, _Default> = T;
 }
+
+
+declare module 'react-native-reanimated' {
+  export interface SharedValue<T = unknown> {
+    value: T;
+    [key: string]: unknown;
+  }
+  export interface FrameInfo {
+    timestamp: number;
+    timeSincePreviousFrame?: number | null;
+    timeSinceFirstFrame?: number;
+  }
+  export type ExtrapolationType = 'extend' | 'clamp' | 'identity';
+  export type WorkletRuntime = unknown;
+  export const useSharedValue: <T>(value: T) => SharedValue<T>;
+  export const useDerivedValue: (...args: any[]) => any;
+  export const useFrameCallback: (...args: any[]) => any;
+  export const useAnimatedRef: (...args: any[]) => any;
+  export const measure: (...args: any[]) => any;
+  export const runOnJS: (...args: any[]) => any;
+  export const runOnRuntime: (...args: any[]) => any;
+  export const createWorkletRuntime: (...args: any[]) => any;
+  const Reanimated: Record<string, any>;
+  export default Reanimated;
+}
+
+declare module 'react-native-worklets' {
+  export type WorkletFunction<T extends (...args: any[]) => any = (...args: any[]) => any> = T;
+}
