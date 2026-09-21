@@ -281,6 +281,71 @@ describe('Nayla action contracts', () => {
     expect(invalid).toBeNull();
   });
 
+  it('accepts deterministic GSAP motion title plans', () => {
+    const action = parseNaylaAction(JSON.stringify({
+      action: 'BUILD_TIMELINE',
+      assets: [
+        {
+          type: 'foto',
+          source: 'url',
+          url: 'https://cdn.example/photo.jpg',
+          durationInSeconds: 6,
+        },
+      ],
+      titles: [
+        {
+          text: 'NAYLA',
+          start: 0.4,
+          end: 3.2,
+          style: 'cinematic',
+          animation: 'word-rise',
+          position: 'center',
+          fontSize: 78,
+          color: '#ffffff',
+          accentColor: '#dddddd',
+        },
+        {
+          text: 'Edición inteligente',
+          start: 3.4,
+          end: 5.8,
+          animation: 'lower-third',
+          position: 'bottom',
+        },
+      ],
+      render: true,
+    }));
+
+    expect(action).not.toBeNull();
+    expect(action).toMatchObject({
+      action: 'BUILD_TIMELINE',
+      titles: [
+        expect.objectContaining({ animation: 'word-rise', style: 'cinematic' }),
+        expect.objectContaining({ animation: 'lower-third', position: 'bottom' }),
+      ],
+    });
+
+    const invalid = parseNaylaAction(JSON.stringify({
+      action: 'BUILD_TIMELINE',
+      assets: [
+        {
+          type: 'foto',
+          source: 'url',
+          url: 'https://cdn.example/photo.jpg',
+        },
+      ],
+      titles: [
+        {
+          text: 'Tiempo incorrecto',
+          start: 5,
+          end: 1,
+          animation: 'pop',
+        },
+      ],
+    }));
+
+    expect(invalid).toBeNull();
+  });
+
   it('accepts explicit none values emitted by Nayla for simple timeline edits', () => {
     const action = parseNaylaAction(JSON.stringify({
       action: 'BUILD_TIMELINE',
