@@ -50,6 +50,18 @@ type TimelineProfessionalEffect = {
 };
 type TimelineItem = { id: string; mediaId: string; tipo: 'foto' | 'video' | 'audio'; nombre: string; etiqueta: string; url: string; durationInSeconds?: number; originalDurationInSeconds?: number; volume?: number; fadeIn?: number; fadeOut?: number; scale?: number; delay?: number; startFrom?: number; trimBefore?: number; trimAfter?: number; loop?: boolean; playbackRate?: number; transitionDuration?: number; transitionType?: 'fade' | 'none' | 'wipe' | 'slide' | 'zoom' | 'film-burn' | 'blur-slide' | 'cross-zoom' | 'dreamy-zoom' | 'linear-blur' | 'push-cut'; efecto?: string; brightness?: number; contrast?: number; saturation?: number; overlay?: string; overlayIntensity?: number; professionalEffects?: TimelineProfessionalEffect[]; motionBlur?: { shutterAngle?: number; samples?: number }; metadata?: MediaMetadata; };
 type SubtitleItem = { id: string; texto: string; inicioSec: number; finSec: number; style?: 'clean' | 'cinematic' | 'tiktok' | 'karaoke'; position?: 'top' | 'center' | 'bottom'; fontSize?: number; };
+type MotionTitleItem = {
+  id: string;
+  text: string;
+  start: number;
+  end: number;
+  style?: 'clean' | 'cinematic' | 'neon' | 'minimal';
+  animation?: 'fade-up' | 'slide-left' | 'slide-right' | 'pop' | 'zoom-in' | 'word-rise' | 'lower-third';
+  position?: 'top' | 'center' | 'bottom';
+  fontSize?: number;
+  color?: string;
+  accentColor?: string;
+};
 type LogoItem = { id: string; url: string; x: number; y: number; scale: number; opacity: number; inicioSec?: number; finSec?: number; fadeIn?: number; fadeOut?: number; };
 type ExpandedSurface = 'tools' | 'chat' | null;
 type NaylaProjectDialog =
@@ -265,6 +277,7 @@ export default function NaylaCore() {
   const [gpuQuoteConfirming, setGpuQuoteConfirming] = useState(false);
   const [lineaDeTiempo, setLineaDeTiempo] = useState<TimelineItem[]>([]);
   const [subtitulos, setSubtitulos] = useState<SubtitleItem[]>([]);
+  const [motionTitles, setMotionTitles] = useState<MotionTitleItem[]>([]);
   const [logos, setLogos] = useState<LogoItem[]>([]);
   const [globalSettings, setGlobalSettings] = useState<{ fadeOutFinal?: number }>({});
   const [clipSeleccionado, setClipSeleccionado] = useState<string | null>(null);
@@ -1270,7 +1283,8 @@ export default function NaylaCore() {
     qualityOverride?: string,
     ratioOverride?: string,
     scopeOverride?: { projectId?: string | null; threadId?: string | null },
-    subtitlesOverride?: SubtitleItem[]
+    subtitlesOverride?: SubtitleItem[],
+    titlesOverride?: MotionTitleItem[]
   ) => {
     const renderProjectId = scopeOverride?.projectId ?? activeProjectId;
     const renderThreadId = scopeOverride?.threadId ?? activeThreadId;
@@ -1282,7 +1296,8 @@ export default function NaylaCore() {
     const renderRatio = ratioOverride || canvasRatio;
     const canvas = getCanvasDimensionsFromRatio(renderRatio, exportQuality);
     const renderSubtitles = subtitlesOverride ?? subtitulos;
-    const durationInFrames = getCompositionDurationInFrames(lineaValidada, 30, renderSubtitles, logos);
+    const renderTitles = titlesOverride ?? motionTitles;
+    const durationInFrames = getCompositionDurationInFrames(lineaValidada, 30, renderSubtitles, logos, renderTitles);
     const requestId = createRenderRequestId();
 
     if (!renderThreadId || activeThreadIdRef.current === renderThreadId) {
@@ -1300,6 +1315,7 @@ export default function NaylaCore() {
     const inputProps = {
       timeline: lineaValidada,
       subtitles: renderSubtitles,
+      titles: renderTitles,
       logos: logos,
       canvasRatio: renderRatio,
       canvasWidth: canvas.width,
@@ -1576,6 +1592,52 @@ export default function NaylaCore() {
               : {}),
           }))
       : subtitulos;
+
+    const hasTitleDirective = Array.isArray(actionData.titles);
+    const actionTitles: MotionTitleItem[] = hasTitleDirective
+      ? actionData.titles
+          .filter((title: any) =>
+            title &&
+            typeof title.text === 'string' &&
+            Number.isFinite(Number(title.start)) &&
+            Number.isFinite(Number(title.end)) &&
+            Number(title.end) > Number(title.start)
+          )
+          .slice(0, 80)
+          .map((title: any, index: number) => ({
+            id: `nayla-title-${Date.now()}-${index}`,
+            text: title.text.trim(),
+            start: Math.max(0, Number(title.start)),
+            end: Math.max(0, Number(title.end)),
+            style: ['clean', 'cinematic', 'neon', 'minimal'].includes(title.style)
+              ? title.style
+              : 'clean',
+            animation: [
+              'fade-up',
+              'slide-left',
+              'slide-right',
+              'pop',
+              'zoom-in',
+              'word-rise',
+              'lower-third',
+            ].includes(title.animation)
+              ? title.animation
+              : 'fade-up',
+            position: ['top', 'center', 'bottom'].includes(title.position)
+              ? title.position
+              : 'center',
+            ...(Number.isFinite(Number(title.fontSize))
+              ? { fontSize: Math.max(24, Math.min(180, Number(title.fontSize))) }
+              : {}),
+            ...(typeof title.color === 'string' && title.color.trim()
+              ? { color: title.color.trim().slice(0, 64) }
+              : {}),
+            ...(typeof title.accentColor === 'string' && title.accentColor.trim()
+              ? { accentColor: title.accentColor.trim().slice(0, 64) }
+              : {}),
+          }))
+      : motionTitles;
+
     const targetThreadId = scopeOverride?.threadId ?? activeThreadId;
     const stillInOriginChat = !targetThreadId || activeThreadIdRef.current === targetThreadId;
 
@@ -1590,6 +1652,9 @@ export default function NaylaCore() {
       setRects([]);
       if (hasSubtitleDirective) {
         setSubtitulos(actionSubtitles);
+      }
+      if (hasTitleDirective) {
+        setMotionTitles(actionTitles);
       }
     }
 
@@ -1606,7 +1671,8 @@ export default function NaylaCore() {
         undefined,
         formatoDetectado,
         scopeOverride,
-        hasSubtitleDirective ? actionSubtitles : undefined
+        hasSubtitleDirective ? actionSubtitles : undefined,
+        hasTitleDirective ? actionTitles : undefined
       );
     } else {
       showAlert('Nayla armó el timeline con los medios existentes.');
@@ -3575,6 +3641,7 @@ export default function NaylaCore() {
            return new Promise<void>((resolve) => {
                setLineaDeTiempo([]);
                setSubtitulos([]);
+               setMotionTitles([]);
                setLogos([]);
                setGlobalSettings({});
                setTimeout(() => {
