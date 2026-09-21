@@ -470,7 +470,7 @@ export const getRecentOwnedMediaForUser = async ({
     .select('*')
     .eq('user_id', userId)
     .eq('project_id', projectId)
-    .order('created_at', { ascending: false })
+    .order('creado_en', { ascending: false })
     .limit(Math.max(1, Math.min(limit, 250)));
 
   if (tipo) query = query.eq('tipo', tipo);
