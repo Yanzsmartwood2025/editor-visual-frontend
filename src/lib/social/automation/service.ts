@@ -175,6 +175,57 @@ export const scheduleAutomationForInteraction = async (interaction: any) => {
   return queue;
 };
 
+export const cancelPendingAutomation = async ({
+  accountId,
+  channel,
+  sourceId,
+  conversationId,
+  reason = 'Respuesta manual enviada.',
+}: {
+  accountId: string;
+  channel: 'comment' | 'dm';
+  sourceId?: string | null;
+  conversationId?: string | null;
+  reason?: string;
+}) => {
+  const supabase = getWorkspaceSupabaseAdmin();
+
+  let query = supabase
+    .from('social_automation_queue')
+    .update({
+      status: 'cancelled',
+      last_error: reason,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('account_id', accountId)
+    .eq('channel', channel)
+    .in('status', ['pending', 'processing', 'needs_approval']);
+
+  if (sourceId) {
+    query = query.eq('source_id', sourceId);
+  } else if (conversationId) {
+    query = query.eq('provider_conversation_id', conversationId);
+  } else {
+    return 0;
+  }
+
+  const { data, error } = await query.select('id,interaction_id');
+  if (error) throw error;
+
+  const interactionIds = (data || [])
+    .map((item: any) => item.interaction_id)
+    .filter(Boolean);
+
+  if (interactionIds.length) {
+    await supabase
+      .from('social_interactions')
+      .update({ automation_state: 'processed' })
+      .in('id', interactionIds);
+  }
+
+  return (data || []).length;
+};
+
 export const ensureDefaultAutomationRule = async ({
   profileId,
   userId,
