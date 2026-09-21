@@ -128,6 +128,38 @@ const hasExplicitPlanConfirmation = (
   );
 };
 
+const isBarePlanConfirmation = (message: string) => {
+  const text = normalizePlanningText(message);
+  return /^(si|si dale|ok|okay|dale|adelante|listo|perfecto|correcto|hazlo|procede|confirmo|acepto|continua|continua con el plan|sigue|sigue con el plan|adelante con el plan)$/.test(text);
+};
+
+const findLastUserPlanInstruction = (
+  history: Array<{ role: 'user' | 'assistant'; content: string }>
+) =>
+  [...history]
+    .reverse()
+    .find((item) => {
+      if (item.role !== 'user') return false;
+      if (isBarePlanConfirmation(item.content)) return false;
+
+      const labels = getOrderedMediaLabels(item.content);
+      if (!labels.length) return false;
+
+      const text = normalizePlanningText(item.content);
+      return /\b(video|timeline|edicion|montaje|foto|imagen|clip|transicion|efecto|movimiento|duracion|segundos)\b/.test(text);
+    })?.content || '';
+
+const findLastAssistantPlan = (
+  history: Array<{ role: 'user' | 'assistant'; content: string }>
+) =>
+  [...history]
+    .reverse()
+    .find((item) => {
+      if (item.role !== 'assistant') return false;
+      const text = normalizePlanningText(item.content);
+      return /\b(plan|te recomiendo|propongo|quedaria|cuando confirmes|cuando me confirmes|si te parece|generare la timeline|generare el video)\b/.test(text);
+    })?.content || '';
+
 const actionNeedsConsultativeApproval = (action: NaylaAction) =>
   action.action !== 'SEARCH_MEDIA';
 
@@ -186,13 +218,19 @@ const buildLabelTimelineFallback = (
   }>
 ): NaylaAction | null => {
   const normalized = message.toLowerCase();
+  const labels = getOrderedMediaLabels(message).filter((label) => !label.startsWith('M'));
   const editingIntent =
-    /\b(crea|crear|haz|hacer|arma|armar|monta|montar|edita|editar|compone|componer|renderiza|renderizar|genera|generar)\b/.test(normalized) &&
-    /\b(video|timeline|edici[oó]n|montaje|render)\b/.test(normalized);
+    (
+      /\b(crea|crear|haz|hacer|arma|armar|monta|montar|edita|editar|compone|componer|renderiza|renderizar|genera|generar)\b/.test(normalized) &&
+      /\b(video|timeline|edici[oó]n|montaje|render)\b/.test(normalized)
+    ) ||
+    (
+      labels.length > 0 &&
+      /\b(video|timeline|edici[oó]n|montaje|foto|imagen|clip|transici[oó]n|efecto|movimiento|duraci[oó]n|segundos?)\b/.test(normalized)
+    );
 
   if (!editingIntent) return null;
 
-  const labels = getOrderedMediaLabels(message).filter((label) => !label.startsWith('M'));
   if (!labels.length) return null;
 
   const byLabel = new Map(
@@ -789,29 +827,39 @@ Para acciones con medios existentes usa únicamente las URLs exactas incluidas e
 MODO_MOTOR=${engineMode}
 `;
 
+    const priorUserPlanInstruction = executionConfirmed
+      ? findLastUserPlanInstruction(effectiveHistory)
+      : '';
+    const priorAssistantPlan = executionConfirmed
+      ? findLastAssistantPlan(effectiveHistory)
+      : '';
+    const fallbackExecutionContext = executionConfirmed
+      ? [priorUserPlanInstruction, priorAssistantPlan, message].filter(Boolean).join('\n\n')
+      : message;
+    const deterministicConfirmedAction =
+      executionConfirmed && isBarePlanConfirmation(message)
+        ? buildLabelTimelineFallback(fallbackExecutionContext, mergedLibrary)
+        : null;
+
     let responseText = '';
-    try {
-      responseText = await executeDirectLlm({
-        provider,
-        prompt: fullPrompt,
-        images: visionImages,
-        systemPrompt: compactSystemPrompt,
-      });
-    } catch (error: any) {
-      console.error('[chat.ts] Todos los motores IA de Nayla fallaron:', error);
-      return res.status(500).json({
-        error: 'Nayla no pudo procesar esta solicitud en este momento. Inténtalo nuevamente.',
-      });
+    if (!deterministicConfirmedAction) {
+      try {
+        responseText = await executeDirectLlm({
+          provider,
+          prompt: fullPrompt,
+          images: visionImages,
+          systemPrompt: compactSystemPrompt,
+        });
+      } catch (error: any) {
+        console.error('[chat.ts] Todos los motores IA de Nayla fallaron:', error);
+        return res.status(500).json({
+          error: 'Nayla no pudo procesar esta solicitud en este momento. Inténtalo nuevamente.',
+        });
+      }
     }
 
-    const previousUserInstruction = [...effectiveHistory]
-      .reverse()
-      .find((item) => item.role === 'user')?.content || '';
-    const fallbackExecutionContext = executionConfirmed
-      ? [previousUserInstruction, message].filter(Boolean).join('\n\n')
-      : message;
-
     const parsedAction =
+      deterministicConfirmedAction ||
       parseNaylaAction(responseText) ||
       (executionConfirmed ? buildLabelTimelineFallback(fallbackExecutionContext, mergedLibrary) : null);
 
