@@ -274,27 +274,6 @@ export const cacheSocialConversation = async ({
     normalizedMessages.push({ interaction: normalized.interaction, raw: rawMessage, direction });
   }
 
-  if (!localPersonId && participantId) {
-    const placeholderId = `conversation:${providerConversationId}`;
-    const normalized = await recordSocialInteraction({
-      userId,
-      projectId,
-      account,
-      channel: 'dm',
-      direction: 'inbound',
-      sourceId: placeholderId,
-      body: lastText || 'Conversación',
-      providerUserId: participantId,
-      username: participantUsername,
-      displayName: participantName,
-      avatarUrl: participantAvatar,
-      providerConversationId,
-      providerParentId: participantId,
-      occurredAt: lastAt || new Date().toISOString(),
-      raw: { conversationOnly: true },
-    });
-    localPersonId = normalized.person.id;
-  }
 
   const { data: localConversation, error: conversationError } = await supabase
     .from('social_conversations')
