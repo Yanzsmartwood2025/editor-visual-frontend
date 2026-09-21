@@ -88,14 +88,23 @@ export const extractSubtitleBlocks = (value: string): string[] => {
     source.matchAll(/(?:^|\n)\s*BLOQUE\s+\d+\s*:?\s*\n([\s\S]*?)(?=(?:\n\s*BLOQUE\s+\d+\s*:?\s*\n)|$)/gi)
   );
 
-  return matches
-    .map((match) =>
-      String(match[1] || '')
-        .trim()
-        .replace(/\n{3,}/g, '\n\n')
-    )
-    .filter(Boolean)
-    .slice(0, 300);
+  const unique: string[] = [];
+  const seen = new Set<string>();
+
+  for (const match of matches) {
+    const text = String(match[1] || '')
+      .trim()
+      .replace(/\n{3,}/g, '\n\n');
+    if (!text) continue;
+
+    const key = normalizeIntentText(text);
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    unique.push(text);
+    if (unique.length >= 300) break;
+  }
+
+  return unique;
 };
 
 export const buildEvenSubtitleTiming = (
@@ -112,4 +121,17 @@ export const buildEvenSubtitleTiming = (
     style: 'clean' as const,
     position: 'center' as const,
   }));
+};
+
+
+export const timelinePlanRequestsRender = (value: string) => {
+  const text = normalizeIntentText(value);
+  if (!text) return false;
+
+  return (
+    /\b(render|renderiza|renderizar|renderice|renderizado|renderizacion|produccion|producir|exporta|exportar)\b/.test(text) ||
+    /\b(video final|resultado final|guardar(?:lo)? en la boveda|guardarlo en la boveda)\b/.test(text) ||
+    /\b(crea|crear|haz|hacer|genera|generar|monta|montar)\b.{0,36}\bvideo\b/.test(text) ||
+    /\bvideo\b.{0,36}\b(crea|crear|haz|hacer|genera|generar|renderiza|renderizar|produce|producir)\b/.test(text)
+  );
 };
