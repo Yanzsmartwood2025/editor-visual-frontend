@@ -221,6 +221,63 @@ describe('Nayla action contracts', () => {
   });
 
 
+
+  it('accepts Lottie and Rive vector animation plans', () => {
+    const action = parseNaylaAction(JSON.stringify({
+      action: 'BUILD_TIMELINE',
+      assets: [],
+      vectorAnimations: [
+        {
+          kind: 'lottie',
+          url: 'https://cdn.example/logo.json',
+          start: 0,
+          end: 4,
+          scale: 0.8,
+          playbackRate: 1.25,
+          direction: 'forward',
+        },
+        {
+          kind: 'rive',
+          url: 'https://cdn.example/icon.riv',
+          start: 4,
+          end: 8,
+          fit: 'contain',
+          alignment: 'center',
+          artboard: 'Main',
+          animation: 'Idle',
+        },
+      ],
+      render: true,
+    }));
+
+    expect(action).not.toBeNull();
+    expect(action).toMatchObject({
+      action: 'BUILD_TIMELINE',
+      vectorAnimations: [
+        expect.objectContaining({
+          kind: 'lottie',
+          playbackRate: 1.25,
+        }),
+        expect.objectContaining({
+          kind: 'rive',
+          artboard: 'Main',
+          animation: 'Idle',
+        }),
+      ],
+    });
+
+    expect(parseNaylaAction(JSON.stringify({
+      action: 'BUILD_TIMELINE',
+      assets: [],
+      vectorAnimations: [{
+        kind: 'lottie',
+        url: 'https://cdn.example/logo.json',
+        start: 5,
+        end: 2,
+      }],
+    }))).toBeNull();
+  });
+
   it('accepts deterministic procedural motion on visual clips', () => {
     const action = parseNaylaAction(JSON.stringify({
       action: 'BUILD_TIMELINE',

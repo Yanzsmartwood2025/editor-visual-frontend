@@ -33,6 +33,11 @@ export type ThreeSceneMetricItem = {
   end?: number;
 };
 
+export type VectorAnimationMetricItem = {
+  start?: number;
+  end?: number;
+};
+
 export type VisualTimelineMetric<T extends TimelineMetricItem = TimelineMetricItem> = T & {
   durationInFrames: number;
   delayInFrames: number;
@@ -151,7 +156,8 @@ export const getCompositionDurationInFrames = (
   subtitles: SubtitleMetricItem[] = [],
   logos: LogoMetricItem[] = [],
   titles: TitleMetricItem[] = [],
-  threeScenes: ThreeSceneMetricItem[] = []
+  threeScenes: ThreeSceneMetricItem[] = [],
+  vectorAnimations: VectorAnimationMetricItem[] = []
 ): number => {
   const visualMetrics = buildVisualTimelineMetrics(timeline, fps);
   const visualEnd = visualMetrics.reduce(
@@ -186,5 +192,10 @@ export const getCompositionDurationInFrames = (
     return Math.max(max, Math.round(end * fps));
   }, 0);
 
-  return Math.max(1, visualEnd, audioEnd, subtitleEnd, logoEnd, titleEnd, threeSceneEnd);
+  const vectorAnimationEnd = vectorAnimations.reduce((max, item) => {
+    const end = Math.max(0, safeNumber(item.end, safeNumber(item.start, 0)));
+    return Math.max(max, Math.round(end * fps));
+  }, 0);
+
+  return Math.max(1, visualEnd, audioEnd, subtitleEnd, logoEnd, titleEnd, threeSceneEnd, vectorAnimationEnd);
 };

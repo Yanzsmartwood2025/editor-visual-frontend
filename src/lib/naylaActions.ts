@@ -158,6 +158,35 @@ export const naylaActionSchema = z.discriminatedUnion('action', [
     }).refine((item) => item.end > item.start, {
       message: 'El final del título debe ser posterior al inicio.',
     })).max(80).optional(),
+    vectorAnimations: z.array(z.object({
+      kind: z.enum(['lottie', 'rive']),
+      url: urlSchema,
+      start: z.number().min(0).max(7200),
+      end: z.number().min(0).max(7200),
+      x: z.number().min(-50).max(50).optional().default(0),
+      y: z.number().min(-50).max(50).optional().default(0),
+      scale: z.number().min(0.05).max(4).optional().default(1),
+      opacity: z.number().min(0).max(1).optional().default(1),
+      fit: z.enum(['contain', 'cover', 'fill', 'fit-height', 'none', 'scale-down', 'fit-width']).optional().default('contain'),
+      alignment: z.enum([
+        'center',
+        'bottom-center',
+        'bottom-left',
+        'bottom-right',
+        'center-left',
+        'center-right',
+        'top-center',
+        'top-left',
+        'top-right',
+      ]).optional().default('center'),
+      artboard: z.string().trim().min(1).max(160).optional(),
+      animation: z.string().trim().min(1).max(160).optional(),
+      loop: z.boolean().optional().default(true),
+      playbackRate: z.number().min(0.1).max(4).optional().default(1),
+      direction: z.enum(['forward', 'backward']).optional().default('forward'),
+    }).refine((item) => item.end > item.start, {
+      message: 'El final de la animación vectorial debe ser posterior al inicio.',
+    })).max(40).optional(),
     threeScenes: z.array(z.object({
       label: z.string().trim().regex(/^M\d+$/i),
       start: z.number().min(0).max(7200),
@@ -272,7 +301,8 @@ export const parseNaylaAction = (raw: string): NaylaAction | null => {
     if (
       parsed.data.action === 'BUILD_TIMELINE' &&
       parsed.data.assets.length === 0 &&
-      (!parsed.data.threeScenes || parsed.data.threeScenes.length === 0)
+      (!parsed.data.threeScenes || parsed.data.threeScenes.length === 0) &&
+      (!parsed.data.vectorAnimations || parsed.data.vectorAnimations.length === 0)
     ) {
       return null;
     }

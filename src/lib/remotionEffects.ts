@@ -83,6 +83,20 @@ export const REMOTION_CPU_EFFECTS = {
     controls: ['seed', 'color', 'accentColor'] as const,
     deterministic: true,
   },
+  vectorAnimations: {
+    supported: true,
+    formats: ['lottie', 'rive'] as const,
+    lottie: {
+      remoteJson: true,
+      controls: ['loop', 'playbackRate', 'direction'] as const,
+    },
+    rive: {
+      remoteRiv: true,
+      controls: ['fit', 'alignment', 'artboard', 'animation'] as const,
+    },
+    placement: ['start', 'end', 'x', 'y', 'scale', 'opacity'] as const,
+    maxItemsPerRender: 40,
+  },
   three: {
     supported: true,
     input: 'GLB',
@@ -116,6 +130,7 @@ export const REMOTION_CPU_PUBLIC_CATALOG = {
   motionTitles: REMOTION_CPU_EFFECTS.motionTitles,
   clipMotion: REMOTION_CPU_EFFECTS.clipMotion,
   proceduralMotion: REMOTION_CPU_EFFECTS.proceduralMotion,
+  vectorAnimations: REMOTION_CPU_EFFECTS.vectorAnimations,
   three: REMOTION_CPU_EFFECTS.three,
   controls: [
     'duración por clip',
@@ -133,6 +148,7 @@ export const REMOTION_CPU_PUBLIC_CATALOG = {
     'títulos y lower thirds animados por frame con GSAP',
     'entradas y salidas GSAP deterministas para fotos y videos',
     'partículas, órbitas, rejillas pulsantes y campos de estrellas procedurales',
+    'animaciones Lottie JSON y Rive .riv sincronizadas por frame',
     'escenas GLB 3D reales con cámara, luces, rotación y animación interna',
   ],
 };

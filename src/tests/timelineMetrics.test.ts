@@ -44,6 +44,21 @@ describe('timeline metrics', () => {
     ).toBe(210);
   });
 
+
+  it('extends the composition for vector animations', () => {
+    expect(
+      getCompositionDurationInFrames(
+        [],
+        30,
+        [],
+        [],
+        [],
+        [],
+        [{ start: 1, end: 8 }]
+      )
+    ).toBe(240);
+  });
+
   it('extends the composition for real 3D scenes', () => {
     const timeline = [
       { tipo: 'foto' as const, durationInSeconds: 2 },
