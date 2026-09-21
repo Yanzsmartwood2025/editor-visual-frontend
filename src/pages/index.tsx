@@ -11,6 +11,7 @@ import { editorGlobalStyles } from '../styles/editorGlobalStyles';
 import { getVideoMetadata, getAudioDurationInSeconds } from '@remotion/media-utils';
 import { createClient } from '@supabase/supabase-js';
 import { createMediaId, uploadMediaFilesToBodega } from '../lib/mediaUpload';
+import { groupSpeechWordsIntoCaptions } from '../lib/autoCaptions';
 import { buildMediaMetadata, getCanvasDimensionsFromRatio, probeMediaUrl, type MediaMetadata } from '../lib/mediaMetadata';
 import { getCompositionDurationInFrames } from '../lib/timelineMetrics';
 import { getFirebaseSession, observeFirebaseSession, signOutFirebase, signInWithCustomTokenValue, type FirebaseSession } from '../lib/firebaseClient';
@@ -51,7 +52,7 @@ type TimelineProfessionalEffect = {
 type TimelineGsapPreset = 'fade' | 'slide-left' | 'slide-right' | 'slide-up' | 'slide-down' | 'zoom-in' | 'zoom-out' | 'bounce' | 'elastic' | 'spin' | 'swing';
 type TimelineGsapMotion = { enter?: TimelineGsapPreset; exit?: TimelineGsapPreset; enterDuration?: number; exitDuration?: number; intensity?: number; };
 type TimelineItem = { id: string; mediaId: string; tipo: 'foto' | 'video' | 'audio'; nombre: string; etiqueta: string; url: string; durationInSeconds?: number; originalDurationInSeconds?: number; volume?: number; fadeIn?: number; fadeOut?: number; scale?: number; delay?: number; startFrom?: number; trimBefore?: number; trimAfter?: number; loop?: boolean; playbackRate?: number; transitionDuration?: number; transitionType?: 'fade' | 'none' | 'wipe' | 'slide' | 'zoom' | 'film-burn' | 'blur-slide' | 'cross-zoom' | 'dreamy-zoom' | 'linear-blur' | 'push-cut'; efecto?: string; brightness?: number; contrast?: number; saturation?: number; overlay?: string; overlayIntensity?: number; professionalEffects?: TimelineProfessionalEffect[]; motionBlur?: { shutterAngle?: number; samples?: number }; gsapMotion?: TimelineGsapMotion; proceduralMotion?: { preset: 'particles' | 'orbit' | 'pulse-grid' | 'starfield'; intensity?: number; speed?: number; seed?: number; color?: string; accentColor?: string; }; metadata?: MediaMetadata; };
-type SubtitleItem = { id: string; texto: string; inicioSec: number; finSec: number; style?: 'clean' | 'cinematic' | 'tiktok' | 'karaoke'; position?: 'top' | 'center' | 'bottom'; fontSize?: number; };
+type SubtitleItem = { id: string; texto: string; inicioSec: number; finSec: number; style?: 'clean' | 'cinematic' | 'tiktok' | 'karaoke'; position?: 'top' | 'center' | 'bottom'; fontSize?: number; generated?: boolean; sourceLabel?: string; };
 type MotionTitleItem = {
   id: string;
   text: string;
@@ -2415,6 +2416,127 @@ export default function NaylaCore() {
     }
   };
 
+  const ejecutarAutoCaptions = async (
+    actionData: any,
+    scope: { projectId: string; threadId: string }
+  ) => {
+    const currentSession = session || await getFirebaseSession();
+    if (!currentSession) throw new Error('Debes iniciar sesión para crear subtítulos automáticos.');
+
+    const label = String(actionData?.label || '').trim().toUpperCase();
+    const source = galeriaMultimedia.find(
+      (item) =>
+        (item.tipo === 'video' || item.tipo === 'audio') &&
+        item.etiqueta?.trim().toUpperCase() === label
+    );
+    if (!source) {
+      throw new Error(`No encontré ${label || 'el medio solicitado'} en la Bóveda de este proyecto.`);
+    }
+
+    const sourceUrl = typeof actionData?.url === 'string' && actionData.url
+      ? actionData.url
+      : source.url;
+    const model = actionData?.model === 'tiny' ? 'tiny' : 'base';
+    const language = String(actionData?.language || 'es').trim().toLowerCase() || 'es';
+    const style = ['clean', 'cinematic', 'tiktok', 'karaoke'].includes(actionData?.style)
+      ? actionData.style
+      : 'clean';
+    const position = ['top', 'center', 'bottom'].includes(actionData?.position)
+      ? actionData.position
+      : 'bottom';
+    const fontSize = Number.isFinite(Number(actionData?.fontSize))
+      ? Math.max(20, Math.min(120, Number(actionData.fontSize)))
+      : undefined;
+
+    setToolMessage('COMPROBANDO MOTOR DE TRANSCRIPCIÓN…');
+
+    const {
+      canUseWhisperWebGpu,
+      resampleTo16Khz,
+      transcribe,
+    } = await import('@remotion/whisper-webgpu');
+
+    const support = await canUseWhisperWebGpu();
+    if (!support.supported) {
+      throw new Error('Este dispositivo o navegador no tiene WebGPU disponible para transcribir localmente.');
+    }
+
+    setToolMessage(`CARGANDO ${label}…`);
+    const mediaResponse = await fetch(sourceUrl);
+    if (!mediaResponse.ok) {
+      throw new Error(`No pude abrir ${label} para transcribirlo.`);
+    }
+    const mediaBlob = await mediaResponse.blob();
+
+    const channelWaveform = await resampleTo16Khz({
+      file: mediaBlob,
+      onProgress: (progress: number) => {
+        const percent = Math.max(0, Math.min(100, Math.round(progress * 100)));
+        setToolMessage(`PREPARANDO AUDIO… ${percent}%`);
+      },
+    });
+
+    setToolMessage('PREPARANDO MODELO DE VOZ…');
+    const transcription = await transcribe({
+      channelWaveform,
+      model,
+      language,
+      onModelLoadProgress: (progress: any) => {
+        const value = Number(progress?.progress);
+        if (!Number.isFinite(value)) return;
+        const percent = Math.max(0, Math.min(100, Math.round(value * 100)));
+        setToolMessage(percent >= 100 ? 'TRANSCRIBIENDO…' : `CARGANDO MODELO… ${percent}%`);
+      },
+    });
+
+    setToolMessage('CREANDO SUBTÍTULOS…');
+    const segments = groupSpeechWordsIntoCaptions(transcription.words, {
+      maxWords: style === 'karaoke' || style === 'tiktok' ? 5 : 7,
+      maxDurationInSeconds: style === 'karaoke' || style === 'tiktok' ? 2.2 : 3,
+      maxCharacters: style === 'karaoke' || style === 'tiktok' ? 38 : 52,
+    });
+
+    if (!segments.length) {
+      throw new Error(`No encontré voz transcribible en ${label}.`);
+    }
+
+    const nextSubtitles: SubtitleItem[] = segments.map((segment, index) => ({
+      id: `auto-${label.toLowerCase()}-${index}-${Math.round(segment.start * 1000)}`,
+      texto: segment.text,
+      inicioSec: segment.start,
+      finSec: segment.end,
+      style,
+      position,
+      fontSize,
+      generated: true,
+      sourceLabel: label,
+    }));
+
+    setSubtitulos((prev) => [
+      ...prev.filter((subtitle) => !(subtitle.generated && subtitle.sourceLabel === label)),
+      ...nextSubtitles,
+    ].sort((a, b) => a.inicioSec - b.inicioSec));
+
+    setChatMessages((prev) => [
+      ...prev,
+      {
+        role: 'ai',
+        text: `Listo. Transcribí ${label} y agregué ${nextSubtitles.length} bloque${nextSubtitles.length === 1 ? '' : 's'} de subtítulos sincronizados al timeline.`,
+      },
+    ]);
+    setToolMessage(null);
+
+    return {
+      label,
+      language,
+      model,
+      transcript: transcription.text,
+      subtitles: nextSubtitles.length,
+      projectId: scope.projectId,
+      threadId: scope.threadId,
+    };
+  };
+
   const sendNaylaMessage = async (messageOverride?: string) => {
     const message = (messageOverride ?? chatInput).trim();
     if (!message) return;
@@ -2564,6 +2686,11 @@ export default function NaylaCore() {
         }
       } else if (data.action === 'REMOVE_VIDEO_BACKGROUND') {
         await ejecutarRemoveVideoBackground(data, {
+          projectId: messageProjectId,
+          threadId: messageThreadId,
+        });
+      } else if (data.action === 'CREATE_AUTO_CAPTIONS') {
+        await ejecutarAutoCaptions(data, {
           projectId: messageProjectId,
           threadId: messageThreadId,
         });
