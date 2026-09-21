@@ -176,7 +176,22 @@ export default function SocialHub({ session, projectId, results }: Props) {
         method: 'POST',
         body: JSON.stringify({ projectId, provider, platform }),
       });
-      window.location.href = payload.authUrl;
+      if (payload.authUrl) {
+        window.location.href = payload.authUrl;
+        return;
+      }
+      if (payload.connectionMode === 'instructions') {
+        const details = payload.details || {};
+        const instructions = Array.isArray(details.instructions) ? details.instructions.join(' · ') : '';
+        setNotice([
+          details.code ? `Código: ${details.code}` : '',
+          details.botUsername ? `Bot: @${String(details.botUsername).replace(/^@/, '')}` : '',
+          instructions,
+        ].filter(Boolean).join(' — ') || 'Sigue las instrucciones de conexión y luego pulsa ↻.');
+      } else {
+        setNotice('La red requiere un paso de conexión adicional.');
+      }
+      setBusy('');
     } catch (error) {
       setNotice(error instanceof Error ? error.message : 'No se pudo conectar.');
       setBusy('');
@@ -357,7 +372,7 @@ export default function SocialHub({ session, projectId, results }: Props) {
           <div style={{ ...panel, padding: 10 }}>
             <div style={{ fontSize: 10, fontWeight: 900, marginBottom: 9 }}>CONECTAR RED</div>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,minmax(0,1fr))', gap: 7 }}>
-              {SOCIAL_NETWORKS.slice(0, 12).map((network) => (
+              {SOCIAL_NETWORKS.map((network) => (
                 <div key={network.id} style={{ minWidth: 0, padding: '8px 4px', borderRadius: 11, background: connectedPlatforms.has(network.id) ? 'rgba(255,255,255,.07)' : 'rgba(255,255,255,.022)', border: '1px solid rgba(255,255,255,.06)', textAlign: 'center' }}>
                   <div style={{ display: 'flex', justifyContent: 'center' }}><NetworkIcon platform={network.id} size={31} /></div>
                   <div style={{ fontSize: 8.5, fontWeight: 800, marginTop: 5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{network.label}</div>
@@ -370,14 +385,16 @@ export default function SocialHub({ session, projectId, results }: Props) {
                         style={{ ...tinyButton(false), padding: '3px 6px', fontSize: 8, opacity: providerA?.configured ? 1 : .3 }}
                       >A</button>
                     )}
-                    {network.zernio && (
+                    {network.zernio && ['oauth', 'telegram_code'].includes(network.zernioConnectMode || 'oauth') ? (
                       <button
-                        title="Conectar por Ruta B"
+                        title={network.zernioConnectMode === 'telegram_code' ? 'Conectar por código · Ruta B' : 'Conectar por Ruta B'}
                         disabled={!providerB?.configured || Boolean(busy)}
                         onClick={() => void connect('zernio', network.id)}
                         style={{ ...tinyButton(false), padding: '3px 6px', fontSize: 8, opacity: providerB?.configured ? 1 : .3 }}
                       >B</button>
-                    )}
+                    ) : network.zernio ? (
+                      <span title="Conexión manual especializada" style={{ color: '#555', fontSize: 7, alignSelf: 'center' }}>MAN</span>
+                    ) : null}
                   </div>
                 </div>
               ))}
