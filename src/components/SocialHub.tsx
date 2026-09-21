@@ -285,6 +285,20 @@ export default function SocialHub({ session, projectId, results, onClose }: Prop
   const [inboxMessages, setInboxMessages] = useState<any[]>([]);
   const [messageDraft, setMessageDraft] = useState('');
   const [policy, setPolicy] = useState({ mode: 'suggest', tone: 'amable, cercano y profesional', language: 'auto', instructions: '' });
+  const [socialChatMessages, setSocialChatMessages] = useState<any[]>([]);
+  const [socialChatDraft, setSocialChatDraft] = useState('');
+  const [socialIntelligenceLoaded, setSocialIntelligenceLoaded] = useState(false);
+  const [knownPeopleCount, setKnownPeopleCount] = useState(0);
+  const [automationRule, setAutomationRule] = useState({
+    enabled: false,
+    channel: 'comments',
+    minDelayHours: 3,
+    maxDelayHours: 4,
+    dailyReplyLimit: 20,
+    personCooldownHours: 3,
+    simpleOnly: true,
+    instructions: '',
+  });
 
   const api = async (path: string, init: RequestInit = {}) => {
     const response = await fetch(path, {
@@ -635,6 +649,112 @@ export default function SocialHub({ session, projectId, results, onClose }: Prop
     }
   };
 
+  const loadSocialIntelligence = async () => {
+    if (!projectId || socialIntelligenceLoaded) return;
+    setBusy('nayla-load');
+    try {
+      const [chat, automation, people] = await Promise.all([
+        api(`/api/social/chat?projectId=${encodeURIComponent(projectId)}`),
+        api(`/api/social/automation/rules?projectId=${encodeURIComponent(projectId)}`),
+        api(`/api/social/people?projectId=${encodeURIComponent(projectId)}`),
+      ]);
+
+      setSocialChatMessages(chat.messages || []);
+      setKnownPeopleCount((people.people || []).length);
+
+      if (automation.rule) {
+        setAutomationRule({
+          enabled: Boolean(automation.rule.enabled),
+          channel: automation.rule.channel || 'comments',
+          minDelayHours: Number(automation.rule.min_delay_minutes || 180) / 60,
+          maxDelayHours: Number(automation.rule.max_delay_minutes || 240) / 60,
+          dailyReplyLimit: Number(automation.rule.daily_reply_limit || 20),
+          personCooldownHours: Number(automation.rule.person_cooldown_minutes || 180) / 60,
+          simpleOnly: automation.rule.simple_only !== false,
+          instructions: automation.rule.instructions || '',
+        });
+      }
+
+      setSocialIntelligenceLoaded(true);
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : 'No se pudo cargar la inteligencia social.');
+    } finally {
+      setBusy('');
+    }
+  };
+
+  const sendSocialChat = async () => {
+    if (!projectId || !socialChatDraft.trim() || busy === 'nayla-chat') return;
+    const text = socialChatDraft.trim();
+    setSocialChatDraft('');
+    setSocialChatMessages((prev) => [
+      ...prev,
+      { id: `local-user-${Date.now()}`, role: 'user', content: text, created_at: new Date().toISOString() },
+    ]);
+    setBusy('nayla-chat');
+
+    try {
+      const payload = await api('/api/social/chat', {
+        method: 'POST',
+        body: JSON.stringify({ projectId, message: text }),
+      });
+      if (payload.message) {
+        setSocialChatMessages((prev) => [...prev, payload.message]);
+      }
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : 'Nayla no pudo responder.');
+    } finally {
+      setBusy('');
+    }
+  };
+
+  const saveAutomationRule = async () => {
+    if (!projectId) return;
+    setBusy('automation');
+
+    try {
+      const payload = await api('/api/social/automation/rules', {
+        method: 'POST',
+        body: JSON.stringify({
+          projectId,
+          enabled: automationRule.enabled,
+          channel: automationRule.channel,
+          minDelayMinutes: Math.round(Number(automationRule.minDelayHours || 0) * 60),
+          maxDelayMinutes: Math.round(Number(automationRule.maxDelayHours || 0) * 60),
+          dailyReplyLimit: Math.round(Number(automationRule.dailyReplyLimit || 20)),
+          personCooldownMinutes: Math.round(Number(automationRule.personCooldownHours || 0) * 60),
+          simpleOnly: automationRule.simpleOnly,
+          instructions: automationRule.instructions,
+        }),
+      });
+
+      if (payload.rule) {
+        setAutomationRule((prev) => ({
+          ...prev,
+          enabled: Boolean(payload.rule.enabled),
+          channel: payload.rule.channel || prev.channel,
+        }));
+      }
+
+      if (automationRule.enabled && policy.mode !== 'auto') {
+        const nextPolicy = { ...policy, mode: 'auto' };
+        await api('/api/social/policy', {
+          method: 'POST',
+          body: JSON.stringify({ projectId, ...nextPolicy }),
+        });
+        setPolicy(nextPolicy);
+      }
+
+      setNotice(automationRule.enabled
+        ? 'Automatización activa. Nayla responderá solo lo permitido dentro del rango configurado.'
+        : 'Automatización desactivada.');
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : 'No se pudo guardar la automatización.');
+    } finally {
+      setBusy('');
+    }
+  };
+
   const openSocialTab = (nextTab: 'inicio' | 'publicar' | 'inbox' | 'metricas' | 'ajustes') => {
     setTab(nextTab);
     setNotice('');
@@ -650,6 +770,10 @@ export default function SocialHub({ session, projectId, results, onClose }: Prop
     if (nextTab === 'metricas' && !analyticsAccount) {
       const account = accounts.find((item: any) => item.status === 'connected');
       if (account) void fetchAnalytics(account.id);
+    }
+
+    if (nextTab === 'ajustes') {
+      void loadSocialIntelligence();
     }
   };
 
@@ -739,7 +863,7 @@ export default function SocialHub({ session, projectId, results, onClose }: Prop
           ['publicar', 'Publicar'],
           ['inbox', 'Inbox'],
           ['metricas', 'Datos'],
-          ['ajustes', 'IA'],
+          ['ajustes', 'Nayla'],
         ].map(([id, label]) => (
           <button key={id} onClick={() => openSocialTab(id as any)} style={{ ...tinyButton(tab === id), padding: '7px 2px', fontSize: 9 }}>
             {label}
