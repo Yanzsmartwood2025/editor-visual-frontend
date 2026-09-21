@@ -1646,7 +1646,6 @@ export default function NaylaCore() {
         setProjectMenuOpen(false);
         requestAnimationFrame(() => chatInputRef.current?.focus());
       }
-      }
     } catch (error: any) {
       console.error('Error subiendo desde canal del chat:', error);
       showAlert(error?.message || 'No se pudo subir el archivo.');
