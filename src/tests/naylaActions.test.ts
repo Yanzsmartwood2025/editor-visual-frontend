@@ -175,6 +175,51 @@ describe('Nayla action contracts', () => {
   });
 
 
+  it('accepts advanced Remotion transitions, professional effect chains and motion blur', () => {
+    const action = parseNaylaAction(JSON.stringify({
+      action: 'BUILD_TIMELINE',
+      assets: [
+        {
+          type: 'video',
+          source: 'url',
+          url: 'https://cdn.example/video.mp4',
+          durationInSeconds: 5,
+          transitionType: 'film-burn',
+          transitionDuration: 0.6,
+          professionalEffects: [
+            { type: 'color-correction', intensity: 0.55 },
+            { type: 'chromatic-aberration', intensity: 0.25, angle: 8 },
+            { type: 'glow', intensity: 0.2, color: '#ffffff' },
+          ],
+          motionBlur: {
+            shutterAngle: 180,
+            samples: 5,
+          },
+        },
+      ],
+      render: true,
+    }));
+
+    expect(action).not.toBeNull();
+    expect(action).toMatchObject({
+      action: 'BUILD_TIMELINE',
+      render: true,
+      assets: [
+        expect.objectContaining({
+          transitionType: 'film-burn',
+          professionalEffects: expect.arrayContaining([
+            expect.objectContaining({ type: 'color-correction' }),
+            expect.objectContaining({ type: 'chromatic-aberration' }),
+          ]),
+          motionBlur: {
+            shutterAngle: 180,
+            samples: 5,
+          },
+        }),
+      ],
+    });
+  });
+
   it('accepts explicit none values emitted by Nayla for simple timeline edits', () => {
     const action = parseNaylaAction(JSON.stringify({
       action: 'BUILD_TIMELINE',
