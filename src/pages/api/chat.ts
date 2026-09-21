@@ -753,7 +753,14 @@ Solo una imagen. No usar para texto→3D ni multivista.
         {"type":"color-correction","intensity":0.55},
         {"type":"glow","intensity":0.25}
       ],
-      "motionBlur": {"shutterAngle":180,"samples":5}
+      "motionBlur": {"shutterAngle":180,"samples":5},
+      "gsapMotion": {
+        "enter": "elastic",
+        "exit": "fade",
+        "enterDuration": 0.8,
+        "exitDuration": 0.5,
+        "intensity": 1
+      }
     },
     {
       "type": "audio",
@@ -781,6 +788,8 @@ Usa type únicamente "foto", "video" o "audio". source únicamente "url".
 Copia URLs exactas del proyecto. Para una orden sencilla decide tú los parámetros sin pedir nombres técnicos.
 Puedes encadenar hasta 6 professionalEffects por clip. Usa solo los nombres publicados en el catálogo Remotion CPU.
 motionBlur es opcional y debe reservarse para movimientos donde aporte valor; 5 muestras y 180 grados es un punto de partida equilibrado.
+gsapMotion es opcional para entradas y salidas expresivas. Presets: fade, slide-left, slide-right, slide-up, slide-down, zoom-in, zoom-out, bounce, elastic, spin y swing.
+Usa enter y/o exit, con enterDuration/exitDuration e intensity entre 0.25 y 2. Elige tú el preset según palabras cotidianas del usuario: rebota→bounce, elástico→elastic, gira→spin, balanceo→swing, entra desde un lado→slide-*.
 Las transiciones avanzadas disponibles incluyen film-burn, blur-slide, cross-zoom, dreamy-zoom, linear-blur y push-cut.
 subtitles es opcional. Cada subtítulo usa text, start, end, style, position y fontSize.
 style puede ser clean, cinematic, tiktok o karaoke. position puede ser top, center o bottom.
