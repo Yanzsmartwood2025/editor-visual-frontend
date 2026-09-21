@@ -4933,11 +4933,9 @@ if (!session) {
                     )}
                   </div>
                 ) : mainNav === 'redes' ? (
-                  <SocialHub
-                    session={session}
-                    projectId={activeProjectId}
-                    results={galeriaMultimedia.filter((item) => item.tipo === 'video' && isNaylaResultMedia(item))}
-                  />
+                  <div style={{ padding: 12, color: '#777', fontSize: '0.7rem' }}>
+                    REDES abierto a pantalla completa.
+                  </div>
                 ) : mainNav === 'play' ? (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 14, padding: '10px 4px' }}>
                     <div style={{ fontSize: '0.78rem', fontWeight: 850, letterSpacing: '0.8px', color: '#fff' }}>
@@ -5402,6 +5400,18 @@ if (!session) {
         </div>
 
       </div>
+
+      {isSubPanelOpen && mainNav === 'redes' && !isCleanMode && (
+        <SocialHub
+          session={session}
+          projectId={activeProjectId}
+          results={galeriaMultimedia.filter((item) => item.tipo === 'video' && isNaylaResultMedia(item))}
+          onClose={() => {
+            setIsSubPanelOpen(false);
+            setSubTool(null);
+          }}
+        />
+      )}
 
       {/* 4. MODAL / OVERLAY PANTALLA COMPLETA DE NAYLA IA */}
       {isAiModalOpen && (
