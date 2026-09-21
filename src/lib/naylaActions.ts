@@ -9,6 +9,27 @@ const gpuProviderSchema = z.enum(['runpod', 'vast']);
 
 const urlSchema = z.string().url().max(4000);
 
+const captionWordSchema = z.object({
+  text: z.string().trim().min(1).max(120),
+  startSec: z.number().min(0).max(3600),
+  endSec: z.number().min(0).max(3600),
+}).strict();
+
+const subtitleSchema = z.object({
+  text: z.string().trim().min(1).max(1200),
+  startSec: z.number().min(0).max(3600),
+  endSec: z.number().min(0).max(3600),
+  style: z.enum(['clean', 'cinematic', 'tiktok', 'karaoke', 'minimal']).optional(),
+  position: z.enum(['top', 'center', 'bottom']).optional(),
+  fontSize: z.number().min(18).max(140).optional(),
+  color: z.string().trim().min(1).max(64).optional(),
+  activeColor: z.string().trim().min(1).max(64).optional(),
+  backgroundColor: z.string().trim().min(1).max(64).optional(),
+  uppercase: z.boolean().optional(),
+  maxWidth: z.number().min(30).max(100).optional(),
+  words: z.array(captionWordSchema).max(300).optional(),
+}).strict();
+
 const buildTimelineAssetSchema = z.object({
   type: z.enum(['foto', 'image', 'video', 'audio']),
   source: z.literal('url'),
@@ -86,6 +107,7 @@ export const naylaActionSchema = z.discriminatedUnion('action', [
   z.object({
     action: z.literal('BUILD_TIMELINE'),
     assets: z.array(buildTimelineAssetSchema).min(1).max(250),
+    subtitles: z.array(subtitleSchema).max(400).optional(),
     render: z.boolean().optional().default(false),
   }),
   z.object({
