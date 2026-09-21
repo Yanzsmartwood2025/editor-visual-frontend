@@ -22,8 +22,18 @@ import { createR2PresignedGetUrl } from '../../lib/r2';
 import { canStartGpuCompute, getNaylaExecutionPolicyPrompt } from '../../lib/naylaExecutionPolicy';
 import { assistantRequestsPlanConfirmation, isUniversalNaylaConfirmation } from '../../lib/naylaPlanConfirmation';
 import {
+  buildEvenSubtitleTiming,
+  extractSubtitleBlocks,
+  getRequestedTimelineSeconds,
+  getRequestedVisualCount,
+  hasNaturalProjectPhotoReference,
+  timelinePlanRequestsRender,
+  wantsAllProjectPhotos,
+} from '../../lib/naylaTimelineIntent';
+import {
   getOwnedMediaByLabelsForUser,
   getOwnedMediaForUser,
+  getRecentOwnedMediaForUser,
   insertChatMessageForUser,
   listThreadMessagesForUser,
   resolveOwnedWorkspaceScope,
@@ -149,7 +159,8 @@ const findLastUserPlanInstruction = (
       if (isBarePlanConfirmation(item.content)) return false;
 
       const labels = getOrderedMediaLabels(item.content);
-      if (!labels.length) return false;
+      const naturalPhotos = hasNaturalProjectPhotoReference(item.content);
+      if (!labels.length && !naturalPhotos) return false;
 
       const text = normalizePlanningText(item.content);
       return /\b(video|timeline|edicion|montaje|foto|imagen|clip|transicion|efecto|movimiento|duracion|segundos)\b/.test(text);
@@ -228,19 +239,19 @@ const buildLabelTimelineFallback = (
 ): NaylaAction | null => {
   const normalized = message.toLowerCase();
   const labels = getOrderedMediaLabels(message).filter((label) => !label.startsWith('M'));
+  const naturalPhotos = hasNaturalProjectPhotoReference(message);
+  const requestedVisualCount = getRequestedVisualCount(message);
   const editingIntent =
     (
       /\b(crea|crear|haz|hacer|arma|armar|monta|montar|edita|editar|compone|componer|renderiza|renderizar|genera|generar)\b/.test(normalized) &&
       /\b(video|timeline|edici[oó]n|montaje|render)\b/.test(normalized)
     ) ||
     (
-      labels.length > 0 &&
-      /\b(video|timeline|edici[oó]n|montaje|foto|imagen|clip|transici[oó]n|efecto|movimiento|duraci[oó]n|segundos?)\b/.test(normalized)
+      (labels.length > 0 || naturalPhotos) &&
+      /\b(video|timeline|edici[oó]n|montaje|foto|imagen|clip|transici[oó]n|efecto|movimiento|duraci[oó]n|segundos?|minuto)\b/.test(normalized)
     );
 
   if (!editingIntent) return null;
-
-  if (!labels.length) return null;
 
   const byLabel = new Map(
     mediaLibrary
@@ -248,14 +259,39 @@ const buildLabelTimelineFallback = (
       .map((item) => [item.etiqueta!.trim().toUpperCase(), item])
   );
 
-  const resolved = labels.map((label) => byLabel.get(label));
-  if (resolved.some((item) => !item)) return null;
+  let resolved: Array<(typeof mediaLibrary)[number] | undefined> = [];
+
+  if (labels.length) {
+    resolved = labels.map((label) => byLabel.get(label));
+    if (resolved.some((item) => !item)) return null;
+  } else if (naturalPhotos) {
+    if (requestedVisualCount) {
+      const expectedLabels = Array.from(
+        { length: requestedVisualCount },
+        (_, index) => `F${index + 1}`
+      );
+      const labeledSequence = expectedLabels.map((label) => byLabel.get(label));
+
+      if (labeledSequence.every(Boolean)) {
+        resolved = labeledSequence;
+      } else {
+        const photos = mediaLibrary.filter((item) => item.tipo === 'foto');
+        if (photos.length < requestedVisualCount) return null;
+        resolved = photos.slice(-requestedVisualCount);
+      }
+    } else if (wantsAllProjectPhotos(message)) {
+      resolved = mediaLibrary.filter((item) => item.tipo === 'foto');
+    }
+  }
+
+  if (!resolved.length || resolved.some((item) => !item)) return null;
 
   const perItemDurationMatch = message.match(
     /\b(?:cada|por)\s+(?:foto|imagen|video|clip)[^.\n]{0,48}?(\d+(?:[.,]\d+)?)\s*(?:segundos?|s)\b/i
   );
   const durationMatch = message.match(/\b(?:aproximadamente\s+|aprox\.?\s+|unos?\s+|de\s+)?(\d+(?:[.,]\d+)?)\s*(?:segundos?|s)\b/i);
-  const requestedSeconds = durationMatch ? Number(durationMatch[1].replace(',', '.')) : null;
+  const requestedSeconds = getRequestedTimelineSeconds(message) ??
+    (durationMatch ? Number(durationMatch[1].replace(',', '.')) : null);
   const perItemSeconds = perItemDurationMatch ? Number(perItemDurationMatch[1].replace(',', '.')) : null;
   const visualCount = resolved.filter((item) => item?.tipo === 'foto' || item?.tipo === 'video').length;
   const perVisualDuration =
@@ -309,7 +345,7 @@ const buildLabelTimelineFallback = (
   const parsed = {
     action: 'BUILD_TIMELINE' as const,
     assets,
-    render: /\b(renderiza|renderizar|video\s+final|gu[aá]rd(?:a|alo).*b[oó]veda|crea\s+un\s+video|haz\s+un\s+video|monta\s+un\s+video)\b/i.test(message),
+    render: timelinePlanRequestsRender(message),
   };
 
   const validated = parseNaylaAction(JSON.stringify(parsed));
