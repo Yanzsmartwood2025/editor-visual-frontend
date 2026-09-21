@@ -19,6 +19,7 @@ import { resolveRequestPublicBaseUrl } from '../../lib/gpu/requestUrl';
 import type { GpuWorkload } from '../../lib/gpu/profiles';
 import { createMediaJobPlan } from '../../lib/mediaJobs';
 import { createR2PresignedGetUrl } from '../../lib/r2';
+import { canStartGpuCompute, getNaylaExecutionPolicyPrompt } from '../../lib/naylaExecutionPolicy';
 import {
   getOwnedMediaForUser,
   insertChatMessageForUser,
@@ -824,6 +825,9 @@ Para M1/M2 usa threeScenes y la etiqueta exacta; para una foto que solo debe par
 {"action":"RUN_GPU_JOB","workload":"video","jobType":"proceso","inputUrls":["URL_EXACTA"]}
 
 Para acciones con medios existentes usa únicamente las URLs exactas incluidas en el contexto del turno.
+
+POLÍTICA DE MOTOR:
+${getNaylaExecutionPolicyPrompt(engineMode)}
 MODO_MOTOR=${engineMode}
 `;
 
@@ -921,6 +925,36 @@ MODO_MOTOR=${engineMode}
                 : null;
             })()
           : parsedAction;
+
+    if (action?.action === 'RUN_GPU_JOB' && !canStartGpuCompute(engineMode)) {
+      const cloudFirstText =
+        'Voy a mantener esta tarea en Cloud primero. En este modo no se alquila GPU automáticamente. Si la operación realmente necesita Potencia, te lo indicaré antes de reservar una tarjeta.';
+
+      if (scope.threadId) {
+        await insertChatMessageForUser({
+          userId: firebaseUser.uid,
+          projectId: scope.projectId,
+          threadId: scope.threadId,
+          role: 'assistant',
+          content: cloudFirstText,
+          metadata: {
+            responseType: 'planning',
+            requiresCompute: true,
+            engineMode,
+          },
+        });
+      }
+
+      return res.status(200).json({
+        text: cloudFirstText,
+        planning: true,
+        requiresConfirmation: false,
+        requiresCompute: true,
+        engine: 'nayla-cloud',
+        projectId: scope.projectId,
+        threadId: scope.threadId || null,
+      });
+    }
 
     if (action && actionNeedsConsultativeApproval(action) && !executionConfirmed) {
       let planningText = sanitizeNaylaPublicText(responseText);
