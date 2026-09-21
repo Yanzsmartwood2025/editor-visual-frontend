@@ -14,12 +14,17 @@ import {
   listZernioConversations,
   listZernioMessages,
 } from '../providers/zernio';
-import { cacheSocialComments, cacheSocialConversation } from './cache';
+import { cacheSocialComments, cacheSocialConversation, extractSocialComments } from './cache';
 
 type ReviewScope = {
   comments: boolean;
   messages: boolean;
   metrics: boolean;
+};
+
+type ActivitySample = {
+  author: string;
+  text: string;
 };
 
 type AccountActivity = {
@@ -30,6 +35,8 @@ type AccountActivity = {
   conversations: number;
   messages: number;
   inboundMessages: number;
+  commentSamples: ActivitySample[];
+  messageSamples: ActivitySample[];
   metrics: Array<{ label: string; value: string | number }>;
   notes: string[];
 };
@@ -47,32 +54,48 @@ export const isSocialActivityReviewRequest = (message: string) => {
   const text = normalize(message);
   if (!text) return false;
 
-  const asksToInspect =
-    /\b(revisa|revisar|mira|mirar|busca|buscar|trae|traer|lee|leer|verifica|verificar|actualiza|actualizar|consulta|consultar|chequea|chequear)\b/.test(text) ||
-    /\b(que paso|que hay|como van|como esta)\b/.test(text);
-
   const socialObject =
-    /\b(comentarios?|mensajes?|notificaciones?|actividad|inbox|metricas?|estadisticas?|vistas?|alcance|interacciones?|redes?)\b/.test(text);
+    /\b(comentarios?|mensajes?|notificaciones?|actividad|inbox|dm|dms|metricas?|estadisticas?|vistas?|alcance|interacciones?|redes?|seguidores?|impresiones?)\b/.test(text);
 
-  return asksToInspect && socialObject;
+  if (!socialObject) return false;
+
+  const asksToInspect =
+    /\b(revisa|revisar|mira|mirar|busca|buscar|trae|traer|lee|leer|verifica|verificar|actualiza|actualizar|consulta|consultar|chequea|chequear|muestra|mostrar|muestrame|dame|necesito|quiero|quiero ver|quiero saber|ensename|dime)\b/.test(text) ||
+    /\b(que paso|que hay|como van|como esta|que escribieron|que dijeron|quien escribio|quienes escribieron|que comentaron|quien comento|cuales son)\b/.test(text);
+
+  const directSocialRequest =
+    /^(comentarios?|mensajes?|notificaciones?|inbox|metricas?|estadisticas?|actividad|redes?)\b/.test(text) ||
+    /\b(comentarios?|mensajes?|notificaciones?)\s+(de|del|de los|de las)\s+(usuarios?|seguidores?|gente|personas?)\b/.test(text);
+
+  return asksToInspect || directSocialRequest;
 };
 
 const reviewScope = (message: string): ReviewScope => {
   const text = normalize(message);
-  const broad =
-    /\b(actividad|redes|todo|todos|toda|todas|que paso|que hay|como van)\b/.test(text) &&
-    !/\bsolo\b/.test(text);
 
-  const comments = broad || /\b(comentarios?|comentaron|notificaciones?)\b/.test(text);
-  const messages = broad || /\b(mensajes?|inbox|dm|dms|notificaciones?)\b/.test(text);
-  const metrics =
-    /\b(metricas?|estadisticas?|vistas?|alcance|rendimiento|seguidores?|impresiones?)\b/.test(text) ||
-    (/\b(todo|todos|toda|todas)\b/.test(text) && /\b(redes?|actividad)\b/.test(text));
+  const mentionsComments =
+    /\b(comentarios?|comentaron|comento|comentario de usuarios?|comentarios de usuarios?)\b/.test(text);
+  const mentionsMessages =
+    /\b(mensajes?|inbox|dm|dms|mensaje privado|mensajes privados|me escribieron|escribieron por privado)\b/.test(text);
+  const mentionsNotifications = /\b(notificaciones?|avisos?)\b/.test(text);
+  const mentionsMetrics =
+    /\b(metricas?|estadisticas?|vistas?|alcance|rendimiento|seguidores?|impresiones?)\b/.test(text);
+
+  const genericActivity =
+    /\b(actividad|redes?)\b/.test(text) &&
+    !mentionsComments &&
+    !mentionsMessages &&
+    !mentionsNotifications &&
+    !mentionsMetrics;
+
+  const asksEverything =
+    /\b(todo|todos|toda|todas|completo|completa)\b/.test(text) &&
+    /\b(redes?|actividad|notificaciones?)\b/.test(text);
 
   return {
-    comments,
-    messages,
-    metrics,
+    comments: mentionsComments || mentionsNotifications || genericActivity || asksEverything,
+    messages: mentionsMessages || mentionsNotifications || genericActivity || asksEverything,
+    metrics: mentionsMetrics || asksEverything,
   };
 };
 
@@ -104,6 +127,45 @@ const extractMessages = (payload: any) =>
   Array.isArray(payload?.data) ? payload.data :
   Array.isArray(payload?.items) ? payload.items :
   [];
+
+const compactText = (value: unknown, max = 180) => {
+  const text = cleanNaylaChatText(String(value || '')).replace(/\s+/g, ' ').trim();
+  return text.length > max ? text.slice(0, max - 1).trimEnd() + '…' : text;
+};
+
+const commentSample = (comment: any): ActivitySample | null => {
+  const text = compactText(comment?.message || comment?.text || comment?.content || '');
+  if (!text) return null;
+  const author = compactText(
+    comment?.from?.name ||
+    comment?.author?.name ||
+    comment?.author?.username ||
+    comment?.user?.display_name ||
+    comment?.user?.username ||
+    comment?.username ||
+    'Usuario',
+    60
+  );
+  return { author: author || 'Usuario', text };
+};
+
+const messageSample = (message: any, fallbackAuthor = 'Usuario'): ActivitySample | null => {
+  const text = compactText(message?.message || message?.text || message?.content || message?.body || '');
+  if (!text) return null;
+  const direction = String(message?.direction || '').toLowerCase();
+  if (direction === 'outbound' || message?.isFromMe === true || message?.fromMe === true) return null;
+  const author = compactText(
+    message?.sender?.name ||
+    message?.sender?.username ||
+    message?.from?.name ||
+    message?.author?.name ||
+    message?.user?.display_name ||
+    message?.user?.username ||
+    fallbackAuthor,
+    60
+  );
+  return { author: author || fallbackAuthor, text };
+};
 
 const metricLabels: Record<string, string> = {
   followers: 'Seguidores',
