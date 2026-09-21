@@ -131,6 +131,14 @@ const SelectableChatText: React.FC<{ text: string }> = ({ text }) => (
   </div>
 );
 
+const isNaylaResultMedia = (item: MediaItem) => {
+  const source = String(item.fuente || '').trim().toLowerCase();
+  const label = String(item.etiqueta || '').trim().toUpperCase();
+
+  if (/^R\d+$/.test(label)) return true;
+  return /^(render:|nayla-cloud|nayla-compute|gpu:|generated:|ai:|output:)/.test(source);
+};
+
 const createRenderRequestId = () => {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
     return crypto.randomUUID();
@@ -221,6 +229,9 @@ export default function NaylaCore() {
   const [isMultiSelectMode, setIsMultiSelectMode] = useState(false);
   const longPressTimerRef = useRef<NodeJS.Timeout | null>(null);
   const [selectedMediaIds, setSelectedMediaIds] = useState<string[]>([]);
+  const [mediaActionItem, setMediaActionItem] = useState<MediaItem | null>(null);
+  const [mediaActionMode, setMediaActionMode] = useState<'menu' | 'delete'>('menu');
+  const [mediaActionBusy, setMediaActionBusy] = useState(false);
   const [codigoJsInput, setCodigoJsInput] = useState('// Inyecta comandos JS aquí\n// Ej: NaylaEngine.agregar(["V1", "V2", "A1"]);\n// NaylaEngine.agregarSubtitulos([{ texto: "Hola", inicioSec: 0, finSec: 5 }]);');
   const [moldesScripts, setMoldesScripts] = useState<{ id?: string, nombre: string; codigo: string }[]>([]);
   const [moldeActivo, setMoldeActivo] = useState<string>('');
@@ -967,6 +978,9 @@ export default function NaylaCore() {
   }, [expandedSurface]);
 
   useEffect(() => {
+    if (mainNav === 'boveda' || mainNav === 'resultados') {
+      setFiltroGaleria('todo');
+    }
     setCenteredMainToolId(mainNav);
     setCenteredSubToolId(SUB_TOOLS[mainNav]?.[0]?.id || null);
   }, [mainNav]);
@@ -2343,6 +2357,54 @@ export default function NaylaCore() {
       a.download = nombre;
       a.target = "_blank";
       a.click();
+    }
+  };
+
+
+  const eliminarMediaIndividual = async (item: MediaItem) => {
+    const currentSession = session || await getFirebaseSession();
+    if (!currentSession) return showAlert('Debes iniciar sesión para eliminar archivos.');
+
+    setMediaActionBusy(true);
+    try {
+      const response = await fetch('/api/galeria', {
+        method: 'DELETE',
+        headers: firebaseHeaders(currentSession, { 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ ids: [item.id] }),
+      });
+      const payload = await response.json().catch(() => ({})) as { error?: string };
+      if (!response.ok) throw new Error(payload.error || 'No se pudo eliminar el archivo.');
+
+      const nextTimeline = lineaDeTiempo.filter((clip) => clip.mediaId !== item.id);
+      if (nextTimeline.length !== lineaDeTiempo.length) {
+        setLineaDeTiempo(nextTimeline);
+        sincronizarLineaDeTiempo(nextTimeline);
+      }
+
+      setGaleriaMultimedia((prev) => prev.filter((media) => media.id !== item.id));
+      setSelectedMediaIds((prev) => prev.filter((id) => id !== item.id));
+      setChatAttachmentIds((prev) => prev.filter((id) => id !== item.id));
+
+      if (clipSeleccionado === item.id || mediaActivaUrl === item.url) {
+        setClipSeleccionado(null);
+        setMediaActivaUrl(null);
+        setIsPlaying(false);
+      }
+
+      if (videoResultadoUrl === item.url) {
+        setVideoResultadoUrl(null);
+        setVideoResultadoNombre(null);
+        setVideoResultadoEtiqueta(null);
+        setIsPlaying(false);
+      }
+
+      setMediaActionItem(null);
+      setMediaActionMode('menu');
+      showAlert('Archivo eliminado de tu espacio.');
+    } catch (error: any) {
+      showAlert(error?.message || 'No se pudo eliminar el archivo.');
+    } finally {
+      setMediaActionBusy(false);
     }
   };
 
@@ -4200,6 +4262,9 @@ if (!session) {
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(100px, 1fr))', gap: '8px' }}>
                     {galeriaMultimedia
                       .filter(item => {
+                        const isResult = isNaylaResultMedia(item);
+                        if (mainNav === 'boveda' && isResult) return false;
+                        if (mainNav === 'resultados' && !isResult) return false;
                         if (filtroGaleria === 'videos') return item.tipo === 'video';
                         if (filtroGaleria === 'fotos') return item.tipo === 'foto';
                         if (filtroGaleria === 'audios') return item.tipo === 'audio';
@@ -4208,6 +4273,36 @@ if (!session) {
                       .map(item => (
                         <div key={item.id} className="neon-btn" style={{ padding: '8px', borderRadius: '10px', flexDirection: 'column', position: 'relative', justifyContent: 'space-between', width: '100%', minHeight: '110px' }}>
                           <span style={{ fontSize: '0.6rem', backgroundColor: '#262626', padding: '2px 4px', borderRadius: '4px', color: '#fff', fontWeight: 'bold' }}>{item.etiqueta}</span>
+                          <button
+                            type="button"
+                            aria-label={`Opciones de ${item.nombre}`}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              setMediaActionItem(item);
+                              setMediaActionMode('menu');
+                            }}
+                            style={{
+                              position: 'absolute',
+                              top: 5,
+                              right: 5,
+                              width: 26,
+                              height: 26,
+                              borderRadius: '50%',
+                              border: '1px solid #3b3b3b',
+                              background: '#0b0b0b',
+                              color: '#fff',
+                              display: 'grid',
+                              placeItems: 'center',
+                              padding: 0,
+                              cursor: 'pointer',
+                              fontSize: 14,
+                              lineHeight: 1,
+                              zIndex: 2,
+                              letterSpacing: 1,
+                            }}
+                          >
+                            •••
+                          </button>
                           <div
                             onClick={() => {
                               setMediaActivaUrl(item.url);
@@ -4215,6 +4310,7 @@ if (!session) {
                               if (item.tipo === 'video' && String(item.fuente || '').startsWith('render:')) {
                                 setVideoResultadoUrl(item.url);
                                 setVideoResultadoNombre(item.nombre);
+                                setVideoResultadoEtiqueta(item.etiqueta || 'R');
                               } else {
                                 setVideoResultadoUrl(null);
                                 setVideoResultadoNombre(null);
@@ -5314,6 +5410,170 @@ if (!session) {
         }}
         onConfirm={(selectionId) => void confirmGpuQuote(selectionId)}
       />
+
+{mediaActionItem && (
+        <div
+          data-no-edge-swipe
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 100120,
+            background: 'rgba(0,0,0,0.78)',
+            display: 'flex',
+            alignItems: 'flex-end',
+            justifyContent: 'center',
+            padding: 14,
+            boxSizing: 'border-box',
+          }}
+          onPointerDown={(event) => {
+            if (event.target === event.currentTarget && !mediaActionBusy) {
+              setMediaActionItem(null);
+              setMediaActionMode('menu');
+            }
+          }}
+        >
+          <div style={{
+            width: 'min(460px, 100%)',
+            background: '#090909',
+            border: '1px solid #383838',
+            borderRadius: 20,
+            padding: 16,
+            color: '#fff',
+            boxShadow: '0 24px 70px rgba(0,0,0,0.75)',
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <div style={{
+                width: 42,
+                height: 42,
+                borderRadius: 11,
+                border: '1px solid #303030',
+                background: '#111',
+                display: 'grid',
+                placeItems: 'center',
+                overflow: 'hidden',
+                flex: '0 0 auto',
+              }}>
+                {mediaActionItem.tipo === 'foto' ? (
+                  <img src={mediaActionItem.url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                ) : mediaActionItem.tipo === 'video' ? (
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="#fff"><polygon points="5,3 19,12 5,21"/></svg>
+                ) : (
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+                )}
+              </div>
+              <div style={{ minWidth: 0, flex: 1 }}>
+                <div style={{ fontSize: 11, color: '#888', letterSpacing: '0.14em', fontWeight: 800 }}>
+                  {isNaylaResultMedia(mediaActionItem) ? 'RESULTADO NAYLA' : 'ARCHIVO DEL PROYECTO'}
+                </div>
+                <div style={{ marginTop: 3, fontSize: 15, fontWeight: 750, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {mediaActionItem.nombre}
+                </div>
+                <div style={{ marginTop: 2, fontSize: 11, color: '#777' }}>
+                  {mediaActionItem.etiqueta || '—'}
+                </div>
+              </div>
+              <button
+                type="button"
+                aria-label="Cerrar"
+                disabled={mediaActionBusy}
+                onClick={() => {
+                  setMediaActionItem(null);
+                  setMediaActionMode('menu');
+                }}
+                style={{ border: 'none', background: 'transparent', color: '#fff', fontSize: 26, cursor: 'pointer', padding: 2 }}
+              >
+                ×
+              </button>
+            </div>
+
+            {mediaActionMode === 'menu' ? (
+              <div style={{ display: 'grid', gap: 9, marginTop: 16 }}>
+                <button
+                  type="button"
+                  disabled={mediaActionBusy}
+                  onClick={() => {
+                    void descargarIndividual(mediaActionItem.url, mediaActionItem.nombre, mediaActionItem.tipo);
+                    setMediaActionItem(null);
+                  }}
+                  style={{
+                    width: '100%',
+                    minHeight: 48,
+                    borderRadius: 13,
+                    border: '1px solid #efefef',
+                    background: '#f4f4f4',
+                    color: '#050505',
+                    fontWeight: 850,
+                    cursor: 'pointer',
+                  }}
+                >
+                  DESCARGAR
+                </button>
+                <button
+                  type="button"
+                  disabled={mediaActionBusy}
+                  onClick={() => setMediaActionMode('delete')}
+                  style={{
+                    width: '100%',
+                    minHeight: 48,
+                    borderRadius: 13,
+                    border: '1px solid #3a3a3a',
+                    background: '#111',
+                    color: '#fff',
+                    fontWeight: 800,
+                    cursor: 'pointer',
+                  }}
+                >
+                  ELIMINAR
+                </button>
+              </div>
+            ) : (
+              <div style={{ marginTop: 17 }}>
+                <div style={{ fontSize: 15, lineHeight: 1.45, fontWeight: 700 }}>
+                  ¿Eliminar este archivo?
+                </div>
+                <div style={{ marginTop: 6, color: '#929292', fontSize: 12, lineHeight: 1.45 }}>
+                  Se quitará de tu proyecto y de tu almacenamiento privado. Esta acción no se puede deshacer.
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 9, marginTop: 16 }}>
+                  <button
+                    type="button"
+                    disabled={mediaActionBusy}
+                    onClick={() => setMediaActionMode('menu')}
+                    style={{
+                      minHeight: 46,
+                      borderRadius: 12,
+                      border: '1px solid #333',
+                      background: '#101010',
+                      color: '#ddd',
+                      fontWeight: 750,
+                      cursor: mediaActionBusy ? 'wait' : 'pointer',
+                    }}
+                  >
+                    VOLVER
+                  </button>
+                  <button
+                    type="button"
+                    disabled={mediaActionBusy}
+                    onClick={() => void eliminarMediaIndividual(mediaActionItem)}
+                    style={{
+                      minHeight: 46,
+                      borderRadius: 12,
+                      border: '1px solid #f0f0f0',
+                      background: '#f4f4f4',
+                      color: '#050505',
+                      fontWeight: 900,
+                      cursor: mediaActionBusy ? 'wait' : 'pointer',
+                      opacity: mediaActionBusy ? 0.55 : 1,
+                    }}
+                  >
+                    {mediaActionBusy ? 'ELIMINANDO…' : 'SÍ, ELIMINAR'}
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
 {projectDialog && (
         <div

@@ -1,6 +1,6 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { requireFirebaseUser } from '../../lib/firebaseAdmin';
-import { createR2PresignedGetUrl, createR2StorageUrl } from '../../lib/r2';
+import { createR2PresignedGetUrl, createR2StorageUrl, deleteR2Object } from '../../lib/r2';
 import {
   getWorkspaceSupabaseAdmin,
   resolveOwnedWorkspaceScope,
@@ -139,13 +139,35 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         : [];
       if (!ids.length) return res.status(400).json({ error: 'Se requiere al menos un id.' });
 
+      const { data: ownedItems, error: lookupError } = await supabase
+        .from('galeria_multimedia')
+        .select('id,r2_key')
+        .in('id', ids)
+        .eq('user_id', user.uid);
+
+      if (lookupError) throw lookupError;
+      if (!ownedItems?.length) return res.status(404).json({ error: 'Archivo no encontrado.' });
+
+      const privateKeys = ownedItems
+        .map((item: any) => typeof item.r2_key === 'string' ? item.r2_key : null)
+        .filter((key: string | null): key is string => Boolean(key));
+
+      for (const key of privateKeys) {
+        if (!key.startsWith(`${user.uid}/`)) {
+          throw new Error('La clave R2 no pertenece al usuario autenticado.');
+        }
+        await deleteR2Object(key);
+      }
+
+      const ownedIds = ownedItems.map((item: any) => item.id);
       const { error } = await supabase
         .from('galeria_multimedia')
         .delete()
-        .in('id', ids)
+        .in('id', ownedIds)
         .eq('user_id', user.uid);
+
       if (error) throw error;
-      return res.status(200).json({ success: true });
+      return res.status(200).json({ success: true, deletedIds: ownedIds });
     }
 
     return res.status(405).json({ error: 'Método no permitido.' });
