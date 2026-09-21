@@ -2239,16 +2239,24 @@ export default function NaylaCore() {
     currentSession: FirebaseSession,
     threadId: string
   ) => {
-    const response = await fetch('/api/chat/messages?threadId=' + encodeURIComponent(threadId) + '&limit=100', {
-      headers: firebaseHeaders(currentSession),
-    });
+    const [response, rendersResponse] = await Promise.all([
+      fetch('/api/chat/messages?threadId=' + encodeURIComponent(threadId) + '&limit=100', {
+        headers: firebaseHeaders(currentSession),
+      }),
+      fetch('/api/render?threadId=' + encodeURIComponent(threadId), {
+        headers: firebaseHeaders(currentSession),
+        cache: 'no-store',
+      }),
+    ]);
+
     const payload = await response.json().catch(() => ({})) as { messages?: any[]; error?: string };
+    const rendersPayload = await rendersResponse.json().catch(() => ({})) as { renders?: any[]; error?: string };
 
     if (!response.ok) {
       throw new Error(payload.error || 'No se pudo cargar el historial del chat.');
     }
 
-    const loaded = (payload.messages || [])
+    const loaded: NaylaChatMessage[] = (payload.messages || [])
       .filter((message) => message.role === 'user' || message.role === 'assistant')
       .map((message) => ({
         role: message.role === 'user' ? 'user' as const : 'ai' as const,
@@ -2280,6 +2288,53 @@ export default function NaylaCore() {
             }
           : undefined,
       }));
+
+    if (rendersResponse.ok) {
+      for (const render of rendersPayload.renders || []) {
+        const usage = render?.usage || {};
+        const serverStatus = String(render?.status || 'started');
+        const stage = String(usage.stage || 'preparing');
+        const renderStatus: NonNullable<NaylaChatMessage['renderTask']>['status'] =
+          serverStatus === 'completed'
+            ? 'completed'
+            : serverStatus === 'failed'
+              ? 'failed'
+              : serverStatus === 'cancelled'
+                ? 'cancelled'
+                : stage === 'saving'
+                  ? 'saving'
+                  : stage === 'rendering'
+                    ? 'rendering'
+                    : 'preparing';
+
+        loaded.push({
+          role: 'ai',
+          text: '',
+          renderTask: {
+            requestId: String(render.requestId || ''),
+            status: renderStatus,
+            phase: String(
+              usage.phase ||
+              (renderStatus === 'completed'
+                ? 'Resultado listo'
+                : renderStatus === 'failed'
+                  ? 'Procesamiento interrumpido'
+                  : renderStatus === 'cancelled'
+                    ? 'Cancelado por el usuario'
+                    : 'Preparando edición')
+            ),
+            progress: renderStatus === 'completed'
+              ? 1
+              : Math.max(0, Math.min(1, Number(usage.progress) || 0)),
+            framesDone: Number.isFinite(Number(usage.framesDone)) ? Number(usage.framesDone) : undefined,
+            framesTotal: Number.isFinite(Number(usage.framesTotal)) ? Number(usage.framesTotal) : undefined,
+            outputUrl: render?.galleryItem?.url || null,
+            galleryItem: render?.galleryItem || null,
+            error: render?.error || null,
+          },
+        });
+      }
+    }
 
     setChatMessages(loaded);
   };
