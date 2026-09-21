@@ -19,6 +19,7 @@ import { firebaseHeaders } from '../lib/apiClient';
 import { Model3DWorkspace } from '../components/Model3DWorkspace';
 import { GpuQuoteModal, type GpuQuoteView } from '../components/GpuQuoteModal';
 import { NaylaEngineBar } from '../components/NaylaEngineBar';
+import SocialHub from '../components/SocialHub';
 import type { NaylaEngineMode } from '../lib/naylaSystemCatalog';
 import {
   NaylaProjectMenu,
@@ -4932,17 +4933,11 @@ if (!session) {
                     )}
                   </div>
                 ) : mainNav === 'redes' ? (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 14, padding: '10px 4px' }}>
-                    <div style={{ fontSize: '0.78rem', fontWeight: 850, letterSpacing: '0.8px', color: '#fff' }}>
-                      REDES SOCIALES
-                    </div>
-                    <div style={{ fontSize: '0.72rem', lineHeight: 1.6, color: '#a3a3a3' }}>
-                      Módulo reservado para publicar los resultados de Nayla directamente en redes sociales después de generar un video.
-                    </div>
-                    <div style={{ border: '1px solid #2a2a2a', borderRadius: 12, padding: 12, background: '#080808', color: '#777', fontSize: '0.68rem' }}>
-                      Próximamente: cuentas conectadas, selección de R1/R2, título, descripción y publicación.
-                    </div>
-                  </div>
+                  <SocialHub
+                    session={session}
+                    projectId={activeProjectId}
+                    results={galeriaMultimedia.filter((item) => item.tipo === 'video' && isNaylaResultMedia(item))}
+                  />
                 ) : mainNav === 'play' ? (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 14, padding: '10px 4px' }}>
                     <div style={{ fontSize: '0.78rem', fontWeight: 850, letterSpacing: '0.8px', color: '#fff' }}>
