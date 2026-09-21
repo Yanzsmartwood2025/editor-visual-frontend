@@ -117,6 +117,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         ? await replyUploadPostComment({
             username: profile.upload_post_username,
             platform: target.platform,
+            postId: String(target.provider_post_id),
             commentId: parsed.data.commentId,
             message: parsed.data.message,
           })
