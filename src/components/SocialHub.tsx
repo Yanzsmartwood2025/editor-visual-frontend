@@ -75,14 +75,190 @@ const statusText: Record<string, string> = {
   pending: 'Pendiente',
 };
 
+type NaylaOption = {
+  value: string;
+  label: string;
+  subtitle?: string;
+  platform?: string;
+};
+
+const NaylaSelect = ({
+  value,
+  placeholder,
+  options,
+  onChange,
+}: {
+  value: string;
+  placeholder: string;
+  options: NaylaOption[];
+  onChange: (value: string) => void;
+}) => {
+  const [open, setOpen] = useState(false);
+  const selected = options.find((option) => option.value === value);
+
+  return (
+    <div style={{ position: 'relative', width: '100%' }}>
+      <button
+        type="button"
+        onClick={() => setOpen((current) => !current)}
+        style={{
+          width: '100%',
+          minHeight: 46,
+          padding: '9px 12px',
+          borderRadius: 11,
+          border: open ? '1px solid rgba(255,255,255,.5)' : '1px solid rgba(255,255,255,.14)',
+          background: '#0b0b0b',
+          color: selected ? '#eee' : '#888',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 9,
+          textAlign: 'left',
+          cursor: 'pointer',
+          boxShadow: open ? '0 0 0 1px rgba(255,255,255,.08)' : 'none',
+        }}
+      >
+        {selected?.platform ? <NetworkIcon platform={selected.platform} size={25} /> : null}
+        <span style={{ flex: 1, minWidth: 0 }}>
+          <span style={{ display: 'block', fontSize: 10, fontWeight: selected ? 800 : 650, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {selected?.label || placeholder}
+          </span>
+          {selected?.subtitle ? (
+            <span style={{ display: 'block', marginTop: 2, color: '#777', fontSize: 8, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {selected.subtitle}
+            </span>
+          ) : null}
+        </span>
+        <span style={{ color: '#aaa', fontSize: 16, transform: open ? 'rotate(180deg)' : 'none', transition: 'transform .15s ease' }}>⌄</span>
+      </button>
+
+      {open && (
+        <>
+          <button
+            type="button"
+            aria-label="Cerrar selector"
+            onClick={() => setOpen(false)}
+            style={{
+              position: 'fixed',
+              inset: 0,
+              zIndex: 9996,
+              border: 0,
+              background: 'rgba(0,0,0,.42)',
+              padding: 0,
+            }}
+          />
+          <div
+            style={{
+              position: 'fixed',
+              left: 18,
+              right: 18,
+              bottom: 18,
+              zIndex: 9997,
+              maxHeight: '62dvh',
+              overflowY: 'auto',
+              borderRadius: 18,
+              border: '1px solid rgba(255,255,255,.16)',
+              background: '#0b0b0b',
+              boxShadow: '0 20px 60px rgba(0,0,0,.75)',
+              padding: 8,
+            }}
+          >
+            <div style={{ padding: '7px 9px 10px', color: '#777', fontSize: 9, fontWeight: 850, letterSpacing: '.5px' }}>
+              {placeholder.toUpperCase()}
+            </div>
+            {options.map((option) => {
+              const active = option.value === value;
+              return (
+                <button
+                  key={option.value}
+                  type="button"
+                  onClick={() => {
+                    onChange(option.value);
+                    setOpen(false);
+                  }}
+                  style={{
+                    width: '100%',
+                    minHeight: 50,
+                    border: 0,
+                    borderTop: '1px solid rgba(255,255,255,.055)',
+                    borderRadius: 10,
+                    background: active ? 'rgba(255,255,255,.09)' : 'transparent',
+                    color: '#eee',
+                    padding: '8px 9px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 10,
+                    textAlign: 'left',
+                    cursor: 'pointer',
+                  }}
+                >
+                  {option.platform ? <NetworkIcon platform={option.platform} size={28} /> : null}
+                  <span style={{ flex: 1, minWidth: 0 }}>
+                    <span style={{ display: 'block', fontSize: 11, fontWeight: active ? 900 : 750, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {option.label}
+                    </span>
+                    {option.subtitle ? (
+                      <span style={{ display: 'block', marginTop: 3, color: '#777', fontSize: 8.5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {option.subtitle}
+                      </span>
+                    ) : null}
+                  </span>
+                  <span style={{ width: 20, height: 20, borderRadius: '50%', border: active ? '2px solid #fff' : '1px solid #555', display: 'grid', placeItems: 'center' }}>
+                    {active ? <span style={{ width: 9, height: 9, borderRadius: '50%', background: '#fff' }} /> : null}
+                  </span>
+                </button>
+              );
+            })}
+            {!options.length && (
+              <div style={{ padding: 14, color: '#666', fontSize: 10 }}>No hay opciones disponibles.</div>
+            )}
+          </div>
+        </>
+      )}
+    </div>
+  );
+};
+
+const metricLabels: Record<string, string> = {
+  followers: 'Seguidores',
+  reach: 'Alcance',
+  impressions: 'Impresiones',
+  profileViews: 'Visitas al perfil',
+  profile_views: 'Visitas al perfil',
+  views: 'Vistas',
+  videoViews: 'Vistas de video',
+  video_views: 'Vistas de video',
+  likes: 'Me gusta',
+  comments: 'Comentarios',
+  shares: 'Compartidos',
+  saves: 'Guardados',
+  clicks: 'Clics',
+  engagement: 'Interacción',
+};
+
 const unwrapMetrics = (value: any): { label: string; value: string | number }[] => {
   const root = value?.analytics || value || {};
-  const candidates = root?.totals || root?.summary || root?.metrics || root;
+  const direct = root?.totals || root?.summary || root?.metrics || root;
+  let candidates = direct;
+
+  if (candidates && typeof candidates === 'object' && !Array.isArray(candidates)) {
+    const scalarCount = Object.values(candidates).filter((item) => typeof item === 'number' || typeof item === 'string').length;
+    if (!scalarCount) {
+      const nested = Object.values(candidates).find((item) => {
+        if (!item || typeof item !== 'object' || Array.isArray(item)) return false;
+        return Object.values(item as Record<string, unknown>).some((child) => typeof child === 'number' || typeof child === 'string');
+      });
+      if (nested) candidates = nested;
+    }
+  }
+
   if (!candidates || typeof candidates !== 'object' || Array.isArray(candidates)) return [];
   return Object.entries(candidates)
     .filter(([, item]) => typeof item === 'number' || typeof item === 'string')
     .slice(0, 12)
-    .map(([label, item]) => ({ label, value: item as any }));
+    .map(([label, item]) => ({
+      label: metricLabels[label] || label.replace(/_/g, ' '),
+      value: item as string | number,
+    }));
 };
 
 export default function SocialHub({ session, projectId, results, onClose }: Props) {
@@ -95,11 +271,15 @@ export default function SocialHub({ session, projectId, results, onClose }: Prop
   const [title, setTitle] = useState('');
   const [caption, setCaption] = useState('');
   const [commentTarget, setCommentTarget] = useState('');
+  const [commentAccount, setCommentAccount] = useState('');
+  const [commentMedia, setCommentMedia] = useState<any[]>([]);
+  const [commentSource, setCommentSource] = useState<any>(null);
   const [liveComments, setLiveComments] = useState<any[]>([]);
   const [replying, setReplying] = useState<Record<string, string>>({});
   const [analyticsAccount, setAnalyticsAccount] = useState('');
   const [analytics, setAnalytics] = useState<any>(null);
   const [inboxAccount, setInboxAccount] = useState('');
+  const [inboxNotice, setInboxNotice] = useState('');
   const [conversations, setConversations] = useState<any[]>([]);
   const [inboxConversation, setInboxConversation] = useState<any>(null);
   const [inboxMessages, setInboxMessages] = useState<any[]>([]);
@@ -259,14 +439,49 @@ export default function SocialHub({ session, projectId, results, onClose }: Prop
     }
   };
 
-  const fetchComments = async (targetId: string) => {
-    if (!projectId) return;
-    setBusy('comments');
+  const fetchCommentMedia = async (accountId: string) => {
+    if (!projectId || !accountId) return;
+    setCommentAccount(accountId);
+    setCommentTarget('');
+    setCommentSource(null);
+    setLiveComments([]);
+    setBusy('comment-media');
     try {
-      const payload = await api(`/api/social/comments?projectId=${encodeURIComponent(projectId)}&targetId=${encodeURIComponent(targetId)}`);
-      setCommentTarget(targetId);
+      const payload = await api(`/api/social/media?projectId=${encodeURIComponent(projectId)}&accountId=${encodeURIComponent(accountId)}`);
+      setCommentMedia(payload.media || []);
+      if (payload.notice) setNotice(payload.notice);
+    } catch (error) {
+      setCommentMedia([]);
+      setNotice(error instanceof Error ? error.message : 'No se pudieron traer las publicaciones de esta cuenta.');
+    } finally {
+      setBusy('');
+    }
+  };
+
+  const fetchComments = async (mediaId: string) => {
+    if (!projectId || !commentAccount || !mediaId) return;
+    const media = commentMedia.find((item: any) => String(item.id) === String(mediaId));
+    if (!media) return;
+
+    setBusy('comments');
+    setCommentTarget(String(media.id));
+    setCommentSource({
+      accountId: commentAccount,
+      postId: String(media.id),
+      postUrl: media.permalink || null,
+      platform: accounts.find((account: any) => account.id === commentAccount)?.platform || 'social',
+    });
+    try {
+      const params = new URLSearchParams({
+        projectId,
+        accountId: commentAccount,
+        postId: String(media.id),
+      });
+      if (media.permalink) params.set('postUrl', String(media.permalink));
+      const payload = await api('/api/social/comments?' + params.toString());
       setLiveComments(payload.comments || []);
     } catch (error) {
+      setLiveComments([]);
       setNotice(error instanceof Error ? error.message : 'No se pudieron traer comentarios.');
     } finally {
       setBusy('');
@@ -274,7 +489,7 @@ export default function SocialHub({ session, projectId, results, onClose }: Prop
   };
 
   const sendReply = async (comment: any) => {
-    if (!projectId || !commentTarget) return;
+    if (!projectId || !commentSource?.accountId || !commentSource?.postId) return;
     const commentId = String(comment.id || comment.comment_id || comment.commentId || '');
     const message = replying[commentId]?.trim();
     if (!message) return;
@@ -282,7 +497,14 @@ export default function SocialHub({ session, projectId, results, onClose }: Prop
     try {
       await api('/api/social/comments', {
         method: 'POST',
-        body: JSON.stringify({ projectId, targetId: commentTarget, commentId, message }),
+        body: JSON.stringify({
+          projectId,
+          accountId: commentSource.accountId,
+          postId: commentSource.postId,
+          postUrl: commentSource.postUrl || undefined,
+          commentId,
+          message,
+        }),
       });
       setReplying((prev) => ({ ...prev, [commentId]: '' }));
       setNotice('Respuesta publicada.');
@@ -310,6 +532,7 @@ export default function SocialHub({ session, projectId, results, onClose }: Prop
   const fetchInbox = async (accountId: string) => {
     if (!projectId) return;
     setInboxAccount(accountId);
+    setInboxNotice('');
     setInboxConversation(null);
     setInboxMessages([]);
     setMessageDraft('');
@@ -317,7 +540,7 @@ export default function SocialHub({ session, projectId, results, onClose }: Prop
     try {
       const payload = await api(`/api/social/inbox?projectId=${encodeURIComponent(projectId)}&accountId=${encodeURIComponent(accountId)}`);
       setConversations(payload.conversations || []);
-      if (payload.notice) setNotice(payload.notice);
+      setInboxNotice(payload.notice || '');
     } catch (error) {
       setNotice(error instanceof Error ? error.message : 'No se pudo abrir el Inbox.');
     } finally {
@@ -374,8 +597,7 @@ export default function SocialHub({ session, projectId, results, onClose }: Prop
   };
 
   const suggestReply = async (comment: any, commentId: string, author: string) => {
-    if (!projectId || !commentTarget) return;
-    const target = recentTargets.find((item: any) => item.id === commentTarget);
+    if (!projectId || !commentSource) return;
     const commentText = String(comment.message || comment.text || comment.content || '').trim();
     if (!commentText) return;
     setBusy('suggest-' + commentId);
@@ -384,7 +606,7 @@ export default function SocialHub({ session, projectId, results, onClose }: Prop
         method: 'POST',
         body: JSON.stringify({
           projectId,
-          platform: target?.platform || 'social',
+          platform: commentSource.platform || 'social',
           authorName: author,
           commentText,
         }),
@@ -410,6 +632,24 @@ export default function SocialHub({ session, projectId, results, onClose }: Prop
       setNotice(error instanceof Error ? error.message : 'No se pudieron guardar las reglas.');
     } finally {
       setBusy('');
+    }
+  };
+
+  const openSocialTab = (nextTab: 'inicio' | 'publicar' | 'inbox' | 'metricas' | 'ajustes') => {
+    setTab(nextTab);
+    setNotice('');
+
+    if (nextTab === 'inbox' && !commentAccount) {
+      const account = accounts.find((item: any) =>
+        item.status === 'connected' &&
+        (!Array.isArray(item.capabilities) || item.capabilities.includes('comments'))
+      );
+      if (account) void fetchCommentMedia(account.id);
+    }
+
+    if (nextTab === 'metricas' && !analyticsAccount) {
+      const account = accounts.find((item: any) => item.status === 'connected');
+      if (account) void fetchAnalytics(account.id);
     }
   };
 
@@ -501,7 +741,7 @@ export default function SocialHub({ session, projectId, results, onClose }: Prop
           ['metricas', 'Datos'],
           ['ajustes', 'IA'],
         ].map(([id, label]) => (
-          <button key={id} onClick={() => setTab(id as any)} style={{ ...tinyButton(tab === id), padding: '7px 2px', fontSize: 9 }}>
+          <button key={id} onClick={() => openSocialTab(id as any)} style={{ ...tinyButton(tab === id), padding: '7px 2px', fontSize: 9 }}>
             {label}
           </button>
         ))}
@@ -600,10 +840,16 @@ export default function SocialHub({ session, projectId, results, onClose }: Prop
       {tab === 'publicar' && (
         <div style={{ ...panel, padding: 11, display: 'flex', flexDirection: 'column', gap: 10 }}>
           <div style={{ fontSize: 10, fontWeight: 900 }}>PUBLICAR RESULTADO</div>
-          <select value={selectedResult} onChange={(event) => setSelectedResult(event.target.value)} style={{ width: '100%', background: '#0b0b0b', color: '#ddd', border: '1px solid #272727', borderRadius: 9, padding: 8, fontSize: 10 }}>
-            <option value="">Seleccionar R1 / R2…</option>
-            {results.map((item) => <option key={item.id} value={item.id}>{item.etiqueta || 'R'} · {item.nombre || 'Video'}</option>)}
-          </select>
+          <NaylaSelect
+            value={selectedResult}
+            placeholder="Seleccionar R1 / R2"
+            onChange={setSelectedResult}
+            options={results.map((item) => ({
+              value: item.id,
+              label: `${item.etiqueta || 'R'} · ${item.nombre || 'Video'}`,
+              subtitle: 'Resultado de Nayla',
+            }))}
+          />
           <input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Título" style={{ background: '#0b0b0b', color: '#eee', border: '1px solid #272727', borderRadius: 9, padding: 8, fontSize: 10 }} />
           <textarea value={caption} onChange={(event) => setCaption(event.target.value)} placeholder="Descripción / caption" rows={4} style={{ resize: 'vertical', background: '#0b0b0b', color: '#eee', border: '1px solid #272727', borderRadius: 9, padding: 8, fontSize: 10, lineHeight: 1.45 }} />
           <div style={{ fontSize: 9, color: '#777' }}>DESTINOS</div>
@@ -629,13 +875,40 @@ export default function SocialHub({ session, projectId, results, onClose }: Prop
       {tab === 'inbox' && (
         <>
           <div style={{ ...panel, padding: 10 }}>
-            <div style={{ fontSize: 10, fontWeight: 900, marginBottom: 8 }}>COMENTARIOS POR PUBLICACIÓN</div>
-            <select value={commentTarget} onChange={(event) => void fetchComments(event.target.value)} style={{ width: '100%', background: '#0b0b0b', color: '#ddd', border: '1px solid #272727', borderRadius: 9, padding: 8, fontSize: 9 }}>
-              <option value="">Selecciona una publicación…</option>
-              {recentTargets.filter((target: any) => target.provider_post_id || target.post_url).map((target: any) => (
-                <option key={target.id} value={target.id}>{target.platform} · {statusText[target.status] || target.status}</option>
-              ))}
-            </select>
+            <div style={{ fontSize: 10, fontWeight: 900, marginBottom: 8 }}>COMENTARIOS</div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+              <NaylaSelect
+                value={commentAccount}
+                placeholder="Seleccionar cuenta"
+                onChange={(value) => void fetchCommentMedia(value)}
+                options={accounts
+                  .filter((account: any) => account.status === 'connected' && (
+                    !Array.isArray(account.capabilities) || account.capabilities.includes('comments')
+                  ))
+                  .map((account: any) => ({
+                    value: account.id,
+                    label: account.display_name || account.handle || account.username || account.platform,
+                    subtitle: account.handle ? `@${String(account.handle).replace(/^@/, '')}` : 'Cuenta conectada',
+                    platform: account.platform,
+                  }))}
+              />
+              <NaylaSelect
+                value={commentTarget}
+                placeholder={busy === 'comment-media' ? 'Cargando publicaciones…' : 'Seleccionar publicación'}
+                onChange={(value) => void fetchComments(value)}
+                options={commentMedia.map((media: any) => ({
+                  value: String(media.id),
+                  label: String(media.caption || 'Publicación sin texto').slice(0, 72),
+                  subtitle: media.timestamp ? new Date(media.timestamp).toLocaleDateString('es') : 'Publicación reciente',
+                  platform: accounts.find((account: any) => account.id === commentAccount)?.platform,
+                }))}
+              />
+            </div>
+            {commentAccount && !commentMedia.length && busy !== 'comment-media' && (
+              <div style={{ marginTop: 8, color: '#666', fontSize: 9, lineHeight: 1.45 }}>
+                No encontré publicaciones recientes en esta cuenta.
+              </div>
+            )}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 7, marginTop: 9 }}>
               {liveComments.map((comment: any, index: number) => {
                 const id = String(comment.id || comment.comment_id || comment.commentId || index);
@@ -664,10 +937,22 @@ export default function SocialHub({ session, projectId, results, onClose }: Prop
 
           <div style={{ ...panel, padding: 10 }}>
             <div style={{ fontSize: 10, fontWeight: 900, marginBottom: 8 }}>MENSAJES</div>
-            <select value={inboxAccount} onChange={(event) => void fetchInbox(event.target.value)} style={{ width: '100%', background: '#0b0b0b', color: '#ddd', border: '1px solid #272727', borderRadius: 9, padding: 8, fontSize: 9 }}>
-              <option value="">Selecciona una cuenta…</option>
-              {accounts.map((account: any) => <option key={account.id} value={account.id}>{account.platform} · {account.display_name || account.handle || account.username || 'Cuenta'}</option>)}
-            </select>
+            <NaylaSelect
+              value={inboxAccount}
+              placeholder="Seleccionar cuenta"
+              onChange={(value) => void fetchInbox(value)}
+              options={accounts.map((account: any) => ({
+                value: account.id,
+                label: account.display_name || account.handle || account.username || 'Cuenta',
+                subtitle: 'Mensajes privados',
+                platform: account.platform,
+              }))}
+            />
+            {inboxNotice && (
+              <div style={{ marginTop: 8, padding: '8px 9px', borderRadius: 9, background: 'rgba(255,255,255,.025)', color: '#777', fontSize: 9, lineHeight: 1.45 }}>
+                {inboxNotice}
+              </div>
+            )}
             <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 6 }}>
               {conversations.slice(0, 12).map((conversation: any, index: number) => {
                 const conversationId = String(conversation._id || conversation.id || index);
@@ -747,10 +1032,17 @@ export default function SocialHub({ session, projectId, results, onClose }: Prop
       {tab === 'metricas' && (
         <div style={{ ...panel, padding: 10 }}>
           <div style={{ fontSize: 10, fontWeight: 900, marginBottom: 8 }}>RENDIMIENTO</div>
-          <select value={analyticsAccount} onChange={(event) => void fetchAnalytics(event.target.value)} style={{ width: '100%', background: '#0b0b0b', color: '#ddd', border: '1px solid #272727', borderRadius: 9, padding: 8, fontSize: 9 }}>
-            <option value="">Selecciona una cuenta…</option>
-            {accounts.map((account: any) => <option key={account.id} value={account.id}>{account.platform} · {account.display_name || account.handle || account.username || 'Cuenta'}</option>)}
-          </select>
+          <NaylaSelect
+            value={analyticsAccount}
+            placeholder="Seleccionar cuenta"
+            onChange={(value) => void fetchAnalytics(value)}
+            options={accounts.map((account: any) => ({
+              value: account.id,
+              label: account.display_name || account.handle || account.username || 'Cuenta',
+              subtitle: 'Rendimiento y alcance',
+              platform: account.platform,
+            }))}
+          />
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,minmax(0,1fr))', gap: 6, marginTop: 9 }}>
             {unwrapMetrics(analytics).map((metric) => (
               <div key={metric.label} style={{ padding: 9, borderRadius: 10, background: 'rgba(255,255,255,.025)' }}>
@@ -760,7 +1052,9 @@ export default function SocialHub({ session, projectId, results, onClose }: Prop
             ))}
           </div>
           {analyticsAccount && analytics && !unwrapMetrics(analytics).length && (
-            <pre style={{ marginTop: 9, whiteSpace: 'pre-wrap', wordBreak: 'break-word', fontSize: 8, color: '#777', maxHeight: 240, overflow: 'auto' }}>{JSON.stringify(analytics, null, 2)}</pre>
+            <div style={{ marginTop: 9, padding: 11, borderRadius: 10, background: 'rgba(255,255,255,.025)', color: '#777', fontSize: 9, lineHeight: 1.45 }}>
+              La cuenta está conectada, pero esta red todavía no devolvió métricas resumidas compatibles.
+            </div>
           )}
         </div>
       )}
@@ -786,11 +1080,16 @@ export default function SocialHub({ session, projectId, results, onClose }: Prop
               <div style={{ fontSize: 10, fontWeight: 900 }}>NAYLA RESPONDE</div>
               <div style={{ fontSize: 8.5, color: '#777', marginTop: 3 }}>El usuario decide cuánto control darle.</div>
             </div>
-            <select value={policy.mode} onChange={(event) => setPolicy((prev) => ({ ...prev, mode: event.target.value }))} style={{ background: '#0b0b0b', color: '#ddd', border: '1px solid #272727', borderRadius: 9, padding: 8, fontSize: 9 }}>
-              <option value="off">Desactivado</option>
-              <option value="suggest">Sugerir respuesta</option>
-              <option value="auto">Responder automáticamente</option>
-            </select>
+            <NaylaSelect
+              value={policy.mode}
+              placeholder="Modo de respuesta"
+              onChange={(value) => setPolicy((prev) => ({ ...prev, mode: value }))}
+              options={[
+                { value: 'off', label: 'Desactivado', subtitle: 'Nayla no interviene' },
+                { value: 'suggest', label: 'Sugerir respuesta', subtitle: 'Tú apruebas antes de publicar' },
+                { value: 'auto', label: 'Responder automáticamente', subtitle: 'Según las reglas configuradas' },
+              ]}
+            />
             <input value={policy.tone} onChange={(event) => setPolicy((prev) => ({ ...prev, tone: event.target.value }))} placeholder="Tono de respuesta" style={{ background: '#0b0b0b', color: '#ddd', border: '1px solid #272727', borderRadius: 9, padding: 8, fontSize: 9 }} />
             <textarea value={policy.instructions} onChange={(event) => setPolicy((prev) => ({ ...prev, instructions: event.target.value }))} placeholder="Ej.: amable, no discutir; precios → invitar a privado; quejas → pedirme aprobación." rows={5} style={{ resize: 'vertical', background: '#0b0b0b', color: '#ddd', border: '1px solid #272727', borderRadius: 9, padding: 8, fontSize: 9, lineHeight: 1.45 }} />
             <button onClick={() => void savePolicy()} style={{ ...tinyButton(true), width: '100%' }}>{busy === 'policy' ? 'GUARDANDO…' : 'GUARDAR REGLAS'}</button>

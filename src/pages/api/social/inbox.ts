@@ -61,7 +61,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           return res.status(200).json({
             conversations: [],
             messages: [],
-            notice: 'Ruta A expone DMs en Instagram; para Inbox multired Nayla usa Ruta B cuando la plataforma lo permite.',
+            notice: 'Los mensajes privados no están disponibles para esta cuenta. Los comentarios públicos sí puedes gestionarlos arriba.',
           });
         }
         const profile = await ensureSocialProfile(user.uid, projectId);
@@ -111,7 +111,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       let result: any;
       if (account.provider === 'upload_post') {
         if (account.platform !== 'instagram') {
-          return res.status(409).json({ error: 'Ruta A solo expone DMs directos de Instagram en este momento.' });
+          return res.status(409).json({ error: 'Los mensajes privados no están disponibles para esta cuenta.' });
         }
         if (!parsed.data.recipientId) return res.status(400).json({ error: 'Falta recipientId.' });
         const profile = await ensureSocialProfile(user.uid, parsed.data.projectId);
