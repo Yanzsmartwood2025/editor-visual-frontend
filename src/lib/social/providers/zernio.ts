@@ -157,11 +157,13 @@ export const listZernioConversations = async (accountId?: string | null) => {
   return request('/inbox/conversations?' + params.toString());
 };
 
-export const listZernioMessages = async (conversationId: string) =>
-  request(`/inbox/conversations/${encodeURIComponent(conversationId)}/messages`);
+export const listZernioMessages = async (conversationId: string, accountId: string) => {
+  const params = new URLSearchParams({ accountId, limit: '100', sortOrder: 'asc' });
+  return request(`/inbox/conversations/${encodeURIComponent(conversationId)}/messages?${params.toString()}`);
+};
 
-export const sendZernioMessage = async (conversationId: string, message: string) =>
+export const sendZernioMessage = async (conversationId: string, accountId: string, message: string) =>
   request(`/inbox/conversations/${encodeURIComponent(conversationId)}/messages`, {
     method: 'POST',
-    body: JSON.stringify({ message }),
+    body: JSON.stringify({ accountId, message }),
   });
