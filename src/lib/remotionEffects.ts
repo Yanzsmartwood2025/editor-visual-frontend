@@ -75,6 +75,14 @@ export const REMOTION_CPU_EFFECTS = {
     intensity: { min: 0.25, max: 2 },
     duration: { min: 0.1, max: 10 },
   },
+  proceduralMotion: {
+    supported: true,
+    presets: ['particles', 'orbit', 'pulse-grid', 'starfield'] as const,
+    intensity: { min: 0, max: 1 },
+    speed: { min: 0.1, max: 4 },
+    controls: ['seed', 'color', 'accentColor'] as const,
+    deterministic: true,
+  },
   three: {
     supported: true,
     input: 'GLB',
@@ -107,6 +115,7 @@ export const REMOTION_CPU_PUBLIC_CATALOG = {
   captions: REMOTION_CPU_EFFECTS.captions,
   motionTitles: REMOTION_CPU_EFFECTS.motionTitles,
   clipMotion: REMOTION_CPU_EFFECTS.clipMotion,
+  proceduralMotion: REMOTION_CPU_EFFECTS.proceduralMotion,
   three: REMOTION_CPU_EFFECTS.three,
   controls: [
     'duración por clip',
@@ -123,6 +132,7 @@ export const REMOTION_CPU_PUBLIC_CATALOG = {
     'subtítulos sincronizados con estilos clean, cinematic, tiktok y karaoke',
     'títulos y lower thirds animados por frame con GSAP',
     'entradas y salidas GSAP deterministas para fotos y videos',
+    'partículas, órbitas, rejillas pulsantes y campos de estrellas procedurales',
     'escenas GLB 3D reales con cámara, luces, rotación y animación interna',
   ],
 };
