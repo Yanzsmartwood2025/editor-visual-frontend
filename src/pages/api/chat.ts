@@ -754,6 +754,14 @@ Solo una imagen. No usar para texto→3D ni multivista.
         {"type":"glow","intensity":0.25}
       ],
       "motionBlur": {"shutterAngle":180,"samples":5},
+      "proceduralMotion": {
+        "preset": "starfield",
+        "intensity": 0.45,
+        "speed": 0.8,
+        "seed": 17,
+        "color": "#ffffff",
+        "accentColor": "#b8d8ff"
+      },
       "gsapMotion": {
         "enter": "elastic",
         "exit": "fade",
@@ -819,6 +827,9 @@ Puedes encadenar hasta 6 professionalEffects por clip. Usa solo los nombres publ
 motionBlur es opcional y debe reservarse para movimientos donde aporte valor; 5 muestras y 180 grados es un punto de partida equilibrado.
 gsapMotion es opcional en fotos y videos completos. Presets: fade, slide-left, slide-right, slide-up, slide-down, zoom-in, zoom-out, bounce, elastic, spin y swing.
 Usa enter y/o exit, con enterDuration/exitDuration e intensity de 0.25 a 2. Traduce lenguaje cotidiano: rebota→bounce, elástico→elastic, gira→spin, balanceo→swing, entra desde un lado→slide-*.
+proceduralMotion es opcional para añadir motion graphics generativos sobre una foto o video sin buscar assets externos.
+Presets: particles para partículas orgánicas, orbit para elementos girando alrededor del centro, pulse-grid para una rejilla rítmica y starfield para estrellas/puntos luminosos.
+Controla intensity de 0 a 1, speed de 0.1 a 4, seed para repetibilidad y color/accentColor. Todo debe permanecer determinista por frame.
 Las transiciones avanzadas disponibles incluyen film-burn, blur-slide, cross-zoom, dreamy-zoom, linear-blur y push-cut.
 subtitles es opcional. Cada subtítulo usa text, start, end, style, position y fontSize.
 style puede ser clean, cinematic, tiktok o karaoke. position puede ser top, center o bottom.

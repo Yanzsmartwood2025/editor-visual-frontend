@@ -220,6 +220,59 @@ describe('Nayla action contracts', () => {
     });
   });
 
+
+  it('accepts deterministic procedural motion on visual clips', () => {
+    const action = parseNaylaAction(JSON.stringify({
+      action: 'BUILD_TIMELINE',
+      assets: [
+        {
+          type: 'foto',
+          source: 'url',
+          url: 'https://cdn.example/photo.jpg',
+          durationInSeconds: 5,
+          proceduralMotion: {
+            preset: 'starfield',
+            intensity: 0.65,
+            speed: 1.2,
+            seed: 42,
+            color: '#ffffff',
+            accentColor: '#aaccff',
+          },
+        },
+      ],
+      render: true,
+    }));
+
+    expect(action).not.toBeNull();
+    expect(action).toMatchObject({
+      action: 'BUILD_TIMELINE',
+      assets: [
+        expect.objectContaining({
+          proceduralMotion: {
+            preset: 'starfield',
+            intensity: 0.65,
+            speed: 1.2,
+            seed: 42,
+            color: '#ffffff',
+            accentColor: '#aaccff',
+          },
+        }),
+      ],
+    });
+
+    expect(parseNaylaAction(JSON.stringify({
+      action: 'BUILD_TIMELINE',
+      assets: [{
+        type: 'video',
+        source: 'url',
+        url: 'https://cdn.example/video.mp4',
+        proceduralMotion: {
+          preset: 'unknown-preset',
+        },
+      }],
+    }))).toBeNull();
+  });
+
   it('accepts GSAP motion for complete visual clips', () => {
     const action = parseNaylaAction(JSON.stringify({
       action: 'BUILD_TIMELINE',
