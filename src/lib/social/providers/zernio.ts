@@ -36,6 +36,10 @@ export const createZernioProfile = async (name: string) => {
   return payload.profile;
 };
 
+export const createZernioTelegramCode = async (profileId: string) => {
+  return request(`/connect/telegram?profileId=${encodeURIComponent(profileId)}`);
+};
+
 export const createZernioConnectUrl = async ({
   profileId,
   platform,
