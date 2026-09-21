@@ -380,9 +380,14 @@ export default function NaylaCore() {
   const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
   const [chatThreads, setChatThreads] = useState<any[]>([]);
   const [activeThreadId, setActiveThreadId] = useState<string | null>(null);
+  const activeThreadIdRef = useRef<string | null>(null);
   const [projectMenuOpen, setProjectMenuOpen] = useState(false);
   const [chatAttachmentIds, setChatAttachmentIds] = useState<string[]>([]);
   const [channelUploadingKind, setChannelUploadingKind] = useState<NaylaChannelKind | null>(null);
+
+  useEffect(() => {
+    activeThreadIdRef.current = activeThreadId;
+  }, [activeThreadId]);
 
   useEffect(() => {
     const textarea = chatInputRef.current;
@@ -418,6 +423,8 @@ export default function NaylaCore() {
       }
 
       if (targetIndex === -1) {
+        if (requestId) return prev;
+
         return [
           ...prev,
           {
