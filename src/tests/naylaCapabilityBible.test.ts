@@ -28,4 +28,13 @@ describe('Nayla capability bible', () => {
     expect(findNaylaCapabilityMatches('quita el fondo del video y deja solo a la persona').map((item) => item.id))
       .toContain('background-removal');
   });
+  it('recognizes advanced GSAP motion for complete clips', () => {
+    const matches = findNaylaCapabilityMatches(
+      'haz que la foto entre con elasticidad y el video salga girando'
+    );
+
+    expect(matches.map((item) => item.id)).toContain('motion-gsap');
+    expect(NAYLA_CAPABILITY_BIBLE.find((item) => item.id === 'motion-gsap')?.status).toBe('ready');
+  });
+
 });
