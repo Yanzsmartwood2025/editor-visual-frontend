@@ -5,6 +5,7 @@ import { getWorkspaceSupabaseAdmin } from '../../../lib/workspaceStore';
 import { ensureSocialProfile, getSocialAccountForUser, recordSocialUsage } from '../../../lib/social/store';
 import { getUploadPostComments, replyUploadPostComment } from '../../../lib/social/providers/uploadPost';
 import { getZernioComments, replyZernioComment } from '../../../lib/social/providers/zernio';
+import { recordSocialInteraction } from '../../../lib/social/interactions/service';
 
 const replySchema = z.object({
   projectId: z.string().uuid(),
@@ -51,24 +52,73 @@ const cacheComments = async ({
   if (!comments.length) return comments;
 
   const supabase = getWorkspaceSupabaseAdmin();
-  const rows = comments.map((comment: any) => ({
-    user_id: userId,
-    project_id: projectId,
-    account_id: account.id,
-    post_target_id: targetId || null,
-    provider,
-    platform,
-    provider_post_id: postId || null,
-    provider_comment_id: String(comment.id || comment.comment_id || comment.commentId || ''),
-    parent_comment_id: comment.parent_id || comment.parentCommentId || null,
-    author_id: String(comment.from?.id || comment.author?.id || comment.user_id || comment.user?.id || ''),
-    author_name: comment.from?.name || comment.author?.name || comment.username || comment.user?.display_name || comment.user?.username || null,
-    author_avatar_url: comment.author?.avatar || comment.user?.avatar_url || comment.user?.avatar || null,
-    message: String(comment.message || comment.text || comment.content || ''),
-    created_at: comment.created_at || comment.timestamp || comment.created_time || null,
-    received_at: new Date().toISOString(),
-    raw: comment,
-  })).filter((row: any) => row.provider_comment_id);
+  const rows: any[] = [];
+
+  for (const comment of comments) {
+    const commentId = String(comment.id || comment.comment_id || comment.commentId || '');
+    if (!commentId) continue;
+
+    const authorId = String(comment.from?.id || comment.author?.id || comment.user_id || comment.user?.id || '');
+    const authorName =
+      comment.from?.name ||
+      comment.author?.name ||
+      comment.username ||
+      comment.user?.display_name ||
+      comment.user?.username ||
+      null;
+    const authorUsername =
+      comment.author?.username ||
+      comment.user?.username ||
+      comment.username ||
+      null;
+    const authorAvatar =
+      comment.author?.avatar ||
+      comment.author?.avatar_url ||
+      comment.user?.avatar_url ||
+      comment.user?.avatar ||
+      null;
+    const message = String(comment.message || comment.text || comment.content || '');
+    const createdAt = comment.created_at || comment.timestamp || comment.created_time || null;
+
+    const normalized = await recordSocialInteraction({
+      userId,
+      projectId,
+      account,
+      channel: 'comment',
+      direction: 'inbound',
+      sourceId: commentId,
+      body: message,
+      providerUserId: authorId || null,
+      username: authorUsername,
+      displayName: authorName,
+      avatarUrl: authorAvatar,
+      providerPostId: postId || null,
+      providerParentId: comment.parent_id || comment.parentCommentId || null,
+      occurredAt: createdAt,
+      raw: comment,
+    });
+
+    rows.push({
+      user_id: userId,
+      project_id: projectId,
+      account_id: account.id,
+      post_target_id: targetId || null,
+      provider,
+      platform,
+      provider_post_id: postId || null,
+      provider_comment_id: commentId,
+      parent_comment_id: comment.parent_id || comment.parentCommentId || null,
+      author_id: authorId || null,
+      author_name: authorName,
+      author_avatar_url: authorAvatar,
+      message,
+      person_id: normalized.person.id,
+      interaction_id: normalized.interaction.id,
+      created_at: createdAt,
+      received_at: new Date().toISOString(),
+      raw: comment,
+    });
+  }
 
   if (rows.length) {
     const { error } = await supabase.from('social_comments').upsert(rows, {
@@ -77,6 +127,7 @@ const cacheComments = async ({
     });
     if (error) throw error;
   }
+
   return comments;
 };
 
