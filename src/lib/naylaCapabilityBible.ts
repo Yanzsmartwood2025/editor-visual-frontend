@@ -108,12 +108,12 @@ export const NAYLA_CAPABILITY_BIBLE: NaylaCapability[] = [
   {
     id: 'motion-gsap',
     category: 'Animación',
-    label: 'Animación avanzada de texto',
-    description: 'Títulos y lower thirds conectados con entradas, deslizamientos, rebote, zoom y animación palabra por palabra, sincronizados exactamente por frame.',
+    label: 'Animación avanzada',
+    description: 'GSAP conectado para títulos, lower thirds y clips completos, con entradas y salidas por fade, deslizamiento, zoom, rebote, elasticidad, giro y swing sincronizados exactamente por frame.',
     status: 'ready',
     engine: 'render',
-    aliases: ['animacion avanzada', 'rebote', 'trayectoria', 'curva', 'entrada de texto', 'salida de texto', 'coreografia', 'titulo animado', 'lower third', 'palabras que suben'],
-    usefulFor: ['motion graphics', 'títulos', 'publicidad', 'presentaciones', 'lower thirds'],
+    aliases: ['animacion avanzada', 'rebote', 'elastico', 'elasticidad', 'giro', 'swing', 'trayectoria', 'curva', 'entrada de texto', 'salida de texto', 'entrada de foto', 'entrada de video', 'coreografia', 'titulo animado', 'lower third', 'palabras que suben'],
+    usefulFor: ['animar fotos y videos completos', 'motion graphics', 'títulos', 'publicidad', 'presentaciones', 'lower thirds'],
   },
   {
     id: 'three-real',
