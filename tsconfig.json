@@ -27,6 +27,9 @@
   ],
   "exclude": [
     "node_modules",
-    "remotion.config.ts"
+    "remotion.config.ts",
+    "src/remotion/**/*",
+    "src/components/MainComposition.tsx",
+    "src/components/NaylaSkiaGraphic.tsx"
   ]
 }
