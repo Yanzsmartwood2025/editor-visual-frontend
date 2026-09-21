@@ -2690,10 +2690,14 @@ export default function NaylaCore() {
           threadId: messageThreadId,
         });
       } else if (data.action === 'CREATE_AUTO_CAPTIONS') {
-        await ejecutarAutoCaptions(data, {
-          projectId: messageProjectId,
-          threadId: messageThreadId,
-        });
+        try {
+          await ejecutarAutoCaptions(data, {
+            projectId: messageProjectId,
+            threadId: messageThreadId,
+          });
+        } finally {
+          setToolMessage(null);
+        }
       }
     } catch (error: any) {
       console.error(error);
