@@ -30,6 +30,7 @@ import { lightLeak } from '@remotion/effects/light-leak';
 import { buildVisualTimelineMetrics, getCompositionDurationInFrames, getItemDelayInFrames, getItemDurationInFrames } from '../lib/timelineMetrics';
 import { NaylaGsapTitle, type NaylaMotionTitle } from './NaylaGsapTitle';
 import { NaylaThreeSceneRenderer, type NaylaThreeScene } from './NaylaThreeScene';
+import { NaylaVectorAnimationRenderer, type NaylaVectorAnimation } from './NaylaVectorAnimation';
 
 // Interfaces based on main file
 type ProfessionalEffect = {
@@ -53,6 +54,7 @@ interface MainCompositionProps {
   subtitles?: SubtitleItem[];
   titles?: NaylaMotionTitle[];
   threeScenes?: NaylaThreeScene[];
+  vectorAnimations?: NaylaVectorAnimation[];
   settings?: {
     fadeOutFinal?: number;
   };
@@ -794,7 +796,7 @@ const DynamicSubtitle: React.FC<{ subtitle: SubtitleItem }> = ({ subtitle }) => 
   );
 };
 
-export const MainComposition: React.FC<MainCompositionProps> = ({ timeline, subtitles = [], titles = [], threeScenes = [], logos = [], settings = {} }) => {
+export const MainComposition: React.FC<MainCompositionProps> = ({ timeline, subtitles = [], titles = [], threeScenes = [], vectorAnimations = [], logos = [], settings = {} }) => {
   const { fps } = useVideoConfig();
 
   // We filter out videos and photos to build the main visual sequence
@@ -818,7 +820,8 @@ export const MainComposition: React.FC<MainCompositionProps> = ({ timeline, subt
     subtitles,
     logos,
     titles,
-    threeScenes
+    threeScenes,
+    vectorAnimations
   );
 
   // Verify Audio Clips as well
@@ -987,6 +990,19 @@ export const MainComposition: React.FC<MainCompositionProps> = ({ timeline, subt
         return (
           <Sequence key={scene.id} from={fromFrame} durationInFrames={duration}>
             <NaylaThreeSceneRenderer scene={scene} />
+          </Sequence>
+        );
+      })}
+
+      {/* Lottie / Rive vector animations */}
+      {vectorAnimations.map((item) => {
+        const fromFrame = Math.round(Math.max(0, item.start) * fps);
+        const duration = Math.round(Math.max(0, item.end - item.start) * fps);
+        if (duration <= 0) return null;
+
+        return (
+          <Sequence key={item.id} from={fromFrame} durationInFrames={duration}>
+            <NaylaVectorAnimationRenderer item={item} />
           </Sequence>
         );
       })}
