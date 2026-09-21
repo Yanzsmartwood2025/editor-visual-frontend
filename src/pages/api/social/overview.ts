@@ -1,5 +1,6 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
-import { SOCIAL_NETWORKS, socialProviderStatuses } from '../../../lib/social/types';
+import { SOCIAL_NETWORKS } from '../../../lib/social/types';
+import { socialProviderStatuses } from '../../../lib/social/serverStatus';
 import { requireSocialUser } from '../../../lib/social/http';
 import { getSocialOverview } from '../../../lib/social/store';
 import { syncSocialAccounts } from '../../../lib/social/sync';
