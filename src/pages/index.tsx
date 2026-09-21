@@ -449,7 +449,7 @@ export default function NaylaCore() {
   const timelineRef = useRef<HTMLDivElement>(null);
   const mainToolsCarouselRef = useRef<HTMLDivElement>(null);
   const subToolsCarouselRef = useRef<HTMLDivElement>(null);
-  const lastVideoSurfaceTapRef = useRef<number>(0);
+  const lastVideoSurfaceTapRef = useRef<{ time: number; x: number; y: number } | null>(null);
   const [rects, setRects] = useState<Rect[]>([]);
   const [isDrawing, setIsDrawing] = useState(false);
   const [startPos, setStartPos] = useState({ x: 0, y: 0 });
@@ -1131,6 +1131,15 @@ export default function NaylaCore() {
   };
 
   const setPreviewFullscreen = async (next: boolean) => {
+    const preview = previewFullscreenRef.current;
+    const fullscreenDocument = document as Document & {
+      webkitFullscreenElement?: Element | null;
+      webkitExitFullscreen?: () => Promise<void> | void;
+    };
+    const fullscreenPreview = preview as (HTMLDivElement & {
+      webkitRequestFullscreen?: () => Promise<void> | void;
+    }) | null;
+
     setIsCleanMode(next);
     setIsSubPanelOpen(false);
     setExpandedSurface(null);
@@ -1139,6 +1148,18 @@ export default function NaylaCore() {
     if (next) {
       setShowPlaybackControls(true);
       resetPlaybackControlsTimer();
+
+      try {
+        const activeFullscreen = document.fullscreenElement || fullscreenDocument.webkitFullscreenElement;
+        if (!activeFullscreen && fullscreenPreview) {
+          const request = fullscreenPreview.requestFullscreen?.bind(fullscreenPreview) ||
+            fullscreenPreview.webkitRequestFullscreen?.bind(fullscreenPreview);
+          if (request) await request();
+        }
+      } catch {
+        // Some mobile browsers reject native fullscreen; the CSS immersive mode remains active.
+      }
+
       requestAnimationFrame(() => {
         window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
       });
@@ -1147,6 +1168,16 @@ export default function NaylaCore() {
       if (playbackControlsTimerRef.current) {
         clearTimeout(playbackControlsTimerRef.current);
         playbackControlsTimerRef.current = null;
+      }
+
+      try {
+        const activeFullscreen = document.fullscreenElement || fullscreenDocument.webkitFullscreenElement;
+        if (activeFullscreen) {
+          if (document.exitFullscreen) await document.exitFullscreen();
+          else if (fullscreenDocument.webkitExitFullscreen) await fullscreenDocument.webkitExitFullscreen();
+        }
+      } catch {
+        // Native fullscreen exit is best-effort; CSS mode is already disabled.
       }
 
       try {
@@ -1169,18 +1200,40 @@ export default function NaylaCore() {
     if (target?.closest('button, input, textarea, select, a')) return;
     if (subTool === 'delogo') return;
 
-    // Mouse/trackpad uses onDoubleClick. Touch/pen gets an explicit double-tap
-    // detector because mobile browsers do not consistently dispatch dblclick.
+    // Mouse/trackpad uses onDoubleClick. Touch/pen gets an explicit detector
+    // because Android browsers do not dispatch dblclick consistently.
     if (e.pointerType === 'mouse') return;
 
     const now = Date.now();
-    if (now - lastVideoSurfaceTapRef.current <= 340) {
-      lastVideoSurfaceTapRef.current = 0;
+    const previous = lastVideoSurfaceTapRef.current;
+    const closeEnough =
+      previous &&
+      now - previous.time <= 520 &&
+      Math.hypot(e.clientX - previous.x, e.clientY - previous.y) <= 56;
+
+    if (closeEnough) {
+      lastVideoSurfaceTapRef.current = null;
       togglePreviewFullscreen();
       return;
     }
-    lastVideoSurfaceTapRef.current = now;
+
+    lastVideoSurfaceTapRef.current = { time: now, x: e.clientX, y: e.clientY };
   };
+
+  useEffect(() => {
+    const syncFullscreenState = () => {
+      const fullscreenDocument = document as Document & { webkitFullscreenElement?: Element | null };
+      const active = document.fullscreenElement || fullscreenDocument.webkitFullscreenElement;
+      if (!active && isCleanMode) setIsCleanMode(false);
+    };
+
+    document.addEventListener('fullscreenchange', syncFullscreenState);
+    document.addEventListener('webkitfullscreenchange', syncFullscreenState as EventListener);
+    return () => {
+      document.removeEventListener('fullscreenchange', syncFullscreenState);
+      document.removeEventListener('webkitfullscreenchange', syncFullscreenState as EventListener);
+    };
+  }, [isCleanMode]);
 
   useEffect(() => {
     if (!isCleanMode || !isPhoneViewport || sourceVideoRatio === null) return;
@@ -1424,75 +1477,8 @@ export default function NaylaCore() {
       settings: globalSettings
     };
 
-    let pollTimer: number | null = null;
-    let stopped = false;
-
-    const absorbRenderStatus = (payload: any) => {
-      const usage = payload?.usage || {};
-      const rawProgress = Number(usage.progress);
-      const progress = Number.isFinite(rawProgress) ? Math.max(0, Math.min(1, rawProgress)) : 0;
-      const serverStatus = String(payload?.status || 'started');
-      const stage = String(usage.stage || 'preparing');
-      const status: NonNullable<NaylaChatMessage['renderTask']>['status'] =
-        serverStatus === 'completed'
-          ? 'completed'
-          : serverStatus === 'failed'
-            ? 'failed'
-            : serverStatus === 'cancelled'
-              ? 'cancelled'
-            : stage === 'saving'
-              ? 'saving'
-              : stage === 'rendering'
-                ? 'rendering'
-                : 'preparing';
-
-      const galleryItem = payload?.galleryItem as MediaItem | undefined;
-      const stillInOriginChat = !renderThreadId || activeThreadIdRef.current === renderThreadId;
-
-      if (galleryItem && stillInOriginChat) {
-        setGaleriaMultimedia((prev) =>
-          prev.some((item) => item.id === galleryItem.id)
-            ? prev
-            : [...prev, galleryItem]
-        );
-      }
-
-      if (!stillInOriginChat) return;
-
-      updateRenderTask(requestId, {
-        requestId,
-        status,
-        phase: String(usage.phase || (status === 'failed' ? 'No se pudo completar' : 'Procesando')),
-        progress: status === 'completed' ? 1 : progress,
-        framesDone: Number.isFinite(Number(usage.framesDone)) ? Number(usage.framesDone) : undefined,
-        framesTotal: Number.isFinite(Number(usage.framesTotal)) ? Number(usage.framesTotal) : durationInFrames,
-        outputUrl: galleryItem?.url || undefined,
-        galleryItem: galleryItem || undefined,
-        error: payload?.error || null,
-      });
-    };
-
-    const pollStatus = async () => {
-      if (stopped) return;
-      try {
-        const response = await fetch('/api/render?id=' + encodeURIComponent(requestId), {
-          headers: firebaseHeaders(currentSession),
-          cache: 'no-store',
-        });
-        if (response.status === 404) return;
-        const payload = await response.json().catch(() => ({}));
-        if (!response.ok) return;
-        absorbRenderStatus(payload);
-        if (payload.status === 'completed' || payload.status === 'failed' || payload.status === 'cancelled') {
-          stopped = true;
-          if (pollTimer) window.clearInterval(pollTimer);
-        }
-      } catch {
-        // El POST principal sigue siendo la fuente final de verdad.
-      }
-    };
-
-    pollTimer = window.setInterval(() => void pollStatus(), 850);
+    // Progress is tracked by the single activeRenderPollKey effect above.
+    // Avoid duplicate status polling while the POST render request is running.
 
     try {
       const res = await fetch('/api/render', {
@@ -1529,9 +1515,6 @@ export default function NaylaCore() {
         renderError.naylaRenderHandled = true;
         throw renderError;
       }
-
-      stopped = true;
-      if (pollTimer) window.clearInterval(pollTimer);
 
       if (data.status === 'completed' && data.output?.url) {
         const outputUrl = data.output.url as string;
@@ -1580,8 +1563,7 @@ export default function NaylaCore() {
       }
       throw error;
     } finally {
-      stopped = true;
-      if (pollTimer) window.clearInterval(pollTimer);
+      // The render poll effect stops automatically once the task becomes terminal.
     }
   };
 
@@ -5029,7 +5011,6 @@ if (!session) {
           <div
             ref={previewFullscreenRef}
             onPointerMove={resetPlaybackControlsTimer}
-            onPointerUp={handleVideoSurfaceTap}
             onDoubleClick={(e) => {
               e.stopPropagation();
               if (subTool !== 'delogo') togglePreviewFullscreen();
@@ -5110,8 +5091,17 @@ if (!session) {
             )}
 
             {/* VIDEO O CANVAS PRINCIPAL */}
-            <div ref={containerRef} onPointerDown={handlePointerDown} onPointerMove={handlePointerMove} onPointerUp={handlePointerUp} onPointerLeave={handlePointerUp}
-              style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative' }}>
+            <div
+              ref={containerRef}
+              onPointerDown={handlePointerDown}
+              onPointerMove={handlePointerMove}
+              onPointerUp={(event) => {
+                handlePointerUp();
+                handleVideoSurfaceTap(event);
+              }}
+              onPointerLeave={handlePointerUp}
+              style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative' }}
+            >
               {(visualActivo || videoResultadoUrl || mediaActivaUrl) ? (
                 <>
                   {visualActivo?.tipo === 'foto' && !videoResultadoUrl ? (
@@ -5404,6 +5394,10 @@ if (!session) {
           boxShadow: '0 0 18px rgba(255,255,255,0.06)',
           display: 'flex',
           flexDirection: 'column',
+          width: '100dvw',
+          height: '100dvh',
+          maxHeight: '100dvh',
+          boxSizing: 'border-box',
           overflow: 'hidden'
         }}>
           {/* Header Modal IA */}
@@ -5561,7 +5555,7 @@ if (!session) {
               const distanceFromBottom = element.scrollHeight - element.scrollTop - element.clientHeight;
               chatAutoFollowRef.current = distanceFromBottom < 120;
             }}
-            style={{ flex: 1, minWidth: 0, padding: '16px 14px', overflowX: 'hidden', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '18px', overscrollBehavior: 'contain' }}
+            style={{ flex: 1, minWidth: 0, minHeight: 0, padding: '16px 14px', overflowX: 'hidden', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '18px', overscrollBehavior: 'contain' }}
           >
             {chatMessages.length === 0 ? (
               <div style={{ textAlign: 'center', color: '#666', marginTop: '40px', fontSize: '0.95rem' }}>
@@ -6033,7 +6027,7 @@ if (!session) {
 
           {/* Chat Input */}
           <div style={{
-            padding: '12px 12px',
+            padding: '12px 12px max(12px, env(safe-area-inset-bottom))',
             borderTop: '1px solid #1a1a1a',
             backgroundColor: '#0a0a0a',
             display: 'flex',
@@ -6041,7 +6035,10 @@ if (!session) {
             gap: '8px',
             boxSizing: 'border-box',
             width: '100%',
-            maxWidth: '100vw'
+            maxWidth: '100vw',
+            flexShrink: 0,
+            position: 'relative',
+            zIndex: 20
           }}>
             <textarea
               ref={chatInputRef}
