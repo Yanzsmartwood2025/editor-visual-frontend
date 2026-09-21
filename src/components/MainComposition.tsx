@@ -1,14 +1,39 @@
 import React, { useMemo } from 'react';
-import { AbsoluteFill, Sequence, Video, Audio, useVideoConfig, useCurrentFrame, interpolate, Img, Loop } from 'remotion';
-import { TransitionSeries, linearTiming } from '@remotion/transitions';
+import { AbsoluteFill, Sequence, CanvasImage, useVideoConfig, useCurrentFrame, interpolate, Img, Loop } from 'remotion';
+import { Audio, Video } from '@remotion/media';
+import { CameraMotionBlur } from '@remotion/motion-blur';
+import {
+  TransitionSeries,
+  linearTiming,
+  blurSlide,
+  crossZoom,
+  dreamyZoom,
+  filmBurn,
+  linearBlur,
+  pushCut,
+} from '@remotion/transitions';
 import { fade } from '@remotion/transitions/fade';
 import { wipe } from '@remotion/transitions/wipe';
 import { slide } from '@remotion/transitions/slide';
 import { zoomInOut } from '@remotion/transitions/zoom-in-out';
+import { chromaticAberration } from '@remotion/effects/chromatic-aberration';
+import { colorCorrection } from '@remotion/effects/color-correction';
+import { glow } from '@remotion/effects/glow';
+import { pixelate } from '@remotion/effects/pixelate';
+import { zoomBlur } from '@remotion/effects/zoom-blur';
+import { vignette } from '@remotion/effects/vignette';
+import { lightLeak } from '@remotion/effects/light-leak';
 import { buildVisualTimelineMetrics, getCompositionDurationInFrames, getItemDelayInFrames, getItemDurationInFrames } from '../lib/timelineMetrics';
 
 // Interfaces based on main file
-type TimelineItem = { id: string; mediaId: string; tipo: 'foto' | 'video' | 'audio'; nombre: string; etiqueta: string; url: string; durationInSeconds?: number; originalDurationInSeconds?: number; volume?: number; fadeIn?: number; fadeOut?: number; scale?: number; delay?: number; startFrom?: number; trimBefore?: number; trimAfter?: number; loop?: boolean; playbackRate?: number; transitionDuration?: number; transitionType?: 'fade' | 'none' | 'wipe' | 'slide' | 'zoom'; efecto?: string; brightness?: number; contrast?: number; saturation?: number; overlay?: string; overlayIntensity?: number; };
+type ProfessionalEffect = {
+  type: 'chromatic-aberration' | 'color-correction' | 'glow' | 'pixelate' | 'zoom-blur' | 'vignette' | 'light-leak';
+  intensity?: number;
+  color?: string;
+  angle?: number;
+  seed?: number;
+};
+type TimelineItem = { id: string; mediaId: string; tipo: 'foto' | 'video' | 'audio'; nombre: string; etiqueta: string; url: string; durationInSeconds?: number; originalDurationInSeconds?: number; volume?: number; fadeIn?: number; fadeOut?: number; scale?: number; delay?: number; startFrom?: number; trimBefore?: number; trimAfter?: number; loop?: boolean; playbackRate?: number; transitionDuration?: number; transitionType?: 'fade' | 'none' | 'wipe' | 'slide' | 'zoom' | 'film-burn' | 'blur-slide' | 'cross-zoom' | 'dreamy-zoom' | 'linear-blur' | 'push-cut'; efecto?: string; brightness?: number; contrast?: number; saturation?: number; overlay?: string; overlayIntensity?: number; professionalEffects?: ProfessionalEffect[]; motionBlur?: { shutterAngle?: number; samples?: number }; };
 type SubtitleItem = { id: string; texto: string; inicioSec: number; finSec: number; };
 type LogoItem = { id: string; url: string; x: number; y: number; scale: number; opacity: number; inicioSec?: number; finSec?: number; fadeIn?: number; fadeOut?: number; };
 
@@ -107,6 +132,91 @@ const getFilterStyle = (clip: TimelineItem): string | undefined => {
   return filters.length > 0 ? filters.join(' ') : undefined;
 };
 
+const clamp01 = (value: unknown, fallback = 0.5) => {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return fallback;
+  return Math.max(0, Math.min(1, numeric));
+};
+
+const getProfessionalEffects = (
+  clip: TimelineItem,
+  frame: number,
+  durationInFrames: number
+): any[] => {
+  const progress = durationInFrames <= 1
+    ? 0.5
+    : Math.max(0, Math.min(1, frame / Math.max(1, durationInFrames - 1)));
+
+  return (clip.professionalEffects || []).map((effect) => {
+    const intensity = clamp01(effect.intensity, 0.5);
+
+    switch (effect.type) {
+      case 'chromatic-aberration':
+        return chromaticAberration({
+          amount: 2 + intensity * 14,
+          angle: Number.isFinite(Number(effect.angle)) ? Number(effect.angle) : 0,
+        });
+      case 'color-correction':
+        return colorCorrection({
+          exposure: (intensity - 0.5) * 0.5,
+          contrast: 1 + intensity * 0.22,
+          highlights: -0.08 * intensity,
+          shadows: 0.06 * intensity,
+          vibrance: 0.12 + intensity * 0.35,
+          saturation: 1 + intensity * 0.12,
+        });
+      case 'glow':
+        return glow({
+          radius: 8 + intensity * 28,
+          intensity: 0.35 + intensity * 1.35,
+          threshold: 0.22 + intensity * 0.28,
+          color: effect.color || '#ffffff',
+        });
+      case 'pixelate':
+        return pixelate({
+          blockSize: Math.max(1, Math.round(3 + intensity * 29)),
+        });
+      case 'zoom-blur':
+        return zoomBlur({
+          amount: intensity * 70,
+          center: [0.5, 0.5],
+          samples: 20,
+        });
+      case 'vignette':
+        return vignette({
+          amount: 0.2 + intensity * 0.72,
+          radius: 0.72 - intensity * 0.2,
+          feather: 0.35,
+          color: effect.color || '#000000',
+        });
+      case 'light-leak':
+        return lightLeak({
+          seed: Number.isFinite(Number(effect.seed)) ? Number(effect.seed) : 3,
+          hueShift: Number.isFinite(Number(effect.angle)) ? Number(effect.angle) : 18,
+          progress,
+        });
+      default:
+        return null;
+    }
+  }).filter(Boolean);
+};
+
+const MaybeMotionBlur: React.FC<{
+  clip: TimelineItem;
+  children: React.ReactNode;
+}> = ({ clip, children }) => {
+  if (!clip.motionBlur) return <>{children}</>;
+
+  const shutterAngle = Math.max(0, Math.min(360, Number(clip.motionBlur.shutterAngle) || 180));
+  const samples = Math.max(2, Math.min(8, Math.round(Number(clip.motionBlur.samples) || 5)));
+
+  return (
+    <CameraMotionBlur shutterAngle={shutterAngle} samples={samples}>
+      {children}
+    </CameraMotionBlur>
+  );
+};
+
 
 
 const getVisualMotionTransform = (
@@ -194,16 +304,56 @@ const AnimatedVisualFrame: React.FC<{
 
 
 const AnimatedPhoto: React.FC<{ clip: TimelineItem, durationInFrames: number }> = ({ clip, durationInFrames }) => {
+  const frame = useCurrentFrame();
+  const { width, height } = useVideoConfig();
+  const effects = getProfessionalEffects(clip, frame, durationInFrames);
+
+  if (effects.length === 0) {
+    return (
+      <PreloadedImage
+        src={clip.url}
+        style={{
+          width: '100%',
+          height: '100%',
+          objectFit: 'contain',
+          transform: undefined,
+          filter: getFilterStyle(clip),
+        }}
+      />
+    );
+  }
+
   return (
-    <PreloadedImage
+    <AbsoluteFill style={{ filter: getFilterStyle(clip) }}>
+      <CanvasImage
+        src={clip.url}
+        width={width}
+        height={height}
+        fit="contain"
+        effects={effects}
+      />
+    </AbsoluteFill>
+  );
+};
+
+const ProfessionalVideo: React.FC<{
+  clip: TimelineItem;
+  durationInFrames: number;
+  volume: number;
+}> = ({ clip, durationInFrames, volume }) => {
+  const frame = useCurrentFrame();
+  const { fps } = useVideoConfig();
+
+  return (
+    <Video
       src={clip.url}
-      style={{
-        width: '100%',
-        height: '100%',
-        objectFit: 'contain',
-        transform: undefined,
-        filter: getFilterStyle(clip),
-      }}
+      volume={volume}
+      trimBefore={clip.trimBefore !== undefined ? Math.round(clip.trimBefore * fps) : (clip.startFrom ? Math.round(clip.startFrom * fps) : undefined)}
+      trimAfter={clip.trimAfter !== undefined ? Math.round(clip.trimAfter * fps) : undefined}
+      loop={clip.loop}
+      playbackRate={clip.playbackRate || 1}
+      effects={getProfessionalEffects(clip, frame, durationInFrames)}
+      style={{ width: '100%', height: '100%', objectFit: 'contain', filter: getFilterStyle(clip) }}
     />
   );
 };
@@ -356,25 +506,23 @@ export const MainComposition: React.FC<MainCompositionProps> = ({ timeline, subt
           elements.push(
             <TransitionSeries.Sequence key={clip.id} durationInFrames={clip.durationInFrames}>
               <ClipWithFades clip={clip} durationInFrames={clip.durationInFrames}>
-                {clip.tipo === 'video' ? (
-                  <AnimatedVisualFrame clip={clip} durationInFrames={clip.durationInFrames}>
-                    <AnimatedVolume clip={clip} durationInFrames={clip.durationInFrames} absoluteStartFrame={clip.absoluteStartFrame} totalCompositionFrames={totalCompositionFrames} globalFadeOutFrames={globalFadeOutFrames} render={(volume) => (
-                      <Video
-                        src={clip.url}
-                        volume={volume}
-                        trimBefore={clip.trimBefore !== undefined ? Math.round(clip.trimBefore * fps) : (clip.startFrom ? Math.round(clip.startFrom * fps) : undefined)}
-                        trimAfter={clip.trimAfter !== undefined ? Math.round(clip.trimAfter * fps) : undefined}
-                        loop={clip.loop}
-                        playbackRate={clip.playbackRate || 1}
-                        style={{ width: '100%', height: '100%', objectFit: 'contain', filter: getFilterStyle(clip) }}
-                      />
-                    )} />
-                  </AnimatedVisualFrame>
-                ) : (
-                  <AnimatedVisualFrame clip={clip} durationInFrames={clip.durationInFrames}>
-                    <AnimatedPhoto clip={clip} durationInFrames={clip.durationInFrames} />
-                  </AnimatedVisualFrame>
-                )}
+                <MaybeMotionBlur clip={clip}>
+                  {clip.tipo === 'video' ? (
+                    <AnimatedVisualFrame clip={clip} durationInFrames={clip.durationInFrames}>
+                      <AnimatedVolume clip={clip} durationInFrames={clip.durationInFrames} absoluteStartFrame={clip.absoluteStartFrame} totalCompositionFrames={totalCompositionFrames} globalFadeOutFrames={globalFadeOutFrames} render={(volume) => (
+                        <ProfessionalVideo
+                          clip={clip}
+                          durationInFrames={clip.durationInFrames}
+                          volume={volume}
+                        />
+                      )} />
+                    </AnimatedVisualFrame>
+                  ) : (
+                    <AnimatedVisualFrame clip={clip} durationInFrames={clip.durationInFrames}>
+                      <AnimatedPhoto clip={clip} durationInFrames={clip.durationInFrames} />
+                    </AnimatedVisualFrame>
+                  )}
+                </MaybeMotionBlur>
                 {clip.overlay === 'vignette' && (
                     <AbsoluteFill style={{
                         pointerEvents: 'none',
@@ -435,6 +583,12 @@ export const MainComposition: React.FC<MainCompositionProps> = ({ timeline, subt
              if (nextClip.transitionType === 'wipe') presentation = wipe();
              else if (nextClip.transitionType === 'slide') presentation = slide();
              else if (nextClip.transitionType === 'zoom') presentation = zoomInOut({});
+             else if (nextClip.transitionType === 'film-burn') presentation = filmBurn({ seed: 2.31 });
+             else if (nextClip.transitionType === 'blur-slide') presentation = blurSlide({ blur: 0.35 });
+             else if (nextClip.transitionType === 'cross-zoom') presentation = crossZoom({ strength: 0.4 });
+             else if (nextClip.transitionType === 'dreamy-zoom') presentation = dreamyZoom({ rotation: 5, scale: 1.18 });
+             else if (nextClip.transitionType === 'linear-blur') presentation = linearBlur({ intensity: 0.08 });
+             else if (nextClip.transitionType === 'push-cut') presentation = pushCut({ flashOpacity: 0.16, flashFrames: 2 });
 
              elements.push(
                <TransitionSeries.Transition
