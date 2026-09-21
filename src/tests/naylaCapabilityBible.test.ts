@@ -28,4 +28,11 @@ describe('Nayla capability bible', () => {
     expect(findNaylaCapabilityMatches('quita el fondo del video y deja solo a la persona').map((item) => item.id))
       .toContain('background-removal');
   });
+
+  it('marks GSAP motion ready and understands natural motion language', () => {
+    const gsap = NAYLA_CAPABILITY_BIBLE.find((item) => item.id === 'motion-gsap');
+    expect(gsap?.status).toBe('ready');
+    expect(findNaylaCapabilityMatches('quiero que entre con rebote y salga con animación elástica').map((item) => item.id))
+      .toContain('motion-gsap');
+  });
 });
