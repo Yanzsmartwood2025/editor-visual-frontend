@@ -44,6 +44,19 @@ describe('timeline metrics', () => {
     ).toBe(210);
   });
 
+  it('supports a 3D-only composition duration', () => {
+    expect(
+      getCompositionDurationInFrames(
+        [],
+        30,
+        [],
+        [],
+        [],
+        [{ start: 0, end: 9 }]
+      )
+    ).toBe(270);
+  });
+
   it('caps transitions so they cannot exceed adjacent clips', () => {
     const timeline = [
       { tipo: 'video' as const, durationInSeconds: 1 },
