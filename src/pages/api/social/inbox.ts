@@ -4,6 +4,7 @@ import { requireSocialUser } from '../../../lib/social/http';
 import { ensureSocialProfile, getSocialAccountForUser, recordSocialUsage } from '../../../lib/social/store';
 import { listUploadPostConversations, sendUploadPostDm } from '../../../lib/social/providers/uploadPost';
 import { listZernioConversations, listZernioMessages, sendZernioMessage } from '../../../lib/social/providers/zernio';
+import { cancelPendingAutomation } from '../../../lib/social/automation/service';
 
 const sendSchema = z.object({
   projectId: z.string().uuid(),
@@ -128,6 +129,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           String(account.provider_account_id),
           parsed.data.message
         );
+      }
+
+      if (parsed.data.conversationId) {
+        await cancelPendingAutomation({
+          accountId: account.id,
+          channel: 'dm',
+          conversationId: parsed.data.conversationId,
+          reason: 'El usuario respondió manualmente esta conversación.',
+        });
       }
 
       await recordSocialUsage({

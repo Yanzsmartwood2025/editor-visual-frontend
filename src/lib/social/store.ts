@@ -2,21 +2,54 @@ import { createHash, randomUUID } from 'node:crypto';
 import { createR2PresignedGetUrl } from '../r2';
 import { getWorkspaceSupabaseAdmin, resolveOwnedWorkspaceScope } from '../workspaceStore';
 import type { NormalizedSocialAccount, SocialProviderId } from './types';
+import { ensureDefaultAutomationRule } from './automation/service';
+import { ensureMemorySettings } from './memory/service';
 
 const stableUploadPostUsername = (userId: string, projectId: string) =>
   'nayla_' + createHash('sha256').update(userId + ':' + projectId).digest('hex').slice(0, 28);
 
+const ensureSocialProfileDefaults = async ({
+  profile,
+  userId,
+  projectId,
+}: {
+  profile: any;
+  userId: string;
+  projectId: string;
+}) => {
+  const supabase = getWorkspaceSupabaseAdmin();
+
+  await supabase.from('social_ai_policies').upsert({
+    social_profile_id: profile.id,
+    user_id: userId,
+    project_id: projectId,
+    mode: 'suggest',
+  }, { onConflict: 'social_profile_id', ignoreDuplicates: true });
+
+  await Promise.all([
+    ensureMemorySettings({ profileId: profile.id, userId, projectId }),
+    ensureDefaultAutomationRule({ profileId: profile.id, userId, projectId }),
+  ]);
+
+  return profile;
+};
+
 export const ensureSocialProfile = async (userId: string, projectId: string) => {
   await resolveOwnedWorkspaceScope({ userId, projectId });
   const supabase = getWorkspaceSupabaseAdmin();
+
   const { data: existing, error: existingError } = await supabase
     .from('social_profiles')
     .select('*')
     .eq('user_id', userId)
     .eq('project_id', projectId)
     .maybeSingle();
+
   if (existingError) throw existingError;
+
   if (existing) {
+    let profile = existing;
+
     if (!existing.upload_post_username) {
       const uploadPostUsername = stableUploadPostUsername(userId, projectId);
       const { data, error } = await supabase
@@ -25,10 +58,12 @@ export const ensureSocialProfile = async (userId: string, projectId: string) => 
         .eq('id', existing.id)
         .select('*')
         .single();
+
       if (error) throw error;
-      return data;
+      profile = data;
     }
-    return existing;
+
+    return ensureSocialProfileDefaults({ profile, userId, projectId });
   }
 
   const { data, error } = await supabase
@@ -37,20 +72,18 @@ export const ensureSocialProfile = async (userId: string, projectId: string) => 
       user_id: userId,
       project_id: projectId,
       upload_post_username: stableUploadPostUsername(userId, projectId),
-      metadata: { schema: 1 },
+      metadata: { schema: 2 },
     })
     .select('*')
     .single();
+
   if (error) throw error;
 
-  await supabase.from('social_ai_policies').upsert({
-    social_profile_id: data.id,
-    user_id: userId,
-    project_id: projectId,
-    mode: 'suggest',
-  }, { onConflict: 'social_profile_id' });
-
-  return data;
+  return ensureSocialProfileDefaults({
+    profile: data,
+    userId,
+    projectId,
+  });
 };
 
 export const updateSocialProviderProfileId = async ({
