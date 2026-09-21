@@ -204,17 +204,26 @@ const buildLabelTimelineFallback = (
   const resolved = labels.map((label) => byLabel.get(label));
   if (resolved.some((item) => !item)) return null;
 
+  const perItemDurationMatch = message.match(
+    /\b(?:cada|por)\s+(?:foto|imagen|video|clip)[^.\n]{0,48}?(\d+(?:[.,]\d+)?)\s*(?:segundos?|s)\b/i
+  );
   const durationMatch = message.match(/\b(?:aproximadamente\s+|aprox\.?\s+|unos?\s+|de\s+)?(\d+(?:[.,]\d+)?)\s*(?:segundos?|s)\b/i);
-  const totalSeconds = durationMatch ? Number(durationMatch[1].replace(',', '.')) : null;
+  const requestedSeconds = durationMatch ? Number(durationMatch[1].replace(',', '.')) : null;
+  const perItemSeconds = perItemDurationMatch ? Number(perItemDurationMatch[1].replace(',', '.')) : null;
   const visualCount = resolved.filter((item) => item?.tipo === 'foto' || item?.tipo === 'video').length;
   const perVisualDuration =
-    totalSeconds && Number.isFinite(totalSeconds) && totalSeconds > 0 && visualCount > 0
-      ? totalSeconds / visualCount
-      : undefined;
+    perItemSeconds && Number.isFinite(perItemSeconds) && perItemSeconds > 0
+      ? perItemSeconds
+      : requestedSeconds && Number.isFinite(requestedSeconds) && requestedSeconds > 0 && visualCount > 0
+        ? requestedSeconds / visualCount
+        : undefined;
 
-  const wantsSoftMotion = /\b(ken[ -]?burns|movimiento\s+suave|zoom\s+suave|acercamiento\s+suave)\b/i.test(message);
+  const wantsSoftMotion = /\b(ken[ -]?burns|movimiento\s+suave|zoom\s+suave|acercamiento\s+suave|desplazamiento\s+lento)\b/i.test(message);
   const wantsCinematic = /\b(cinematogr[aá]fic[oa]s?|pel[ií]cula)\b/i.test(message);
   const wantsFade = /\b(fade|fundido|transici[oó]n(?:es)?\s+suaves?|cinematogr[aá]fic[oa]s?)\b/i.test(message);
+  const wantsColorCorrection = /\b(correcci[oó]n\s+de\s+color|colores?\s+uniformes?|uniformar\s+(?:el\s+)?color)\b/i.test(message);
+  const wantsVignette = /\bvi(?:ñ|n)eta\b/i.test(message);
+  const wantsGlow = /\b(glow|brillo\s+(?:muy\s+)?discreto|brillo\s+leve)\b/i.test(message);
 
   const assets = resolved.map((item) => {
     const asset: Record<string, unknown> = {
@@ -231,6 +240,20 @@ const buildLabelTimelineFallback = (
       if (wantsFade) {
         asset.transitionType = 'fade';
         asset.transitionDuration = 0.5;
+      }
+      if (wantsVignette) {
+        asset.overlay = 'vignette';
+        asset.overlayIntensity = 0.18;
+      }
+      const professionalEffects: Array<Record<string, unknown>> = [];
+      if (wantsColorCorrection) {
+        professionalEffects.push({ type: 'color-correction', intensity: 0.35 });
+      }
+      if (wantsGlow) {
+        professionalEffects.push({ type: 'glow', intensity: 0.16 });
+      }
+      if (professionalEffects.length) {
+        asset.professionalEffects = professionalEffects;
       }
     }
     return asset;
@@ -781,9 +804,16 @@ MODO_MOTOR=${engineMode}
       });
     }
 
+    const previousUserInstruction = [...effectiveHistory]
+      .reverse()
+      .find((item) => item.role === 'user')?.content || '';
+    const fallbackExecutionContext = executionConfirmed
+      ? [previousUserInstruction, message].filter(Boolean).join('\n\n')
+      : message;
+
     const parsedAction =
       parseNaylaAction(responseText) ||
-      (executionConfirmed ? buildLabelTimelineFallback(message, mergedLibrary) : null);
+      (executionConfirmed ? buildLabelTimelineFallback(fallbackExecutionContext, mergedLibrary) : null);
 
     const canonicalizeUrl = (value: string) => {
       const exact = mergedLibrary.find((item: any) => item.url === value);
@@ -928,6 +958,14 @@ MODO_MOTOR=${engineMode}
     }
 
     let publicResponseText = sanitizeNaylaPublicText(responseText);
+    const looksLikeTechnicalAction =
+      /^\s*\{/.test(responseText) &&
+      /"action"\s*:/.test(responseText);
+    if (looksLikeTechnicalAction) {
+      publicResponseText = executionConfirmed
+        ? 'No pude convertir ese plan en una edición segura. Conservé el plan sin mostrar detalles técnicos; revisa que las etiquetas del proyecto sigan disponibles y vuelve a decirme adelante.'
+        : buildPlanningFallback(intentMatches);
+    }
     if (
       /\b(en\s+marcha|renderiz(?:ando|aci[oó]n)|procesando|guard(?:ando|ar[aá]).*b[oó]veda|cuando\s+termine)\b/i.test(publicResponseText) &&
       /\b(video|render|timeline|edici[oó]n)\b/i.test(message)

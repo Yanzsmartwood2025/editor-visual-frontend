@@ -322,12 +322,39 @@ export const naylaActionSchema = z.discriminatedUnion('action', [
 
 export type NaylaAction = z.infer<typeof naylaActionSchema>;
 
+const normalizeNaylaActionShape = (value: unknown): unknown => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return value;
+
+  const action = { ...(value as Record<string, unknown>) };
+  if (action.action !== 'BUILD_TIMELINE' || !Array.isArray(action.assets)) return action;
+
+  action.assets = action.assets.map((item) => {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) return item;
+    const asset = { ...(item as Record<string, unknown>) };
+
+    if (typeof asset.effect === 'string' && typeof asset.efecto !== 'string') {
+      asset.efecto = asset.effect;
+    }
+    delete asset.effect;
+
+    if (Array.isArray(asset.professionalEffects)) {
+      asset.professionalEffects = asset.professionalEffects.map((effect) =>
+        typeof effect === 'string' ? { type: effect } : effect
+      );
+    }
+
+    return asset;
+  });
+
+  return action;
+};
+
 export const parseNaylaAction = (raw: string): NaylaAction | null => {
-  const cleaned = raw.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/\s*```$/i, '').trim();
+  const cleaned = raw.replace(/^\`\`\`json\s*/i, '').replace(/^\`\`\`\s*/i, '').replace(/\s*\`\`\`$/i, '').trim();
   if (!cleaned.startsWith('{') || !cleaned.endsWith('}')) return null;
 
   try {
-    const json = JSON.parse(cleaned);
+    const json = normalizeNaylaActionShape(JSON.parse(cleaned));
     const parsed = naylaActionSchema.safeParse(json);
     if (!parsed.success) return null;
 

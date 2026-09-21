@@ -468,6 +468,8 @@ export default function NaylaCore() {
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [chatInput, setChatInput] = useState('');
   const chatInputRef = useRef<HTMLTextAreaElement | null>(null);
+  const chatMessagesRef = useRef<HTMLDivElement | null>(null);
+  const chatAutoFollowRef = useRef(true);
   const [chatMessages, setChatMessages] = useState<NaylaChatMessage[]>([]);
   const [chatProcessing, setChatProcessing] = useState(false);
   const [cloudExecutingIds, setCloudExecutingIds] = useState<string[]>([]);
@@ -485,18 +487,42 @@ export default function NaylaCore() {
     activeThreadIdRef.current = activeThreadId;
   }, [activeThreadId]);
 
+  const resetChatComposerHeight = () => {
+    const textarea = chatInputRef.current;
+    if (!textarea) return;
+    textarea.style.height = '46px';
+    textarea.style.overflowY = 'hidden';
+    textarea.scrollTop = 0;
+  };
+
+  const scrollChatToBottom = (behavior: ScrollBehavior = 'smooth') => {
+    const container = chatMessagesRef.current;
+    if (!container) return;
+    container.scrollTo({ top: container.scrollHeight, behavior });
+  };
+
   useEffect(() => {
     const textarea = chatInputRef.current;
     if (!textarea) return;
 
     const minHeight = 46;
     const maxHeight = 190;
-    textarea.style.height = '0px';
+    if (!chatInput) {
+      resetChatComposerHeight();
+      return;
+    }
 
+    textarea.style.height = '0px';
     const nextHeight = Math.max(minHeight, Math.min(textarea.scrollHeight, maxHeight));
     textarea.style.height = `${nextHeight}px`;
     textarea.style.overflowY = textarea.scrollHeight > maxHeight ? 'auto' : 'hidden';
   }, [chatInput, isAiModalOpen, isChatOpen]);
+
+  useEffect(() => {
+    if (!isAiModalOpen || !chatAutoFollowRef.current) return;
+    const frame = window.requestAnimationFrame(() => scrollChatToBottom(chatProcessing ? 'smooth' : 'auto'));
+    return () => window.cancelAnimationFrame(frame);
+  }, [chatMessages, chatProcessing, toolMessage, isAiModalOpen]);
 
   const updateRenderTask = (
     requestId: string | undefined,
@@ -2541,9 +2567,14 @@ export default function NaylaCore() {
     const message = (messageOverride ?? chatInput).trim();
     if (!message) return;
     const newMessages: NaylaChatMessage[] = [...chatMessages, { role: 'user', text: message }];
+    chatAutoFollowRef.current = true;
     setChatMessages(newMessages);
-    if (!messageOverride) setChatInput('');
+    if (!messageOverride) {
+      setChatInput('');
+      resetChatComposerHeight();
+    }
     setChatProcessing(true);
+    window.requestAnimationFrame(() => scrollChatToBottom('smooth'));
 
     try {
       const currentSession = session || await getFirebaseSession();
@@ -5522,7 +5553,16 @@ if (!session) {
           </div>
 
           {/* Chat Messages Body */}
-          <div data-no-edge-swipe style={{ flex: 1, minWidth: 0, padding: '16px 14px', overflowX: 'hidden', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '18px', overscrollBehavior: 'contain' }}>
+          <div
+            ref={chatMessagesRef}
+            data-no-edge-swipe
+            onScroll={(event) => {
+              const element = event.currentTarget;
+              const distanceFromBottom = element.scrollHeight - element.scrollTop - element.clientHeight;
+              chatAutoFollowRef.current = distanceFromBottom < 120;
+            }}
+            style={{ flex: 1, minWidth: 0, padding: '16px 14px', overflowX: 'hidden', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '18px', overscrollBehavior: 'contain' }}
+          >
             {chatMessages.length === 0 ? (
               <div style={{ textAlign: 'center', color: '#666', marginTop: '40px', fontSize: '0.95rem' }}>
                 Hola, soy Nayla. ¿En qué puedo ayudarte hoy?
@@ -5876,9 +5916,31 @@ if (!session) {
                 </div>
               ))
             )}
-            {chatProcessing && (
-              <div style={{ alignSelf: 'flex-start', color: '#f2f2f2', padding: '10px', fontSize: '0.9rem', fontStyle: 'italic' }}>
-                {naylaIsWorking ? 'Nayla está trabajando…' : 'Nayla está preparando la respuesta…'}
+            {(chatProcessing || toolMessage) && (
+              <div style={{
+                alignSelf: 'stretch',
+                color: '#f2f2f2',
+                padding: '10px 2px 2px',
+                fontSize: '0.82rem',
+                fontStyle: 'italic',
+              }}>
+                <div>{toolMessage || 'Nayla está pensando…'}</div>
+                <div style={{
+                  height: 5,
+                  borderRadius: 999,
+                  background: '#171717',
+                  border: '1px solid #292929',
+                  overflow: 'hidden',
+                  marginTop: 8,
+                }}>
+                  <div style={{
+                    width: '32%',
+                    height: '100%',
+                    background: '#eee',
+                    borderRadius: 999,
+                    animation: 'naylaJobSweep 1.15s ease-in-out infinite',
+                  }} />
+                </div>
               </div>
             )}
           </div>
@@ -5975,6 +6037,7 @@ if (!session) {
             borderTop: '1px solid #1a1a1a',
             backgroundColor: '#0a0a0a',
             display: 'flex',
+            alignItems: 'flex-end',
             gap: '8px',
             boxSizing: 'border-box',
             width: '100%',
@@ -6022,6 +6085,7 @@ if (!session) {
                 width: 42,
                 height: 42,
                 flex: '0 0 42px',
+                alignSelf: 'flex-end',
                 borderRadius: '50%',
                 border: projectMenuOpen ? '1px solid #f1f1f1' : '1px solid #3a3a3a',
                 background: projectMenuOpen ? '#f1f1f1' : '#111',
@@ -6041,7 +6105,9 @@ if (!session) {
               onClick={() => void sendNaylaMessage()}
               disabled={chatProcessing}
               style={{
-                padding: '10px 16px',
+                height: 46,
+                padding: '0 16px',
+                alignSelf: 'flex-end',
                 backgroundColor: chatProcessing ? '#333' : '#f2f2f2',
                 color: '#000',
                 border: 'none',

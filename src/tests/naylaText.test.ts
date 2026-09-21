@@ -14,4 +14,10 @@ describe('Nayla chat typography', () => {
   it('collapses excessive blank space without flattening paragraphs', () => {
     expect(cleanNaylaChatText('Uno\n\n\n\nDos')).toBe('Uno\n\nDos');
   });
+  it('hides raw executable action payloads from the visible chat', () => {
+    expect(cleanNaylaChatText(
+      '{"action":"BUILD_TIMELINE","assets":[{"type":"foto","source":"url","url":"https://cdn.example/f1.jpg"}]}'
+    )).toBe('');
+  });
+
 });

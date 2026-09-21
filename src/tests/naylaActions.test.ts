@@ -712,4 +712,39 @@ describe('Nayla action contracts', () => {
     });
   });
 
+  it('normalizes common timeline aliases emitted by language models', () => {
+    const action = parseNaylaAction(JSON.stringify({
+      action: 'BUILD_TIMELINE',
+      assets: [
+        {
+          type: 'foto',
+          source: 'url',
+          url: 'https://cdn.example/photo.jpg',
+          durationInSeconds: 3,
+          effect: 'pan',
+          professionalEffects: ['color-correction', 'glow'],
+          overlay: 'vignette',
+          overlayIntensity: 0.2,
+          transitionType: 'fade',
+          transitionDuration: 1,
+        },
+      ],
+      render: true,
+    }));
+
+    expect(action).not.toBeNull();
+    expect(action).toMatchObject({
+      action: 'BUILD_TIMELINE',
+      assets: [
+        expect.objectContaining({
+          efecto: 'pan',
+          professionalEffects: [
+            { type: 'color-correction' },
+            { type: 'glow' },
+          ],
+        }),
+      ],
+    });
+  });
+
 });
