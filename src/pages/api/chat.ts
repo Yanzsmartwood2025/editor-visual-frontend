@@ -774,6 +774,19 @@ Solo una imagen. No usar para texto→3D ni multivista.
       "fontSize": 46
     }
   ],
+  "titles": [
+    {
+      "text": "ST★RLIGHT LOG",
+      "start": 0.4,
+      "end": 3.2,
+      "style": "cinematic",
+      "animation": "word-rise",
+      "position": "center",
+      "fontSize": 76,
+      "color": "#ffffff",
+      "accentColor": "#ffffff"
+    }
+  ],
   "render": true
 }
 
@@ -787,6 +800,12 @@ style puede ser clean, cinematic, tiktok o karaoke. position puede ser top, cent
 Si el usuario pide subtítulos normales y no especifica estilo, elige clean o cinematic según el tono del plan.
 Para contenido social con palabra destacada usa tiktok. Para letra o lectura palabra a palabra usa karaoke.
 Si el usuario pide quitar todos los subtítulos de un plan, usa "subtitles": [].
+titles es opcional y sirve para títulos, rótulos y lower thirds animados con el motor de animación por frame.
+Cada título usa text, start, end, style, animation, position, fontSize, color y accentColor.
+style puede ser clean, cinematic, neon o minimal.
+animation puede ser fade-up, slide-left, slide-right, pop, zoom-in, word-rise o lower-third.
+Usa pop cuando el usuario pida rebote o entrada con fuerza; word-rise para palabras que aparecen/suben; lower-third para rótulos informativos; slide-left/right para entradas laterales.
+Si el usuario pide quitar los títulos animados, usa "titles": [].
 Catálogo Remotion CPU:
 ${JSON.stringify(REMOTION_CPU_PUBLIC_CATALOG)}
 
