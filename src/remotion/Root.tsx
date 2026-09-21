@@ -35,6 +35,7 @@ const defaultProps = {
     { id: 's2', texto: 'Donde el silencio parece tener vida propia.', inicioSec: 5, finSec: 10 }
   ],
   titles: [],
+  threeScenes: [],
   logos: []
 };
 
@@ -62,7 +63,8 @@ export const RemotionRoot: React.FC = () => {
     fps,
     defaultProps.subtitles,
     defaultProps.logos,
-    defaultProps.titles
+    defaultProps.titles,
+    defaultProps.threeScenes
   );
 
   return (
@@ -82,6 +84,7 @@ export const RemotionRoot: React.FC = () => {
           const subtitles = Array.isArray(typedProps.subtitles) ? typedProps.subtitles : [];
           const logos = Array.isArray(typedProps.logos) ? typedProps.logos : [];
           const titles = Array.isArray(typedProps.titles) ? typedProps.titles : [];
+          const threeScenes = Array.isArray(typedProps.threeScenes) ? typedProps.threeScenes : [];
 
           return {
             durationInFrames: getCompositionDurationInFrames(
@@ -89,7 +92,8 @@ export const RemotionRoot: React.FC = () => {
               fps,
               subtitles as any[],
               logos as any[],
-              titles as any[]
+              titles as any[],
+              threeScenes as any[]
             ),
             width,
             height,
