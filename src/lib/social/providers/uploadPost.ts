@@ -149,6 +149,24 @@ export const getUploadPostAnalytics = async (username: string, platforms: Social
   return request(`/api/analytics/${encodeURIComponent(username)}?platforms=${encodeURIComponent(mapped)}`);
 };
 
+export const listUploadPostMedia = async ({
+  username,
+  platform,
+  limit = 25,
+}: {
+  username: string;
+  platform: SocialPlatform;
+  limit?: number;
+}) => {
+  const mapped = getSocialNetwork(platform)?.uploadPostPublish || platform;
+  const params = new URLSearchParams({
+    platform: mapped,
+    user: username,
+    limit: String(Math.max(1, Math.min(100, limit))),
+  });
+  return request(`/api/uploadposts/media?${params.toString()}`);
+};
+
 export const getUploadPostComments = async ({
   username,
   platform,
