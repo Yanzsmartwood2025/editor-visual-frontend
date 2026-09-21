@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import type { FirebaseSession } from '../lib/firebaseClient';
 import { firebaseHeaders } from '../lib/apiClient';
 import { SOCIAL_NETWORKS } from '../lib/social/types';
+import { cleanNaylaChatText } from '../lib/naylaText';
 
 type ResultMedia = {
   id: string;
@@ -814,7 +815,7 @@ export default function SocialHub({ session, projectId, results, onClose }: Prop
         width: '100dvw',
         height: '100dvh',
         boxSizing: 'border-box',
-        overflowY: 'auto',
+        overflowY: tab === 'ajustes' ? 'hidden' : 'auto',
         overscrollBehavior: 'contain',
         display: 'flex',
         flexDirection: 'column',
@@ -1283,7 +1284,7 @@ export default function SocialHub({ session, projectId, results, onClose }: Prop
                       overflowWrap: 'anywhere',
                     }}
                   >
-                    {message.content}
+                    {isUser ? message.content : cleanNaylaChatText(String(message.content || ''))}
                   </div>
                 );
               })}
