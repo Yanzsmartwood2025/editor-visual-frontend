@@ -11,6 +11,6 @@ await bundle({
   entryPoint: path.resolve('src/remotion/index.ts'),
   outDir,
   enableCaching: true,
-  webpackOverride: (config) => enableSkia(config),
+  webpackOverride: (config, context) => enableSkia(config, context),
 });
 console.log('[remotion] Bundle ready at .remotion');
