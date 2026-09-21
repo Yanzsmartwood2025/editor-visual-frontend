@@ -83,6 +83,14 @@ export const REMOTION_CPU_EFFECTS = {
     controls: ['seed', 'color', 'accentColor'] as const,
     deterministic: true,
   },
+  skiaGraphics: {
+    supported: true,
+    presets: ['glow-orb', 'rings', 'energy-pulse', 'spotlights'] as const,
+    placement: ['start', 'end', 'x', 'y', 'scale', 'opacity'] as const,
+    appearance: ['color', 'accentColor', 'intensity', 'speed'] as const,
+    deterministic: true,
+    maxItemsPerRender: 40,
+  },
   vectorAnimations: {
     supported: true,
     formats: ['lottie', 'rive'] as const,
@@ -130,6 +138,7 @@ export const REMOTION_CPU_PUBLIC_CATALOG = {
   motionTitles: REMOTION_CPU_EFFECTS.motionTitles,
   clipMotion: REMOTION_CPU_EFFECTS.clipMotion,
   proceduralMotion: REMOTION_CPU_EFFECTS.proceduralMotion,
+  skiaGraphics: REMOTION_CPU_EFFECTS.skiaGraphics,
   vectorAnimations: REMOTION_CPU_EFFECTS.vectorAnimations,
   three: REMOTION_CPU_EFFECTS.three,
   controls: [
@@ -148,6 +157,7 @@ export const REMOTION_CPU_PUBLIC_CATALOG = {
     'títulos y lower thirds animados por frame con GSAP',
     'entradas y salidas GSAP deterministas para fotos y videos',
     'partículas, órbitas, rejillas pulsantes y campos de estrellas procedurales',
+    'gráficos Skia avanzados: orbes luminosos, anillos, pulsos de energía y focos animados',
     'animaciones Lottie JSON y Rive .riv sincronizadas por frame',
     'escenas GLB 3D reales con cámara, luces, rotación y animación interna',
   ],

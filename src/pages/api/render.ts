@@ -23,6 +23,7 @@ type ValidatedRenderProps = Record<string, unknown> & {
   titles?: any[];
   threeScenes?: any[];
   vectorAnimations?: any[];
+  skiaGraphics?: any[];
   canvasWidth: number;
   canvasHeight: number;
 };
@@ -36,9 +37,10 @@ const validateInputProps = (inputProps: unknown): ValidatedRenderProps => {
   const timeline = Array.isArray(props.timeline) ? props.timeline : [];
   const threeScenes = Array.isArray(props.threeScenes) ? props.threeScenes : [];
   const vectorAnimations = Array.isArray(props.vectorAnimations) ? props.vectorAnimations : [];
+  const skiaGraphics = Array.isArray(props.skiaGraphics) ? props.skiaGraphics : [];
 
-  if (timeline.length === 0 && threeScenes.length === 0 && vectorAnimations.length === 0) {
-    throw new RenderValidationError('El render debe contener al menos un clip, una escena 3D o una animación vectorial.');
+  if (timeline.length === 0 && threeScenes.length === 0 && vectorAnimations.length === 0 && skiaGraphics.length === 0) {
+    throw new RenderValidationError('El render debe contener al menos un clip, una escena 3D, una animación vectorial o un gráfico Skia.');
   }
   if (timeline.length > MAX_TIMELINE_ITEMS) {
     throw new RenderValidationError(`El timeline supera el máximo de ${MAX_TIMELINE_ITEMS} elementos por render.`);
@@ -61,6 +63,22 @@ const validateInputProps = (inputProps: unknown): ValidatedRenderProps => {
       throw new RenderValidationError('Una animación vectorial privada necesita una URL HTTPS firmada.');
     }
   }
+  if (skiaGraphics.length > 40) {
+    throw new RenderValidationError('El render supera el máximo de 40 gráficos Skia.');
+  }
+  for (const item of skiaGraphics) {
+    const preset = String(item?.preset || '');
+    const start = Number(item?.start);
+    const end = Number(item?.end);
+    if (
+      !['glow-orb', 'rings', 'energy-pulse', 'spotlights'].includes(preset) ||
+      !Number.isFinite(start) ||
+      !Number.isFinite(end) ||
+      end <= start
+    ) {
+      throw new RenderValidationError('Un gráfico Skia tiene datos inválidos.');
+    }
+  }
 
   const fps = 30;
   const subtitles = Array.isArray(props.subtitles) ? props.subtitles : [];
@@ -73,7 +91,8 @@ const validateInputProps = (inputProps: unknown): ValidatedRenderProps => {
     logos as any[],
     titles as any[],
     threeScenes as any[],
-    vectorAnimations as any[]
+    vectorAnimations as any[],
+    skiaGraphics as any[]
   );
   const durationInSeconds = durationInFrames / fps;
 
@@ -108,6 +127,7 @@ const validateInputProps = (inputProps: unknown): ValidatedRenderProps => {
     timeline: timeline as any[],
     threeScenes: threeScenes as any[],
     vectorAnimations: vectorAnimations as any[],
+    skiaGraphics: skiaGraphics as any[],
     canvasWidth,
     canvasHeight,
   } as ValidatedRenderProps;
@@ -521,7 +541,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       Array.isArray(inputProps.subtitles) ? inputProps.subtitles as any[] : [],
       Array.isArray(inputProps.logos) ? inputProps.logos as any[] : [],
       Array.isArray(inputProps.titles) ? inputProps.titles as any[] : [],
-      Array.isArray(inputProps.threeScenes) ? inputProps.threeScenes as any[] : []
+      Array.isArray(inputProps.threeScenes) ? inputProps.threeScenes as any[] : [],
+      Array.isArray(inputProps.vectorAnimations) ? inputProps.vectorAnimations as any[] : [],
+      Array.isArray(inputProps.skiaGraphics) ? inputProps.skiaGraphics as any[] : []
     );
     const durationInSeconds = durationInFrames / 30;
 

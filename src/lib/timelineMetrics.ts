@@ -38,6 +38,11 @@ export type VectorAnimationMetricItem = {
   end?: number;
 };
 
+export type SkiaGraphicMetricItem = {
+  start?: number;
+  end?: number;
+};
+
 export type VisualTimelineMetric<T extends TimelineMetricItem = TimelineMetricItem> = T & {
   durationInFrames: number;
   delayInFrames: number;
@@ -157,7 +162,8 @@ export const getCompositionDurationInFrames = (
   logos: LogoMetricItem[] = [],
   titles: TitleMetricItem[] = [],
   threeScenes: ThreeSceneMetricItem[] = [],
-  vectorAnimations: VectorAnimationMetricItem[] = []
+  vectorAnimations: VectorAnimationMetricItem[] = [],
+  skiaGraphics: SkiaGraphicMetricItem[] = []
 ): number => {
   const visualMetrics = buildVisualTimelineMetrics(timeline, fps);
   const visualEnd = visualMetrics.reduce(
@@ -197,5 +203,10 @@ export const getCompositionDurationInFrames = (
     return Math.max(max, Math.round(end * fps));
   }, 0);
 
-  return Math.max(1, visualEnd, audioEnd, subtitleEnd, logoEnd, titleEnd, threeSceneEnd, vectorAnimationEnd);
+  const skiaGraphicEnd = skiaGraphics.reduce((max, item) => {
+    const end = Math.max(0, safeNumber(item.end, safeNumber(item.start, 0)));
+    return Math.max(max, Math.round(end * fps));
+  }, 0);
+
+  return Math.max(1, visualEnd, audioEnd, subtitleEnd, logoEnd, titleEnd, threeSceneEnd, vectorAnimationEnd, skiaGraphicEnd);
 };

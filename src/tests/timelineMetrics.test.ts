@@ -45,6 +45,22 @@ describe('timeline metrics', () => {
   });
 
 
+
+  it('extends the composition for Skia graphics', () => {
+    expect(
+      getCompositionDurationInFrames(
+        [],
+        30,
+        [],
+        [],
+        [],
+        [],
+        [],
+        [{ start: 2, end: 9 }]
+      )
+    ).toBe(270);
+  });
+
   it('extends the composition for vector animations', () => {
     expect(
       getCompositionDurationInFrames(
