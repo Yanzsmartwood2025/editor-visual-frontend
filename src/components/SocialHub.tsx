@@ -155,7 +155,7 @@ const NaylaSelect = ({
               bottom: 18,
               zIndex: 9997,
               maxHeight: '62dvh',
-              overflowY: tab === 'ajustes' ? 'hidden' : 'auto',
+              overflowY: 'auto',
               borderRadius: 18,
               border: '1px solid rgba(255,255,255,.16)',
               background: '#0b0b0b',
