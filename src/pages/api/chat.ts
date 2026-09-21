@@ -802,6 +802,37 @@ Solo una imagen. No usar para texto→3D ni multivista.
       "accentColor": "#ffffff"
     }
   ],
+  "vectorAnimations": [
+    {
+      "kind": "lottie",
+      "url": "https://.../animation.json",
+      "start": 0.5,
+      "end": 4.5,
+      "x": 0,
+      "y": 0,
+      "scale": 0.8,
+      "opacity": 1,
+      "fit": "contain",
+      "alignment": "center",
+      "loop": true,
+      "playbackRate": 1,
+      "direction": "forward"
+    },
+    {
+      "kind": "rive",
+      "url": "https://.../animation.riv",
+      "start": 4.5,
+      "end": 8,
+      "x": 0,
+      "y": 0,
+      "scale": 1,
+      "opacity": 1,
+      "fit": "contain",
+      "alignment": "center",
+      "artboard": "Main",
+      "animation": "Idle"
+    }
+  ],
   "threeScenes": [
     {
       "label": "M1",
@@ -849,7 +880,14 @@ lighting puede ser studio, soft o dramatic.
 Si el usuario dice "que parezca 3D" sobre una foto, usa motion-depth/parallax. Si habla de M1/M2, GLB, modelo 3D real, luces o cámara 3D, usa threeScenes.
 assets puede ser [] únicamente cuando threeScenes contenga al menos una escena. Eso permite un render 3D sobre fondo negro/transparente sin fotos ni videos.
 Si el usuario menciona una animación interna por nombre, usa animationName. Si no especifica una y el GLB contiene animaciones, el renderer puede usar la primera.
-Si el usuario pide quitar las escenas 3D del plan, usa "threeScenes": [] siempre acompañado por al menos un asset normal.
+Si el usuario pide quitar las escenas 3D del plan, usa "threeScenes": [] siempre acompañado por al menos un asset normal o una animación vectorial.
+vectorAnimations es opcional para Lottie JSON y Rive .riv remotos.
+Cada animación usa kind, url, start, end, x, y, scale, opacity, fit y alignment.
+Para Lottie también puedes usar loop, playbackRate y direction forward/backward. La URL debe apuntar al JSON y permitir CORS.
+Para Rive puedes usar artboard y animation cuando el usuario conozca esos nombres. La URL debe apuntar al archivo .riv.
+Usa Lottie/Rive para logos animados, iconos, UI, stickers y overlays vectoriales. No los confundas con una foto ni con un modelo GLB 3D.
+assets puede ser [] si threeScenes o vectorAnimations contiene al menos un elemento válido.
+Si el usuario pide quitar todas las animaciones vectoriales, usa "vectorAnimations": [] acompañado por un asset normal o una escena 3D.
 Catálogo Remotion CPU:
 ${JSON.stringify(REMOTION_CPU_PUBLIC_CATALOG)}
 
