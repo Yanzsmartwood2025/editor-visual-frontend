@@ -49,7 +49,7 @@ const loadCandidates = async ({
     .eq('user_id', userId)
     .eq('project_id', projectId)
     .eq('direction', 'inbound')
-    .eq('response_state', 'unanswered')
+    .in('response_state', ['unanswered', 'planned'])
     .order('occurred_at', { ascending: false })
     .limit(40);
 
@@ -293,13 +293,6 @@ export const planSocialCommand = async ({
   if (!hasReplyCommandIntent(message)) return null;
 
   const supabase = getWorkspaceSupabaseAdmin();
-  await supabase
-    .from('social_interactions')
-    .update({ response_state: 'unanswered' })
-    .eq('user_id', userId)
-    .eq('project_id', projectId)
-    .eq('response_state', 'planned');
-
   const candidates = await loadCandidates({ userId, projectId });
   if (!candidates.length) {
     return {
@@ -380,6 +373,13 @@ export const planSocialCommand = async ({
       count: valid.length,
     },
   });
+
+  await supabase
+    .from('social_interactions')
+    .update({ response_state: 'unanswered' })
+    .eq('user_id', userId)
+    .eq('project_id', projectId)
+    .eq('response_state', 'planned');
 
   await supabase
     .from('social_interactions')
