@@ -24,7 +24,18 @@ const buildTimelineAssetSchema = z.object({
   trimAfter: z.number().min(0).max(3600).optional(),
   loop: z.boolean().optional(),
   playbackRate: z.number().min(0.1).max(4).optional(),
-  transitionType: z.enum(['fade', 'wipe', 'slide', 'zoom']).optional(),
+  transitionType: z.enum([
+    'fade',
+    'wipe',
+    'slide',
+    'zoom',
+    'film-burn',
+    'blur-slide',
+    'cross-zoom',
+    'dreamy-zoom',
+    'linear-blur',
+    'push-cut',
+  ]).optional(),
   transitionDuration: z.number().min(0).max(10).optional(),
   efecto: z.enum([
     'none',
@@ -50,6 +61,25 @@ const buildTimelineAssetSchema = z.object({
   saturation: z.number().min(0).max(4).optional(),
   overlay: z.enum(['none', 'vignette', 'film-grain', 'light-leak', 'letterbox']).optional(),
   overlayIntensity: z.number().min(0).max(1).optional(),
+  professionalEffects: z.array(z.object({
+    type: z.enum([
+      'chromatic-aberration',
+      'color-correction',
+      'glow',
+      'pixelate',
+      'zoom-blur',
+      'vignette',
+      'light-leak',
+    ]),
+    intensity: z.number().min(0).max(1).optional(),
+    color: z.string().trim().min(1).max(64).optional(),
+    angle: z.number().min(-360).max(360).optional(),
+    seed: z.number().min(-100000).max(100000).optional(),
+  }).strict()).max(6).optional(),
+  motionBlur: z.object({
+    shutterAngle: z.number().min(0).max(360).optional(),
+    samples: z.number().int().min(2).max(8).optional(),
+  }).strict().optional(),
 });
 
 export const naylaActionSchema = z.discriminatedUnion('action', [
