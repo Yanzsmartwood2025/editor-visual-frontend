@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 import { uploadR2Object } from './r2';
+import { VERCEL_SANDBOX_CHROMIUM_OPTIONS } from './remotionSandboxOptions';
 
 const COMPOSITION_ID = 'MainComposition';
 const BUNDLE_DIR = path.join(process.cwd(), '.remotion');
@@ -91,7 +92,7 @@ export async function startVercelSandboxRender(
       codec: 'h264',
       outputFile: '/tmp/render.mp4',
       concurrency: 4,
-      chromiumOptions: { gl: 'angle' },
+      chromiumOptions: VERCEL_SANDBOX_CHROMIUM_OPTIONS,
       timeoutInMilliseconds: 60_000,
       detachedSandboxTimeoutInMilliseconds: 5 * 60 * 1000,
       onProgress: async (update: any) => {
