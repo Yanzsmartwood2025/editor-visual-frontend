@@ -217,6 +217,7 @@ export const naylaActionSchema = z.discriminatedUnion('action', [
   z.object({
     action: z.literal('REMOVE_VIDEO_BACKGROUND'),
     label: z.string().trim().regex(/^V\d+$/i),
+    url: urlSchema.optional(),
     model: z.enum(['modnet', 'ben2-base']).optional().default('modnet'),
     keepAudio: z.boolean().optional().default(true),
     quality: z.enum(['medium', 'high', 'very-high']).optional().default('high'),
