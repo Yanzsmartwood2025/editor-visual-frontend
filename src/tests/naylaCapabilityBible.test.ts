@@ -37,6 +37,14 @@ describe('Nayla capability bible', () => {
     expect(NAYLA_CAPABILITY_BIBLE.find((item) => item.id === 'motion-gsap')?.status).toBe('ready');
   });
 
+
+  it('marks procedural motion ready and recognizes particle language', () => {
+    expect(NAYLA_CAPABILITY_BIBLE.find((item) => item.id === 'procedural-motion')?.status).toBe('ready');
+    expect(
+      findNaylaCapabilityMatches('pon partículas y estrellas moviéndose en el fondo').map((item) => item.id)
+    ).toContain('procedural-motion');
+  });
+
   it('marks real Three.js scenes ready and matches natural 3D requests', () => {
     expect(NAYLA_CAPABILITY_BIBLE.find((item) => item.id === 'three-real')?.status).toBe('ready');
     expect(
