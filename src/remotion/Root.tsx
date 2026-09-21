@@ -34,6 +34,7 @@ const defaultProps = {
     { id: 's1', texto: 'Existe un lugar al pie del monte Fuji...', inicioSec: 0, finSec: 5 },
     { id: 's2', texto: 'Donde el silencio parece tener vida propia.', inicioSec: 5, finSec: 10 }
   ],
+  titles: [],
   logos: []
 };
 
@@ -60,7 +61,8 @@ export const RemotionRoot: React.FC = () => {
     defaultProps.timeline,
     fps,
     defaultProps.subtitles,
-    defaultProps.logos
+    defaultProps.logos,
+    defaultProps.titles
   );
 
   return (
@@ -79,13 +81,15 @@ export const RemotionRoot: React.FC = () => {
           const timeline = Array.isArray(typedProps.timeline) ? typedProps.timeline : [];
           const subtitles = Array.isArray(typedProps.subtitles) ? typedProps.subtitles : [];
           const logos = Array.isArray(typedProps.logos) ? typedProps.logos : [];
+          const titles = Array.isArray(typedProps.titles) ? typedProps.titles : [];
 
           return {
             durationInFrames: getCompositionDurationInFrames(
               timeline as any[],
               fps,
               subtitles as any[],
-              logos as any[]
+              logos as any[],
+              titles as any[]
             ),
             width,
             height,
