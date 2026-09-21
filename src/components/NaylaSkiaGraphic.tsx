@@ -1,7 +1,9 @@
 import React from 'react';
 import { AbsoluteFill, interpolate, useCurrentFrame, useVideoConfig } from 'remotion';
-import { SkiaCanvas } from '@remotion/skia';
-import { BlurMask, Circle, Group } from '@shopify/react-native-skia';
+import { Canvas } from '@shopify/react-native-skia/src/renderer/Canvas';
+import { Group } from '@shopify/react-native-skia/src/renderer/components/Group';
+import { Circle } from '@shopify/react-native-skia/src/renderer/components/shapes/Circle';
+import { BlurMask } from '@shopify/react-native-skia/src/renderer/components/maskFilters/Blur';
 
 export type NaylaSkiaGraphic = {
   id: string;
@@ -125,9 +127,9 @@ export const NaylaSkiaGraphicRenderer: React.FC<{ item: NaylaSkiaGraphic }> = ({
 
   return (
     <AbsoluteFill style={{ pointerEvents: 'none' }}>
-      <SkiaCanvas width={width} height={height}>
+      <Canvas style={{ width, height }}>
         {renderPreset()}
-      </SkiaCanvas>
+      </Canvas>
     </AbsoluteFill>
   );
 };
