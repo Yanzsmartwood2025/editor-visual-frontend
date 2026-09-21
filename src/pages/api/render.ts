@@ -541,7 +541,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       Array.isArray(inputProps.subtitles) ? inputProps.subtitles as any[] : [],
       Array.isArray(inputProps.logos) ? inputProps.logos as any[] : [],
       Array.isArray(inputProps.titles) ? inputProps.titles as any[] : [],
-      Array.isArray(inputProps.threeScenes) ? inputProps.threeScenes as any[] : []
+      Array.isArray(inputProps.threeScenes) ? inputProps.threeScenes as any[] : [],
+      Array.isArray(inputProps.vectorAnimations) ? inputProps.vectorAnimations as any[] : [],
+      Array.isArray(inputProps.skiaGraphics) ? inputProps.skiaGraphics as any[] : []
     );
     const durationInSeconds = durationInFrames / 30;
 
