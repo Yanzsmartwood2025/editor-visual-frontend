@@ -6,6 +6,7 @@ import { ensureSocialProfile, getSocialAccountForUser, recordSocialUsage } from 
 import { getUploadPostComments, replyUploadPostComment } from '../../../lib/social/providers/uploadPost';
 import { getZernioComments, replyZernioComment } from '../../../lib/social/providers/zernio';
 import { recordSocialInteraction } from '../../../lib/social/interactions/service';
+import { cancelPendingAutomation } from '../../../lib/social/automation/service';
 
 const replySchema = z.object({
   projectId: z.string().uuid(),
@@ -267,6 +268,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
             commentId: parsed.data.commentId,
             message: parsed.data.message,
           });
+
+      await cancelPendingAutomation({
+        accountId: source.account.id,
+        channel: 'comment',
+        sourceId: parsed.data.commentId,
+        reason: 'El usuario respondió manualmente este comentario.',
+      });
 
       await recordSocialUsage({
         userId: user.uid,
