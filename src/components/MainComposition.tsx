@@ -31,6 +31,7 @@ import { buildVisualTimelineMetrics, getCompositionDurationInFrames, getItemDela
 import { NaylaGsapTitle, type NaylaMotionTitle } from './NaylaGsapTitle';
 import { NaylaThreeSceneRenderer, type NaylaThreeScene } from './NaylaThreeScene';
 import { NaylaVectorAnimationRenderer, type NaylaVectorAnimation } from './NaylaVectorAnimation';
+import { NaylaSkiaGraphicRenderer, type NaylaSkiaGraphic } from './NaylaSkiaGraphic';
 
 // Interfaces based on main file
 type ProfessionalEffect = {
@@ -55,6 +56,7 @@ interface MainCompositionProps {
   titles?: NaylaMotionTitle[];
   threeScenes?: NaylaThreeScene[];
   vectorAnimations?: NaylaVectorAnimation[];
+  skiaGraphics?: NaylaSkiaGraphic[];
   settings?: {
     fadeOutFinal?: number;
   };
@@ -796,7 +798,7 @@ const DynamicSubtitle: React.FC<{ subtitle: SubtitleItem }> = ({ subtitle }) => 
   );
 };
 
-export const MainComposition: React.FC<MainCompositionProps> = ({ timeline, subtitles = [], titles = [], threeScenes = [], vectorAnimations = [], logos = [], settings = {} }) => {
+export const MainComposition: React.FC<MainCompositionProps> = ({ timeline, subtitles = [], titles = [], threeScenes = [], vectorAnimations = [], skiaGraphics = [], logos = [], settings = {} }) => {
   const { fps } = useVideoConfig();
 
   // We filter out videos and photos to build the main visual sequence
@@ -821,7 +823,8 @@ export const MainComposition: React.FC<MainCompositionProps> = ({ timeline, subt
     logos,
     titles,
     threeScenes,
-    vectorAnimations
+    vectorAnimations,
+    skiaGraphics
   );
 
   // Verify Audio Clips as well
@@ -990,6 +993,19 @@ export const MainComposition: React.FC<MainCompositionProps> = ({ timeline, subt
         return (
           <Sequence key={scene.id} from={fromFrame} durationInFrames={duration}>
             <NaylaThreeSceneRenderer scene={scene} />
+          </Sequence>
+        );
+      })}
+
+      {/* Advanced Skia graphics */}
+      {skiaGraphics.map((item) => {
+        const fromFrame = Math.round(Math.max(0, item.start) * fps);
+        const duration = Math.round(Math.max(0, item.end - item.start) * fps);
+        if (duration <= 0) return null;
+
+        return (
+          <Sequence key={item.id} from={fromFrame} durationInFrames={duration}>
+            <NaylaSkiaGraphicRenderer item={item} />
           </Sequence>
         );
       })}
