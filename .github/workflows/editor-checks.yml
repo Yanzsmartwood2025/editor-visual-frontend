@@ -5,6 +5,8 @@ on:
   push:
     branches:
       - main
+      - 'feat/**'
+      - 'fix/**'
 
 concurrency:
   group: editor-checks-${{ github.ref }}
