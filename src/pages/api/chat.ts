@@ -878,7 +878,7 @@ Usa siempre la etiqueta exacta M1, M2, etc. No inventes modelos y no copies una 
 Cada escena 3D usa label, start, end, modelScale, position, rotation, autoRotate, rotationSpeed, cameraDistance, cameraFov, lighting, backgroundColor y opcionalmente animationName.
 lighting puede ser studio, soft o dramatic.
 Si el usuario dice "que parezca 3D" sobre una foto, usa motion-depth/parallax. Si habla de M1/M2, GLB, modelo 3D real, luces o cámara 3D, usa threeScenes.
-assets puede ser [] únicamente cuando threeScenes contenga al menos una escena. Eso permite un render 3D sobre fondo negro/transparente sin fotos ni videos.
+assets puede ser [] cuando threeScenes o vectorAnimations contengan al menos un elemento válido. Esto permite renders sin fotos ni videos base.
 Si el usuario menciona una animación interna por nombre, usa animationName. Si no especifica una y el GLB contiene animaciones, el renderer puede usar la primera.
 Si el usuario pide quitar las escenas 3D del plan, usa "threeScenes": [] siempre acompañado por al menos un asset normal o una animación vectorial.
 vectorAnimations es opcional para Lottie JSON y Rive .riv remotos.
