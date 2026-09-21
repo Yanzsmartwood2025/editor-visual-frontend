@@ -26,6 +26,7 @@ import { vignette } from '@remotion/effects/vignette';
 import { lightLeak } from '@remotion/effects/light-leak';
 import { buildVisualTimelineMetrics, getCompositionDurationInFrames, getItemDelayInFrames, getItemDurationInFrames } from '../lib/timelineMetrics';
 import { NaylaGsapTitle, type NaylaMotionTitle } from './NaylaGsapTitle';
+import { NaylaThreeSceneRenderer, type NaylaThreeScene } from './NaylaThreeScene';
 
 // Interfaces based on main file
 type ProfessionalEffect = {
@@ -45,6 +46,7 @@ interface MainCompositionProps {
   logos?: LogoItem[];
   subtitles?: SubtitleItem[];
   titles?: NaylaMotionTitle[];
+  threeScenes?: NaylaThreeScene[];
   settings?: {
     fadeOutFinal?: number;
   };
@@ -571,7 +573,7 @@ const DynamicSubtitle: React.FC<{ subtitle: SubtitleItem }> = ({ subtitle }) => 
   );
 };
 
-export const MainComposition: React.FC<MainCompositionProps> = ({ timeline, subtitles = [], titles = [], logos = [], settings = {} }) => {
+export const MainComposition: React.FC<MainCompositionProps> = ({ timeline, subtitles = [], titles = [], threeScenes = [], logos = [], settings = {} }) => {
   const { fps } = useVideoConfig();
 
   // We filter out videos and photos to build the main visual sequence
@@ -594,7 +596,8 @@ export const MainComposition: React.FC<MainCompositionProps> = ({ timeline, subt
     fps,
     subtitles,
     logos,
-    titles
+    titles,
+    threeScenes
   );
 
   // Verify Audio Clips as well
@@ -748,6 +751,19 @@ export const MainComposition: React.FC<MainCompositionProps> = ({ timeline, subt
              </AbsoluteFill>
           </Sequence>
       )}
+
+      {/* Real Three.js / GLB scenes */}
+      {threeScenes.map((scene) => {
+        const fromFrame = Math.round(Math.max(0, scene.start) * fps);
+        const duration = Math.round(Math.max(0, scene.end - scene.start) * fps);
+        if (duration <= 0) return null;
+
+        return (
+          <Sequence key={scene.id} from={fromFrame} durationInFrames={duration}>
+            <NaylaThreeSceneRenderer scene={scene} />
+          </Sequence>
+        );
+      })}
 
       {/* GSAP Motion Titles */}
       {titles.map((title) => {
