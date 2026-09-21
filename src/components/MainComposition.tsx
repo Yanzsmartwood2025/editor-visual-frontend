@@ -2,6 +2,7 @@ import React, { useMemo } from 'react';
 import { AbsoluteFill, Sequence, CanvasImage, useVideoConfig, useCurrentFrame, interpolate, Img, Loop } from 'remotion';
 import { Audio, Video } from '@remotion/media';
 import { createTikTokStyleCaptions, type Caption } from '@remotion/captions';
+import { useGsapTimeline } from '@remotion/gsap';
 import { CameraMotionBlur } from '@remotion/motion-blur';
 import {
   TransitionSeries,
@@ -35,7 +36,9 @@ type ProfessionalEffect = {
   angle?: number;
   seed?: number;
 };
-type TimelineItem = { id: string; mediaId: string; tipo: 'foto' | 'video' | 'audio'; nombre: string; etiqueta: string; url: string; durationInSeconds?: number; originalDurationInSeconds?: number; volume?: number; fadeIn?: number; fadeOut?: number; scale?: number; delay?: number; startFrom?: number; trimBefore?: number; trimAfter?: number; loop?: boolean; playbackRate?: number; transitionDuration?: number; transitionType?: 'fade' | 'none' | 'wipe' | 'slide' | 'zoom' | 'film-burn' | 'blur-slide' | 'cross-zoom' | 'dreamy-zoom' | 'linear-blur' | 'push-cut'; efecto?: string; brightness?: number; contrast?: number; saturation?: number; overlay?: string; overlayIntensity?: number; professionalEffects?: ProfessionalEffect[]; motionBlur?: { shutterAngle?: number; samples?: number }; };
+type GsapClipPreset = 'fade' | 'slide-left' | 'slide-right' | 'slide-up' | 'slide-down' | 'zoom-in' | 'zoom-out' | 'bounce' | 'elastic' | 'spin' | 'swing';
+type GsapClipMotion = { enter?: GsapClipPreset; exit?: GsapClipPreset; enterDuration?: number; exitDuration?: number; intensity?: number; };
+type TimelineItem = { id: string; mediaId: string; tipo: 'foto' | 'video' | 'audio'; nombre: string; etiqueta: string; url: string; durationInSeconds?: number; originalDurationInSeconds?: number; volume?: number; fadeIn?: number; fadeOut?: number; scale?: number; delay?: number; startFrom?: number; trimBefore?: number; trimAfter?: number; loop?: boolean; playbackRate?: number; transitionDuration?: number; transitionType?: 'fade' | 'none' | 'wipe' | 'slide' | 'zoom' | 'film-burn' | 'blur-slide' | 'cross-zoom' | 'dreamy-zoom' | 'linear-blur' | 'push-cut'; efecto?: string; brightness?: number; contrast?: number; saturation?: number; overlay?: string; overlayIntensity?: number; professionalEffects?: ProfessionalEffect[]; motionBlur?: { shutterAngle?: number; samples?: number }; gsapMotion?: GsapClipMotion; };
 type SubtitleItem = { id: string; texto: string; inicioSec: number; finSec: number; style?: 'clean' | 'cinematic' | 'tiktok' | 'karaoke'; position?: 'top' | 'center' | 'bottom'; fontSize?: number; };
 type LogoItem = { id: string; url: string; x: number; y: number; scale: number; opacity: number; inicioSec?: number; finSec?: number; fadeIn?: number; fadeOut?: number; };
 
@@ -284,6 +287,136 @@ const getVisualMotionTransform = (
 
   return clip.scale !== undefined ? `scale(${baseScale})` : undefined;
 };
+
+const getGsapClipVars = (
+  preset: GsapClipPreset,
+  intensity: number,
+  exiting: boolean
+): Record<string, number> => {
+  const distance = 120 * intensity;
+  const scaleDistance = 0.32 * intensity;
+
+  switch (preset) {
+    case 'fade':
+      return { opacity: 0 };
+    case 'slide-left':
+      return { x: -distance, opacity: 0 };
+    case 'slide-right':
+      return { x: distance, opacity: 0 };
+    case 'slide-up':
+      return { y: -distance, opacity: 0 };
+    case 'slide-down':
+      return { y: distance, opacity: 0 };
+    case 'zoom-in':
+      return { scale: exiting ? 1 + scaleDistance : Math.max(0.35, 1 - scaleDistance), opacity: 0 };
+    case 'zoom-out':
+      return { scale: exiting ? Math.max(0.35, 1 - scaleDistance) : 1 + scaleDistance, opacity: 0 };
+    case 'bounce':
+      return { y: exiting ? distance * 0.75 : -distance, opacity: 0 };
+    case 'elastic':
+      return { scale: Math.max(0.4, 1 - scaleDistance), opacity: 0 };
+    case 'spin':
+      return { rotation: (exiting ? 55 : -55) * intensity, scale: Math.max(0.45, 1 - scaleDistance * 0.5), opacity: 0 };
+    case 'swing':
+      return { rotation: (exiting ? 12 : -12) * intensity, x: (exiting ? 35 : -35) * intensity, opacity: 0 };
+    default:
+      return { opacity: 0 };
+  }
+};
+
+const GsapClipMotionFrame: React.FC<{
+  clip: TimelineItem;
+  durationInFrames: number;
+  children: React.ReactNode;
+}> = ({ clip, durationInFrames, children }) => {
+  const { fps } = useVideoConfig();
+  const motion = clip.gsapMotion;
+  const enter = motion?.enter;
+  const exit = motion?.exit;
+  const intensity = Math.max(0.25, Math.min(2, Number(motion?.intensity) || 1));
+  const clipDurationSeconds = Math.max(1 / fps, durationInFrames / fps);
+  const enterDuration = Math.min(
+    Math.max(0.1, Number(motion?.enterDuration) || 0.75),
+    clipDurationSeconds
+  );
+  const exitDuration = Math.min(
+    Math.max(0.1, Number(motion?.exitDuration) || 0.65),
+    clipDurationSeconds
+  );
+
+  const scope = useGsapTimeline<HTMLDivElement>(
+    ({ timeline, selector }) => {
+      const target = selector('[data-nayla-gsap-clip]');
+
+      if (enter) {
+        const ease =
+          enter === 'bounce'
+            ? 'bounce.out'
+            : enter === 'elastic'
+              ? 'elastic.out(1, 0.35)'
+              : 'power3.out';
+
+        timeline.from(
+          target,
+          {
+            ...getGsapClipVars(enter, intensity, false),
+            duration: enterDuration,
+            ease,
+          },
+          0
+        );
+      }
+
+      if (exit) {
+        timeline.to(
+          target,
+          {
+            ...getGsapClipVars(exit, intensity, true),
+            duration: exitDuration,
+            ease: 'power2.in',
+          },
+          Math.max(0, clipDurationSeconds - exitDuration)
+        );
+      }
+    },
+    {
+      dependencies: [
+        enter,
+        exit,
+        intensity,
+        enterDuration,
+        exitDuration,
+        clipDurationSeconds,
+      ],
+    }
+  );
+
+  if (!enter && !exit) return <>{children}</>;
+
+  return (
+    <div
+      ref={scope}
+      style={{
+        position: 'absolute',
+        inset: 0,
+        overflow: 'hidden',
+      }}
+    >
+      <div
+        data-nayla-gsap-clip
+        style={{
+          position: 'absolute',
+          inset: 0,
+          transformOrigin: 'center center',
+          willChange: 'transform, opacity',
+        }}
+      >
+        {children}
+      </div>
+    </div>
+  );
+};
+
 
 const AnimatedVisualFrame: React.FC<{
   clip: TimelineItem;
@@ -625,19 +758,23 @@ export const MainComposition: React.FC<MainCompositionProps> = ({ timeline, subt
               <ClipWithFades clip={clip} durationInFrames={clip.durationInFrames}>
                 <MaybeMotionBlur clip={clip}>
                   {clip.tipo === 'video' ? (
-                    <AnimatedVisualFrame clip={clip} durationInFrames={clip.durationInFrames}>
-                      <AnimatedVolume clip={clip} durationInFrames={clip.durationInFrames} absoluteStartFrame={clip.absoluteStartFrame} totalCompositionFrames={totalCompositionFrames} globalFadeOutFrames={globalFadeOutFrames} render={(volume) => (
-                        <ProfessionalVideo
-                          clip={clip}
-                          durationInFrames={clip.durationInFrames}
-                          volume={volume}
-                        />
-                      )} />
-                    </AnimatedVisualFrame>
+                    <GsapClipMotionFrame clip={clip} durationInFrames={clip.durationInFrames}>
+                      <AnimatedVisualFrame clip={clip} durationInFrames={clip.durationInFrames}>
+                        <AnimatedVolume clip={clip} durationInFrames={clip.durationInFrames} absoluteStartFrame={clip.absoluteStartFrame} totalCompositionFrames={totalCompositionFrames} globalFadeOutFrames={globalFadeOutFrames} render={(volume) => (
+                          <ProfessionalVideo
+                            clip={clip}
+                            durationInFrames={clip.durationInFrames}
+                            volume={volume}
+                          />
+                        )} />
+                      </AnimatedVisualFrame>
+                    </GsapClipMotionFrame>
                   ) : (
-                    <AnimatedVisualFrame clip={clip} durationInFrames={clip.durationInFrames}>
-                      <AnimatedPhoto clip={clip} durationInFrames={clip.durationInFrames} />
-                    </AnimatedVisualFrame>
+                    <GsapClipMotionFrame clip={clip} durationInFrames={clip.durationInFrames}>
+                      <AnimatedVisualFrame clip={clip} durationInFrames={clip.durationInFrames}>
+                        <AnimatedPhoto clip={clip} durationInFrames={clip.durationInFrames} />
+                      </AnimatedVisualFrame>
+                    </GsapClipMotionFrame>
                   )}
                 </MaybeMotionBlur>
                 {clip.overlay === 'vignette' && (

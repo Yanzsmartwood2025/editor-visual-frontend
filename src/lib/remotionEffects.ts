@@ -69,6 +69,12 @@ export const REMOTION_CPU_EFFECTS = {
     fontSize: { min: 24, max: 180 },
     maxItemsPerRender: 80,
   },
+  clipMotion: {
+    supported: true,
+    presets: ['fade', 'slide-left', 'slide-right', 'slide-up', 'slide-down', 'zoom-in', 'zoom-out', 'bounce', 'elastic', 'spin', 'swing'] as const,
+    intensity: { min: 0.25, max: 2 },
+    duration: { min: 0.1, max: 10 },
+  },
 };
 
 export const REMOTION_CPU_PUBLIC_CATALOG = {
@@ -82,6 +88,7 @@ export const REMOTION_CPU_PUBLIC_CATALOG = {
   motionBlur: REMOTION_CPU_EFFECTS.motionBlur,
   captions: REMOTION_CPU_EFFECTS.captions,
   motionTitles: REMOTION_CPU_EFFECTS.motionTitles,
+  clipMotion: REMOTION_CPU_EFFECTS.clipMotion,
   controls: [
     'duración por clip',
     'volumen',
@@ -96,5 +103,6 @@ export const REMOTION_CPU_PUBLIC_CATALOG = {
     'hasta 6 efectos profesionales encadenados por clip',
     'subtítulos sincronizados con estilos clean, cinematic, tiktok y karaoke',
     'títulos y lower thirds animados por frame con GSAP',
+    'entradas y salidas GSAP deterministas para fotos y videos',
   ],
 };
