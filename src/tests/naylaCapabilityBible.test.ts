@@ -29,6 +29,13 @@ describe('Nayla capability bible', () => {
     ).toContain('background-removal');
   });
 
+  it('marks local automatic speech captions as ready', () => {
+    expect(NAYLA_CAPABILITY_BIBLE.find((item) => item.id === 'speech-captions')?.status).toBe('ready');
+    expect(
+      findNaylaCapabilityMatches('transcribe el audio A1 y crea subtítulos automáticos').map((item) => item.id)
+    ).toContain('speech-captions');
+  });
+
   it('recognizes captions and background removal from everyday Spanish', () => {
     expect(findNaylaCapabilityMatches('quiero sacar subtítulos palabra por palabra').map((item) => item.id))
       .toContain('captions-professional');
