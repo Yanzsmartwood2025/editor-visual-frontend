@@ -39,6 +39,14 @@ describe('Nayla capability bible', () => {
 
 
 
+
+  it('marks Skia graphics ready and recognizes advanced canvas language', () => {
+    expect(NAYLA_CAPABILITY_BIBLE.find((item) => item.id === 'skia-graphics')?.status).toBe('ready');
+    expect(
+      findNaylaCapabilityMatches('quiero un pulso de energía con brillo y un gráfico avanzado').map((item) => item.id)
+    ).toContain('skia-graphics');
+  });
+
   it('marks Lottie and Rive ready and recognizes vector animation language', () => {
     expect(NAYLA_CAPABILITY_BIBLE.find((item) => item.id === 'lottie-rive')?.status).toBe('ready');
     expect(
