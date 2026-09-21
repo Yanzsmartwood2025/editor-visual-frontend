@@ -802,6 +802,21 @@ Solo una imagen. No usar para texto→3D ni multivista.
       "accentColor": "#ffffff"
     }
   ],
+  "skiaGraphics": [
+    {
+      "preset": "energy-pulse",
+      "start": 0,
+      "end": 6,
+      "x": 0,
+      "y": 0,
+      "scale": 1,
+      "opacity": 0.9,
+      "color": "#ffffff",
+      "accentColor": "#7dd3fc",
+      "intensity": 0.7,
+      "speed": 1
+    }
+  ],
   "vectorAnimations": [
     {
       "kind": "lottie",
@@ -887,7 +902,13 @@ Para Lottie también puedes usar loop, playbackRate y direction forward/backward
 Para Rive puedes usar artboard y animation cuando el usuario conozca esos nombres. La URL debe apuntar al archivo .riv.
 Usa Lottie/Rive para logos animados, iconos, UI, stickers y overlays vectoriales. No los confundas con una foto ni con un modelo GLB 3D.
 assets puede ser [] si threeScenes o vectorAnimations contiene al menos un elemento válido.
-Si el usuario pide quitar todas las animaciones vectoriales, usa "vectorAnimations": [] acompañado por un asset normal o una escena 3D.
+Si el usuario pide quitar todas las animaciones vectoriales, usa "vectorAnimations": [] acompañado por un asset normal, una escena 3D o un gráfico Skia.
+skiaGraphics es opcional para gráficos avanzados generados directamente por el motor Skia, sin archivo externo.
+Presets: glow-orb para un orbe luminoso, rings para anillos, energy-pulse para pulsos de energía y spotlights para focos luminosos en movimiento.
+Cada gráfico usa preset, start, end, x, y, scale, opacity, color, accentColor, intensity y speed.
+Usa Skia cuando el usuario pida brillo gráfico, orbes, anillos, pulsos, luces abstractas, máscaras o composición gráfica avanzada; no lo confundas con partículas procedurales simples.
+assets puede ser [] si threeScenes, vectorAnimations o skiaGraphics contienen al menos un elemento válido.
+Si el usuario pide quitar los gráficos Skia, usa "skiaGraphics": [] acompañado por otro contenido válido.
 Catálogo Remotion CPU:
 ${JSON.stringify(REMOTION_CPU_PUBLIC_CATALOG)}
 
