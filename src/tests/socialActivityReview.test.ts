@@ -7,6 +7,10 @@ describe('Nayla Social activity review intent', () => {
     expect(isSocialActivityReviewRequest('Revisa todas las notificaciones')).toBe(true);
     expect(isSocialActivityReviewRequest('Mira los mensajes del inbox')).toBe(true);
     expect(isSocialActivityReviewRequest('Revisa las métricas y vistas de mis redes')).toBe(true);
+    expect(isSocialActivityReviewRequest('Necesito los comentarios de los usuarios')).toBe(true);
+    expect(isSocialActivityReviewRequest('Dame los mensajes de los usuarios')).toBe(true);
+    expect(isSocialActivityReviewRequest('Qué me escribieron')).toBe(true);
+    expect(isSocialActivityReviewRequest('Comentarios de los usuarios')).toBe(true);
   });
 
   it('does not intercept publishing or reply commands', () => {
