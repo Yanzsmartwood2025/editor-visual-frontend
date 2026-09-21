@@ -716,6 +716,36 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const effectiveHistory = scope.threadId ? persistedHistory : (history || []);
     const executionConfirmed = hasExplicitPlanConfirmation(message, effectiveHistory);
 
+    const userPlanningContext = [
+      ...effectiveHistory
+        .filter((item) => item.role === 'user')
+        .map((item) => item.content),
+      message,
+    ].join('\n\n');
+
+    const requestedNaturalPhotoCount = getRequestedVisualCount(userPlanningContext);
+    const naturalProjectPhotoReference = hasNaturalProjectPhotoReference(userPlanningContext);
+    const recentNaturalPhotoRows = naturalProjectPhotoReference
+      ? await getRecentOwnedMediaForUser({
+          userId: firebaseUser.uid,
+          projectId: scope.projectId,
+          tipo: 'foto',
+          limit: requestedNaturalPhotoCount || 40,
+        })
+      : [];
+
+    const recentNaturalPhotos = recentNaturalPhotoRows.map((item: Record<string, any>) => ({
+      id: item.id as string,
+      tipo: item.tipo as 'foto',
+      nombre: item.nombre as string,
+      etiqueta: item.etiqueta as string | undefined,
+      fuente: item.fuente as string | undefined,
+      metadata: item.metadata || {},
+      url: item.r2_key
+        ? createR2PresignedGetUrl({ key: item.r2_key, expiresIn: 3600 }).url
+        : item.url,
+    }));
+
     const historyLabelContext = [
       message,
       ...effectiveHistory
@@ -751,6 +781,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       mergedLibraryMap.set(item.id ? `id:${item.id}` : `url:${item.url}:${index}`, item);
     });
     ownedLabelMedia.forEach((item) => {
+      mergedLibraryMap.set(item.id ? `id:${item.id}` : `url:${item.url}`, item);
+    });
+    recentNaturalPhotos.forEach((item) => {
       mergedLibraryMap.set(item.id ? `id:${item.id}` : `url:${item.url}`, item);
     });
     attachments.forEach((item) => {
