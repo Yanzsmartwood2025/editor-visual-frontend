@@ -21,6 +21,7 @@ type ValidatedRenderProps = Record<string, unknown> & {
   subtitles?: any[];
   logos?: any[];
   titles?: any[];
+  threeScenes?: any[];
   canvasWidth: number;
   canvasHeight: number;
 };
@@ -31,11 +32,17 @@ const validateInputProps = (inputProps: unknown): ValidatedRenderProps => {
   }
 
   const props = inputProps as Record<string, unknown>;
-  if (!Array.isArray(props.timeline) || props.timeline.length === 0) {
-    throw new RenderValidationError('El timeline debe contener al menos un clip.');
+  const timeline = Array.isArray(props.timeline) ? props.timeline : [];
+  const threeScenes = Array.isArray(props.threeScenes) ? props.threeScenes : [];
+
+  if (timeline.length === 0 && threeScenes.length === 0) {
+    throw new RenderValidationError('El render debe contener al menos un clip o una escena 3D.');
   }
-  if (props.timeline.length > MAX_TIMELINE_ITEMS) {
+  if (timeline.length > MAX_TIMELINE_ITEMS) {
     throw new RenderValidationError(`El timeline supera el máximo de ${MAX_TIMELINE_ITEMS} elementos por render.`);
+  }
+  if (threeScenes.length > 24) {
+    throw new RenderValidationError('El render supera el máximo de 24 escenas 3D.');
   }
 
   const fps = 30;
@@ -43,11 +50,12 @@ const validateInputProps = (inputProps: unknown): ValidatedRenderProps => {
   const logos = Array.isArray(props.logos) ? props.logos : [];
   const titles = Array.isArray(props.titles) ? props.titles : [];
   const durationInFrames = getCompositionDurationInFrames(
-    props.timeline as any[],
+    timeline as any[],
     fps,
     subtitles as any[],
     logos as any[],
-    titles as any[]
+    titles as any[],
+    threeScenes as any[]
   );
   const durationInSeconds = durationInFrames / fps;
 
@@ -79,7 +87,8 @@ const validateInputProps = (inputProps: unknown): ValidatedRenderProps => {
 
   return {
     ...props,
-    timeline: props.timeline as any[],
+    timeline: timeline as any[],
+    threeScenes: threeScenes as any[],
     canvasWidth,
     canvasHeight,
   } as ValidatedRenderProps;
@@ -97,8 +106,9 @@ const hydrateOwnedRenderMedia = async ({
   inputProps: ValidatedRenderProps;
 }): Promise<ValidatedRenderProps> => {
   const timeline = Array.isArray(inputProps.timeline) ? inputProps.timeline : [];
+  const threeScenes = Array.isArray(inputProps.threeScenes) ? inputProps.threeScenes : [];
   const mediaIds = Array.from(new Set(
-    timeline
+    [...timeline, ...threeScenes]
       .map((item: any) => typeof item?.mediaId === 'string' ? item.mediaId : '')
       .filter((id): id is string => UUID_RE.test(id))
   ));
@@ -142,9 +152,26 @@ const hydrateOwnedRenderMedia = async ({
     return item;
   });
 
+  const hydratedThreeScenes = threeScenes.map((scene: any) => {
+    const mediaId = typeof scene?.mediaId === 'string' ? scene.mediaId : '';
+    const owned = mediaId ? byId.get(mediaId) : null;
+
+    if (!owned || owned.tipo !== 'modelo3d') {
+      throw new RenderValidationError('Una escena 3D no pertenece al proyecto activo o ya no está disponible.');
+    }
+
+    return {
+      ...scene,
+      url: owned.r2_key
+        ? createR2PresignedGetUrl({ key: owned.r2_key, expiresIn: 3600 }).url
+        : owned.url,
+    };
+  });
+
   return {
     ...inputProps,
     timeline: hydratedTimeline,
+    threeScenes: hydratedThreeScenes,
   };
 };
 
@@ -474,7 +501,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       30,
       Array.isArray(inputProps.subtitles) ? inputProps.subtitles as any[] : [],
       Array.isArray(inputProps.logos) ? inputProps.logos as any[] : [],
-      Array.isArray(inputProps.titles) ? inputProps.titles as any[] : []
+      Array.isArray(inputProps.titles) ? inputProps.titles as any[] : [],
+      Array.isArray(inputProps.threeScenes) ? inputProps.threeScenes as any[] : []
     );
     const durationInSeconds = durationInFrames / 30;
 
