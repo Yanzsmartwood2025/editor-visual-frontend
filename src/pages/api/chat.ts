@@ -787,10 +787,26 @@ Solo una imagen. No usar para texto→3D ni multivista.
       "accentColor": "#ffffff"
     }
   ],
+  "threeScenes": [
+    {
+      "label": "M1",
+      "start": 0,
+      "end": 6,
+      "modelScale": 1,
+      "position": {"x":0,"y":0,"z":0},
+      "rotation": {"x":0,"y":0,"z":0},
+      "autoRotate": true,
+      "rotationSpeed": 24,
+      "cameraDistance": 5,
+      "cameraFov": 42,
+      "lighting": "studio",
+      "backgroundColor": "transparent"
+    }
+  ],
   "render": true
 }
 
-Usa type únicamente "foto", "video" o "audio". source únicamente "url".
+Dentro de assets usa type únicamente "foto", "video" o "audio". source únicamente "url". Los modelos 3D no van en assets: van en threeScenes mediante su etiqueta M1/M2.
 Copia URLs exactas del proyecto. Para una orden sencilla decide tú los parámetros sin pedir nombres técnicos.
 Puedes encadenar hasta 6 professionalEffects por clip. Usa solo los nombres publicados en el catálogo Remotion CPU.
 motionBlur es opcional y debe reservarse para movimientos donde aporte valor; 5 muestras y 180 grados es un punto de partida equilibrado.
@@ -806,6 +822,14 @@ style puede ser clean, cinematic, neon o minimal.
 animation puede ser fade-up, slide-left, slide-right, pop, zoom-in, word-rise o lower-third.
 Usa pop cuando el usuario pida rebote o entrada con fuerza; word-rise para palabras que aparecen/suben; lower-third para rótulos informativos; slide-left/right para entradas laterales.
 Si el usuario pide quitar los títulos animados, usa "titles": [].
+threeScenes es opcional y sirve para render 3D REAL de modelos GLB ya existentes en el proyecto.
+Usa siempre la etiqueta exacta M1, M2, etc. No inventes modelos y no copies una URL privada manualmente.
+Cada escena 3D usa label, start, end, modelScale, position, rotation, autoRotate, rotationSpeed, cameraDistance, cameraFov, lighting, backgroundColor y opcionalmente animationName.
+lighting puede ser studio, soft o dramatic.
+Si el usuario dice "que parezca 3D" sobre una foto, usa motion-depth/parallax. Si habla de M1/M2, GLB, modelo 3D real, luces o cámara 3D, usa threeScenes.
+assets puede ser [] únicamente cuando threeScenes contenga al menos una escena. Eso permite un render 3D sobre fondo negro/transparente sin fotos ni videos.
+Si el usuario menciona una animación interna por nombre, usa animationName. Si no especifica una y el GLB contiene animaciones, el renderer puede usar la primera.
+Si el usuario pide quitar las escenas 3D del plan, usa "threeScenes": [] siempre acompañado por al menos un asset normal.
 Catálogo Remotion CPU:
 ${JSON.stringify(REMOTION_CPU_PUBLIC_CATALOG)}
 
