@@ -61,7 +61,7 @@ export const isSocialActivityReviewRequest = (message: string) => {
 
   const asksToInspect =
     /\b(revisa|revisar|mira|mirar|busca|buscar|trae|traer|lee|leer|verifica|verificar|actualiza|actualizar|consulta|consultar|chequea|chequear|muestra|mostrar|muestrame|dame|necesito|quiero|quiero ver|quiero saber|ensename|dime)\b/.test(text) ||
-    /\b(que paso|que hay|como van|como esta|que escribieron|que dijeron|quien escribio|quienes escribieron|que comentaron|quien comento|cuales son)\b/.test(text);
+    /\b(que paso|que hay|como van|como esta|que escribieron|que me escribieron|que dijeron|que me dijeron|quien escribio|quienes escribieron|que comentaron|quien comento|cuales son)\b/.test(text);
 
   const directSocialRequest =
     /^(comentarios?|mensajes?|notificaciones?|inbox|metricas?|estadisticas?|actividad|redes?)\b/.test(text) ||
@@ -90,7 +90,7 @@ export const getSocialActivityReviewScope = (message: string): ReviewScope => {
 
   const asksEverything =
     /\b(todo|todos|toda|todas|completo|completa)\b/.test(text) &&
-    /\b(redes?|actividad|notificaciones?)\b/.test(text);
+    /\b(redes?|actividad)\b/.test(text);
 
   return {
     comments: mentionsComments || mentionsNotifications || genericActivity || asksEverything,
