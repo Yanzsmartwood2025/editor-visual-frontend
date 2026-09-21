@@ -222,6 +222,52 @@ describe('Nayla action contracts', () => {
 
 
 
+
+  it('accepts deterministic Skia graphic plans', () => {
+    const action = parseNaylaAction(JSON.stringify({
+      action: 'BUILD_TIMELINE',
+      assets: [],
+      skiaGraphics: [
+        {
+          preset: 'energy-pulse',
+          start: 0,
+          end: 6,
+          x: 4,
+          y: -3,
+          scale: 1.2,
+          opacity: 0.9,
+          color: '#ffffff',
+          accentColor: '#7dd3fc',
+          intensity: 0.75,
+          speed: 1.4,
+        },
+      ],
+      render: true,
+    }));
+
+    expect(action).not.toBeNull();
+    expect(action).toMatchObject({
+      action: 'BUILD_TIMELINE',
+      skiaGraphics: [
+        expect.objectContaining({
+          preset: 'energy-pulse',
+          intensity: 0.75,
+          speed: 1.4,
+        }),
+      ],
+    });
+
+    expect(parseNaylaAction(JSON.stringify({
+      action: 'BUILD_TIMELINE',
+      assets: [],
+      skiaGraphics: [{
+        preset: 'energy-pulse',
+        start: 5,
+        end: 2,
+      }],
+    }))).toBeNull();
+  });
+
   it('accepts Lottie and Rive vector animation plans', () => {
     const action = parseNaylaAction(JSON.stringify({
       action: 'BUILD_TIMELINE',
