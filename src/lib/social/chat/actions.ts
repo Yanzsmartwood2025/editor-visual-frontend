@@ -12,6 +12,7 @@ import { getPersonMemoryContext } from '../identity/service';
 import { ensureSocialProfile, recordSocialUsage } from '../store';
 import { replyUploadPostComment, sendUploadPostDm } from '../providers/uploadPost';
 import { replyZernioComment, sendZernioMessage } from '../providers/zernio';
+import { publishSocialVideo } from '../publishing/service';
 
 type Candidate = {
   interactionId: string;
@@ -28,8 +29,11 @@ type PlannedReply = {
   reply?: string;
 };
 
-const hasCommandIntent = (message: string) =>
-  /\b(responde|respondeles|respóndeles|responder|contesta|contéstale|contestale|contesten|dile|diles|envia|envía|manda|escribe|escríbele|escribele)\b/i.test(message);
+const hasReplyCommandIntent = (message: string) =>
+  /\b(responde|respondeles|respóndeles|responder|contesta|contéstale|contestale|contesten|dile|diles|escríbele|escribele)\b/i.test(message);
+
+const hasPublishCommandIntent = (message: string) =>
+  /\b(publica|publicalo|publícalo|publicar|sube|subelo|súbelo|postea|postear|comparte|compartelo|compártelo)\b/i.test(message);
 
 const loadCandidates = async ({
   userId,
@@ -107,6 +111,170 @@ const buildPlanText = (items: Array<{ candidate: Candidate; reply: string }>) =>
   ].join('\n');
 };
 
+const planPublishCommand = async ({
+  userId,
+  projectId,
+  threadId,
+  message,
+}: {
+  userId: string;
+  projectId: string;
+  threadId: string;
+  message: string;
+}) => {
+  const supabase = getWorkspaceSupabaseAdmin();
+
+  const [mediaResult, accountResult] = await Promise.all([
+    supabase
+      .from('galeria_multimedia')
+      .select('id,tipo,nombre,etiqueta,created_at')
+      .eq('user_id', userId)
+      .eq('project_id', projectId)
+      .eq('tipo', 'video')
+      .order('created_at', { ascending: false })
+      .limit(40),
+    supabase
+      .from('social_accounts')
+      .select('id,provider,platform,username,handle,display_name,status')
+      .eq('user_id', userId)
+      .eq('project_id', projectId)
+      .eq('status', 'connected')
+      .order('platform'),
+  ]);
+
+  if (mediaResult.error) throw mediaResult.error;
+  if (accountResult.error) throw accountResult.error;
+
+  const media = mediaResult.data || [];
+  const rawAccounts = accountResult.data || [];
+
+  const seenAccounts = new Set<string>();
+  const accounts = rawAccounts.filter((account: any) => {
+    const identity = String(
+      account.handle ||
+      account.username ||
+      account.display_name ||
+      account.provider_account_id ||
+      account.id
+    ).trim().toLowerCase();
+    const key = `${account.platform}:${identity}`;
+    if (seenAccounts.has(key)) return false;
+    seenAccounts.add(key);
+    return true;
+  });
+
+  if (!media.length) {
+    return {
+      kind: 'no_candidates' as const,
+      text: 'No encuentro un video R1/R2 disponible en la Bóveda de este proyecto para publicar.',
+    };
+  }
+
+  if (!accounts.length) {
+    return {
+      kind: 'no_candidates' as const,
+      text: 'No hay cuentas sociales conectadas en este proyecto. Conecta una cuenta y después podré preparar la publicación.',
+    };
+  }
+
+  const systemPrompt = [
+    'Eres el planificador de publicación social de Nayla.',
+    'Devuelve SOLO JSON válido y no publiques nada.',
+    'Usa únicamente mediaId y accountId presentes en CANDIDATOS.',
+    'Si el usuario menciona R1, R2 u otra etiqueta, elige exactamente esa etiqueta. No sustituyas un video por otro.',
+    'Selecciona solamente las redes que el usuario pidió.',
+    'Si hay ambigüedad entre varias cuentas de la misma red y el usuario no dio suficiente detalle, devuelve intent none.',
+    'No inventes contenido del video. Si el usuario no dio título o descripción, puedes dejarlos vacíos.',
+    'Formato exacto: {"intent":"publish|none","mediaId":"uuid","accountIds":["uuid"],"title":"texto","caption":"texto"}',
+  ].join('\n');
+
+  const prompt = [
+    `ORDEN DEL USUARIO:\n${message}`,
+    '',
+    'VIDEOS DISPONIBLES:',
+    JSON.stringify(media),
+    '',
+    'CUENTAS CONECTADAS:',
+    JSON.stringify(accounts.map((account: any) => ({
+      accountId: account.id,
+      platform: account.platform,
+      handle: account.handle || account.username || '',
+      displayName: account.display_name || '',
+    }))),
+  ].join('\n');
+
+  const raw = await generateSocialText({ systemPrompt, prompt });
+  const parsed = parseJsonObject<{
+    intent?: string;
+    mediaId?: string;
+    accountIds?: string[];
+    title?: string;
+    caption?: string;
+  }>(raw);
+
+  if (!parsed || parsed.intent !== 'publish') return null;
+
+  const selectedMedia = media.find((item: any) => item.id === parsed.mediaId);
+  const allowedAccounts = new Map(accounts.map((account: any) => [account.id, account]));
+  const accountIds = Array.from(new Set((parsed.accountIds || []).map(String)))
+    .filter((id) => allowedAccounts.has(id))
+    .slice(0, 12);
+
+  if (!selectedMedia || !accountIds.length) return null;
+
+  const destinations = accountIds
+    .map((id) => allowedAccounts.get(id))
+    .filter(Boolean)
+    .map((account: any) => {
+      const who = account.handle || account.username || account.display_name || '';
+      return who ? `${account.platform} (${who.startsWith('@') ? who : '@' + who})` : account.platform;
+    });
+
+  const title = String(parsed.title || '').trim().slice(0, 300);
+  const caption = String(parsed.caption || '').trim().slice(0, 10000);
+  const label = selectedMedia.etiqueta || selectedMedia.nombre || 'video';
+
+  const summary = [
+    `Voy a publicar ${label} en ${destinations.join(', ')}.`,
+    title ? `Título: ${title}` : '',
+    caption ? `Descripción: ${caption}` : '',
+    '',
+    'No he publicado nada todavía. Si está bien, dime “Dale” y lo ejecuto.',
+  ].filter(Boolean).join('\n');
+
+  const stored = await createNaylaActionPlan({
+    userId,
+    projectId,
+    module: 'social',
+    threadKey: threadId,
+    summary,
+    sourceMessage: message,
+    items: [{
+      actionType: 'SOCIAL_PUBLISH_VIDEO',
+      payload: {
+        mediaId: selectedMedia.id,
+        mediaLabel: selectedMedia.etiqueta || null,
+        accountIds,
+        title,
+        caption,
+        destinations,
+      },
+    }],
+    metadata: {
+      planner: 'nayla-social-publish',
+      mediaId: selectedMedia.id,
+      destinations,
+    },
+  });
+
+  return {
+    kind: 'plan' as const,
+    text: summary,
+    planId: stored.plan.id,
+    count: 1,
+  };
+};
+
 export const planSocialCommand = async ({
   userId,
   projectId,
@@ -118,7 +286,11 @@ export const planSocialCommand = async ({
   threadId: string;
   message: string;
 }) => {
-  if (!hasCommandIntent(message)) return null;
+  if (hasPublishCommandIntent(message)) {
+    return planPublishCommand({ userId, projectId, threadId, message });
+  }
+
+  if (!hasReplyCommandIntent(message)) return null;
 
   const supabase = getWorkspaceSupabaseAdmin();
   await supabase
@@ -349,6 +521,37 @@ const executeReplyItem = async ({
   };
 };
 
+const executePublishItem = async ({
+  userId,
+  projectId,
+  item,
+}: {
+  userId: string;
+  projectId: string;
+  item: any;
+}) => {
+  const mediaId = String(item.payload?.mediaId || '');
+  const accountIds = Array.isArray(item.payload?.accountIds)
+    ? item.payload.accountIds.map(String)
+    : [];
+  const title = String(item.payload?.title || '');
+  const caption = String(item.payload?.caption || '');
+
+  if (!mediaId || !accountIds.length) {
+    throw new Error('La orden de publicación está incompleta.');
+  }
+
+  return publishSocialVideo({
+    userId,
+    projectId,
+    mediaId,
+    accountIds,
+    title,
+    caption,
+    source: 'nayla_universal_dale',
+  });
+};
+
 export const executePendingSocialPlan = async ({
   userId,
   projectId,
@@ -394,7 +597,7 @@ export const executePendingSocialPlan = async ({
   const details: string[] = [];
 
   for (const item of pending.items) {
-    if (item.action_type !== 'SOCIAL_REPLY_INTERACTION') {
+    if (!['SOCIAL_REPLY_INTERACTION', 'SOCIAL_PUBLISH_VIDEO'].includes(item.action_type)) {
       await updateNaylaActionItem({
         itemId: item.id,
         status: 'skipped',
@@ -407,6 +610,33 @@ export const executePendingSocialPlan = async ({
     await updateNaylaActionItem({ itemId: item.id, status: 'executing' });
 
     try {
+      if (item.action_type === 'SOCIAL_PUBLISH_VIDEO') {
+        const result = await executePublishItem({ userId, projectId, item });
+        await updateNaylaActionItem({
+          itemId: item.id,
+          status: result.success ? 'completed' : 'failed',
+          result: {
+            postId: result.postId,
+            mediaId: result.mediaId,
+            published: result.published,
+            failed: result.failed,
+            processing: result.processing,
+          },
+          error: result.success ? null : 'La publicación no pudo completarse.',
+        });
+
+        if (result.success) {
+          completed += 1;
+          details.push(
+            `• ${item.payload?.mediaLabel || 'Video'}: publicación enviada (${result.published} publicadas, ${result.processing} procesando).`
+          );
+        } else {
+          failed += 1;
+          details.push(`• ${item.payload?.mediaLabel || 'Video'}: no se pudo publicar.`);
+        }
+        continue;
+      }
+
       const result = await executeReplyItem({ userId, projectId, item });
       if (result.skipped) {
         await updateNaylaActionItem({
