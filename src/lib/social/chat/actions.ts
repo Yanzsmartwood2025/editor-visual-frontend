@@ -120,6 +120,14 @@ export const planSocialCommand = async ({
 }) => {
   if (!hasCommandIntent(message)) return null;
 
+  const supabase = getWorkspaceSupabaseAdmin();
+  await supabase
+    .from('social_interactions')
+    .update({ response_state: 'unanswered' })
+    .eq('user_id', userId)
+    .eq('project_id', projectId)
+    .eq('response_state', 'planned');
+
   const candidates = await loadCandidates({ userId, projectId });
   if (!candidates.length) {
     return {
@@ -422,6 +430,15 @@ export const executePendingSocialPlan = async ({
         status: 'failed',
         error: message,
       });
+      const failedInteractionId = String(item.payload?.interactionId || '');
+      if (failedInteractionId) {
+        const supabase = getWorkspaceSupabaseAdmin();
+        await supabase
+          .from('social_interactions')
+          .update({ response_state: 'unanswered' })
+          .eq('id', failedInteractionId)
+          .eq('response_state', 'planned');
+      }
       failed += 1;
       details.push(`• ${item.payload?.personName || 'Persona'}: ${message}`);
     }
