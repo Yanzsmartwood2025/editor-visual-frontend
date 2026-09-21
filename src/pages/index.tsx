@@ -289,6 +289,16 @@ export default function NaylaCore() {
   const [mainNav, setMainNav] = useState<string>('boveda');
   const [subTool, setSubTool] = useState<string | null>(null);
   const [isVideoExpanded, setIsVideoExpanded] = useState<boolean>(false);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('social_callback') !== '1') return;
+
+    setMainNav('redes');
+    setIsSubPanelOpen(true);
+    setSubTool('social-hub');
+  }, []);
   const [mobileOverlaysVisible, setMobileOverlaysVisible] = useState<boolean>(false);
   const [viewportOverride, setViewportOverride] = useState<'auto' | 'pc' | 'phone'>('auto');
   const [isPhoneViewport, setIsPhoneViewport] = useState<boolean>(false);
