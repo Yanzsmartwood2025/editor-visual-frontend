@@ -1478,7 +1478,7 @@ export default function NaylaCore() {
     }
 
     if (actionData.render === true) {
-      await solicitarRenderTimeline(timelineValidado, undefined, formatoDetectado);
+      await solicitarRenderTimeline(timelineValidado, undefined, formatoDetectado, scopeOverride);
     } else {
       showAlert('Nayla armó el timeline con los medios existentes.');
     }
