@@ -24,23 +24,24 @@ export type SocialNetworkDefinition = {
   uploadPostConnect?: string;
   uploadPostPublish?: string;
   zernio?: string;
+  zernioConnectMode?: 'oauth' | 'telegram_code' | 'credentials' | 'oauth_channel';
 };
 
 export const SOCIAL_NETWORKS: SocialNetworkDefinition[] = [
-  { id: 'instagram', label: 'Instagram', short: '◎', domain: 'instagram.com', uploadPostConnect: 'instagram', uploadPostPublish: 'instagram', zernio: 'instagram' },
-  { id: 'tiktok', label: 'TikTok', short: '♪', domain: 'tiktok.com', uploadPostConnect: 'tiktok', uploadPostPublish: 'tiktok', zernio: 'tiktok' },
-  { id: 'youtube', label: 'YouTube', short: '▶', domain: 'youtube.com', uploadPostConnect: 'youtube', uploadPostPublish: 'youtube', zernio: 'youtube' },
-  { id: 'facebook', label: 'Facebook', short: 'f', domain: 'facebook.com', uploadPostConnect: 'facebook', uploadPostPublish: 'facebook', zernio: 'facebook' },
-  { id: 'x', label: 'X', short: 'X', domain: 'x.com', uploadPostConnect: 'x', uploadPostPublish: 'twitter', zernio: 'twitter' },
-  { id: 'threads', label: 'Threads', short: '@', domain: 'threads.net', uploadPostConnect: 'threads', uploadPostPublish: 'threads', zernio: 'threads' },
-  { id: 'linkedin', label: 'LinkedIn', short: 'in', domain: 'linkedin.com', uploadPostConnect: 'linkedin', uploadPostPublish: 'linkedin', zernio: 'linkedin' },
-  { id: 'pinterest', label: 'Pinterest', short: 'P', domain: 'pinterest.com', uploadPostConnect: 'pinterest', uploadPostPublish: 'pinterest', zernio: 'pinterest' },
-  { id: 'bluesky', label: 'Bluesky', short: '🦋', domain: 'bsky.app', uploadPostPublish: 'bluesky', zernio: 'bluesky' },
-  { id: 'reddit', label: 'Reddit', short: 'r', domain: 'reddit.com', uploadPostConnect: 'reddit', zernio: 'reddit' },
-  { id: 'google_business', label: 'Google Business', short: 'G', domain: 'business.google.com', uploadPostConnect: 'google_business', uploadPostPublish: 'google_business', zernio: 'googlebusiness' },
-  { id: 'snapchat', label: 'Snapchat', short: '◉', domain: 'snapchat.com', uploadPostConnect: 'snapchat', zernio: 'snapchat' },
-  { id: 'discord', label: 'Discord', short: 'D', domain: 'discord.com', uploadPostPublish: 'discord', zernio: 'discord' },
-  { id: 'telegram', label: 'Telegram', short: '✈', domain: 'telegram.org', uploadPostPublish: 'telegram', zernio: 'telegram' },
+  { id: 'instagram', label: 'Instagram', short: '◎', domain: 'instagram.com', uploadPostConnect: 'instagram', uploadPostPublish: 'instagram', zernio: 'instagram', zernioConnectMode: 'oauth' },
+  { id: 'tiktok', label: 'TikTok', short: '♪', domain: 'tiktok.com', uploadPostConnect: 'tiktok', uploadPostPublish: 'tiktok', zernio: 'tiktok', zernioConnectMode: 'oauth' },
+  { id: 'youtube', label: 'YouTube', short: '▶', domain: 'youtube.com', uploadPostConnect: 'youtube', uploadPostPublish: 'youtube', zernio: 'youtube', zernioConnectMode: 'oauth' },
+  { id: 'facebook', label: 'Facebook', short: 'f', domain: 'facebook.com', uploadPostConnect: 'facebook', uploadPostPublish: 'facebook', zernio: 'facebook', zernioConnectMode: 'oauth' },
+  { id: 'x', label: 'X', short: 'X', domain: 'x.com', uploadPostConnect: 'x', uploadPostPublish: 'twitter', zernio: 'twitter', zernioConnectMode: 'oauth' },
+  { id: 'threads', label: 'Threads', short: '@', domain: 'threads.net', uploadPostConnect: 'threads', uploadPostPublish: 'threads', zernio: 'threads', zernioConnectMode: 'oauth' },
+  { id: 'linkedin', label: 'LinkedIn', short: 'in', domain: 'linkedin.com', uploadPostConnect: 'linkedin', uploadPostPublish: 'linkedin', zernio: 'linkedin', zernioConnectMode: 'oauth' },
+  { id: 'pinterest', label: 'Pinterest', short: 'P', domain: 'pinterest.com', uploadPostPublish: 'pinterest', zernio: 'pinterest', zernioConnectMode: 'oauth' },
+  { id: 'bluesky', label: 'Bluesky', short: '🦋', domain: 'bsky.app', uploadPostPublish: 'bluesky', zernio: 'bluesky', zernioConnectMode: 'credentials' },
+  { id: 'reddit', label: 'Reddit', short: 'r', domain: 'reddit.com', zernio: 'reddit', zernioConnectMode: 'oauth' },
+  { id: 'google_business', label: 'Google Business', short: 'G', domain: 'business.google.com', uploadPostConnect: 'google_business', uploadPostPublish: 'google_business', zernio: 'googlebusiness', zernioConnectMode: 'oauth' },
+  { id: 'snapchat', label: 'Snapchat', short: '◉', domain: 'snapchat.com', zernio: 'snapchat', zernioConnectMode: 'oauth' },
+  { id: 'discord', label: 'Discord', short: 'D', domain: 'discord.com', uploadPostPublish: 'discord', zernio: 'discord', zernioConnectMode: 'oauth_channel' },
+  { id: 'telegram', label: 'Telegram', short: '✈', domain: 'telegram.org', uploadPostPublish: 'telegram', zernio: 'telegram', zernioConnectMode: 'telegram_code' },
 ];
 
 export const getSocialNetwork = (platform: string) =>
