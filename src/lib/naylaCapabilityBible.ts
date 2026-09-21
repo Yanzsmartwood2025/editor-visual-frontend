@@ -108,12 +108,12 @@ export const NAYLA_CAPABILITY_BIBLE: NaylaCapability[] = [
   {
     id: 'motion-gsap',
     category: 'Animación',
-    label: 'Animación avanzada',
-    description: 'Base instalada para secuencias complejas de movimiento, rebotes, curvas, entradas, salidas y coreografías.',
-    status: 'installed',
+    label: 'Animación avanzada de texto',
+    description: 'Títulos y lower thirds conectados con entradas, deslizamientos, rebote, zoom y animación palabra por palabra, sincronizados exactamente por frame.',
+    status: 'ready',
     engine: 'render',
-    aliases: ['animacion avanzada', 'rebote', 'trayectoria', 'curva', 'entrada de texto', 'salida de texto', 'coreografia'],
-    usefulFor: ['motion graphics', 'títulos', 'publicidad', 'animaciones complejas'],
+    aliases: ['animacion avanzada', 'rebote', 'trayectoria', 'curva', 'entrada de texto', 'salida de texto', 'coreografia', 'titulo animado', 'lower third', 'palabras que suben'],
+    usefulFor: ['motion graphics', 'títulos', 'publicidad', 'presentaciones', 'lower thirds'],
   },
   {
     id: 'three-real',
