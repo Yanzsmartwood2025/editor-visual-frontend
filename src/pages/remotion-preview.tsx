@@ -1,81 +1,19 @@
 import Head from 'next/head';
-import dynamic from 'next/dynamic';
-import { MainComposition } from '../components/MainComposition';
-import { getCanvasDimensionsFromRatio } from '../lib/mediaMetadata';
-import { getCompositionDurationInFrames } from '../lib/timelineMetrics';
-
-const Player = dynamic(() => import('@remotion/player').then(m => m.Player), {
-  ssr: false,
-});
-
-const defaultProps = {
-  timeline: [
-    {
-      id: '1',
-      mediaId: 'm1',
-      tipo: 'video' as const,
-      nombre: 'Clip 1',
-      etiqueta: 'V1',
-      url: 'https://videos.pexels.com/video-files/19752304/19752304-uhd_1440_2732_24fps.mp4',
-      durationInSeconds: 5,
-    },
-    {
-      id: '2',
-      mediaId: 'm2',
-      tipo: 'video' as const,
-      nombre: 'Clip 2',
-      etiqueta: 'V2',
-      url: 'https://videos.pexels.com/video-files/5679006/5679006-uhd_1440_2732_25fps.mp4',
-      durationInSeconds: 5,
-    }
-  ],
-  canvasRatio: '9/16' as const,
-  subtitles: [
-    { id: 's1', texto: 'Existe un lugar al pie del monte Fuji...', inicioSec: 0, finSec: 5 },
-    { id: 's2', texto: 'Donde el silencio parece tener vida propia.', inicioSec: 5, finSec: 10 }
-  ],
-  logos: []
-};
 
 export default function RemotionPreview() {
-  const fps = 30;
-  const { width, height } = getCanvasDimensionsFromRatio(defaultProps.canvasRatio, '1080p');
-  const durationInFrames = getCompositionDurationInFrames(
-    defaultProps.timeline,
-    fps,
-    defaultProps.subtitles,
-    defaultProps.logos
-  );
-
   return (
     <div className="min-h-screen bg-gray-900 flex flex-col items-center justify-center p-4">
       <Head>
-        <title>Remotion Dev Preview</title>
+        <title>Nayla Render Diagnostics</title>
       </Head>
-      <div className="w-full max-w-md bg-black rounded-lg overflow-hidden shadow-2xl flex flex-col">
+      <div className="w-full max-w-md bg-black rounded-lg overflow-hidden shadow-2xl">
         <div className="p-4 bg-gray-800 text-white font-semibold text-center border-b border-gray-700">
-          Remotion Player Preview (Dev Only)
+          Nayla Render Diagnostics
         </div>
-
-        {/* Player Container */}
-        <div className="relative w-full" style={{ aspectRatio: `${width} / ${height}` }}>
-            <Player
-            component={MainComposition as any}
-            inputProps={defaultProps}
-            durationInFrames={durationInFrames}
-            fps={fps}
-            compositionWidth={width}
-            compositionHeight={height}
-            style={{
-                width: '100%',
-                height: '100%',
-            }}
-            controls
-            />
-        </div>
-
-        <div className="p-4 bg-gray-800 text-gray-400 text-sm border-t border-gray-700">
-          Esta vista es solo para previsualizar el diseño de Remotion usando componentes estáticos antes del renderizado en el servidor.
+        <div className="p-6 text-gray-300 text-sm leading-relaxed">
+          La composición profesional se empaqueta de forma independiente para el motor de render.
+          Esta ruta de desarrollo no carga el compositor completo para mantener aislados los motores
+          gráficos avanzados del bundle principal de Next.js.
         </div>
       </div>
     </div>
