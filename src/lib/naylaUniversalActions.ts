@@ -33,7 +33,7 @@ export const createNaylaActionPlan = async ({
   const supabase = getWorkspaceSupabaseAdmin();
   const now = new Date().toISOString();
 
-  await supabase
+  const { data: replacedPlans, error: replaceError } = await supabase
     .from('nayla_action_plans')
     .update({
       status: 'cancelled',
@@ -44,7 +44,25 @@ export const createNaylaActionPlan = async ({
     .eq('project_id', projectId)
     .eq('module', module)
     .eq('thread_key', threadKey)
-    .eq('status', 'pending');
+    .eq('status', 'pending')
+    .select('id');
+
+  if (replaceError) throw replaceError;
+
+  const replacedIds = (replacedPlans || []).map((plan: any) => plan.id);
+  if (replacedIds.length) {
+    const { error: cancelledItemsError } = await supabase
+      .from('nayla_action_items')
+      .update({
+        status: 'cancelled',
+        error: 'Plan reemplazado por una orden más reciente.',
+        executed_at: now,
+      })
+      .in('plan_id', replacedIds)
+      .eq('status', 'planned');
+
+    if (cancelledItemsError) throw cancelledItemsError;
+  }
 
   const expiresAt = new Date(Date.now() + Math.max(1, ttlHours) * 60 * 60_000).toISOString();
 
