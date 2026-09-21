@@ -209,7 +209,6 @@ export const planSocialCommand = async ({
     },
   });
 
-  const supabase = getWorkspaceSupabaseAdmin();
   await supabase
     .from('social_interactions')
     .update({ response_state: 'planned' })
@@ -367,6 +366,14 @@ export const executePendingSocialPlan = async ({
   });
 
   if (!pending) {
+    const supabase = getWorkspaceSupabaseAdmin();
+    await supabase
+      .from('social_interactions')
+      .update({ response_state: 'unanswered' })
+      .eq('user_id', userId)
+      .eq('project_id', projectId)
+      .eq('response_state', 'planned');
+
     return {
       found: false as const,
       text: 'No tengo una orden pendiente para ejecutar. Dime qué quieres que haga y primero te mostraré el plan.',
