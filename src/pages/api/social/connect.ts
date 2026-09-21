@@ -1,10 +1,10 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { z } from 'zod';
 import { createUploadPostConnectUrl, ensureUploadPostProfile } from '../../../lib/social/providers/uploadPost';
-import { createZernioConnectUrl, createZernioProfile } from '../../../lib/social/providers/zernio';
+import { createZernioConnectUrl, createZernioProfile, createZernioTelegramCode } from '../../../lib/social/providers/zernio';
 import { requireSocialUser, requestOrigin } from '../../../lib/social/http';
 import { ensureSocialProfile, updateSocialProviderProfileId } from '../../../lib/social/store';
-import { SOCIAL_NETWORKS } from '../../../lib/social/types';
+import { SOCIAL_NETWORKS, getSocialNetwork } from '../../../lib/social/types';
 
 const schema = z.object({
   projectId: z.string().uuid(),
@@ -49,12 +49,26 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         providerProfileId: String(remote._id),
       });
     }
+    const network = getSocialNetwork(platform);
+    if (network?.zernioConnectMode === 'telegram_code') {
+      const details = await createZernioTelegramCode(profile.zernio_profile_id);
+      return res.status(200).json({
+        connectionMode: 'instructions',
+        details,
+      });
+    }
+    if (network?.zernioConnectMode === 'credentials') {
+      return res.status(409).json({ error: `${network.label} requiere credenciales específicas; Nayla mostrará ese formulario en una siguiente conexión manual.` });
+    }
+    if (network?.zernioConnectMode === 'oauth_channel') {
+      return res.status(409).json({ error: `${network.label} requiere elegir el canal después de OAuth; Nayla no abrirá un flujo incompleto.` });
+    }
     const authUrl = await createZernioConnectUrl({
       profileId: profile.zernio_profile_id,
       platform,
       redirectUrl,
     });
-    return res.status(200).json({ authUrl });
+    return res.status(200).json({ connectionMode: 'oauth', authUrl });
   } catch (error) {
     return res.status(500).json({ error: error instanceof Error ? error.message : 'No se pudo iniciar la conexión social.' });
   }
