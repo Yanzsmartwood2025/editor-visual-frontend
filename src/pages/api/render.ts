@@ -22,6 +22,7 @@ type ValidatedRenderProps = Record<string, unknown> & {
   logos?: any[];
   titles?: any[];
   threeScenes?: any[];
+  vectorAnimations?: any[];
   canvasWidth: number;
   canvasHeight: number;
 };
@@ -34,15 +35,31 @@ const validateInputProps = (inputProps: unknown): ValidatedRenderProps => {
   const props = inputProps as Record<string, unknown>;
   const timeline = Array.isArray(props.timeline) ? props.timeline : [];
   const threeScenes = Array.isArray(props.threeScenes) ? props.threeScenes : [];
+  const vectorAnimations = Array.isArray(props.vectorAnimations) ? props.vectorAnimations : [];
 
-  if (timeline.length === 0 && threeScenes.length === 0) {
-    throw new RenderValidationError('El render debe contener al menos un clip o una escena 3D.');
+  if (timeline.length === 0 && threeScenes.length === 0 && vectorAnimations.length === 0) {
+    throw new RenderValidationError('El render debe contener al menos un clip, una escena 3D o una animación vectorial.');
   }
   if (timeline.length > MAX_TIMELINE_ITEMS) {
     throw new RenderValidationError(`El timeline supera el máximo de ${MAX_TIMELINE_ITEMS} elementos por render.`);
   }
   if (threeScenes.length > 24) {
     throw new RenderValidationError('El render supera el máximo de 24 escenas 3D.');
+  }
+  if (vectorAnimations.length > 40) {
+    throw new RenderValidationError('El render supera el máximo de 40 animaciones vectoriales.');
+  }
+  for (const item of vectorAnimations) {
+    const kind = String(item?.kind || '');
+    const url = typeof item?.url === 'string' ? item.url.trim() : '';
+    const start = Number(item?.start);
+    const end = Number(item?.end);
+    if (!['lottie', 'rive'].includes(kind) || !/^https?:\/\//i.test(url) || !Number.isFinite(start) || !Number.isFinite(end) || end <= start) {
+      throw new RenderValidationError('Una animación vectorial tiene datos inválidos.');
+    }
+    if (/^r2:\/\//i.test(url)) {
+      throw new RenderValidationError('Una animación vectorial privada necesita una URL HTTPS firmada.');
+    }
   }
 
   const fps = 30;
@@ -55,7 +72,8 @@ const validateInputProps = (inputProps: unknown): ValidatedRenderProps => {
     subtitles as any[],
     logos as any[],
     titles as any[],
-    threeScenes as any[]
+    threeScenes as any[],
+    vectorAnimations as any[]
   );
   const durationInSeconds = durationInFrames / fps;
 
@@ -89,6 +107,7 @@ const validateInputProps = (inputProps: unknown): ValidatedRenderProps => {
     ...props,
     timeline: timeline as any[],
     threeScenes: threeScenes as any[],
+    vectorAnimations: vectorAnimations as any[],
     canvasWidth,
     canvasHeight,
   } as ValidatedRenderProps;
