@@ -450,3 +450,33 @@ export const getOwnedMediaForUser = async ({
   if (error) throw error;
   return data || [];
 };
+
+
+export const getOwnedMediaByLabelsForUser = async ({
+  userId,
+  projectId,
+  labels,
+}: {
+  userId: string;
+  projectId: string;
+  labels: string[];
+}) => {
+  const normalizedLabels = Array.from(new Set(
+    labels
+      .map((label) => String(label || '').trim().toUpperCase())
+      .filter(Boolean)
+  )).slice(0, 50);
+
+  if (!normalizedLabels.length) return [];
+
+  const supabase = getWorkspaceSupabaseAdmin();
+  const { data, error } = await supabase
+    .from('galeria_multimedia')
+    .select('*')
+    .eq('user_id', userId)
+    .eq('project_id', projectId)
+    .in('etiqueta', normalizedLabels);
+
+  if (error) throw error;
+  return data || [];
+};

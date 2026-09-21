@@ -21,6 +21,7 @@ import { createMediaJobPlan } from '../../lib/mediaJobs';
 import { createR2PresignedGetUrl } from '../../lib/r2';
 import { canStartGpuCompute, getNaylaExecutionPolicyPrompt } from '../../lib/naylaExecutionPolicy';
 import {
+  getOwnedMediaByLabelsForUser,
   getOwnedMediaForUser,
   insertChatMessageForUser,
   listThreadMessagesForUser,
@@ -672,9 +673,42 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const effectiveHistory = scope.threadId ? persistedHistory : (history || []);
     const executionConfirmed = hasExplicitPlanConfirmation(message, effectiveHistory);
 
+    const historyLabelContext = [
+      message,
+      ...effectiveHistory
+        .slice(-12)
+        .map((item) => item.content),
+    ].join('\n');
+    const referencedProjectLabels = getOrderedMediaLabels(historyLabelContext)
+      .filter((label) => !label.startsWith('M'))
+      .slice(0, 24);
+
+    const ownedLabelRows = referencedProjectLabels.length
+      ? await getOwnedMediaByLabelsForUser({
+          userId: firebaseUser.uid,
+          projectId: scope.projectId,
+          labels: referencedProjectLabels,
+        })
+      : [];
+
+    const ownedLabelMedia = ownedLabelRows.map((item: Record<string, any>) => ({
+      id: item.id as string,
+      tipo: item.tipo as 'foto' | 'video' | 'audio' | 'modelo3d',
+      nombre: item.nombre as string,
+      etiqueta: item.etiqueta as string | undefined,
+      fuente: item.fuente as string | undefined,
+      metadata: item.metadata || {},
+      url: item.r2_key
+        ? createR2PresignedGetUrl({ key: item.r2_key, expiresIn: 3600 }).url
+        : item.url,
+    }));
+
     const mergedLibraryMap = new Map<string, any>();
     (secureMediaLibrary || []).forEach((item: any, index: number) => {
       mergedLibraryMap.set(item.id ? `id:${item.id}` : `url:${item.url}:${index}`, item);
+    });
+    ownedLabelMedia.forEach((item) => {
+      mergedLibraryMap.set(item.id ? `id:${item.id}` : `url:${item.url}`, item);
     });
     attachments.forEach((item) => {
       mergedLibraryMap.set(item.id ? `id:${item.id}` : `url:${item.url}`, item);
@@ -776,6 +810,7 @@ SEGURIDAD Y CONTEXTO:
 - Nunca muestres secretos, API keys, proveedores externos, infraestructura interna ni URLs que no vengan del contexto.
 - F1/F2... son fotos; V1/V2... videos; A1/A2... audios; M1/M2... modelos 3D.
 - Nunca sustituyas una etiqueta inexistente por otro archivo. Si falta una etiqueta, dilo y no emitas una acción inventada.
+- Si F1/F2/V1/A1 u otra etiqueta está disponible en el contexto del proyecto, úsala directamente. Nunca le pidas al usuario que copie o proporcione una URL para un medio ya guardado.
 - Las fotos subidas no se analizan visualmente salvo que el usuario lo pida de forma explícita.
 - Para editar medios existentes usa el timeline. Para crear contenido nuevo usa generación. GPU/Compute solo cuando realmente sea necesario.
 

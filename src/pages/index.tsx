@@ -487,10 +487,12 @@ export default function NaylaCore() {
     activeThreadIdRef.current = activeThreadId;
   }, [activeThreadId]);
 
+  const getChatComposerMinHeight = () => isPhoneViewport ? 66 : 46;
+
   const resetChatComposerHeight = () => {
     const textarea = chatInputRef.current;
     if (!textarea) return;
-    textarea.style.height = '46px';
+    textarea.style.height = `${getChatComposerMinHeight()}px`;
     textarea.style.overflowY = 'hidden';
     textarea.scrollTop = 0;
   };
@@ -505,7 +507,7 @@ export default function NaylaCore() {
     const textarea = chatInputRef.current;
     if (!textarea) return;
 
-    const minHeight = 46;
+    const minHeight = getChatComposerMinHeight();
     const maxHeight = 190;
     if (!chatInput) {
       resetChatComposerHeight();
@@ -516,7 +518,7 @@ export default function NaylaCore() {
     const nextHeight = Math.max(minHeight, Math.min(textarea.scrollHeight, maxHeight));
     textarea.style.height = `${nextHeight}px`;
     textarea.style.overflowY = textarea.scrollHeight > maxHeight ? 'auto' : 'hidden';
-  }, [chatInput, isAiModalOpen, isChatOpen]);
+  }, [chatInput, isAiModalOpen, isChatOpen, isPhoneViewport]);
 
   useEffect(() => {
     if (!isAiModalOpen || !chatAutoFollowRef.current) return;
@@ -6050,12 +6052,12 @@ if (!session) {
                   void sendNaylaMessage();
                 }
               }}
-              rows={1}
-              placeholder="Escribe aquí tu mensaje..."
+              rows={isPhoneViewport ? 2 : 1}
+              placeholder="Escribe tu mensaje…"
               style={{
                 flex: 1,
                 minWidth: 0,
-                minHeight: 46,
+                minHeight: isPhoneViewport ? 66 : 46,
                 maxHeight: 190,
                 padding: '11px 13px',
                 backgroundColor: '#111',
