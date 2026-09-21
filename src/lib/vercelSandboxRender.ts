@@ -91,6 +91,9 @@ export async function startVercelSandboxRender(
       codec: 'h264',
       outputFile: '/tmp/render.mp4',
       concurrency: 4,
+      chromiumOptions: {
+        gl: 'angle',
+      },
       timeoutInMilliseconds: 60_000,
       detachedSandboxTimeoutInMilliseconds: 5 * 60 * 1000,
       onProgress: async (update: any) => {
