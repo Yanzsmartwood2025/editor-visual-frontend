@@ -82,6 +82,24 @@ type ThreeRenderScene = {
   backgroundColor?: string;
   animationName?: string;
 };
+type VectorAnimationItem = {
+  id: string;
+  kind: 'lottie' | 'rive';
+  url: string;
+  start: number;
+  end: number;
+  x?: number;
+  y?: number;
+  scale?: number;
+  opacity?: number;
+  fit?: 'contain' | 'cover' | 'fill' | 'fit-height' | 'none' | 'scale-down' | 'fit-width';
+  alignment?: 'center' | 'bottom-center' | 'bottom-left' | 'bottom-right' | 'center-left' | 'center-right' | 'top-center' | 'top-left' | 'top-right';
+  artboard?: string;
+  animation?: string;
+  loop?: boolean;
+  playbackRate?: number;
+  direction?: 'forward' | 'backward';
+};
 type LogoItem = { id: string; url: string; x: number; y: number; scale: number; opacity: number; inicioSec?: number; finSec?: number; fadeIn?: number; fadeOut?: number; };
 type ExpandedSurface = 'tools' | 'chat' | null;
 type NaylaProjectDialog =
@@ -299,6 +317,7 @@ export default function NaylaCore() {
   const [subtitulos, setSubtitulos] = useState<SubtitleItem[]>([]);
   const [motionTitles, setMotionTitles] = useState<MotionTitleItem[]>([]);
   const [threeRenderScenes, setThreeRenderScenes] = useState<ThreeRenderScene[]>([]);
+  const [vectorAnimations, setVectorAnimations] = useState<VectorAnimationItem[]>([]);
   const [logos, setLogos] = useState<LogoItem[]>([]);
   const [globalSettings, setGlobalSettings] = useState<{ fadeOutFinal?: number }>({});
   const [clipSeleccionado, setClipSeleccionado] = useState<string | null>(null);
@@ -1306,7 +1325,8 @@ export default function NaylaCore() {
     scopeOverride?: { projectId?: string | null; threadId?: string | null },
     subtitlesOverride?: SubtitleItem[],
     titlesOverride?: MotionTitleItem[],
-    threeScenesOverride?: ThreeRenderScene[]
+    threeScenesOverride?: ThreeRenderScene[],
+    vectorAnimationsOverride?: VectorAnimationItem[]
   ) => {
     const renderProjectId = scopeOverride?.projectId ?? activeProjectId;
     const renderThreadId = scopeOverride?.threadId ?? activeThreadId;
@@ -1320,13 +1340,15 @@ export default function NaylaCore() {
     const renderSubtitles = subtitlesOverride ?? subtitulos;
     const renderTitles = titlesOverride ?? motionTitles;
     const renderThreeScenes = threeScenesOverride ?? threeRenderScenes;
+    const renderVectorAnimations = vectorAnimationsOverride ?? vectorAnimations;
     const durationInFrames = getCompositionDurationInFrames(
       lineaValidada,
       30,
       renderSubtitles,
       logos,
       renderTitles,
-      renderThreeScenes
+      renderThreeScenes,
+      renderVectorAnimations
     );
     const requestId = createRenderRequestId();
 
@@ -1347,6 +1369,7 @@ export default function NaylaCore() {
       subtitles: renderSubtitles,
       titles: renderTitles,
       threeScenes: renderThreeScenes,
+      vectorAnimations: renderVectorAnimations,
       logos: logos,
       canvasRatio: renderRatio,
       canvasWidth: canvas.width,
@@ -1522,8 +1545,9 @@ export default function NaylaCore() {
   ) => {
     const assets = Array.isArray(actionData.assets) ? actionData.assets : [];
     const requestedThreeScenes = Array.isArray(actionData.threeScenes) ? actionData.threeScenes : [];
-    if (assets.length === 0 && requestedThreeScenes.length === 0) {
-      throw new Error('Nayla no devolvió clips ni escenas 3D para armar el render.');
+    const requestedVectorAnimations = Array.isArray(actionData.vectorAnimations) ? actionData.vectorAnimations : [];
+    if (assets.length === 0 && requestedThreeScenes.length === 0 && requestedVectorAnimations.length === 0) {
+      throw new Error('Nayla no devolvió clips, escenas 3D ni animaciones vectoriales para armar el render.');
     }
 
     const nextTimeline: TimelineItem[] = [];
@@ -1602,7 +1626,7 @@ export default function NaylaCore() {
       });
     });
 
-    if (nextTimeline.length === 0 && requestedThreeScenes.length === 0) {
+    if (nextTimeline.length === 0 && requestedThreeScenes.length === 0 && requestedVectorAnimations.length === 0) {
       throw new Error('Nayla no devolvió medios válidos para armar el render.');
     }
 
@@ -1720,6 +1744,57 @@ export default function NaylaCore() {
         })
       : threeRenderScenes;
 
+    const hasVectorAnimationDirective = Array.isArray(actionData.vectorAnimations);
+    const actionVectorAnimations: VectorAnimationItem[] = hasVectorAnimationDirective
+      ? requestedVectorAnimations
+          .filter((item: any) =>
+            item &&
+            ['lottie', 'rive'].includes(item.kind) &&
+            typeof item.url === 'string' &&
+            /^https?:\/\//i.test(item.url.trim()) &&
+            Number.isFinite(Number(item.start)) &&
+            Number.isFinite(Number(item.end)) &&
+            Number(item.end) > Number(item.start)
+          )
+          .slice(0, 40)
+          .map((item: any, index: number) => ({
+            id: `nayla-vector-${Date.now()}-${index}`,
+            kind: item.kind,
+            url: item.url.trim(),
+            start: Math.max(0, Number(item.start)),
+            end: Math.max(0.1, Number(item.end)),
+            x: Math.max(-50, Math.min(50, Number(item.x) || 0)),
+            y: Math.max(-50, Math.min(50, Number(item.y) || 0)),
+            scale: Math.max(0.05, Math.min(4, Number(item.scale) || 1)),
+            opacity: Math.max(0, Math.min(1, Number.isFinite(Number(item.opacity)) ? Number(item.opacity) : 1)),
+            fit: ['contain', 'cover', 'fill', 'fit-height', 'none', 'scale-down', 'fit-width'].includes(item.fit)
+              ? item.fit
+              : 'contain',
+            alignment: [
+              'center',
+              'bottom-center',
+              'bottom-left',
+              'bottom-right',
+              'center-left',
+              'center-right',
+              'top-center',
+              'top-left',
+              'top-right',
+            ].includes(item.alignment)
+              ? item.alignment
+              : 'center',
+            ...(typeof item.artboard === 'string' && item.artboard.trim()
+              ? { artboard: item.artboard.trim().slice(0, 160) }
+              : {}),
+            ...(typeof item.animation === 'string' && item.animation.trim()
+              ? { animation: item.animation.trim().slice(0, 160) }
+              : {}),
+            loop: item.loop !== false,
+            playbackRate: Math.max(0.1, Math.min(4, Number(item.playbackRate) || 1)),
+            direction: item.direction === 'backward' ? 'backward' : 'forward',
+          }))
+      : vectorAnimations;
+
     const targetThreadId = scopeOverride?.threadId ?? activeThreadId;
     const stillInOriginChat = !targetThreadId || activeThreadIdRef.current === targetThreadId;
 
@@ -1742,6 +1817,9 @@ export default function NaylaCore() {
       if (hasThreeSceneDirective) {
         setThreeRenderScenes(actionThreeScenes);
       }
+      if (hasVectorAnimationDirective) {
+        setVectorAnimations(actionVectorAnimations);
+      }
     }
 
     const primerVisual = timelineValidado.find(item => item.tipo === 'video' || item.tipo === 'foto');
@@ -1759,7 +1837,8 @@ export default function NaylaCore() {
         scopeOverride,
         hasSubtitleDirective ? actionSubtitles : undefined,
         hasTitleDirective ? actionTitles : undefined,
-        hasThreeSceneDirective ? actionThreeScenes : undefined
+        hasThreeSceneDirective ? actionThreeScenes : undefined,
+        hasVectorAnimationDirective ? actionVectorAnimations : undefined
       );
     } else {
       showAlert('Nayla armó el timeline con los medios existentes.');
