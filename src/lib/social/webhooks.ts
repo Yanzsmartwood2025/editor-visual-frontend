@@ -1,6 +1,7 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import type { NextApiRequest } from 'next';
 import { getWorkspaceSupabaseAdmin } from '../workspaceStore';
+import { recordSocialInteraction } from './interactions/service';
 
 export const readRawBody = async (req: NextApiRequest) => {
   const chunks: Buffer[] = [];
@@ -80,33 +81,64 @@ export const bestEffortCacheZernioRealtime = async (payload: any) => {
   const supabase = getWorkspaceSupabaseAdmin();
   const accountRemoteId = String(payload?.account?.id || payload?.account?._id || payload?.accountId || '');
   if (!accountRemoteId) return;
+
   const { data: account } = await supabase
     .from('social_accounts')
     .select('*')
     .eq('provider', 'zernio')
     .eq('provider_account_id', accountRemoteId)
     .maybeSingle();
+
   if (!account) return;
 
   const event = String(payload?.event || payload?.type || '');
+
   if (event === 'comment.received' || payload?.comment) {
     const comment = payload.comment || payload.data?.comment || payload.data || {};
     const commentId = String(comment.id || comment._id || comment.commentId || '');
     if (!commentId) return;
+
+    const authorId = String(comment.author?.id || comment.user?.id || '') || null;
+    const authorName = comment.author?.name || comment.user?.name || comment.username || null;
+    const authorUsername = comment.author?.username || comment.user?.username || comment.username || null;
+    const message = String(comment.message || comment.text || comment.content || '');
+    const postId = String(comment.postId || payload?.post?.id || payload?.postId || '') || null;
+    const createdAt = comment.createdAt || payload?.timestamp || new Date().toISOString();
+
+    const normalized = await recordSocialInteraction({
+      userId: account.user_id,
+      projectId: account.project_id,
+      account,
+      channel: 'comment',
+      direction: 'inbound',
+      sourceId: commentId,
+      body: message,
+      providerUserId: authorId,
+      username: authorUsername,
+      displayName: authorName,
+      avatarUrl: comment.author?.avatarUrl || comment.user?.avatarUrl || null,
+      providerPostId: postId,
+      providerParentId: comment.parentId || null,
+      occurredAt: createdAt,
+      raw: comment,
+    });
+
     await supabase.from('social_comments').upsert({
       user_id: account.user_id,
       project_id: account.project_id,
       account_id: account.id,
       provider: 'zernio',
       platform: account.platform,
-      provider_post_id: String(comment.postId || payload?.post?.id || payload?.postId || '') || null,
+      provider_post_id: postId,
       provider_comment_id: commentId,
       parent_comment_id: comment.parentId || null,
-      author_id: String(comment.author?.id || comment.user?.id || '') || null,
-      author_name: comment.author?.name || comment.user?.name || comment.username || null,
-      author_avatar_url: comment.author?.avatarUrl || null,
-      message: String(comment.message || comment.text || comment.content || ''),
-      created_at: comment.createdAt || payload?.timestamp || null,
+      author_id: authorId,
+      author_name: authorName,
+      author_avatar_url: comment.author?.avatarUrl || comment.user?.avatarUrl || null,
+      message,
+      person_id: normalized.person.id,
+      interaction_id: normalized.interaction.id,
+      created_at: createdAt,
       received_at: new Date().toISOString(),
       raw: comment,
     }, { onConflict: 'provider,provider_comment_id' });
@@ -116,7 +148,35 @@ export const bestEffortCacheZernioRealtime = async (payload: any) => {
     const conversation = payload.conversation || {};
     const conversationRemoteId = String(conversation.id || conversation._id || payload?.conversationId || '');
     const message = payload.message || {};
-    if (!conversationRemoteId) return;
+    const messageRemoteId = String(message.id || message._id || message.platformMessageId || '');
+    if (!conversationRemoteId || !messageRemoteId) return;
+
+    const direction = event === 'message.received' ? 'inbound' : 'outbound';
+    const participant = conversation.participant || {};
+    const externalId = String(participant.id || participant._id || message.sender?.id || '') || null;
+    const externalName = participant.name || participant.username || message.sender?.name || null;
+    const externalUsername = participant.username || message.sender?.username || null;
+    const messageText = String(message.text || message.message || '');
+    const createdAt = message.createdAt || payload?.timestamp || new Date().toISOString();
+
+    const normalized = await recordSocialInteraction({
+      userId: account.user_id,
+      projectId: account.project_id,
+      account,
+      channel: 'dm',
+      direction,
+      sourceId: messageRemoteId,
+      body: messageText,
+      providerUserId: externalId,
+      username: externalUsername,
+      displayName: externalName,
+      avatarUrl: participant.avatarUrl || message.sender?.avatarUrl || null,
+      providerConversationId: conversationRemoteId,
+      providerParentId: externalId,
+      occurredAt: createdAt,
+      raw: message,
+    });
+
     const { data: localConversation } = await supabase.from('social_conversations').upsert({
       user_id: account.user_id,
       project_id: account.project_id,
@@ -124,28 +184,31 @@ export const bestEffortCacheZernioRealtime = async (payload: any) => {
       provider: 'zernio',
       platform: account.platform,
       provider_conversation_id: conversationRemoteId,
-      participant_id: String(conversation.participant?.id || message.sender?.id || '') || null,
-      participant_name: conversation.participant?.name || message.sender?.name || null,
-      participant_avatar_url: conversation.participant?.avatarUrl || null,
-      last_message: String(message.text || message.message || ''),
-      last_message_at: message.createdAt || payload?.timestamp || new Date().toISOString(),
-      unread_count: event === 'message.received' ? 1 : 0,
+      participant_id: externalId,
+      participant_name: externalName,
+      participant_avatar_url: participant.avatarUrl || null,
+      person_id: normalized.person.id,
+      last_message: messageText,
+      last_message_at: createdAt,
+      unread_count: direction === 'inbound' ? 1 : 0,
       raw: conversation,
       updated_at: new Date().toISOString(),
     }, { onConflict: 'provider,provider_conversation_id' }).select('*').single();
-    const messageRemoteId = String(message.id || message._id || message.platformMessageId || '');
-    if (localConversation && messageRemoteId) {
+
+    if (localConversation) {
       await supabase.from('social_messages').upsert({
         conversation_id: localConversation.id,
         user_id: account.user_id,
         project_id: account.project_id,
         provider_message_id: messageRemoteId,
-        direction: event === 'message.received' ? 'inbound' : 'outbound',
-        author_name: message.sender?.name || null,
-        message: String(message.text || message.message || ''),
+        direction,
+        author_name: direction === 'inbound' ? externalName : account.display_name,
+        message: messageText,
         media_url: message.attachments?.[0]?.url || null,
+        person_id: normalized.person.id,
+        interaction_id: normalized.interaction.id,
         raw: message,
-        created_at: message.createdAt || payload?.timestamp || new Date().toISOString(),
+        created_at: createdAt,
       }, { onConflict: 'conversation_id,provider_message_id' });
     }
   }
