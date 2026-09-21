@@ -118,7 +118,7 @@ const buildTimelineAssetSchema = z.object({
 export const naylaActionSchema = z.discriminatedUnion('action', [
   z.object({
     action: z.literal('BUILD_TIMELINE'),
-    assets: z.array(buildTimelineAssetSchema).min(1).max(250),
+    assets: z.array(buildTimelineAssetSchema).max(250).optional().default([]),
     subtitles: z.array(z.object({
       text: z.string().trim().min(1).max(1200),
       start: z.number().min(0).max(7200),
@@ -150,6 +150,31 @@ export const naylaActionSchema = z.discriminatedUnion('action', [
     }).refine((item) => item.end > item.start, {
       message: 'El final del título debe ser posterior al inicio.',
     })).max(80).optional(),
+    threeScenes: z.array(z.object({
+      label: z.string().trim().regex(/^M\d+$/i),
+      start: z.number().min(0).max(7200),
+      end: z.number().min(0).max(7200),
+      modelScale: z.number().min(0.02).max(30).optional().default(1),
+      position: z.object({
+        x: z.number().min(-50).max(50).optional(),
+        y: z.number().min(-50).max(50).optional(),
+        z: z.number().min(-50).max(50).optional(),
+      }).strict().optional(),
+      rotation: z.object({
+        x: z.number().min(-3600).max(3600).optional(),
+        y: z.number().min(-3600).max(3600).optional(),
+        z: z.number().min(-3600).max(3600).optional(),
+      }).strict().optional(),
+      autoRotate: z.boolean().optional().default(true),
+      rotationSpeed: z.number().min(-720).max(720).optional().default(24),
+      cameraDistance: z.number().min(0.8).max(40).optional().default(5),
+      cameraFov: z.number().min(15).max(100).optional().default(42),
+      lighting: z.enum(['studio', 'soft', 'dramatic']).optional().default('studio'),
+      backgroundColor: z.string().trim().min(1).max(64).optional().default('transparent'),
+      animationName: z.string().trim().min(1).max(160).optional(),
+    }).refine((item) => item.end > item.start, {
+      message: 'El final de la escena 3D debe ser posterior al inicio.',
+    })).max(24).optional(),
     render: z.boolean().optional().default(false),
   }),
   z.object({
@@ -234,7 +259,17 @@ export const parseNaylaAction = (raw: string): NaylaAction | null => {
   try {
     const json = JSON.parse(cleaned);
     const parsed = naylaActionSchema.safeParse(json);
-    return parsed.success ? parsed.data : null;
+    if (!parsed.success) return null;
+
+    if (
+      parsed.data.action === 'BUILD_TIMELINE' &&
+      parsed.data.assets.length === 0 &&
+      (!parsed.data.threeScenes || parsed.data.threeScenes.length === 0)
+    ) {
+      return null;
+    }
+
+    return parsed.data;
   } catch {
     return null;
   }
