@@ -8,6 +8,11 @@ import {
   sanitizeNaylaPublicText,
 } from '../../lib/naylaSystemCatalog';
 import { REMOTION_CPU_PUBLIC_CATALOG } from '../../lib/remotionEffects';
+import {
+  findNaylaCapabilityMatches,
+  getNaylaCapabilityBibleForPrompt,
+  NAYLA_CAPABILITY_BIBLE_VERSION,
+} from '../../lib/naylaCapabilityBible';
 import { searchStockMedia } from '../../lib/mediaProviders/stock';
 import {
   getAvailableProvidersForAction,
@@ -92,6 +97,64 @@ const getRequestedPhotoLabels = (message: string) => {
     labels.add(`F${Number(match[1])}`);
   }
   return labels;
+};
+
+const normalizePlanningText = (value: string) =>
+  value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+const hasPriorNaylaPlan = (
+  history: Array<{ role: 'user' | 'assistant'; content: string }>
+) =>
+  history
+    .slice(-8)
+    .some((item) => {
+      if (item.role !== 'assistant') return false;
+      const text = normalizePlanningText(item.content);
+      return /\b(plan|te recomiendo|propongo|podemos usar|podemos combinar|mi recomendacion|si te parece|cuando me confirmes|si quieres lo preparo|quedaria asi)\b/.test(text);
+    });
+
+const hasExplicitPlanConfirmation = (
+  message: string,
+  history: Array<{ role: 'user' | 'assistant'; content: string }>
+) => {
+  if (!hasPriorNaylaPlan(history)) return false;
+
+  const text = normalizePlanningText(message);
+  if (!text) return false;
+
+  return (
+    /^(si|ok|okay|dale|adelante|listo|perfecto|correcto)(\b|$)/.test(text) ||
+    /\b(hazlo|hazlo asi|procede|continua con el plan|sigue con el plan|aplica el plan|ejecuta el plan|confirmo|acepto|renderiza ahora|envialo|manda adelante|adelante con el plan)\b/.test(text)
+  );
+};
+
+const actionNeedsConsultativeApproval = (action: NaylaAction) =>
+  action.action !== 'SEARCH_MEDIA';
+
+const buildPlanningFallback = (
+  matches: ReturnType<typeof findNaylaCapabilityMatches>
+) => {
+  const ready = matches.filter((item) => item.status === 'ready').slice(0, 3);
+  const selected = ready.length ? ready : matches.slice(0, 3);
+
+  if (!selected.length) {
+    return 'Sí, puedo ayudarte a armarlo. Primero definamos el estilo, el movimiento y cómo quieres que cambien las escenas. Cuando el plan quede como quieres, me dices adelante y lo ejecuto.';
+  }
+
+  const ideas = selected.map((item) => item.label.toLowerCase());
+  const joined = ideas.length === 1
+    ? ideas[0]
+    : ideas.length === 2
+      ? ideas.join(' y ')
+      : ideas.slice(0, -1).join(', ') + ' y ' + ideas[ideas.length - 1];
+
+  return 'Por lo que describes, te recomiendo combinar ' + joined + '. Puedo ajustar la intensidad y el ritmo contigo antes de procesar nada. Cuando el plan te guste, dime adelante y lo ejecuto.';
 };
 
 const getOrderedMediaLabels = (message: string) => {
@@ -532,6 +595,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       group: item.group,
       requiresConsent: Boolean(item.requiresConsent),
     }));
+    const capabilityBible = getNaylaCapabilityBibleForPrompt();
+    const intentMatches = findNaylaCapabilityMatches(message);
+    const effectiveHistory = scope.threadId ? persistedHistory : (history || []);
+    const executionConfirmed = hasExplicitPlanConfirmation(message, effectiveHistory);
 
     const systemPrompt = `
 Eres Nayla, orquestadora de IA para un editor multimedia basado en Remotion.
@@ -563,9 +630,25 @@ REGLAS DE SEGURIDAD Y EJECUCIÓN:
 - Interpreta "foto 1", "imagen 1" y "F1" como la etiqueta F1; "video 1" y "V1" como V1; "audio 1", "música 1" y "A1" como A1; "3D 1", "modelo 1" y "M1" como M1.
 - Nunca sustituyas una etiqueta por otro archivo parecido. Si la etiqueta pedida no existe en el proyecto, indícalo en texto normal y no inventes una URL.
 - Para cortes sobre un video existente puedes repetir la misma URL de video en varios assets usando trimBefore/trimAfter y colocar fotos o clips entre esos segmentos. Ejemplo conceptual: V1 tramo inicial → F1 → V1 tramo siguiente → F2 → V1 tramo final.
-- Para una petición ejecutable responde ÚNICAMENTE JSON válido, sin markdown ni texto adicional.
+MODO CONSULTIVO Y PLANIFICACIÓN:
+- EJECUCION_CONFIRMADA=${executionConfirmed ? 'SI' : 'NO'}.
+- Por defecto conversa primero. Interpreta lo que el usuario quiere aunque use palabras vagas como "algo 3D", "que se cruce", "más profesional", "que tenga fuerza" o "que se mueva bonito".
+- Consulta la BIBLIA DE CAPACIDADES y recomienda en lenguaje cotidiano entre 1 y 4 recursos que encajen con la intención. Explica brevemente qué aportaría cada uno.
+- No obligues al usuario a conocer nombres técnicos. Si puedes inferir una buena solución, propónla.
+- Si hay varias opciones razonables, ofrece una combinación concreta como recomendación y pregunta por una preferencia solo cuando realmente cambie el resultado.
+- Las capacidades con status="ready" están conectadas y se pueden ejecutar hoy.
+- Las capacidades con status="installed" están físicamente instaladas pero todavía necesitan su adaptador dentro del plan de edición. No las prometas como ejecutables. Si el usuario las pide explícitamente, explica de forma natural que están preparadas en Nayla pero aún no están activadas en ese flujo, y ofrece la alternativa ready más cercana.
+- Si EJECUCION_CONFIRMADA=NO, NO emitas JSON ejecutable aunque la petición parezca una orden. Primero arma o refina el plan con el usuario.
+- Si EJECUCION_CONFIRMADA=SI y el usuario está confirmando un plan ya conversado, responde ÚNICAMENTE con el JSON válido de la acción necesaria, sin texto adicional.
+- Buscar recursos de stock puede ejecutarse directamente cuando el usuario lo pide; no necesita una fase de confirmación.
 - Nunca afirmes que un render, generación o trabajo está "en marcha", "procesando", "guardándose" o "listo" dentro de una respuesta de texto normal. Esos estados solo los confirma el servidor después de crear un trabajo real.
-- Para conversación normal responde texto normal.
+
+ESTILO DE CONVERSACIÓN:
+- Para conversación normal usa texto limpio y natural.
+- No uses Markdown visible: no asteriscos, no dobles asteriscos, no backticks, no almohadillas de títulos, no tablas y no bloques de código.
+- No escribas nombres internos de acciones, recetas, librerías, proveedores ni infraestructura.
+- Usa párrafos cortos. Puedes enumerar con "1.", "2.", "3." solo si realmente ayuda.
+- Habla como una editora experta que guía a una persona que puede saber mucho, poco o nada de edición.
 
 ACCIONES EJECUTABLES:
 
@@ -684,6 +767,19 @@ Copia URLs exactas del proyecto. Para una orden sencilla decide tú los parámet
 Catálogo Remotion CPU:
 ${JSON.stringify(REMOTION_CPU_PUBLIC_CATALOG)}
 
+BIBLIA DE CAPACIDADES NAYLA v${NAYLA_CAPABILITY_BIBLE_VERSION}:
+${JSON.stringify(capabilityBible)}
+
+CAPACIDADES QUE MÁS COINCIDEN CON ESTE MENSAJE:
+${JSON.stringify(intentMatches.map((item) => ({
+  id: item.id,
+  label: item.label,
+  description: item.description,
+  status: item.status,
+  engine: item.engine,
+  usefulFor: item.usefulFor,
+})))}
+
 CATÁLOGO DE CAPACIDADES:
 ${JSON.stringify(capabilitySummary)}
 
@@ -750,7 +846,6 @@ Si una petición combina pasos, elige la PRIMERA acción necesaria. El resultado
         : 'Visión NO solicitada. No inspecciones píxeles ni describas el contenido de fotos. Para editar, ordenar, cortar o renderizar usa únicamente etiquetas, URLs, tipos y las instrucciones del usuario.',
     ].join('\n\n');
 
-    const effectiveHistory = scope.threadId ? persistedHistory : (history || []);
     const historyText = effectiveHistory.length
       ? effectiveHistory.map((msg) => `${msg.role}: ${msg.content}`).join('\n')
       : '';
@@ -778,7 +873,7 @@ Si una petición combina pasos, elige la PRIMERA acción necesaria. El resultado
 
     const parsedAction =
       parseNaylaAction(responseText) ||
-      buildLabelTimelineFallback(message, mergedLibrary);
+      (executionConfirmed ? buildLabelTimelineFallback(message, mergedLibrary) : null);
 
     const canonicalizeUrl = (value: string) => {
       const exact = mergedLibrary.find((item: any) => item.url === value);
@@ -814,6 +909,41 @@ Si una petición combina pasos, elige la PRIMERA acción necesaria. El resultado
           })),
         } as NaylaAction
       : parsedAction;
+
+    if (action && actionNeedsConsultativeApproval(action) && !executionConfirmed) {
+      let planningText = sanitizeNaylaPublicText(responseText);
+      if (!planningText || planningText.startsWith('{') || planningText.includes('"action"')) {
+        planningText = buildPlanningFallback(intentMatches);
+      }
+
+      if (scope.threadId) {
+        await insertChatMessageForUser({
+          userId: firebaseUser.uid,
+          projectId: scope.projectId,
+          threadId: scope.threadId,
+          role: 'assistant',
+          content: planningText,
+          metadata: {
+            responseType: 'planning',
+            bibleVersion: NAYLA_CAPABILITY_BIBLE_VERSION,
+            matchedCapabilities: intentMatches.map((item) => item.id),
+          },
+        });
+      }
+
+      return res.status(200).json({
+        text: planningText,
+        planning: true,
+        requiresConfirmation: true,
+        matchedCapabilities: intentMatches.map((item) => ({
+          id: item.id,
+          label: item.label,
+          status: item.status,
+        })),
+        projectId: scope.projectId,
+        threadId: scope.threadId || null,
+      });
+    }
 
     if (action) {
       try {
