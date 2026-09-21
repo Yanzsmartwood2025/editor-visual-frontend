@@ -378,6 +378,36 @@ describe('Nayla action contracts', () => {
     }))).toBeNull();
   });
 
+  it('accepts local browser background removal for stable video labels', () => {
+    const action = parseNaylaAction(JSON.stringify({
+      action: 'REMOVE_VIDEO_BACKGROUND',
+      label: 'V2',
+      model: 'modnet',
+      keepAudio: true,
+      quality: 'high',
+    }));
+
+    expect(action).not.toBeNull();
+    expect(action).toMatchObject({
+      action: 'REMOVE_VIDEO_BACKGROUND',
+      label: 'V2',
+      model: 'modnet',
+      keepAudio: true,
+      quality: 'high',
+    });
+
+    expect(parseNaylaAction(JSON.stringify({
+      action: 'REMOVE_VIDEO_BACKGROUND',
+      label: 'F1',
+    }))).toBeNull();
+
+    expect(parseNaylaAction(JSON.stringify({
+      action: 'REMOVE_VIDEO_BACKGROUND',
+      label: 'V1',
+      model: 'unsupported-model',
+    }))).toBeNull();
+  });
+
   it('accepts professional caption plans and rejects invalid timing', () => {
     const valid = parseNaylaAction(JSON.stringify({
       action: 'BUILD_TIMELINE',
