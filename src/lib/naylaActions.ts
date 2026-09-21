@@ -80,6 +80,39 @@ const buildTimelineAssetSchema = z.object({
     shutterAngle: z.number().min(0).max(360).optional(),
     samples: z.number().int().min(2).max(8).optional(),
   }).strict().optional(),
+  gsapMotion: z.object({
+    enter: z.enum([
+      'fade',
+      'slide-left',
+      'slide-right',
+      'slide-up',
+      'slide-down',
+      'zoom-in',
+      'zoom-out',
+      'bounce',
+      'elastic',
+      'spin',
+      'swing',
+    ]).optional(),
+    exit: z.enum([
+      'fade',
+      'slide-left',
+      'slide-right',
+      'slide-up',
+      'slide-down',
+      'zoom-in',
+      'zoom-out',
+      'bounce',
+      'elastic',
+      'spin',
+      'swing',
+    ]).optional(),
+    enterDuration: z.number().min(0.1).max(10).optional(),
+    exitDuration: z.number().min(0.1).max(10).optional(),
+    intensity: z.number().min(0.25).max(2).optional(),
+  }).strict().refine((motion) => Boolean(motion.enter || motion.exit), {
+    message: 'GSAP motion requiere enter o exit.',
+  }).optional(),
 });
 
 export const naylaActionSchema = z.discriminatedUnion('action', [
