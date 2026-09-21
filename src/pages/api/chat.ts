@@ -462,6 +462,42 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         : item.url,
     }));
 
+    // Never trust client-side media URLs as the render source of truth.
+    // They may be expired signed URLs, internal r2:// URLs, or URLs copied by the LLM
+    // without their signature query string. Re-hydrate owned project media server-side.
+    const libraryIds = Array.from(new Set(
+      (mediaLibrary || [])
+        .map((item) => item.id)
+        .filter((id): id is string => typeof id === 'string' && id.length > 0)
+    ));
+    const ownedLibraryRows = libraryIds.length
+      ? await getOwnedMediaForUser({
+          userId: firebaseUser.uid,
+          mediaIds: libraryIds,
+          projectId: scope.projectId,
+        })
+      : [];
+    const ownedLibraryById = new Map(
+      ownedLibraryRows.map((item: Record<string, any>) => [String(item.id), item])
+    );
+
+    const secureMediaLibrary = (mediaLibrary || []).map((item) => {
+      if (!item.id) return item;
+      const owned = ownedLibraryById.get(item.id);
+      if (!owned) return null;
+      return {
+        ...item,
+        tipo: owned.tipo,
+        nombre: owned.nombre,
+        etiqueta: owned.etiqueta,
+        fuente: owned.fuente,
+        metadata: owned.metadata || item.metadata || {},
+        url: owned.r2_key
+          ? createR2PresignedGetUrl({ key: owned.r2_key, expiresIn: 3600 }).url
+          : owned.url,
+      };
+    }).filter(Boolean) as typeof mediaLibrary;
+
     let persistedHistory: Array<{ role: 'user' | 'assistant'; content: string }> = [];
     if (scope.threadId) {
       const stored = await listThreadMessagesForUser({
@@ -659,12 +695,14 @@ MODO_MOTOR=${engineMode}
 Si una petición combina pasos, elige la PRIMERA acción necesaria. El resultado volverá al chat y el siguiente turno puede continuar el flujo.
 `;
 
-    const mergedLibrary = [
-      ...(mediaLibrary || []),
-      ...attachments.filter((attachment) =>
-        !mediaLibrary?.some((item) => item.id && item.id === attachment.id)
-      ),
-    ];
+    const mergedLibraryMap = new Map<string, any>();
+    (secureMediaLibrary || []).forEach((item: any, index: number) => {
+      mergedLibraryMap.set(item.id ? `id:${item.id}` : `url:${item.url}:${index}`, item);
+    });
+    attachments.forEach((item) => {
+      mergedLibraryMap.set(item.id ? `id:${item.id}` : `url:${item.url}`, item);
+    });
+    const mergedLibrary = Array.from(mergedLibraryMap.values());
 
     const visualIntent = hasExplicitVisionIntent(message);
     const requestedPhotoLabels = getRequestedPhotoLabels(message);
@@ -738,9 +776,44 @@ Si una petición combina pasos, elige la PRIMERA acción necesaria. El resultado
       });
     }
 
-    const action =
+    const parsedAction =
       parseNaylaAction(responseText) ||
       buildLabelTimelineFallback(message, mergedLibrary);
+
+    const canonicalizeUrl = (value: string) => {
+      const exact = mergedLibrary.find((item: any) => item.url === value);
+      if (exact?.url) return exact.url;
+
+      try {
+        const requested = new URL(value);
+        const requestedKey = requested.origin + requested.pathname;
+        const byPath = mergedLibrary.find((item: any) => {
+          try {
+            const candidate = new URL(item.url);
+            return candidate.origin + candidate.pathname === requestedKey;
+          } catch {
+            return false;
+          }
+        });
+        if (byPath?.url) return byPath.url;
+      } catch {
+        // Non-HTTP URLs are handled by label fallback or validation below.
+      }
+
+      return value;
+    };
+
+    const action = parsedAction?.action === 'BUILD_TIMELINE'
+      ? {
+          ...parsedAction,
+          assets: parsedAction.assets.map((asset: any) => ({
+            ...asset,
+            url: asset?.source === 'url' && typeof asset?.url === 'string'
+              ? canonicalizeUrl(asset.url)
+              : asset?.url,
+          })),
+        } as NaylaAction
+      : parsedAction;
 
     if (action) {
       try {
