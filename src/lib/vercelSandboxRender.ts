@@ -31,23 +31,28 @@ export type NaylaRenderProgress = {
 export async function startVercelSandboxRender(
   inputProps: unknown,
   scope: { ownerId: string; projectId: string; threadId?: string },
-  onProgress?: (update: NaylaRenderProgress) => Promise<void> | void
+  onProgress?: (update: NaylaRenderProgress) => Promise<void> | void,
+  shouldCancel?: () => Promise<boolean> | boolean
 ) {
   const props = inputPropsToRecord(inputProps);
   const { addBundleToSandbox, createSandbox, renderMediaOnVercel } = await import('@remotion/vercel').catch(() => {
     throw new Error('El adaptador @remotion/vercel no está instalado en este entorno. Instálalo durante el despliegue de Vercel Sandbox.');
   });
 
-  const emitProgress = async (update: NaylaRenderProgress) => {
-    if (!onProgress) return;
-    try {
-      await onProgress({
-        ...update,
-        progress: Math.max(0, Math.min(1, Number(update.progress) || 0)),
-      });
-    } catch (error) {
-      console.warn('No se pudo registrar el progreso de Nayla Render:', error);
+  const ensureNotCancelled = async () => {
+    if (!shouldCancel) return;
+    if (await shouldCancel()) {
+      throw new Error('NAYLA_RENDER_CANCELLED');
     }
+  };
+
+  const emitProgress = async (update: NaylaRenderProgress) => {
+    await ensureNotCancelled();
+    if (!onProgress) return;
+    await onProgress({
+      ...update,
+      progress: Math.max(0, Math.min(1, Number(update.progress) || 0)),
+    });
   };
 
   const startedAt = Date.now();
@@ -64,6 +69,7 @@ export async function startVercelSandboxRender(
   });
   const sandboxCreateMs = Date.now() - sandboxStartedAt;
 
+  await ensureNotCancelled();
   await emitProgress({ stage: 'preparing', phase: 'Preparando motor de edición', progress: 0.08 });
 
   let lastProgress = 0;
@@ -72,8 +78,10 @@ export async function startVercelSandboxRender(
   try {
     // @remotion/vercel creates nested bundle directories but expects the root
     // directory to exist first inside a fresh Vercel Sandbox.
+    await ensureNotCancelled();
     await sandbox.mkDir('remotion-bundle');
     await addBundleToSandbox({ sandbox, bundleDir });
+    await ensureNotCancelled();
     await emitProgress({ stage: 'preparing', phase: 'Organizando medios', progress: 0.12 });
 
     const { sandboxFilePath, contentType } = await renderMediaOnVercel({
@@ -86,6 +94,7 @@ export async function startVercelSandboxRender(
       timeoutInMilliseconds: 60_000,
       detachedSandboxTimeoutInMilliseconds: 5 * 60 * 1000,
       onProgress: async (update: any) => {
+        await ensureNotCancelled();
         const overall = Number(update?.overallProgress ?? update?.progress?.progress ?? 0);
         if (Number.isFinite(overall)) lastProgress = Math.max(lastProgress, overall);
 
@@ -107,6 +116,7 @@ export async function startVercelSandboxRender(
       },
     });
     const renderMs = Date.now() - renderStartedAt;
+    await ensureNotCancelled();
     await emitProgress({ stage: 'saving', phase: 'Preparando archivo final', progress: 0.93 });
 
     const readStartedAt = Date.now();
@@ -116,6 +126,7 @@ export async function startVercelSandboxRender(
       throw new Error(`Vercel Sandbox no produjo el archivo de render: ${sandboxFilePath}`);
     }
 
+    await ensureNotCancelled();
     const threadSegment = scope.threadId ? `threads/${scope.threadId}` : 'shared';
     const key =
       `${scope.ownerId}/projects/${scope.projectId}/${threadSegment}/renders/` +

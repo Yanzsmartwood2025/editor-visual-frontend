@@ -74,7 +74,7 @@ type NaylaChatMessage = {
   attachments?: NaylaChannelAsset[];
   renderTask?: {
     requestId?: string;
-    status: 'preparing' | 'rendering' | 'saving' | 'completed' | 'failed';
+    status: 'preparing' | 'rendering' | 'saving' | 'completed' | 'failed' | 'cancelled';
     phase: string;
     progress: number;
     framesDone?: number;
@@ -398,7 +398,7 @@ export default function NaylaCore() {
           targetIndex = index;
           break;
         }
-        if (!requestId && !['completed', 'failed'].includes(task.status)) {
+        if (!requestId && !['completed', 'failed', 'cancelled'].includes(task.status)) {
           targetIndex = index;
           break;
         }
@@ -459,7 +459,7 @@ export default function NaylaCore() {
     gpuQuoteConfirming ||
     channelUploadingKind !== null ||
     chatMessages.some((message) => {
-      const renderActive = message.renderTask && !['completed', 'failed'].includes(message.renderTask.status);
+      const renderActive = message.renderTask && !['completed', 'failed', 'cancelled'].includes(message.renderTask.status);
       const actionStatus = message.actionPlan?.status || '';
       const actionActive = Boolean(
         message.actionPlan &&
@@ -467,6 +467,30 @@ export default function NaylaCore() {
       );
       return Boolean(renderActive || actionActive);
     });
+
+  const cancelRenderTask = async (task: NonNullable<NaylaChatMessage['renderTask']>) => {
+    if (!task.requestId || ['completed', 'failed', 'cancelled'].includes(task.status)) return;
+
+    const currentSession = session || await getFirebaseSession();
+    if (!currentSession) return showAlert('Debes iniciar sesión para cancelar el render.');
+
+    try {
+      const response = await fetch('/api/render?id=' + encodeURIComponent(task.requestId), {
+        method: 'DELETE',
+        headers: firebaseHeaders(currentSession),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.error || 'No se pudo cancelar el render.');
+
+      updateRenderTask(task.requestId, {
+        status: 'cancelled',
+        phase: 'Cancelado por el usuario',
+        error: null,
+      });
+    } catch (error: any) {
+      showAlert(error?.message || 'No se pudo cancelar el render.');
+    }
+  };
 
   const openRenderResult = (task: NonNullable<NaylaChatMessage['renderTask']>) => {
     if (!task.outputUrl) return;
@@ -1100,6 +1124,8 @@ export default function NaylaCore() {
           ? 'completed'
           : serverStatus === 'failed'
             ? 'failed'
+            : serverStatus === 'cancelled'
+              ? 'cancelled'
             : stage === 'saving'
               ? 'saving'
               : stage === 'rendering'
@@ -1139,7 +1165,7 @@ export default function NaylaCore() {
         const payload = await response.json().catch(() => ({}));
         if (!response.ok) return;
         absorbRenderStatus(payload);
-        if (payload.status === 'completed' || payload.status === 'failed') {
+        if (payload.status === 'completed' || payload.status === 'failed' || payload.status === 'cancelled') {
           stopped = true;
           if (pollTimer) window.clearInterval(pollTimer);
         }
@@ -1164,6 +1190,15 @@ export default function NaylaCore() {
 
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
+        if (data.cancelled) {
+          updateRenderTask(requestId, {
+            status: 'cancelled',
+            phase: 'Cancelado por el usuario',
+            error: null,
+          });
+          return data;
+        }
+
         const publicMessage = data.error || 'No se pudo completar el procesamiento en este intento.';
         updateRenderTask(requestId, {
           status: 'failed',
@@ -1608,46 +1643,8 @@ export default function NaylaCore() {
       setChatAttachmentIds((prev) => Array.from(new Set([...prev, ...uploadedIds])));
 
       if (uploadedIds.length) {
-        const response = await fetch('/api/chat/messages', {
-          method: 'POST',
-          headers: firebaseHeaders(currentSession, { 'Content-Type': 'application/json' }),
-          body: JSON.stringify({
-            projectId: activeProjectId,
-            threadId: activeThreadId,
-            attachmentIds: uploadedIds,
-          }),
-        });
-        const payload = await response.json().catch(() => ({}));
-
-        const persistedAttachments = Array.isArray(payload?.message?.attachments)
-          ? payload.message.attachments.map((item: any) => ({
-              id: String(item.id),
-              tipo: item.tipo as NaylaChannelKind,
-              nombre: String(item.nombre || item.etiqueta || 'Archivo'),
-              url: typeof item.url === 'string' ? item.url : undefined,
-              etiqueta: typeof item.etiqueta === 'string' ? item.etiqueta : undefined,
-            }))
-          : uploadedAssets;
-
-        if (response.ok) {
-          setChatMessages((prev) => [
-            ...prev,
-            {
-              role: 'user',
-              text: String(payload?.message?.content || ''),
-              attachments: persistedAttachments,
-            },
-          ]);
-        } else {
-          setChatMessages((prev) => [
-            ...prev,
-            {
-              role: 'user',
-              text: '',
-              attachments: uploadedAssets,
-            },
-          ]);
-        }
+        setProjectMenuOpen(false);
+        requestAnimationFrame(() => chatInputRef.current?.focus());
       }
     } catch (error: any) {
       console.error('Error subiendo desde canal del chat:', error);
@@ -4457,7 +4454,9 @@ if (!session) {
                             ? 'LISTO'
                             : msg.renderTask.status === 'failed'
                               ? 'INTERRUMPIDO'
-                              : `${Math.round((msg.renderTask.progress || 0) * 100)}%`}
+                              : msg.renderTask.status === 'cancelled'
+                                ? 'CANCELADO'
+                                : `${Math.round((msg.renderTask.progress || 0) * 100)}%`}
                         </div>
                       </div>
 
@@ -4465,7 +4464,7 @@ if (!session) {
                         {msg.renderTask.phase}
                       </div>
 
-                      {msg.renderTask.status !== 'failed' && (
+                      {!['failed', 'cancelled'].includes(msg.renderTask.status) && (
                         <div style={{
                           height: 6,
                           borderRadius: 999,
@@ -4484,7 +4483,7 @@ if (!session) {
                         </div>
                       )}
 
-                      {msg.renderTask.framesTotal && msg.renderTask.status !== 'failed' && (
+                      {msg.renderTask.framesTotal && !['failed', 'cancelled'].includes(msg.renderTask.status) && (
                         <div style={{ color: '#777', fontSize: '0.67rem', marginTop: 7 }}>
                           Fotogramas: {Math.min(msg.renderTask.framesDone || 0, msg.renderTask.framesTotal)} / {msg.renderTask.framesTotal}
                         </div>
@@ -4502,6 +4501,26 @@ if (!session) {
                         }}>
                           {msg.renderTask.error || 'No se pudo completar el procesamiento en este intento.'}
                         </div>
+                      )}
+
+                      {!['completed', 'failed', 'cancelled'].includes(msg.renderTask.status) && msg.renderTask.requestId && (
+                        <button
+                          type="button"
+                          onClick={() => void cancelRenderTask(msg.renderTask!)}
+                          style={{
+                            marginTop: 10,
+                            border: '1px solid #3b3b3b',
+                            borderRadius: 9,
+                            background: 'transparent',
+                            color: '#c8c8c8',
+                            padding: '7px 10px',
+                            fontSize: '0.7rem',
+                            fontWeight: 750,
+                            cursor: 'pointer',
+                          }}
+                        >
+                          CANCELAR
+                        </button>
                       )}
 
                       {msg.renderTask.status === 'completed' && msg.renderTask.outputUrl && (
@@ -4689,7 +4708,7 @@ if (!session) {
               display: 'flex',
               gap: 8,
               overflowX: 'auto',
-              padding: '8px 12px',
+              padding: '9px 12px 7px',
               borderTop: '1px solid #1f1f1f',
               backgroundColor: '#080808',
             }}>
@@ -4697,31 +4716,71 @@ if (!session) {
                 <div
                   key={asset.id}
                   style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 7,
+                    position: 'relative',
                     flex: '0 0 auto',
-                    maxWidth: 190,
-                    border: '1px solid #333',
-                    borderRadius: 10,
-                    padding: '6px 8px',
+                    width: 66,
+                    height: 66,
+                    border: '1px solid #3a3a3a',
+                    borderRadius: 12,
+                    overflow: 'visible',
                     background: '#111',
-                    color: '#eee',
                   }}
                 >
                   {asset.tipo === 'foto' && asset.url ? (
-                    <img src={asset.url} alt="" style={{ width: 28, height: 28, borderRadius: 6, objectFit: 'cover' }} />
+                    <img
+                      src={asset.url}
+                      alt={asset.nombre}
+                      style={{ width: '100%', height: '100%', borderRadius: 11, objectFit: 'cover', display: 'block' }}
+                    />
+                  ) : asset.tipo === 'video' && asset.url ? (
+                    <video
+                      src={asset.url}
+                      muted
+                      playsInline
+                      preload="metadata"
+                      style={{ width: '100%', height: '100%', borderRadius: 11, objectFit: 'cover', display: 'block' }}
+                    />
                   ) : (
-                    <span style={{ width: 28, height: 28, borderRadius: 6, border: '1px solid #333', display: 'grid', placeItems: 'center', fontSize: 11 }}>
-                      {asset.tipo === 'video' ? 'VID' : asset.tipo === 'audio' ? 'AUD' : '3D'}
-                    </span>
+                    <div style={{ width: '100%', height: '100%', borderRadius: 11, display: 'grid', placeItems: 'center', color: '#ddd', fontSize: 12 }}>
+                      {asset.tipo === 'audio' ? 'AUDIO' : '3D'}
+                    </div>
                   )}
-                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 12 }}>{asset.nombre}</span>
+
+                  <span style={{
+                    position: 'absolute',
+                    left: 5,
+                    bottom: 5,
+                    padding: '1px 5px',
+                    borderRadius: 6,
+                    background: 'rgba(0,0,0,0.78)',
+                    color: '#fff',
+                    fontSize: 10,
+                    fontWeight: 800,
+                  }}>
+                    {asset.etiqueta || '—'}
+                  </span>
+
                   <button
                     type="button"
                     aria-label={`Quitar ${asset.nombre}`}
                     onClick={() => toggleChatAttachment(asset)}
-                    style={{ border: 'none', background: 'transparent', color: '#aaa', cursor: 'pointer', fontSize: 16, padding: 0 }}
+                    style={{
+                      position: 'absolute',
+                      top: -7,
+                      right: -7,
+                      width: 24,
+                      height: 24,
+                      borderRadius: '50%',
+                      border: '1px solid #555',
+                      background: '#1c1c1c',
+                      color: '#fff',
+                      cursor: 'pointer',
+                      fontSize: 17,
+                      lineHeight: '20px',
+                      padding: 0,
+                      display: 'grid',
+                      placeItems: 'center',
+                    }}
                   >
                     ×
                   </button>
