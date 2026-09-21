@@ -38,6 +38,14 @@ describe('Nayla capability bible', () => {
   });
 
 
+
+  it('marks Lottie and Rive ready and recognizes vector animation language', () => {
+    expect(NAYLA_CAPABILITY_BIBLE.find((item) => item.id === 'lottie-rive')?.status).toBe('ready');
+    expect(
+      findNaylaCapabilityMatches('quiero un logo animado en Lottie y un icono Rive').map((item) => item.id)
+    ).toContain('lottie-rive');
+  });
+
   it('marks procedural motion ready and recognizes particle language', () => {
     expect(NAYLA_CAPABILITY_BIBLE.find((item) => item.id === 'procedural-motion')?.status).toBe('ready');
     expect(
