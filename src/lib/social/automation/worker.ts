@@ -162,6 +162,22 @@ export const processDueAutomationJobs = async (limit = 20) => {
       const suggested = cleanReply(await generateSocialText({ prompt, systemPrompt }));
       if (!suggested) throw new Error('Nayla no generó una respuesta utilizable.');
 
+      const { data: latestQueue, error: latestQueueError } = await supabase
+        .from('social_automation_queue')
+        .select('status')
+        .eq('id', job.id)
+        .maybeSingle();
+
+      if (latestQueueError) throw latestQueueError;
+
+      if (latestQueue?.status !== 'processing') {
+        await addRun(job, 'auto_reply', 'cancelled_before_send', {
+          status: latestQueue?.status || 'missing',
+        });
+        skipped += 1;
+        continue;
+      }
+
       let providerResponse: any;
 
       if (job.channel === 'comment') {
