@@ -75,14 +75,190 @@ const statusText: Record<string, string> = {
   pending: 'Pendiente',
 };
 
+type NaylaOption = {
+  value: string;
+  label: string;
+  subtitle?: string;
+  platform?: string;
+};
+
+const NaylaSelect = ({
+  value,
+  placeholder,
+  options,
+  onChange,
+}: {
+  value: string;
+  placeholder: string;
+  options: NaylaOption[];
+  onChange: (value: string) => void;
+}) => {
+  const [open, setOpen] = useState(false);
+  const selected = options.find((option) => option.value === value);
+
+  return (
+    <div style={{ position: 'relative', width: '100%' }}>
+      <button
+        type="button"
+        onClick={() => setOpen((current) => !current)}
+        style={{
+          width: '100%',
+          minHeight: 46,
+          padding: '9px 12px',
+          borderRadius: 11,
+          border: open ? '1px solid rgba(255,255,255,.5)' : '1px solid rgba(255,255,255,.14)',
+          background: '#0b0b0b',
+          color: selected ? '#eee' : '#888',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 9,
+          textAlign: 'left',
+          cursor: 'pointer',
+          boxShadow: open ? '0 0 0 1px rgba(255,255,255,.08)' : 'none',
+        }}
+      >
+        {selected?.platform ? <NetworkIcon platform={selected.platform} size={25} /> : null}
+        <span style={{ flex: 1, minWidth: 0 }}>
+          <span style={{ display: 'block', fontSize: 10, fontWeight: selected ? 800 : 650, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {selected?.label || placeholder}
+          </span>
+          {selected?.subtitle ? (
+            <span style={{ display: 'block', marginTop: 2, color: '#777', fontSize: 8, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {selected.subtitle}
+            </span>
+          ) : null}
+        </span>
+        <span style={{ color: '#aaa', fontSize: 16, transform: open ? 'rotate(180deg)' : 'none', transition: 'transform .15s ease' }}>⌄</span>
+      </button>
+
+      {open && (
+        <>
+          <button
+            type="button"
+            aria-label="Cerrar selector"
+            onClick={() => setOpen(false)}
+            style={{
+              position: 'fixed',
+              inset: 0,
+              zIndex: 9996,
+              border: 0,
+              background: 'rgba(0,0,0,.42)',
+              padding: 0,
+            }}
+          />
+          <div
+            style={{
+              position: 'fixed',
+              left: 18,
+              right: 18,
+              bottom: 18,
+              zIndex: 9997,
+              maxHeight: '62dvh',
+              overflowY: 'auto',
+              borderRadius: 18,
+              border: '1px solid rgba(255,255,255,.16)',
+              background: '#0b0b0b',
+              boxShadow: '0 20px 60px rgba(0,0,0,.75)',
+              padding: 8,
+            }}
+          >
+            <div style={{ padding: '7px 9px 10px', color: '#777', fontSize: 9, fontWeight: 850, letterSpacing: '.5px' }}>
+              {placeholder.toUpperCase()}
+            </div>
+            {options.map((option) => {
+              const active = option.value === value;
+              return (
+                <button
+                  key={option.value}
+                  type="button"
+                  onClick={() => {
+                    onChange(option.value);
+                    setOpen(false);
+                  }}
+                  style={{
+                    width: '100%',
+                    minHeight: 50,
+                    border: 0,
+                    borderTop: '1px solid rgba(255,255,255,.055)',
+                    borderRadius: 10,
+                    background: active ? 'rgba(255,255,255,.09)' : 'transparent',
+                    color: '#eee',
+                    padding: '8px 9px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 10,
+                    textAlign: 'left',
+                    cursor: 'pointer',
+                  }}
+                >
+                  {option.platform ? <NetworkIcon platform={option.platform} size={28} /> : null}
+                  <span style={{ flex: 1, minWidth: 0 }}>
+                    <span style={{ display: 'block', fontSize: 11, fontWeight: active ? 900 : 750, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {option.label}
+                    </span>
+                    {option.subtitle ? (
+                      <span style={{ display: 'block', marginTop: 3, color: '#777', fontSize: 8.5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {option.subtitle}
+                      </span>
+                    ) : null}
+                  </span>
+                  <span style={{ width: 20, height: 20, borderRadius: '50%', border: active ? '2px solid #fff' : '1px solid #555', display: 'grid', placeItems: 'center' }}>
+                    {active ? <span style={{ width: 9, height: 9, borderRadius: '50%', background: '#fff' }} /> : null}
+                  </span>
+                </button>
+              );
+            })}
+            {!options.length && (
+              <div style={{ padding: 14, color: '#666', fontSize: 10 }}>No hay opciones disponibles.</div>
+            )}
+          </div>
+        </>
+      )}
+    </div>
+  );
+};
+
+const metricLabels: Record<string, string> = {
+  followers: 'Seguidores',
+  reach: 'Alcance',
+  impressions: 'Impresiones',
+  profileViews: 'Visitas al perfil',
+  profile_views: 'Visitas al perfil',
+  views: 'Vistas',
+  videoViews: 'Vistas de video',
+  video_views: 'Vistas de video',
+  likes: 'Me gusta',
+  comments: 'Comentarios',
+  shares: 'Compartidos',
+  saves: 'Guardados',
+  clicks: 'Clics',
+  engagement: 'Interacción',
+};
+
 const unwrapMetrics = (value: any): { label: string; value: string | number }[] => {
   const root = value?.analytics || value || {};
-  const candidates = root?.totals || root?.summary || root?.metrics || root;
+  const direct = root?.totals || root?.summary || root?.metrics || root;
+  let candidates = direct;
+
+  if (candidates && typeof candidates === 'object' && !Array.isArray(candidates)) {
+    const scalarCount = Object.values(candidates).filter((item) => typeof item === 'number' || typeof item === 'string').length;
+    if (!scalarCount) {
+      const nested = Object.values(candidates).find((item) => {
+        if (!item || typeof item !== 'object' || Array.isArray(item)) return false;
+        return Object.values(item as Record<string, unknown>).some((child) => typeof child === 'number' || typeof child === 'string');
+      });
+      if (nested) candidates = nested;
+    }
+  }
+
   if (!candidates || typeof candidates !== 'object' || Array.isArray(candidates)) return [];
   return Object.entries(candidates)
     .filter(([, item]) => typeof item === 'number' || typeof item === 'string')
     .slice(0, 12)
-    .map(([label, item]) => ({ label, value: item as any }));
+    .map(([label, item]) => ({
+      label: metricLabels[label] || label.replace(/_/g, ' '),
+      value: item as string | number,
+    }));
 };
 
 export default function SocialHub({ session, projectId, results, onClose }: Props) {
@@ -95,11 +271,15 @@ export default function SocialHub({ session, projectId, results, onClose }: Prop
   const [title, setTitle] = useState('');
   const [caption, setCaption] = useState('');
   const [commentTarget, setCommentTarget] = useState('');
+  const [commentAccount, setCommentAccount] = useState('');
+  const [commentMedia, setCommentMedia] = useState<any[]>([]);
+  const [commentSource, setCommentSource] = useState<any>(null);
   const [liveComments, setLiveComments] = useState<any[]>([]);
   const [replying, setReplying] = useState<Record<string, string>>({});
   const [analyticsAccount, setAnalyticsAccount] = useState('');
   const [analytics, setAnalytics] = useState<any>(null);
   const [inboxAccount, setInboxAccount] = useState('');
+  const [inboxNotice, setInboxNotice] = useState('');
   const [conversations, setConversations] = useState<any[]>([]);
   const [inboxConversation, setInboxConversation] = useState<any>(null);
   const [inboxMessages, setInboxMessages] = useState<any[]>([]);
