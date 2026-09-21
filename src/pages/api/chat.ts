@@ -764,9 +764,23 @@ Solo una imagen. No usar para texto→3D ni multivista.
       "fadeOut": 1.2
     }
   ],
+  "subtitles": [
+    {
+      "text": "Texto del subtítulo",
+      "startSec": 0,
+      "endSec": 3.2,
+      "style": "tiktok",
+      "position": "bottom",
+      "fontSize": 54,
+      "color": "#ffffff",
+      "activeColor": "#ffe55c",
+      "uppercase": false
+    }
+  ],
   "render": true
 }
 
+Subtítulos disponibles: style puede ser clean, cinematic, tiktok, karaoke o minimal; position top, center o bottom. Si conoces tiempos por palabra puedes incluir words con text, startSec y endSec. Si no los conoces, Nayla distribuye la activación de palabras dentro del bloque.
 Usa type únicamente "foto", "video" o "audio". source únicamente "url".
 Copia URLs exactas del proyecto. Para una orden sencilla decide tú los parámetros sin pedir nombres técnicos.
 Puedes encadenar hasta 6 professionalEffects por clip. Usa solo los nombres publicados en el catálogo Remotion CPU.
