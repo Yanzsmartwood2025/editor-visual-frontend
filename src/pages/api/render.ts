@@ -82,6 +82,69 @@ const validateInputProps = (inputProps: unknown): ValidatedRenderProps => {
   } as ValidatedRenderProps;
 };
 
+const hydrateOwnedRenderMedia = async ({
+  supabase,
+  userId,
+  projectId,
+  inputProps,
+}: {
+  supabase: ReturnType<typeof getWorkspaceSupabaseAdmin>;
+  userId: string;
+  projectId: string;
+  inputProps: ValidatedRenderProps;
+}): Promise<ValidatedRenderProps> => {
+  const timeline = Array.isArray(inputProps.timeline) ? inputProps.timeline : [];
+  const mediaIds = Array.from(new Set(
+    timeline
+      .map((item: any) => typeof item?.mediaId === 'string' ? item.mediaId : '')
+      .filter((id): id is string => UUID_RE.test(id))
+  ));
+
+  const byId = new Map<string, any>();
+  if (mediaIds.length) {
+    const { data: ownedMedia, error } = await supabase
+      .from('galeria_multimedia')
+      .select('id,tipo,url,r2_key,project_id,user_id')
+      .eq('user_id', userId)
+      .eq('project_id', projectId)
+      .in('id', mediaIds);
+
+    if (error) throw error;
+    for (const item of ownedMedia || []) byId.set(String(item.id), item);
+  }
+
+  const hydratedTimeline = timeline.map((item: any) => {
+    const mediaId = typeof item?.mediaId === 'string' ? item.mediaId : '';
+    const owned = mediaId ? byId.get(mediaId) : null;
+
+    if (owned) {
+      return {
+        ...item,
+        tipo: owned.tipo || item.tipo,
+        url: owned.r2_key
+          ? createR2PresignedGetUrl({ key: owned.r2_key, expiresIn: 3600 }).url
+          : owned.url,
+      };
+    }
+
+    const url = typeof item?.url === 'string' ? item.url.trim() : '';
+    if (/^r2:\/\//i.test(url)) {
+      throw new RenderValidationError('Uno de los archivos privados necesita volver a resolverse desde la Bóveda.');
+    }
+
+    if (!/^https?:\/\//i.test(url)) {
+      throw new RenderValidationError('Uno de los archivos del timeline no tiene una dirección válida.');
+    }
+
+    return item;
+  });
+
+  return {
+    ...inputProps,
+    timeline: hydratedTimeline,
+  };
+};
+
 const reserveRenderSlot = async ({
   userId,
   projectId,
@@ -184,8 +247,18 @@ const publicRenderError = (message: string) => {
   if (normalized.includes('duration') || normalized.includes('duración') || normalized.includes('timeline')) {
     return 'No se pudo preparar correctamente la edición solicitada.';
   }
-  if (normalized.includes('media') || normalized.includes('archivo') || normalized.includes('video')) {
-    return 'Uno de los archivos no pudo procesarse correctamente.';
+  if (
+    normalized.includes('media') ||
+    normalized.includes('archivo') ||
+    normalized.includes('video') ||
+    normalized.includes('image') ||
+    normalized.includes('audio') ||
+    normalized.includes('bóveda') ||
+    normalized.includes('boveda') ||
+    normalized.includes('orb') ||
+    normalized.includes('decode')
+  ) {
+    return 'Uno de los archivos no pudo procesarse correctamente. Nayla renovará su acceso al volver a intentarlo.';
   }
   return 'No se pudo completar el procesamiento en este intento.';
 };
@@ -362,7 +435,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     if (requestedId && !UUID_RE.test(requestedId)) {
       return res.status(400).json({ error: 'Identificador de trabajo inválido.' });
     }
-    const inputProps = validateInputProps(req.body?.inputProps);
+    let inputProps = validateInputProps(req.body?.inputProps);
     const scope = await resolveOwnedWorkspaceScope({
       userId: user.uid,
       projectId: typeof req.body?.projectId === 'string' ? req.body.projectId : undefined,
@@ -385,6 +458,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
 
     renderRequestId = slot.requestId;
+
+    inputProps = await hydrateOwnedRenderMedia({
+      supabase: renderLedger,
+      userId: user.uid,
+      projectId: scope.projectId,
+      inputProps,
+    });
 
     const durationInFrames = getCompositionDurationInFrames(
       inputProps.timeline as any[],
