@@ -454,6 +454,46 @@ describe('Nayla action contracts', () => {
     }))).toBeNull();
   });
 
+  it('accepts local automatic caption plans for video and audio labels', () => {
+    const videoAction = parseNaylaAction(JSON.stringify({
+      action: 'CREATE_AUTO_CAPTIONS',
+      label: 'V1',
+      language: 'es',
+      model: 'base',
+      style: 'tiktok',
+      position: 'bottom',
+      fontSize: 48,
+    }));
+
+    expect(videoAction).toMatchObject({
+      action: 'CREATE_AUTO_CAPTIONS',
+      label: 'V1',
+      language: 'es',
+      model: 'base',
+      style: 'tiktok',
+      position: 'bottom',
+      fontSize: 48,
+    });
+
+    const audioAction = parseNaylaAction(JSON.stringify({
+      action: 'CREATE_AUTO_CAPTIONS',
+      label: 'A2',
+    }));
+    expect(audioAction).toMatchObject({
+      action: 'CREATE_AUTO_CAPTIONS',
+      label: 'A2',
+      language: 'es',
+      model: 'base',
+      style: 'clean',
+      position: 'bottom',
+    });
+
+    expect(parseNaylaAction(JSON.stringify({
+      action: 'CREATE_AUTO_CAPTIONS',
+      label: 'F1',
+    }))).toBeNull();
+  });
+
   it('accepts professional caption plans and rejects invalid timing', () => {
     const valid = parseNaylaAction(JSON.stringify({
       action: 'BUILD_TIMELINE',

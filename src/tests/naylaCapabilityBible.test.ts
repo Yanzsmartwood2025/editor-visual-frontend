@@ -6,10 +6,10 @@ import {
 } from '../lib/naylaCapabilityBible';
 
 describe('Nayla capability bible', () => {
-  it('has a dated version and distinguishes connected from installed capabilities', () => {
+  it('has a dated version and keeps every declared capability connected', () => {
     expect(NAYLA_CAPABILITY_BIBLE_VERSION).toMatch(/^2026-/);
-    expect(NAYLA_CAPABILITY_BIBLE.some((item) => item.status === 'ready')).toBe(true);
-    expect(NAYLA_CAPABILITY_BIBLE.some((item) => item.status === 'installed')).toBe(true);
+    expect(NAYLA_CAPABILITY_BIBLE.length).toBeGreaterThan(0);
+    expect(NAYLA_CAPABILITY_BIBLE.every((item) => item.status === 'ready')).toBe(true);
   });
 
   it('maps vague 3D language to usable depth motion before real 3D integration', () => {
@@ -27,6 +27,13 @@ describe('Nayla capability bible', () => {
     expect(
       findNaylaCapabilityMatches('quita el fondo del video V1 y deja solo a la persona').map((item) => item.id)
     ).toContain('background-removal');
+  });
+
+  it('marks local automatic speech captions as ready', () => {
+    expect(NAYLA_CAPABILITY_BIBLE.find((item) => item.id === 'speech-captions')?.status).toBe('ready');
+    expect(
+      findNaylaCapabilityMatches('transcribe el audio A1 y crea subtítulos automáticos').map((item) => item.id)
+    ).toContain('speech-captions');
   });
 
   it('recognizes captions and background removal from everyday Spanish', () => {

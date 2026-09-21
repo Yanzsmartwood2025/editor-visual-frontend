@@ -331,6 +331,18 @@ const executeValidatedAction = async (
     };
   }
 
+  if (action.action === 'CREATE_AUTO_CAPTIONS') {
+    return {
+      ...action,
+      label: action.label.toUpperCase(),
+      projectId: context.projectId,
+      threadId: context.threadId || null,
+      status: 'browser_ready' as const,
+      engine: 'nayla-browser' as const,
+      text: 'Transcripción y subtítulos preparados para procesarse de forma local.',
+    };
+  }
+
   if (
     action.action === 'GENERATE_IMAGE' ||
     action.action === 'GENERATE_VIDEO' ||
@@ -759,7 +771,23 @@ model "ben2-base" sirve para sujetos/objetos generales, pero es bastante más pe
 quality puede ser medium, high o very-high. Por defecto usa high.
 Esta acción se procesa localmente en el navegador del usuario con Nayla y guarda el sujeto transparente como un nuevo video V en la Bóveda.
 
-8) Editar/componer con Remotion CPU:
+8) Transcribir voz y crear subtítulos automáticos en el navegador:
+{
+  "action": "CREATE_AUTO_CAPTIONS",
+  "label": "V1",
+  "language": "es",
+  "model": "base",
+  "style": "tiktok",
+  "position": "bottom",
+  "fontSize": 48
+}
+Usa una etiqueta V o A existente del proyecto.
+model "base" es la opción recomendada por equilibrio entre calidad y peso; "tiny" es más ligera.
+language debe ser el idioma hablado, por ejemplo "es" o "en".
+style puede ser clean, cinematic, tiktok o karaoke.
+Esta acción se procesa localmente en el navegador con WebGPU y agrega subtítulos sincronizados al timeline.
+
+9) Editar/componer con Remotion CPU:
 {
   "action": "BUILD_TIMELINE",
   "assets": [
@@ -1091,7 +1119,19 @@ Si una petición combina pasos, elige la PRIMERA acción necesaria. El resultado
               ? ({ ...parsedAction, label, url: video.url } as NaylaAction)
               : null;
           })()
-        : parsedAction;
+        : parsedAction?.action === 'CREATE_AUTO_CAPTIONS'
+          ? (() => {
+              const label = parsedAction.label.trim().toUpperCase();
+              const media = mergedLibrary.find((item: any) =>
+                (item.tipo === 'video' || item.tipo === 'audio') &&
+                typeof item.etiqueta === 'string' &&
+                item.etiqueta.trim().toUpperCase() === label
+              );
+              return media?.url
+                ? ({ ...parsedAction, label, url: media.url } as NaylaAction)
+                : null;
+            })()
+          : parsedAction;
 
     if (action && actionNeedsConsultativeApproval(action) && !executionConfirmed) {
       let planningText = sanitizeNaylaPublicText(responseText);
@@ -1139,13 +1179,21 @@ Si una petición combina pasos, elige la PRIMERA acción necesaria. El resultado
         });
 
         if (scope.threadId) {
+          const persistedExecuted = { ...(executed as Record<string, unknown>) };
+          if (
+            executed.action === 'REMOVE_VIDEO_BACKGROUND' ||
+            executed.action === 'CREATE_AUTO_CAPTIONS'
+          ) {
+            delete persistedExecuted.url;
+          }
+
           await insertChatMessageForUser({
             userId: firebaseUser.uid,
             projectId: scope.projectId,
             threadId: scope.threadId,
             role: 'assistant',
             content: typeof executed.text === 'string' ? executed.text : 'Acción preparada.',
-            action: executed as Record<string, unknown>,
+            action: persistedExecuted,
             metadata: { responseType: 'action' },
           });
         }
