@@ -179,6 +179,60 @@ const publicRenderError = (message: string) => {
   return 'No se pudo completar el procesamiento en este intento.';
 };
 
+const cancelRender = async (req: NextApiRequest, res: NextApiResponse) => {
+  try {
+    const user = await requireFirebaseUser(req);
+    const id = typeof req.query.id === 'string' ? req.query.id : '';
+    if (!UUID_RE.test(id)) return res.status(400).json({ error: 'Identificador de trabajo inválido.' });
+
+    const supabase = getWorkspaceSupabaseAdmin();
+    const { data: request, error } = await supabase
+      .from('render_requests')
+      .select('id,status,usage')
+      .eq('id', id)
+      .eq('user_id', user.uid)
+      .maybeSingle();
+
+    if (error) throw error;
+    if (!request) return res.status(404).json({ error: 'Trabajo no encontrado.' });
+
+    if (request.status !== 'started') {
+      return res.status(200).json({
+        requestId: request.id,
+        status: request.status,
+        cancelled: request.status === 'cancelled',
+      });
+    }
+
+    const usage = request.usage && typeof request.usage === 'object' ? request.usage : {};
+    const { error: updateError } = await supabase
+      .from('render_requests')
+      .update({
+        status: 'cancelled',
+        usage: {
+          ...usage,
+          stage: 'cancelled',
+          phase: 'Cancelado por el usuario',
+          cancelRequested: true,
+        },
+        completed_at: new Date().toISOString(),
+      })
+      .eq('id', id)
+      .eq('user_id', user.uid)
+      .eq('status', 'started');
+
+    if (updateError) throw updateError;
+
+    return res.status(200).json({
+      requestId: id,
+      status: 'cancelled',
+      cancelled: true,
+    });
+  } catch {
+    return res.status(500).json({ error: 'No se pudo cancelar el render.' });
+  }
+};
+
 const getRenderStatus = async (req: NextApiRequest, res: NextApiResponse) => {
   try {
     const user = await requireFirebaseUser(req);
@@ -237,7 +291,8 @@ const getRenderStatus = async (req: NextApiRequest, res: NextApiResponse) => {
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method === 'GET') return getRenderStatus(req, res);
-  if (req.method !== 'POST') return res.status(405).json({ error: 'Usa GET o POST.' });
+  if (req.method === 'DELETE') return cancelRender(req, res);
+  if (req.method !== 'POST') return res.status(405).json({ error: 'Usa GET, POST o DELETE.' });
 
   let renderRequestId: string | null = null;
   let renderLedger: ReturnType<typeof getWorkspaceSupabaseAdmin> | null = null;
@@ -282,6 +337,26 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     let lastProgressWrite = 0;
     let lastProgressValue = -1;
+    let lastCancelCheck = 0;
+    let cancellationObserved = false;
+
+    const shouldCancel = async () => {
+      if (!renderLedger || !renderRequestId) return false;
+      const now = Date.now();
+      if (cancellationObserved) return true;
+      if (now - lastCancelCheck < 450) return false;
+      lastCancelCheck = now;
+
+      const { data: current } = await renderLedger
+        .from('render_requests')
+        .select('status')
+        .eq('id', renderRequestId)
+        .eq('user_id', user.uid)
+        .maybeSingle();
+
+      cancellationObserved = current?.status === 'cancelled';
+      return cancellationObserved;
+    };
 
     const data = await startVercelSandboxRender(
       inputProps,
@@ -320,7 +395,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           })
           .eq('id', renderRequestId)
           .eq('user_id', user.uid);
-      }
+      },
+      shouldCancel
     );
 
     const { data: existingRenders, error: countError } = await renderLedger
@@ -407,16 +483,36 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Error iniciando el renderizado.';
+    const cancelled = message === 'NAYLA_RENDER_CANCELLED';
 
     if (renderLedger && renderRequestId) {
-      await renderLedger
-        .from('render_requests')
-        .update({
-          status: 'failed',
-          error_message: message.slice(0, 2000),
-          completed_at: new Date().toISOString(),
-        })
-        .eq('id', renderRequestId);
+      if (cancelled) {
+        await renderLedger
+          .from('render_requests')
+          .update({
+            status: 'cancelled',
+            completed_at: new Date().toISOString(),
+          })
+          .eq('id', renderRequestId)
+          .eq('user_id', (await requireFirebaseUser(req)).uid);
+      } else {
+        await renderLedger
+          .from('render_requests')
+          .update({
+            status: 'failed',
+            error_message: message.slice(0, 2000),
+            completed_at: new Date().toISOString(),
+          })
+          .eq('id', renderRequestId);
+      }
+    }
+
+    if (cancelled) {
+      return res.status(409).json({
+        error: 'Render cancelado.',
+        cancelled: true,
+        requestId: renderRequestId,
+      });
     }
 
     if (error instanceof RenderValidationError) {
