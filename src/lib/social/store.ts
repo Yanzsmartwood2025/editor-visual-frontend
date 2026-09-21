@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { createR2PresignedGetUrl } from '../r2';
 import { getWorkspaceSupabaseAdmin, resolveOwnedWorkspaceScope } from '../workspaceStore';
-import type { NormalizedSocialAccount, SocialProviderId, SocialPlatform } from './types';
+import type { NormalizedSocialAccount, SocialProviderId } from './types';
 
 const stableUploadPostUsername = (userId: string, projectId: string) =>
   'nayla_' + createHash('sha256').update(userId + ':' + projectId).digest('hex').slice(0, 28);
