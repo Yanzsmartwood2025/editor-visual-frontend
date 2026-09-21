@@ -1,5 +1,10 @@
 export const cleanNaylaChatText = (value: string): string => {
   let text = String(value || '');
+  const trimmed = text.trim();
+
+  if (/^\s*\{/.test(trimmed) && /"action"\s*:/.test(trimmed)) {
+    return '';
+  }
 
   text = text
     .replace(/\`\`\`(?:json|javascript|typescript|js|ts)?\s*/gi, '')
