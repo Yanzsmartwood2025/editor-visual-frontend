@@ -62,3 +62,5 @@ REDES exposes five own-brand views: Inicio, Publicar, Inbox, Datos and IA. Users
 ## Webhooks
 
 Upload-Post verification uses HMAC-SHA256 over `<timestamp>.<raw body>`. Zernio uses HMAC-SHA256 over the raw body. Both routes reject invalid signatures before persisting events.
+
+> Nota operativa: las credenciales sociales se leen desde Vercel y requieren un despliegue nuevo después de cualquier cambio de variables de entorno.
