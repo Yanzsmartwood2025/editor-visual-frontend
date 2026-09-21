@@ -14,12 +14,17 @@ import {
   listZernioConversations,
   listZernioMessages,
 } from '../providers/zernio';
-import { cacheSocialComments, cacheSocialConversation } from './cache';
+import { cacheSocialComments, cacheSocialConversation, extractSocialComments } from './cache';
 
 type ReviewScope = {
   comments: boolean;
   messages: boolean;
   metrics: boolean;
+};
+
+type ActivitySample = {
+  author: string;
+  text: string;
 };
 
 type AccountActivity = {
@@ -30,6 +35,8 @@ type AccountActivity = {
   conversations: number;
   messages: number;
   inboundMessages: number;
+  commentSamples: ActivitySample[];
+  messageSamples: ActivitySample[];
   metrics: Array<{ label: string; value: string | number }>;
   notes: string[];
 };
@@ -47,32 +54,48 @@ export const isSocialActivityReviewRequest = (message: string) => {
   const text = normalize(message);
   if (!text) return false;
 
-  const asksToInspect =
-    /\b(revisa|revisar|mira|mirar|busca|buscar|trae|traer|lee|leer|verifica|verificar|actualiza|actualizar|consulta|consultar|chequea|chequear)\b/.test(text) ||
-    /\b(que paso|que hay|como van|como esta)\b/.test(text);
-
   const socialObject =
-    /\b(comentarios?|mensajes?|notificaciones?|actividad|inbox|metricas?|estadisticas?|vistas?|alcance|interacciones?|redes?)\b/.test(text);
+    /\b(comentarios?|comentaron|mensajes?|notificaciones?|actividad|inbox|dm|dms|metricas?|estadisticas?|vistas?|alcance|interacciones?|redes?|seguidores?|impresiones?|escribieron|dijeron)\b/.test(text);
 
-  return asksToInspect && socialObject;
+  if (!socialObject) return false;
+
+  const asksToInspect =
+    /\b(revisa|revisar|mira|mirar|busca|buscar|trae|traer|lee|leer|verifica|verificar|actualiza|actualizar|consulta|consultar|chequea|chequear|muestra|mostrar|muestrame|dame|necesito|quiero|quiero ver|quiero saber|ensename|dime)\b/.test(text) ||
+    /\b(que paso|que hay|como van|como esta|que escribieron|que me escribieron|que dijeron|que me dijeron|quien escribio|quienes escribieron|que comentaron|quien comento|cuales son)\b/.test(text);
+
+  const directSocialRequest =
+    /^(comentarios?|mensajes?|notificaciones?|inbox|metricas?|estadisticas?|actividad|redes?)\b/.test(text) ||
+    /\b(comentarios?|mensajes?|notificaciones?)\s+(de|del|de los|de las)\s+(usuarios?|seguidores?|gente|personas?)\b/.test(text);
+
+  return asksToInspect || directSocialRequest;
 };
 
-const reviewScope = (message: string): ReviewScope => {
+export const getSocialActivityReviewScope = (message: string): ReviewScope => {
   const text = normalize(message);
-  const broad =
-    /\b(actividad|redes|todo|todos|toda|todas|que paso|que hay|como van)\b/.test(text) &&
-    !/\bsolo\b/.test(text);
 
-  const comments = broad || /\b(comentarios?|comentaron|notificaciones?)\b/.test(text);
-  const messages = broad || /\b(mensajes?|inbox|dm|dms|notificaciones?)\b/.test(text);
-  const metrics =
-    /\b(metricas?|estadisticas?|vistas?|alcance|rendimiento|seguidores?|impresiones?)\b/.test(text) ||
-    (/\b(todo|todos|toda|todas)\b/.test(text) && /\b(redes?|actividad)\b/.test(text));
+  const mentionsComments =
+    /\b(comentarios?|comentaron|comento|comentario de usuarios?|comentarios de usuarios?)\b/.test(text);
+  const mentionsMessages =
+    /\b(mensajes?|inbox|dm|dms|mensaje privado|mensajes privados|me escribieron|escribieron por privado)\b/.test(text);
+  const mentionsNotifications = /\b(notificaciones?|avisos?)\b/.test(text);
+  const mentionsMetrics =
+    /\b(metricas?|estadisticas?|vistas?|alcance|rendimiento|seguidores?|impresiones?)\b/.test(text);
+
+  const genericActivity =
+    /\b(actividad|redes?)\b/.test(text) &&
+    !mentionsComments &&
+    !mentionsMessages &&
+    !mentionsNotifications &&
+    !mentionsMetrics;
+
+  const asksEverything =
+    /\b(todo|todos|toda|todas|completo|completa)\b/.test(text) &&
+    /\b(redes?|actividad)\b/.test(text);
 
   return {
-    comments,
-    messages,
-    metrics,
+    comments: mentionsComments || mentionsNotifications || genericActivity || asksEverything,
+    messages: mentionsMessages || mentionsNotifications || genericActivity || asksEverything,
+    metrics: mentionsMetrics || asksEverything,
   };
 };
 
@@ -104,6 +127,45 @@ const extractMessages = (payload: any) =>
   Array.isArray(payload?.data) ? payload.data :
   Array.isArray(payload?.items) ? payload.items :
   [];
+
+const compactText = (value: unknown, max = 180) => {
+  const text = cleanNaylaChatText(String(value || '')).replace(/\s+/g, ' ').trim();
+  return text.length > max ? text.slice(0, max - 1).trimEnd() + '…' : text;
+};
+
+const commentSample = (comment: any): ActivitySample | null => {
+  const text = compactText(comment?.message || comment?.text || comment?.content || '');
+  if (!text) return null;
+  const author = compactText(
+    comment?.from?.name ||
+    comment?.author?.name ||
+    comment?.author?.username ||
+    comment?.user?.display_name ||
+    comment?.user?.username ||
+    comment?.username ||
+    'Usuario',
+    60
+  );
+  return { author: author || 'Usuario', text };
+};
+
+const messageSample = (message: any, fallbackAuthor = 'Usuario'): ActivitySample | null => {
+  const text = compactText(message?.message || message?.text || message?.content || message?.body || '');
+  if (!text) return null;
+  const direction = String(message?.direction || '').toLowerCase();
+  if (direction === 'outbound' || message?.isFromMe === true || message?.fromMe === true) return null;
+  const author = compactText(
+    message?.sender?.name ||
+    message?.sender?.username ||
+    message?.from?.name ||
+    message?.author?.name ||
+    message?.user?.display_name ||
+    message?.user?.username ||
+    fallbackAuthor,
+    60
+  );
+  return { author: author || fallbackAuthor, text };
+};
 
 const metricLabels: Record<string, string> = {
   followers: 'Seguidores',
@@ -238,10 +300,11 @@ const loadUploadPostComments = async ({
   const mediaPayload = await listUploadPostMedia({
     username,
     platform: account.platform,
-    limit: 12,
+    limit: 30,
   });
-  const media = extractMedia(mediaPayload).slice(0, 8);
+  const media = extractMedia(mediaPayload).slice(0, 20);
   let comments = 0;
+  const samples: ActivitySample[] = [];
 
   for (const post of media) {
     try {
@@ -262,12 +325,17 @@ const loadUploadPostComments = async ({
         payload,
       });
       comments += cached.length;
+
+      for (const comment of extractSocialComments(payload)) {
+        const sample = commentSample(comment);
+        if (sample && samples.length < 20) samples.push(sample);
+      }
     } catch {
       // A single post should not abort the rest of the account scan.
     }
   }
 
-  return { comments, inspectedPosts: media.length };
+  return { comments, inspectedPosts: media.length, samples };
 };
 
 const loadZernioComments = async ({
@@ -293,6 +361,7 @@ const loadZernioComments = async ({
   if (error) throw error;
 
   let comments = 0;
+  const samples: ActivitySample[] = [];
   for (const target of targets || []) {
     try {
       const postId = String(target.provider_post_id || '');
@@ -312,12 +381,17 @@ const loadZernioComments = async ({
         payload,
       });
       comments += cached.length;
+
+      for (const comment of extractSocialComments(payload)) {
+        const sample = commentSample(comment);
+        if (sample && samples.length < 20) samples.push(sample);
+      }
     } catch {
       // Continue scanning other known posts.
     }
   }
 
-  return { comments, inspectedPosts: (targets || []).length };
+  return { comments, inspectedPosts: (targets || []).length, samples };
 };
 
 const loadUploadPostMessages = async ({
@@ -332,16 +406,17 @@ const loadUploadPostMessages = async ({
   username: string;
 }) => {
   if (account.platform !== 'instagram') {
-    return { conversations: 0, messages: 0, inbound: 0, unavailable: true };
+    return { conversations: 0, messages: 0, inbound: 0, samples: [] as ActivitySample[], unavailable: true };
   }
 
   const payload = await listUploadPostConversations({
     username,
     platform: account.platform,
   });
-  const conversations = extractConversations(payload).slice(0, 10);
+  const conversations = extractConversations(payload).slice(0, 15);
   let totalMessages = 0;
   let inbound = 0;
+  const samples: ActivitySample[] = [];
 
   for (const conversation of conversations) {
     const cached = await cacheSocialConversation({
@@ -352,12 +427,28 @@ const loadUploadPostMessages = async ({
     });
     totalMessages += cached.messages;
     inbound += cached.inbound;
+
+    const preview =
+      conversation?.lastMessage?.text ||
+      conversation?.lastMessage ||
+      conversation?.preview ||
+      '';
+    const author =
+      conversation?.participant?.name ||
+      conversation?.participant?.username ||
+      conversation?.participantName ||
+      conversation?.username ||
+      'Usuario';
+    if (preview && samples.length < 15) {
+      samples.push({ author: compactText(author, 60) || 'Usuario', text: compactText(preview) });
+    }
   }
 
   return {
     conversations: conversations.length,
     messages: totalMessages,
     inbound,
+    samples,
     unavailable: false,
   };
 };
@@ -372,9 +463,10 @@ const loadZernioMessages = async ({
   account: any;
 }) => {
   const payload = await listZernioConversations(String(account.provider_account_id));
-  const conversations = extractConversations(payload).slice(0, 10);
+  const conversations = extractConversations(payload).slice(0, 15);
   let totalMessages = 0;
   let inbound = 0;
+  const samples: ActivitySample[] = [];
 
   for (const conversation of conversations) {
     const conversationId = String(
@@ -392,7 +484,7 @@ const loadZernioMessages = async ({
         conversationId,
         String(account.provider_account_id)
       );
-      messages = extractMessages(messagePayload).slice(-60);
+      messages = extractMessages(messagePayload).slice(-100);
     } catch {
       messages = [];
     }
@@ -406,12 +498,25 @@ const loadZernioMessages = async ({
     });
     totalMessages += cached.messages;
     inbound += cached.inbound;
+
+    const fallbackAuthor =
+      conversation?.participant?.name ||
+      conversation?.participant?.username ||
+      conversation?.participantName ||
+      conversation?.username ||
+      'Usuario';
+
+    for (const rawMessage of messages) {
+      const sample = messageSample(rawMessage, fallbackAuthor);
+      if (sample && samples.length < 20) samples.push(sample);
+    }
   }
 
   return {
     conversations: conversations.length,
     messages: totalMessages,
     inbound,
+    samples,
     unavailable: false,
   };
 };
@@ -427,23 +532,45 @@ const formatActivity = (activity: AccountActivity[], scope: ReviewScope) => {
 
   for (const item of activity) {
     const details: string[] = [];
-    if (scope.comments) details.push(`${item.comments} comentario${item.comments === 1 ? '' : 's'} visible${item.comments === 1 ? '' : 's'}`);
+    if (scope.comments) details.push(`${item.comments} comentario${item.comments === 1 ? '' : 's'} reciente${item.comments === 1 ? '' : 's'}`);
     if (scope.messages) details.push(`${item.inboundMessages} mensaje${item.inboundMessages === 1 ? '' : 's'} entrante${item.inboundMessages === 1 ? '' : 's'}`);
     if (scope.metrics && item.metrics.length) {
-      details.push(item.metrics.slice(0, 3).map((metric) => `${metric.label}: ${metric.value}`).join(' · '));
+      details.push(item.metrics.slice(0, 4).map((metric) => `${metric.label}: ${metric.value}`).join(' · '));
     }
 
     lines.push('');
     lines.push(item.label);
     lines.push(details.length ? details.join(' · ') : 'Sin actividad compatible visible en esta conexión.');
+
+    if (scope.comments && item.commentSamples.length) {
+      lines.push('Comentarios recientes:');
+      for (const sample of item.commentSamples.slice(0, 12)) {
+        lines.push(`${sample.author}: ${sample.text}`);
+      }
+      if (item.comments > 12) lines.push(`Y ${item.comments - 12} comentarios más guardados en Nayla.`);
+    }
+
+    if (scope.messages && item.messageSamples.length) {
+      lines.push('Mensajes recientes:');
+      for (const sample of item.messageSamples.slice(0, 10)) {
+        lines.push(`${sample.author}: ${sample.text}`);
+      }
+      if (item.inboundMessages > 10) lines.push(`Y ${item.inboundMessages - 10} mensajes más guardados en Nayla.`);
+    }
+
     for (const note of item.notes.slice(0, 2)) lines.push(note);
   }
 
   lines.push('');
-  if (scope.comments || scope.messages) {
+  if (scope.comments && scope.messages) {
     lines.push(`Total encontrado: ${totalComments} comentarios y ${totalInbound} mensajes entrantes.`);
+  } else if (scope.comments) {
+    lines.push(`Total encontrado: ${totalComments} comentarios recientes disponibles.`);
+  } else if (scope.messages) {
+    lines.push(`Total encontrado: ${totalInbound} mensajes entrantes disponibles.`);
   }
-  lines.push('Ya guardé la actividad nueva para que Nayla pueda reconocer a las personas y trabajar con esos comentarios o mensajes.');
+
+  lines.push('La actividad encontrada quedó guardada para que puedas pedirme respuestas o preguntar por una persona después.');
 
   return cleanNaylaChatText(lines.join('\n'));
 };
@@ -457,7 +584,7 @@ export const reviewConnectedSocialActivity = async ({
   projectId: string;
   message: string;
 }) => {
-  const scope = reviewScope(message);
+  const scope = getSocialActivityReviewScope(message);
   const supabase = getWorkspaceSupabaseAdmin();
   const profile = await ensureSocialProfile(userId, projectId);
 
@@ -490,6 +617,8 @@ export const reviewConnectedSocialActivity = async ({
       conversations: 0,
       messages: 0,
       inboundMessages: 0,
+      commentSamples: [],
+      messageSamples: [],
       metrics: [],
       notes: [],
     };
@@ -510,6 +639,7 @@ export const reviewConnectedSocialActivity = async ({
             });
 
         item.comments = result.comments;
+        item.commentSamples = result.samples || [];
         if (!result.inspectedPosts) item.notes.push('No encontré publicaciones recientes accesibles para revisar comentarios.');
       } catch (error) {
         item.notes.push(error instanceof Error ? error.message : 'No pude leer comentarios en esta red.');
@@ -534,6 +664,7 @@ export const reviewConnectedSocialActivity = async ({
         item.conversations = result.conversations;
         item.messages = result.messages;
         item.inboundMessages = result.inbound;
+        item.messageSamples = result.samples || [];
         if (result.unavailable) item.notes.push('Los mensajes privados no están disponibles en esta conexión.');
       } catch (error) {
         item.notes.push(error instanceof Error ? error.message : 'No pude leer mensajes en esta red.');

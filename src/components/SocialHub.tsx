@@ -882,7 +882,19 @@ export default function SocialHub({ session, projectId, results, onClose }: Prop
         </div>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5,minmax(0,1fr))', gap: 4 }}>
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(5,minmax(0,1fr))',
+          gap: 6,
+          padding: '3px 0 5px',
+          minHeight: 56,
+          boxSizing: 'border-box',
+          overflow: 'visible',
+          flex: '0 0 auto',
+          alignItems: 'stretch',
+        }}
+      >
         {[
           ['inicio', 'Inicio'],
           ['publicar', 'Publicar'],
@@ -890,7 +902,25 @@ export default function SocialHub({ session, projectId, results, onClose }: Prop
           ['metricas', 'Datos'],
           ['ajustes', 'Nayla'],
         ].map(([id, label]) => (
-          <button key={id} onClick={() => openSocialTab(id as any)} style={{ ...tinyButton(tab === id), padding: '8px 2px', fontSize: 10.5 }}>
+          <button
+            key={id}
+            onClick={() => openSocialTab(id as any)}
+            style={{
+              ...tinyButton(tab === id),
+              minHeight: 48,
+              height: 48,
+              padding: '0 4px',
+              borderRadius: 14,
+              fontSize: 11,
+              lineHeight: 1.2,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              boxSizing: 'border-box',
+              overflow: 'visible',
+              whiteSpace: 'nowrap',
+            }}
+          >
             {label}
           </button>
         ))}
