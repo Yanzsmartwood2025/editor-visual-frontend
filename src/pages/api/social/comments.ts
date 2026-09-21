@@ -276,6 +276,20 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         reason: 'El usuario respondió manualmente este comentario.',
       });
 
+      const supabase = getWorkspaceSupabaseAdmin();
+      await supabase
+        .from('social_interactions')
+        .update({
+          response_state: 'responded',
+          responded_at: new Date().toISOString(),
+          response_text: parsed.data.message,
+          response_source: 'manual',
+          automation_state: 'processed',
+        })
+        .eq('account_id', source.account.id)
+        .eq('channel', 'comment')
+        .eq('source_id', parsed.data.commentId);
+
       await recordSocialUsage({
         userId: user.uid,
         projectId: parsed.data.projectId,
