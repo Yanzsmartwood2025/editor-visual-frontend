@@ -4,6 +4,8 @@ import { Audio, Video } from '@remotion/media';
 import { createTikTokStyleCaptions, type Caption } from '@remotion/captions';
 import { useGsapTimeline } from '@remotion/gsap';
 import { CameraMotionBlur } from '@remotion/motion-blur';
+import { noise2D } from '@remotion/noise';
+import { Circle, Star } from '@remotion/shapes';
 import {
   TransitionSeries,
   linearTiming,
@@ -39,7 +41,8 @@ type ProfessionalEffect = {
 };
 type GsapClipPreset = 'fade' | 'slide-left' | 'slide-right' | 'slide-up' | 'slide-down' | 'zoom-in' | 'zoom-out' | 'bounce' | 'elastic' | 'spin' | 'swing';
 type GsapClipMotion = { enter?: GsapClipPreset; exit?: GsapClipPreset; enterDuration?: number; exitDuration?: number; intensity?: number; };
-type TimelineItem = { id: string; mediaId: string; tipo: 'foto' | 'video' | 'audio'; nombre: string; etiqueta: string; url: string; durationInSeconds?: number; originalDurationInSeconds?: number; volume?: number; fadeIn?: number; fadeOut?: number; scale?: number; delay?: number; startFrom?: number; trimBefore?: number; trimAfter?: number; loop?: boolean; playbackRate?: number; transitionDuration?: number; transitionType?: 'fade' | 'none' | 'wipe' | 'slide' | 'zoom' | 'film-burn' | 'blur-slide' | 'cross-zoom' | 'dreamy-zoom' | 'linear-blur' | 'push-cut'; efecto?: string; brightness?: number; contrast?: number; saturation?: number; overlay?: string; overlayIntensity?: number; professionalEffects?: ProfessionalEffect[]; motionBlur?: { shutterAngle?: number; samples?: number }; gsapMotion?: GsapClipMotion; };
+type ProceduralMotion = { preset: 'particles' | 'orbit' | 'pulse-grid' | 'starfield'; intensity?: number; speed?: number; seed?: number; color?: string; accentColor?: string; };
+type TimelineItem = { id: string; mediaId: string; tipo: 'foto' | 'video' | 'audio'; nombre: string; etiqueta: string; url: string; durationInSeconds?: number; originalDurationInSeconds?: number; volume?: number; fadeIn?: number; fadeOut?: number; scale?: number; delay?: number; startFrom?: number; trimBefore?: number; trimAfter?: number; loop?: boolean; playbackRate?: number; transitionDuration?: number; transitionType?: 'fade' | 'none' | 'wipe' | 'slide' | 'zoom' | 'film-burn' | 'blur-slide' | 'cross-zoom' | 'dreamy-zoom' | 'linear-blur' | 'push-cut'; efecto?: string; brightness?: number; contrast?: number; saturation?: number; overlay?: string; overlayIntensity?: number; professionalEffects?: ProfessionalEffect[]; motionBlur?: { shutterAngle?: number; samples?: number }; gsapMotion?: GsapClipMotion; proceduralMotion?: ProceduralMotion; };
 type SubtitleItem = { id: string; texto: string; inicioSec: number; finSec: number; style?: 'clean' | 'cinematic' | 'tiktok' | 'karaoke'; position?: 'top' | 'center' | 'bottom'; fontSize?: number; };
 type LogoItem = { id: string; url: string; x: number; y: number; scale: number; opacity: number; inicioSec?: number; finSec?: number; fadeIn?: number; fadeOut?: number; };
 
@@ -420,6 +423,91 @@ const GsapClipMotionFrame: React.FC<{
 };
 
 
+const ProceduralClipOverlay: React.FC<{ clip: TimelineItem }> = ({ clip }) => {
+  const motion = clip.proceduralMotion;
+  const frame = useCurrentFrame();
+  const { fps, width, height } = useVideoConfig();
+  if (!motion) return null;
+
+  const preset = motion.preset;
+  const intensity = clamp01(motion.intensity, 0.5);
+  const speed = Math.max(0.1, Math.min(4, Number(motion.speed) || 1));
+  const seed = Number.isFinite(Number(motion.seed)) ? Number(motion.seed) : 17;
+  const color = motion.color || '#ffffff';
+  const accentColor = motion.accentColor || color;
+  const t = (frame / Math.max(1, fps)) * speed;
+  const count = preset === 'pulse-grid'
+    ? 24
+    : Math.max(10, Math.round(12 + intensity * 28));
+
+  return (
+    <AbsoluteFill style={{ pointerEvents: 'none', overflow: 'hidden' }}>
+      {Array.from({ length: count }).map((_, index) => {
+        let x = 0;
+        let y = 0;
+        let scale = 1;
+        const phase = index / Math.max(1, count);
+
+        if (preset === 'orbit') {
+          const angle = phase * Math.PI * 2 + t * (0.7 + intensity);
+          const radiusX = width * (0.2 + 0.16 * intensity);
+          const radiusY = height * (0.16 + 0.12 * intensity);
+          x = width / 2 + Math.cos(angle) * radiusX;
+          y = height / 2 + Math.sin(angle) * radiusY;
+          scale = 0.7 + (Math.sin(angle * 2) + 1) * 0.22;
+        } else if (preset === 'pulse-grid') {
+          const columns = 6;
+          const row = Math.floor(index / columns);
+          const column = index % columns;
+          x = ((column + 0.5) / columns) * width;
+          y = ((row + 0.5) / 4) * height;
+          scale = 0.55 + ((Math.sin(t * 3 + index * 0.7) + 1) / 2) * (0.55 + intensity * 0.55);
+        } else {
+          const driftX = noise2D(seed + index * 13, t * 0.18, index * 0.31);
+          const driftY = noise2D(seed + index * 29, index * 0.27, t * 0.16);
+          x = (phase * 0.86 + 0.07) * width + driftX * width * (0.05 + intensity * 0.07);
+          y = (((index * 0.61803398875) % 1) * 0.86 + 0.07) * height + driftY * height * (0.05 + intensity * 0.07);
+          scale = 0.65 + ((noise2D(seed + 97, index * 0.2, t * 0.22) + 1) / 2) * (0.45 + intensity * 0.55);
+        }
+
+        const size = 4 + intensity * 13 + (index % 5) * 1.6;
+        const opacity = Math.max(0.14, Math.min(0.82, 0.2 + intensity * 0.5));
+        const useStar = preset === 'starfield' || (preset === 'orbit' && index % 3 === 0);
+
+        return (
+          <div
+            key={index}
+            style={{
+              position: 'absolute',
+              left: x,
+              top: y,
+              transform: `translate(-50%, -50%) scale(${scale}) rotate(${t * 18 + index * 9}deg)`,
+              opacity,
+              filter: intensity > 0.65 ? `drop-shadow(0 0 ${6 + intensity * 10}px ${accentColor})` : undefined,
+              willChange: 'transform',
+            }}
+          >
+            {useStar ? (
+              <Star
+                points={5}
+                innerRadius={size * 0.45}
+                outerRadius={size}
+                fill={index % 2 === 0 ? color : accentColor}
+              />
+            ) : (
+              <Circle
+                radius={size * 0.55}
+                fill={index % 2 === 0 ? color : accentColor}
+              />
+            )}
+          </div>
+        );
+      })}
+    </AbsoluteFill>
+  );
+};
+
+
 const AnimatedVisualFrame: React.FC<{
   clip: TimelineItem;
   durationInFrames: number;
@@ -780,6 +868,7 @@ export const MainComposition: React.FC<MainCompositionProps> = ({ timeline, subt
                     </GsapClipMotionFrame>
                   )}
                 </MaybeMotionBlur>
+                <ProceduralClipOverlay clip={clip} />
                 {clip.overlay === 'vignette' && (
                     <AbsoluteFill style={{
                         pointerEvents: 'none',
