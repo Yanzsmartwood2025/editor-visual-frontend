@@ -315,13 +315,21 @@ export default function NaylaCore() {
   };
 
   useEffect(() => {
+    if (isCleanMode) {
+      resetPlaybackControlsTimer();
+      return;
+    }
+
     if (isPlaying) {
       resetPlaybackControlsTimer();
     } else {
       setShowPlaybackControls(true);
-      if (playbackControlsTimerRef.current) clearTimeout(playbackControlsTimerRef.current);
+      if (playbackControlsTimerRef.current) {
+        clearTimeout(playbackControlsTimerRef.current);
+        playbackControlsTimerRef.current = null;
+      }
     }
-  }, [isPlaying]);
+  }, [isPlaying, isCleanMode]);
 
 
   // Render Jobs State
@@ -1025,21 +1033,25 @@ export default function NaylaCore() {
     setExpandedSurface(null);
     setIsAiModalOpen(false);
 
-    if (typeof document === 'undefined') return;
-
-    try {
-      if (next) {
-        const element = previewFullscreenRef.current;
-        if (element && !document.fullscreenElement && element.requestFullscreen) {
-          await element.requestFullscreen({ navigationUI: 'hide' });
-        }
-      } else if (document.fullscreenElement && document.exitFullscreen) {
-        await document.exitFullscreen();
+    if (next) {
+      setShowPlaybackControls(true);
+      resetPlaybackControlsTimer();
+      requestAnimationFrame(() => {
+        window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+      });
+    } else {
+      setShowPlaybackControls(true);
+      if (playbackControlsTimerRef.current) {
+        clearTimeout(playbackControlsTimerRef.current);
+        playbackControlsTimerRef.current = null;
       }
-    } catch (error) {
-      // Fullscreen API can be denied by some mobile browsers. The fixed-position
-      // clean mode below remains the visual fallback and still fills the viewport.
-      console.warn('Fullscreen API no disponible; usando modo pantalla completa CSS.', error);
+
+      try {
+        const orientation = screen.orientation as any;
+        if (orientation?.unlock) orientation.unlock();
+      } catch {
+        // Orientation unlock is best-effort and must never block leaving immersive mode.
+      }
     }
   };
 
@@ -1068,13 +1080,52 @@ export default function NaylaCore() {
   };
 
   useEffect(() => {
-    const syncFullscreenState = () => {
-      if (!document.fullscreenElement && isCleanMode) {
-        setIsCleanMode(false);
+    if (!isCleanMode || !isPhoneViewport || sourceVideoRatio === null) return;
+
+    const horizontalSource = sourceVideoRatio > 1.15;
+    const preferredOrientation = horizontalSource ? 'landscape' : 'portrait';
+
+    const lockOrientation = async () => {
+      try {
+        const orientation = screen.orientation as any;
+        if (orientation?.lock) {
+          await orientation.lock(preferredOrientation);
+        }
+      } catch {
+        // Mobile browsers may reject orientation locking outside native fullscreen.
+        // The player still stays correct with object-fit: contain and responds
+        // automatically if the user rotates the device.
       }
     };
-    document.addEventListener('fullscreenchange', syncFullscreenState);
-    return () => document.removeEventListener('fullscreenchange', syncFullscreenState);
+
+    void lockOrientation();
+
+    return () => {
+      try {
+        const orientation = screen.orientation as any;
+        if (orientation?.unlock) orientation.unlock();
+      } catch {
+        // Best-effort cleanup only.
+      }
+    };
+  }, [isCleanMode, isPhoneViewport, sourceVideoRatio]);
+
+  useEffect(() => {
+    if (!isCleanMode || typeof document === 'undefined') return;
+
+    const previousBodyOverflow = document.body.style.overflow;
+    const previousHtmlOverflow = document.documentElement.style.overflow;
+    const previousOverscroll = document.body.style.overscrollBehavior;
+
+    document.body.style.overflow = 'hidden';
+    document.documentElement.style.overflow = 'hidden';
+    document.body.style.overscrollBehavior = 'none';
+
+    return () => {
+      document.body.style.overflow = previousBodyOverflow;
+      document.documentElement.style.overflow = previousHtmlOverflow;
+      document.body.style.overscrollBehavior = previousOverscroll;
+    };
   }, [isCleanMode]);
 
   const handleMainCarouselToolPress = (tool: any) => {
@@ -1154,7 +1205,8 @@ export default function NaylaCore() {
   };
 
   const isPortraitSourceVideo = sourceVideoRatio !== null && sourceVideoRatio < 1;
-  const phoneVideoObjectFit = isPortraitSourceVideo && deviceOrientation === 'portrait' ? 'cover' : 'contain';
+  const isLandscapeSourceVideo = sourceVideoRatio !== null && sourceVideoRatio > 1.15;
+  const phoneVideoObjectFit = 'contain';
 
   const validarTimelineParaRender = async (timeline: TimelineItem[]) => {
     const lineaValidada: TimelineItem[] = [];
@@ -4430,7 +4482,7 @@ if (!session) {
                       key={visualActivo.url}
                       src={visualActivo.url}
                       alt={visualActivo.nombre || 'Imagen activa'}
-                      style={{ width: '100%', height: '100%', objectFit: 'contain', backgroundColor: '#000', maxWidth: '100dvw', maxHeight: '100dvh' }}
+                      style={{ width: '100%', height: '100%', objectFit: phoneVideoObjectFit, backgroundColor: '#000', maxWidth: '100dvw', maxHeight: '100dvh' }}
                       onLoad={(e) => {
                         const image = e.currentTarget;
                         if (image.naturalWidth && image.naturalHeight) {
@@ -4478,7 +4530,9 @@ if (!session) {
                 </>
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', height: '100%', justifyContent: 'center', alignItems: 'center', gap: '12px' }}>
-                  <img src="/assets/imagenes/Icono-intro.jpeg" alt="NAYLA" style={{ width: '80px', height: '80px', borderRadius: '16px', opacity: 0.4, filter: 'grayscale(100%)' }} />
+                  {!isCleanMode && (
+                    <img src="/assets/imagenes/Icono-intro.jpeg" alt="NAYLA" style={{ width: '80px', height: '80px', borderRadius: '16px', opacity: 0.4, filter: 'grayscale(100%)' }} />
+                  )}
                 </div>
               )}
             </div>
@@ -4503,8 +4557,12 @@ if (!session) {
                 gap: '12px',
                 boxShadow: '0 4px 16px rgba(0, 0, 0, 0.5), 0 0 var(--glow-spread) rgba(var(--glow-color-rgb), var(--glow-intensity))',
                 transition: 'opacity 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease',
-                opacity: isCleanMode ? 1 : ((showPlaybackControls || !isPlaying) ? 1 : 0),
-                pointerEvents: isCleanMode ? 'auto' : ((showPlaybackControls || !isPlaying) ? 'auto' : 'none')
+                opacity: isCleanMode
+                  ? (showPlaybackControls ? 1 : 0)
+                  : ((showPlaybackControls || !isPlaying) ? 1 : 0),
+                pointerEvents: isCleanMode
+                  ? (showPlaybackControls ? 'auto' : 'none')
+                  : ((showPlaybackControls || !isPlaying) ? 'auto' : 'none')
               }}
             >
               {!isCleanMode && <span style={{ color: '#888', fontSize: '0.65rem', fontFamily: 'monospace' }}>00:00:00</span>}
