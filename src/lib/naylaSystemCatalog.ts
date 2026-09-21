@@ -1,3 +1,4 @@
+import { cleanNaylaChatText } from './naylaText';
 import { getProviderCandidates } from './mediaProviders/registry';
 import type { MediaCapability } from './mediaProviders/types';
 
@@ -178,8 +179,14 @@ const UPSTREAM_REPLACEMENTS: Array<[RegExp, string]> = [
   [/\btriposr\b/gi, 'motor 3D de Nayla Compute'],
 ];
 
-export const sanitizeNaylaPublicText = (value: string): string =>
-  UPSTREAM_REPLACEMENTS.reduce(
+export const sanitizeNaylaPublicText = (value: string): string => {
+  const branded = UPSTREAM_REPLACEMENTS.reduce(
     (text, [pattern, replacement]) => text.replace(pattern, replacement),
     value
   );
+
+  return cleanNaylaChatText(branded)
+    .replace(/\brender\s*:\s*true\b/gi, 'render final')
+    .replace(/\baction\s*:\s*/gi, '')
+    .trim();
+};
