@@ -413,9 +413,10 @@ const loadUploadPostMessages = async ({
     username,
     platform: account.platform,
   });
-  const conversations = extractConversations(payload).slice(0, 10);
+  const conversations = extractConversations(payload).slice(0, 15);
   let totalMessages = 0;
   let inbound = 0;
+  const samples: ActivitySample[] = [];
 
   for (const conversation of conversations) {
     const cached = await cacheSocialConversation({
@@ -426,12 +427,28 @@ const loadUploadPostMessages = async ({
     });
     totalMessages += cached.messages;
     inbound += cached.inbound;
+
+    const preview =
+      conversation?.lastMessage?.text ||
+      conversation?.lastMessage ||
+      conversation?.preview ||
+      '';
+    const author =
+      conversation?.participant?.name ||
+      conversation?.participant?.username ||
+      conversation?.participantName ||
+      conversation?.username ||
+      'Usuario';
+    if (preview && samples.length < 15) {
+      samples.push({ author: compactText(author, 60) || 'Usuario', text: compactText(preview) });
+    }
   }
 
   return {
     conversations: conversations.length,
     messages: totalMessages,
     inbound,
+    samples,
     unavailable: false,
   };
 };
@@ -446,9 +463,10 @@ const loadZernioMessages = async ({
   account: any;
 }) => {
   const payload = await listZernioConversations(String(account.provider_account_id));
-  const conversations = extractConversations(payload).slice(0, 10);
+  const conversations = extractConversations(payload).slice(0, 15);
   let totalMessages = 0;
   let inbound = 0;
+  const samples: ActivitySample[] = [];
 
   for (const conversation of conversations) {
     const conversationId = String(
@@ -466,7 +484,7 @@ const loadZernioMessages = async ({
         conversationId,
         String(account.provider_account_id)
       );
-      messages = extractMessages(messagePayload).slice(-60);
+      messages = extractMessages(messagePayload).slice(-100);
     } catch {
       messages = [];
     }
@@ -480,12 +498,25 @@ const loadZernioMessages = async ({
     });
     totalMessages += cached.messages;
     inbound += cached.inbound;
+
+    const fallbackAuthor =
+      conversation?.participant?.name ||
+      conversation?.participant?.username ||
+      conversation?.participantName ||
+      conversation?.username ||
+      'Usuario';
+
+    for (const rawMessage of messages) {
+      const sample = messageSample(rawMessage, fallbackAuthor);
+      if (sample && samples.length < 20) samples.push(sample);
+    }
   }
 
   return {
     conversations: conversations.length,
     messages: totalMessages,
     inbound,
+    samples,
     unavailable: false,
   };
 };
@@ -564,6 +595,8 @@ export const reviewConnectedSocialActivity = async ({
       conversations: 0,
       messages: 0,
       inboundMessages: 0,
+      commentSamples: [],
+      messageSamples: [],
       metrics: [],
       notes: [],
     };
@@ -584,6 +617,7 @@ export const reviewConnectedSocialActivity = async ({
             });
 
         item.comments = result.comments;
+        item.commentSamples = result.samples || [];
         if (!result.inspectedPosts) item.notes.push('No encontré publicaciones recientes accesibles para revisar comentarios.');
       } catch (error) {
         item.notes.push(error instanceof Error ? error.message : 'No pude leer comentarios en esta red.');
@@ -608,6 +642,7 @@ export const reviewConnectedSocialActivity = async ({
         item.conversations = result.conversations;
         item.messages = result.messages;
         item.inboundMessages = result.inbound;
+        item.messageSamples = result.samples || [];
         if (result.unavailable) item.notes.push('Los mensajes privados no están disponibles en esta conexión.');
       } catch (error) {
         item.notes.push(error instanceof Error ? error.message : 'No pude leer mensajes en esta red.');
