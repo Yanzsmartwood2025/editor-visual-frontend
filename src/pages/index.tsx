@@ -62,6 +62,24 @@ type MotionTitleItem = {
   color?: string;
   accentColor?: string;
 };
+type ThreeRenderScene = {
+  id: string;
+  mediaId: string;
+  label?: string;
+  url: string;
+  start: number;
+  end: number;
+  modelScale?: number;
+  position?: { x?: number; y?: number; z?: number };
+  rotation?: { x?: number; y?: number; z?: number };
+  autoRotate?: boolean;
+  rotationSpeed?: number;
+  cameraDistance?: number;
+  cameraFov?: number;
+  lighting?: 'studio' | 'soft' | 'dramatic';
+  backgroundColor?: string;
+  animationName?: string;
+};
 type LogoItem = { id: string; url: string; x: number; y: number; scale: number; opacity: number; inicioSec?: number; finSec?: number; fadeIn?: number; fadeOut?: number; };
 type ExpandedSurface = 'tools' | 'chat' | null;
 type NaylaProjectDialog =
@@ -278,6 +296,7 @@ export default function NaylaCore() {
   const [lineaDeTiempo, setLineaDeTiempo] = useState<TimelineItem[]>([]);
   const [subtitulos, setSubtitulos] = useState<SubtitleItem[]>([]);
   const [motionTitles, setMotionTitles] = useState<MotionTitleItem[]>([]);
+  const [threeRenderScenes, setThreeRenderScenes] = useState<ThreeRenderScene[]>([]);
   const [logos, setLogos] = useState<LogoItem[]>([]);
   const [globalSettings, setGlobalSettings] = useState<{ fadeOutFinal?: number }>({});
   const [clipSeleccionado, setClipSeleccionado] = useState<string | null>(null);
@@ -1284,7 +1303,8 @@ export default function NaylaCore() {
     ratioOverride?: string,
     scopeOverride?: { projectId?: string | null; threadId?: string | null },
     subtitlesOverride?: SubtitleItem[],
-    titlesOverride?: MotionTitleItem[]
+    titlesOverride?: MotionTitleItem[],
+    threeScenesOverride?: ThreeRenderScene[]
   ) => {
     const renderProjectId = scopeOverride?.projectId ?? activeProjectId;
     const renderThreadId = scopeOverride?.threadId ?? activeThreadId;
@@ -1297,7 +1317,15 @@ export default function NaylaCore() {
     const canvas = getCanvasDimensionsFromRatio(renderRatio, exportQuality);
     const renderSubtitles = subtitlesOverride ?? subtitulos;
     const renderTitles = titlesOverride ?? motionTitles;
-    const durationInFrames = getCompositionDurationInFrames(lineaValidada, 30, renderSubtitles, logos, renderTitles);
+    const renderThreeScenes = threeScenesOverride ?? threeRenderScenes;
+    const durationInFrames = getCompositionDurationInFrames(
+      lineaValidada,
+      30,
+      renderSubtitles,
+      logos,
+      renderTitles,
+      renderThreeScenes
+    );
     const requestId = createRenderRequestId();
 
     if (!renderThreadId || activeThreadIdRef.current === renderThreadId) {
@@ -1316,6 +1344,7 @@ export default function NaylaCore() {
       timeline: lineaValidada,
       subtitles: renderSubtitles,
       titles: renderTitles,
+      threeScenes: renderThreeScenes,
       logos: logos,
       canvasRatio: renderRatio,
       canvasWidth: canvas.width,
@@ -1490,7 +1519,10 @@ export default function NaylaCore() {
     scopeOverride?: { projectId?: string | null; threadId?: string | null }
   ) => {
     const assets = Array.isArray(actionData.assets) ? actionData.assets : [];
-    if (assets.length === 0) throw new Error('BUILD_TIMELINE llegó sin assets.');
+    const requestedThreeScenes = Array.isArray(actionData.threeScenes) ? actionData.threeScenes : [];
+    if (assets.length === 0 && requestedThreeScenes.length === 0) {
+      throw new Error('Nayla no devolvió clips ni escenas 3D para armar el render.');
+    }
 
     const nextTimeline: TimelineItem[] = [];
     assets.forEach((asset: any, index: number) => {
@@ -1562,7 +1594,9 @@ export default function NaylaCore() {
       });
     });
 
-    if (nextTimeline.length === 0) throw new Error('Nayla no devolvió URLs válidas para armar el timeline.');
+    if (nextTimeline.length === 0 && requestedThreeScenes.length === 0) {
+      throw new Error('Nayla no devolvió medios válidos para armar el render.');
+    }
 
     const timelineValidado = await validarTimelineParaRender(nextTimeline);
     const hasSubtitleDirective = Array.isArray(actionData.subtitles);
@@ -1638,6 +1672,46 @@ export default function NaylaCore() {
           }))
       : motionTitles;
 
+    const hasThreeSceneDirective = Array.isArray(actionData.threeScenes);
+    const actionThreeScenes: ThreeRenderScene[] = hasThreeSceneDirective
+      ? requestedThreeScenes.slice(0, 24).map((scene: any, index: number) => {
+          const requestedLabel = String(scene.label || '').trim().toUpperCase();
+          const model = modelos3d.find(
+            (item) => String(item.etiqueta || '').trim().toUpperCase() === requestedLabel
+          );
+
+          if (!model) {
+            throw new Error(`No encuentro ${requestedLabel || 'ese modelo 3D'} en este proyecto.`);
+          }
+
+          return {
+            id: `nayla-3d-${Date.now()}-${index}`,
+            mediaId: model.id,
+            label: model.etiqueta,
+            url: model.url,
+            start: Math.max(0, Number(scene.start) || 0),
+            end: Math.max(0.1, Number(scene.end) || 5),
+            modelScale: Math.max(0.02, Math.min(30, Number(scene.modelScale) || 1)),
+            position: scene.position && typeof scene.position === 'object' ? scene.position : undefined,
+            rotation: scene.rotation && typeof scene.rotation === 'object' ? scene.rotation : undefined,
+            autoRotate: scene.autoRotate !== false,
+            rotationSpeed: Number.isFinite(Number(scene.rotationSpeed)) ? Number(scene.rotationSpeed) : 24,
+            cameraDistance: Math.max(0.8, Math.min(40, Number(scene.cameraDistance) || 5)),
+            cameraFov: Math.max(15, Math.min(100, Number(scene.cameraFov) || 42)),
+            lighting: ['studio', 'soft', 'dramatic'].includes(scene.lighting)
+              ? scene.lighting
+              : 'studio',
+            backgroundColor:
+              typeof scene.backgroundColor === 'string' && scene.backgroundColor.trim()
+                ? scene.backgroundColor.trim().slice(0, 64)
+                : 'transparent',
+            ...(typeof scene.animationName === 'string' && scene.animationName.trim()
+              ? { animationName: scene.animationName.trim().slice(0, 160) }
+              : {}),
+          };
+        })
+      : threeRenderScenes;
+
     const targetThreadId = scopeOverride?.threadId ?? activeThreadId;
     const stillInOriginChat = !targetThreadId || activeThreadIdRef.current === targetThreadId;
 
@@ -1656,6 +1730,9 @@ export default function NaylaCore() {
       if (hasTitleDirective) {
         setMotionTitles(actionTitles);
       }
+      if (hasThreeSceneDirective) {
+        setThreeRenderScenes(actionThreeScenes);
+      }
     }
 
     const primerVisual = timelineValidado.find(item => item.tipo === 'video' || item.tipo === 'foto');
@@ -1672,7 +1749,8 @@ export default function NaylaCore() {
         formatoDetectado,
         scopeOverride,
         hasSubtitleDirective ? actionSubtitles : undefined,
-        hasTitleDirective ? actionTitles : undefined
+        hasTitleDirective ? actionTitles : undefined,
+        hasThreeSceneDirective ? actionThreeScenes : undefined
       );
     } else {
       showAlert('Nayla armó el timeline con los medios existentes.');
@@ -2875,6 +2953,9 @@ export default function NaylaCore() {
       ? proyectoPayload.data!.linea_de_tiempo!
       : [];
     setLineaDeTiempo(timeline);
+    setSubtitulos([]);
+    setMotionTitles([]);
+    setThreeRenderScenes([]);
 
     const firstVisual = timeline.find((item: any) => item.tipo === 'video' || item.tipo === 'foto');
     if (firstVisual) {
@@ -3642,6 +3723,7 @@ export default function NaylaCore() {
                setLineaDeTiempo([]);
                setSubtitulos([]);
                setMotionTitles([]);
+               setThreeRenderScenes([]);
                setLogos([]);
                setGlobalSettings({});
                setTimeout(() => {
