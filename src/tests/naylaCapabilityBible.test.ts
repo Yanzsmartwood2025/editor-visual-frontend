@@ -28,4 +28,19 @@ describe('Nayla capability bible', () => {
     expect(findNaylaCapabilityMatches('quita el fondo del video y deja solo a la persona').map((item) => item.id))
       .toContain('background-removal');
   });
+  it('marks the connected professional render layer as ready', () => {
+    const byId = new Map(NAYLA_CAPABILITY_BIBLE.map((item) => [item.id, item]));
+    for (const id of [
+      'effects-professional',
+      'transition-professional',
+      'captions-professional',
+      'modern-media',
+    ]) {
+      expect(byId.get(id)?.status).toBe('ready');
+    }
+
+    expect(byId.get('three-real')?.status).toBe('installed');
+    expect(byId.get('motion-gsap')?.status).toBe('installed');
+  });
+
 });
