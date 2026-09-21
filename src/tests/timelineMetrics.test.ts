@@ -44,6 +44,23 @@ describe('timeline metrics', () => {
     ).toBe(210);
   });
 
+  it('extends the composition for real 3D scenes', () => {
+    const timeline = [
+      { tipo: 'foto' as const, durationInSeconds: 2 },
+    ];
+
+    expect(
+      getCompositionDurationInFrames(
+        timeline,
+        30,
+        [],
+        [],
+        [],
+        [{ start: 1, end: 9 }]
+      )
+    ).toBe(270);
+  });
+
   it('caps transitions so they cannot exceed adjacent clips', () => {
     const timeline = [
       { tipo: 'video' as const, durationInSeconds: 1 },

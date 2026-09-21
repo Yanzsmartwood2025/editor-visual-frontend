@@ -37,4 +37,11 @@ describe('Nayla capability bible', () => {
     expect(NAYLA_CAPABILITY_BIBLE.find((item) => item.id === 'motion-gsap')?.status).toBe('ready');
   });
 
+  it('marks real Three.js scenes ready and matches natural 3D requests', () => {
+    expect(NAYLA_CAPABILITY_BIBLE.find((item) => item.id === 'three-real')?.status).toBe('ready');
+    expect(
+      findNaylaCapabilityMatches('usa mi modelo M1 con luces y cámara 3D').map((item) => item.id)
+    ).toContain('three-real');
+  });
+
 });
