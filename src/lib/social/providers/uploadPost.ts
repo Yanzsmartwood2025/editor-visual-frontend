@@ -168,11 +168,13 @@ export const getUploadPostComments = async ({
 export const replyUploadPostComment = async ({
   username,
   platform,
+  postId,
   commentId,
   message,
 }: {
   username: string;
   platform: SocialPlatform;
+  postId: string;
   commentId: string;
   message: string;
 }) => {
@@ -182,7 +184,43 @@ export const replyUploadPostComment = async ({
     body: JSON.stringify({
       platform: mapped,
       user: username,
+      post_id: postId,
       comment_id: commentId,
+      message,
+    }),
+  });
+};
+
+export const listUploadPostConversations = async ({
+  username,
+  platform,
+}: {
+  username: string;
+  platform: SocialPlatform;
+}) => {
+  const mapped = getSocialNetwork(platform)?.uploadPostPublish || platform;
+  const params = new URLSearchParams({ platform: mapped, user: username });
+  return request(`/api/uploadposts/dms/conversations?${params.toString()}`);
+};
+
+export const sendUploadPostDm = async ({
+  username,
+  platform,
+  recipientId,
+  message,
+}: {
+  username: string;
+  platform: SocialPlatform;
+  recipientId: string;
+  message: string;
+}) => {
+  const mapped = getSocialNetwork(platform)?.uploadPostPublish || platform;
+  return request('/api/uploadposts/dms/send', {
+    method: 'POST',
+    body: JSON.stringify({
+      platform: mapped,
+      user: username,
+      recipient_id: recipientId,
       message,
     }),
   });
