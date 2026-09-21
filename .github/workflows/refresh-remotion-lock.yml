@@ -41,3 +41,5 @@ jobs:
             git commit -m "Refresh lockfile for Remotion 4.0.526"
             git push origin HEAD:chore/remotion-professional-stack-526
           fi
+
+# lock-refresh-trigger
