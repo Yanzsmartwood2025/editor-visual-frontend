@@ -1,5 +1,16 @@
 export const REMOTION_CPU_EFFECTS = {
-  transitions: ['fade', 'wipe', 'slide', 'zoom'] as const,
+  transitions: [
+    'fade',
+    'wipe',
+    'slide',
+    'zoom',
+    'film-burn',
+    'blur-slide',
+    'cross-zoom',
+    'dreamy-zoom',
+    'linear-blur',
+    'push-cut',
+  ] as const,
   looks: [
     'none',
     'grayscale',
@@ -29,15 +40,31 @@ export const REMOTION_CPU_EFFECTS = {
     'light-leak',
     'letterbox',
   ] as const,
+  professionalEffects: [
+    'chromatic-aberration',
+    'color-correction',
+    'glow',
+    'pixelate',
+    'zoom-blur',
+    'vignette',
+    'light-leak',
+  ] as const,
+  motionBlur: {
+    supported: true,
+    shutterAngle: { min: 0, max: 360, recommended: [90, 180] },
+    samples: { min: 2, max: 8, recommended: [4, 5, 6] },
+  },
 };
 
 export const REMOTION_CPU_PUBLIC_CATALOG = {
   engine: 'Nayla Render CPU',
-  purpose: 'Edición y composición con Remotion en Vercel Sandbox sin alquilar GPU.',
+  purpose: 'Edición y composición profesional en Vercel Sandbox sin alquilar GPU.',
   transitions: REMOTION_CPU_EFFECTS.transitions,
   looks: REMOTION_CPU_EFFECTS.looks,
   motion: REMOTION_CPU_EFFECTS.motion,
   overlays: REMOTION_CPU_EFFECTS.overlays,
+  professionalEffects: REMOTION_CPU_EFFECTS.professionalEffects,
+  motionBlur: REMOTION_CPU_EFFECTS.motionBlur,
   controls: [
     'duración por clip',
     'volumen',
@@ -49,5 +76,6 @@ export const REMOTION_CPU_PUBLIC_CATALOG = {
     'brillo',
     'contraste',
     'saturación',
+    'hasta 6 efectos profesionales encadenados por clip',
   ],
 };
