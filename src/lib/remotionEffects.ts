@@ -54,6 +54,12 @@ export const REMOTION_CPU_EFFECTS = {
     shutterAngle: { min: 0, max: 360, recommended: [90, 180] },
     samples: { min: 2, max: 8, recommended: [4, 5, 6] },
   },
+  captions: {
+    supported: true,
+    styles: ['clean', 'cinematic', 'tiktok', 'karaoke', 'minimal'] as const,
+    positions: ['top', 'center', 'bottom'] as const,
+    wordTiming: true,
+  },
 };
 
 export const REMOTION_CPU_PUBLIC_CATALOG = {
@@ -65,6 +71,7 @@ export const REMOTION_CPU_PUBLIC_CATALOG = {
   overlays: REMOTION_CPU_EFFECTS.overlays,
   professionalEffects: REMOTION_CPU_EFFECTS.professionalEffects,
   motionBlur: REMOTION_CPU_EFFECTS.motionBlur,
+  captions: REMOTION_CPU_EFFECTS.captions,
   controls: [
     'duración por clip',
     'volumen',
