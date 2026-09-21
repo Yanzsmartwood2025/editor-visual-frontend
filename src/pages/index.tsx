@@ -188,8 +188,20 @@ export default function NaylaCore() {
   const [projectDialogBusy, setProjectDialogBusy] = useState(false);
   const [newProjectName, setNewProjectName] = useState('Nuevo proyecto');
 
+  const sanitizePublicUiMessage = (value: unknown) => {
+    const raw = String(value || '').trim();
+    if (!raw) return 'Nayla no pudo completar la operación.';
+
+    return raw
+      .replace(/https?:\/\/[^\s)]+/gi, 'Nayla')
+      .replace(/\b(?:vercel|github|supabase|remotion|cloudflare|r2|groq|mistral|runpod|vast(?:\.ai)?)\b/gi, 'Nayla')
+      .replace(/\beditor-visual-frontend(?:-[a-z0-9-]+)?(?:\.vercel\.app)?\b/gi, 'Nayla')
+      .replace(/\s{2,}/g, ' ')
+      .trim();
+  };
+
   const showAlert = (msg: string) => {
-    setCustomAlertMsg(msg);
+    setCustomAlertMsg(sanitizePublicUiMessage(msg));
   };
 
   const [mainNav, setMainNav] = useState<string>('boveda');
@@ -248,6 +260,7 @@ export default function NaylaCore() {
   const [mediaActivaUrl, setMediaActivaUrl] = useState<string | null>(null);
   const [videoResultadoUrl, setVideoResultadoUrl] = useState<string | null>(null);
   const [videoResultadoNombre, setVideoResultadoNombre] = useState<string | null>(null);
+  const [videoResultadoEtiqueta, setVideoResultadoEtiqueta] = useState<string | null>(null);
   const [videoMetadata, setVideoMetadata] = useState({ width: 1080, height: 1920 });
   const [isScriptRunning, setIsScriptRunning] = useState(false);
 
@@ -496,6 +509,7 @@ export default function NaylaCore() {
     if (!task.outputUrl) return;
     setVideoResultadoUrl(task.outputUrl);
     setVideoResultadoNombre(task.galleryItem?.nombre || 'Nayla_Render.mp4');
+    setVideoResultadoEtiqueta(task.galleryItem?.etiqueta || 'R');
     setMediaActivaUrl(task.outputUrl);
     setClipSeleccionado(null);
     setIsPlaying(false);
@@ -1221,6 +1235,7 @@ export default function NaylaCore() {
 
         const renderItem = data.galleryItem as MediaItem | undefined;
         setVideoResultadoNombre(renderItem?.nombre || 'Nayla_Render.mp4');
+        setVideoResultadoEtiqueta(renderItem?.etiqueta || 'R');
         if (renderItem) {
           setGaleriaMultimedia(prev =>
             prev.some(item => item.id === renderItem.id)
@@ -2719,6 +2734,8 @@ export default function NaylaCore() {
         setClipSeleccionado(nextClip.id);
         setMediaActivaUrl(nextClip.url);
         setVideoResultadoUrl(null);
+        setVideoResultadoNombre(null);
+        setVideoResultadoEtiqueta(null);
         // Play is handled automatically in a useEffect or by the user hitting play again if we don't want autoplay
         // But for "reproducción de corrido" we should autoplay:
         setTimeout(() => {
@@ -4105,7 +4122,35 @@ if (!session) {
               {!isCleanMode && <span style={{ color: '#888', fontSize: '0.65rem', fontFamily: 'monospace' }}>00:00:00</span>}
               <div style={{ display: 'flex', alignItems: 'center', gap: isCleanMode ? '18px' : '12px' }}>
                 <button onClick={(e) => { e.stopPropagation(); seekBy(-10); }} style={{ background: 'none', border: 'none', color: '#ffffff', fontSize: '0.9rem', cursor: 'pointer', outline: 'none' }}>↺10</button>
-                <button onClick={(e) => { e.stopPropagation(); togglePlay(); }} style={{ background: 'none', border: 'none', color: '#ffffff', fontSize: '1.2rem', cursor: 'pointer', outline: 'none' }}>{isPlaying ? '⏸' : '▶'}</button>
+                <button
+                  aria-label={isPlaying ? 'Pausar' : 'Reproducir'}
+                  onClick={(e) => { e.stopPropagation(); togglePlay(); }}
+                  style={{
+                    width: 34,
+                    height: 34,
+                    borderRadius: '50%',
+                    border: '1px solid #fff',
+                    background: '#fff',
+                    color: '#050505',
+                    cursor: 'pointer',
+                    outline: 'none',
+                    display: 'grid',
+                    placeItems: 'center',
+                    padding: 0,
+                    flex: '0 0 34px',
+                  }}
+                >
+                  {isPlaying ? (
+                    <svg width="13" height="15" viewBox="0 0 13 15" aria-hidden="true">
+                      <rect x="1" y="1" width="4" height="13" rx="1" fill="currentColor" />
+                      <rect x="8" y="1" width="4" height="13" rx="1" fill="currentColor" />
+                    </svg>
+                  ) : (
+                    <svg width="14" height="16" viewBox="0 0 14 16" aria-hidden="true">
+                      <path d="M2 1.6 12.5 8 2 14.4Z" fill="currentColor" />
+                    </svg>
+                  )}
+                </button>
                 <button onClick={(e) => { e.stopPropagation(); seekBy(10); }} style={{ background: 'none', border: 'none', color: '#ffffff', fontSize: '0.9rem', cursor: 'pointer', outline: 'none' }}>10↻</button>
               </div>
               {!isCleanMode && <span style={{ color: '#888', fontSize: '0.65rem', fontFamily: 'monospace' }}>00:00:00</span>}
@@ -4141,10 +4186,81 @@ if (!session) {
             onPointerLeave={() => { setTimeout(() => setIsUserScrolling(false), 50); }}
             style={{ paddingLeft: '50%', paddingRight: '50%' }}
             onClick={(e) => e.stopPropagation()}>
-            <div className="neon-btn"
-              onClick={(e) => { e.stopPropagation(); setMainNav('boveda'); setIsSubPanelOpen(true); }}
-              style={{ width: '36px', height: '44px', minWidth: '36px', borderRadius: '8px', flexShrink: 0, marginRight: hayClips ? '6px' : '0', borderStyle: 'dashed', cursor: 'pointer', fontSize: '1.2rem' }}>+</div>
+            {!videoResultadoUrl && (
+              <div className="neon-btn"
+                onClick={(e) => { e.stopPropagation(); setMainNav('boveda'); setIsSubPanelOpen(true); }}
+                style={{ width: '36px', height: '44px', minWidth: '36px', borderRadius: '8px', flexShrink: 0, marginRight: hayClips ? '6px' : '0', borderStyle: 'dashed', cursor: 'pointer', fontSize: '1.2rem' }}>+</div>
+            )}
 
+            {videoResultadoUrl ? (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setClipSeleccionado(null);
+                  setMediaActivaUrl(videoResultadoUrl);
+                }}
+                style={{
+                  minWidth: 180,
+                  height: 48,
+                  borderRadius: 10,
+                  border: '1px solid #3d3d3d',
+                  background: '#101010',
+                  color: '#fff',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 10,
+                  padding: '0 12px',
+                  cursor: 'pointer',
+                  flexShrink: 0,
+                }}
+              >
+                <span style={{
+                  flex: '0 0 auto',
+                  border: '1px solid #fff',
+                  borderRadius: 7,
+                  padding: '3px 7px',
+                  fontSize: '0.72rem',
+                  fontWeight: 850,
+                }}>
+                  {videoResultadoEtiqueta || 'R'}
+                </span>
+                <span style={{
+                  minWidth: 0,
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                  fontSize: '0.75rem',
+                  fontWeight: 700,
+                }}>
+                  {videoResultadoNombre || 'Resultado Nayla'}
+                </span>
+              </button>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setVideoResultadoUrl(null);
+                  setVideoResultadoNombre(null);
+                  setVideoResultadoEtiqueta(null);
+                  setIsPlaying(false);
+                  setMediaActivaUrl(pistaVideo[0]?.url || null);
+                }}
+                style={{
+                  height: 38,
+                  padding: '0 12px',
+                  borderRadius: 999,
+                  border: '1px solid #303030',
+                  background: '#0a0a0a',
+                  color: '#aaa',
+                  fontSize: '0.67rem',
+                  cursor: 'pointer',
+                  flexShrink: 0,
+                }}
+              >
+                EDITAR
+              </button>
+            ) : (
             <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
               <SortableContext items={pistaVideo.map(c => c.id)} strategy={horizontalListSortingStrategy}>
                 {pistaVideo.map((clip) => (
@@ -4171,6 +4287,7 @@ if (!session) {
                 ))}
               </SortableContext>
             </DndContext>
+            )}
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', height: '22px', overflowX: 'auto', padding: '0 50%', gap: '2px', marginTop: '4px' }} onClick={(e) => e.stopPropagation()}>
