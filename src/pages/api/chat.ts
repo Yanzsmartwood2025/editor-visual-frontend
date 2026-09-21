@@ -22,8 +22,18 @@ import { createR2PresignedGetUrl } from '../../lib/r2';
 import { canStartGpuCompute, getNaylaExecutionPolicyPrompt } from '../../lib/naylaExecutionPolicy';
 import { assistantRequestsPlanConfirmation, isUniversalNaylaConfirmation } from '../../lib/naylaPlanConfirmation';
 import {
+  buildEvenSubtitleTiming,
+  extractSubtitleBlocks,
+  getRequestedTimelineSeconds,
+  getRequestedVisualCount,
+  hasNaturalProjectPhotoReference,
+  timelinePlanRequestsRender,
+  wantsAllProjectPhotos,
+} from '../../lib/naylaTimelineIntent';
+import {
   getOwnedMediaByLabelsForUser,
   getOwnedMediaForUser,
+  getRecentOwnedMediaForUser,
   insertChatMessageForUser,
   listThreadMessagesForUser,
   resolveOwnedWorkspaceScope,
@@ -149,7 +159,8 @@ const findLastUserPlanInstruction = (
       if (isBarePlanConfirmation(item.content)) return false;
 
       const labels = getOrderedMediaLabels(item.content);
-      if (!labels.length) return false;
+      const naturalPhotos = hasNaturalProjectPhotoReference(item.content);
+      if (!labels.length && !naturalPhotos) return false;
 
       const text = normalizePlanningText(item.content);
       return /\b(video|timeline|edicion|montaje|foto|imagen|clip|transicion|efecto|movimiento|duracion|segundos)\b/.test(text);
@@ -228,19 +239,19 @@ const buildLabelTimelineFallback = (
 ): NaylaAction | null => {
   const normalized = message.toLowerCase();
   const labels = getOrderedMediaLabels(message).filter((label) => !label.startsWith('M'));
+  const naturalPhotos = hasNaturalProjectPhotoReference(message);
+  const requestedVisualCount = getRequestedVisualCount(message);
   const editingIntent =
     (
       /\b(crea|crear|haz|hacer|arma|armar|monta|montar|edita|editar|compone|componer|renderiza|renderizar|genera|generar)\b/.test(normalized) &&
       /\b(video|timeline|edici[oó]n|montaje|render)\b/.test(normalized)
     ) ||
     (
-      labels.length > 0 &&
-      /\b(video|timeline|edici[oó]n|montaje|foto|imagen|clip|transici[oó]n|efecto|movimiento|duraci[oó]n|segundos?)\b/.test(normalized)
+      (labels.length > 0 || naturalPhotos) &&
+      /\b(video|timeline|edici[oó]n|montaje|foto|imagen|clip|transici[oó]n|efecto|movimiento|duraci[oó]n|segundos?|minuto)\b/.test(normalized)
     );
 
   if (!editingIntent) return null;
-
-  if (!labels.length) return null;
 
   const byLabel = new Map(
     mediaLibrary
@@ -248,14 +259,39 @@ const buildLabelTimelineFallback = (
       .map((item) => [item.etiqueta!.trim().toUpperCase(), item])
   );
 
-  const resolved = labels.map((label) => byLabel.get(label));
-  if (resolved.some((item) => !item)) return null;
+  let resolved: Array<(typeof mediaLibrary)[number] | undefined> = [];
+
+  if (labels.length) {
+    resolved = labels.map((label) => byLabel.get(label));
+    if (resolved.some((item) => !item)) return null;
+  } else if (naturalPhotos) {
+    if (requestedVisualCount) {
+      const expectedLabels = Array.from(
+        { length: requestedVisualCount },
+        (_, index) => `F${index + 1}`
+      );
+      const labeledSequence = expectedLabels.map((label) => byLabel.get(label));
+
+      if (labeledSequence.every(Boolean)) {
+        resolved = labeledSequence;
+      } else {
+        const photos = mediaLibrary.filter((item) => item.tipo === 'foto');
+        if (photos.length < requestedVisualCount) return null;
+        resolved = photos.slice(-requestedVisualCount);
+      }
+    } else if (wantsAllProjectPhotos(message)) {
+      resolved = mediaLibrary.filter((item) => item.tipo === 'foto');
+    }
+  }
+
+  if (!resolved.length || resolved.some((item) => !item)) return null;
 
   const perItemDurationMatch = message.match(
     /\b(?:cada|por)\s+(?:foto|imagen|video|clip)[^.\n]{0,48}?(\d+(?:[.,]\d+)?)\s*(?:segundos?|s)\b/i
   );
   const durationMatch = message.match(/\b(?:aproximadamente\s+|aprox\.?\s+|unos?\s+|de\s+)?(\d+(?:[.,]\d+)?)\s*(?:segundos?|s)\b/i);
-  const requestedSeconds = durationMatch ? Number(durationMatch[1].replace(',', '.')) : null;
+  const requestedSeconds = getRequestedTimelineSeconds(message) ??
+    (durationMatch ? Number(durationMatch[1].replace(',', '.')) : null);
   const perItemSeconds = perItemDurationMatch ? Number(perItemDurationMatch[1].replace(',', '.')) : null;
   const visualCount = resolved.filter((item) => item?.tipo === 'foto' || item?.tipo === 'video').length;
   const perVisualDuration =
@@ -309,7 +345,7 @@ const buildLabelTimelineFallback = (
   const parsed = {
     action: 'BUILD_TIMELINE' as const,
     assets,
-    render: /\b(renderiza|renderizar|video\s+final|gu[aá]rd(?:a|alo).*b[oó]veda|crea\s+un\s+video|haz\s+un\s+video|monta\s+un\s+video)\b/i.test(message),
+    render: timelinePlanRequestsRender(message),
   };
 
   const validated = parseNaylaAction(JSON.stringify(parsed));
@@ -680,6 +716,36 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const effectiveHistory = scope.threadId ? persistedHistory : (history || []);
     const executionConfirmed = hasExplicitPlanConfirmation(message, effectiveHistory);
 
+    const userPlanningContext = [
+      ...effectiveHistory
+        .filter((item) => item.role === 'user')
+        .map((item) => item.content),
+      message,
+    ].join('\n\n');
+
+    const requestedNaturalPhotoCount = getRequestedVisualCount(userPlanningContext);
+    const naturalProjectPhotoReference = hasNaturalProjectPhotoReference(userPlanningContext);
+    const recentNaturalPhotoRows = naturalProjectPhotoReference
+      ? await getRecentOwnedMediaForUser({
+          userId: firebaseUser.uid,
+          projectId: scope.projectId,
+          tipo: 'foto',
+          limit: requestedNaturalPhotoCount || 40,
+        })
+      : [];
+
+    const recentNaturalPhotos = recentNaturalPhotoRows.map((item: Record<string, any>) => ({
+      id: item.id as string,
+      tipo: item.tipo as 'foto',
+      nombre: item.nombre as string,
+      etiqueta: item.etiqueta as string | undefined,
+      fuente: item.fuente as string | undefined,
+      metadata: item.metadata || {},
+      url: item.r2_key
+        ? createR2PresignedGetUrl({ key: item.r2_key, expiresIn: 3600 }).url
+        : item.url,
+    }));
+
     const historyLabelContext = [
       message,
       ...effectiveHistory
@@ -715,6 +781,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       mergedLibraryMap.set(item.id ? `id:${item.id}` : `url:${item.url}:${index}`, item);
     });
     ownedLabelMedia.forEach((item) => {
+      mergedLibraryMap.set(item.id ? `id:${item.id}` : `url:${item.url}`, item);
+    });
+    recentNaturalPhotos.forEach((item) => {
       mergedLibraryMap.set(item.id ? `id:${item.id}` : `url:${item.url}`, item);
     });
     attachments.forEach((item) => {
@@ -820,6 +889,9 @@ SEGURIDAD Y CONTEXTO:
 - Si F1/F2/V1/A1 u otra etiqueta está disponible en el contexto del proyecto, úsala directamente. Nunca le pidas al usuario que copie o proporcione una URL para un medio ya guardado.
 - Las fotos subidas no se analizan visualmente salvo que el usuario lo pida de forma explícita.
 - Para editar medios existentes usa el timeline. Para crear contenido nuevo usa generación. GPU/Compute solo cuando realmente sea necesario.
+- La cantidad de fotos/videos y la cantidad de subtítulos son pistas independientes. Nunca asumas que debe existir un subtítulo por cada foto.
+- Si hay 9 fotos y 8 bloques de subtítulos, distribuye las 9 fotos durante la duración visual y distribuye los 8 bloques por tiempo de forma independiente.
+- Si el usuario confirmó un plan cuyo objetivo es producir, renderizar, exportar o crear el video final, BUILD_TIMELINE debe llevar render:true.
 
 MODO CONSULTIVO:
 - EJECUCION_CONFIRMADA=${executionConfirmed ? 'SI' : 'NO'}.
@@ -882,9 +954,17 @@ MODO_MOTOR=${engineMode}
     const fallbackExecutionContext = executionConfirmed
       ? [priorUserPlanInstruction, priorAssistantPlan, message].filter(Boolean).join('\n\n')
       : message;
+    const confirmedTimelineContext = executionConfirmed
+      ? [userPlanningContext, priorAssistantPlan, message].filter(Boolean).join('\n\n')
+      : message;
+    const subtitleBlocks = extractSubtitleBlocks(userPlanningContext);
+    const requestedTimelineSeconds = getRequestedTimelineSeconds(userPlanningContext);
+    const confirmedTimelineShouldRender =
+      executionConfirmed && timelinePlanRequestsRender(confirmedTimelineContext);
+
     const deterministicConfirmedAction =
       executionConfirmed && isBarePlanConfirmation(message)
-        ? buildLabelTimelineFallback(fallbackExecutionContext, mergedLibrary)
+        ? buildLabelTimelineFallback(confirmedTimelineContext, mergedLibrary)
         : null;
 
     let responseText = '';
@@ -933,15 +1013,40 @@ MODO_MOTOR=${engineMode}
     };
 
     const action = parsedAction?.action === 'BUILD_TIMELINE'
-      ? {
-          ...parsedAction,
-          assets: parsedAction.assets.map((asset: any) => ({
+      ? (() => {
+          let assets = parsedAction.assets.map((asset: any) => ({
             ...asset,
             url: asset?.source === 'url' && typeof asset?.url === 'string'
               ? canonicalizeUrl(asset.url)
               : asset?.url,
-          })),
-        } as NaylaAction
+          }));
+
+          const photoOnly = assets.length > 0 && assets.every((asset: any) => asset.type === 'foto' || asset.type === 'image');
+          if (photoOnly && requestedTimelineSeconds && requestedTimelineSeconds > 0) {
+            const perPhoto = requestedTimelineSeconds / assets.length;
+            assets = assets.map((asset: any) => ({
+              ...asset,
+              durationInSeconds: perPhoto,
+            }));
+          }
+
+          const existingDuration = assets.reduce(
+            (sum: number, asset: any) => sum + Math.max(0, Number(asset.durationInSeconds) || 0),
+            0
+          );
+          const subtitleDuration =
+            requestedTimelineSeconds ||
+            (existingDuration > 0 ? existingDuration : Math.max(1, assets.length * 5));
+
+          return {
+            ...parsedAction,
+            assets,
+            render: Boolean(parsedAction.render || confirmedTimelineShouldRender),
+            ...(subtitleBlocks.length
+              ? { subtitles: buildEvenSubtitleTiming(subtitleBlocks, subtitleDuration) }
+              : {}),
+          } as NaylaAction;
+        })()
       : parsedAction?.action === 'REMOVE_VIDEO_BACKGROUND'
         ? (() => {
             const label = parsedAction.label.trim().toUpperCase();
