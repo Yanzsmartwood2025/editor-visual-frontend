@@ -1,6 +1,7 @@
 import { timingSafeEqual } from 'node:crypto';
 import type { NextApiRequest, NextApiResponse } from 'next';
 import {
+  cleanupNaylaPcBaseBuild,
   progressNaylaPcBaseBuild,
   startNaylaPcBaseBuild,
 } from '../../../lib/pc/baseBuilder';
@@ -32,7 +33,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const result =
       action === 'start'
         ? await startNaylaPcBaseBuild()
-        : await progressNaylaPcBaseBuild();
+        : action === 'cleanup'
+          ? await cleanupNaylaPcBaseBuild()
+          : await progressNaylaPcBaseBuild();
     return res.status(action === 'start' ? 201 : 200).json({ ok: true, ...result });
   } catch (error) {
     return res.status(500).json({
