@@ -29,6 +29,14 @@ export type VultrRegion = {
   [key: string]: unknown;
 };
 
+export type VultrOperatingSystem = {
+  id: number;
+  name?: string;
+  arch?: string;
+  family?: string;
+  [key: string]: unknown;
+};
+
 export type VultrInstance = {
   id: string;
   label?: string;
@@ -140,13 +148,32 @@ export const listVultrRegions = async (): Promise<VultrRegion[]> => {
   );
 };
 
-export const listVultrGpuPlans = async (): Promise<VultrGpuPlan[]> => {
+export const listVultrPlans = async (): Promise<VultrGpuPlan[]> => {
   const data = await vultrRequest<{ plans?: VultrGpuPlan[] }>(
     '/plans?per_page=500',
     { method: 'GET' }
   );
 
-  return (data.plans || []).filter((plan) => {
+  return (data.plans || []).filter(
+    (plan) => typeof plan.id === 'string' && plan.id.trim().length > 0
+  );
+};
+
+export const listVultrOperatingSystems = async (): Promise<VultrOperatingSystem[]> => {
+  const data = await vultrRequest<{ os?: VultrOperatingSystem[] }>(
+    '/os?per_page=500',
+    { method: 'GET' }
+  );
+
+  return (data.os || []).filter(
+    (os) => Number.isInteger(Number(os.id)) && Number(os.id) > 0
+  );
+};
+
+export const listVultrGpuPlans = async (): Promise<VultrGpuPlan[]> => {
+  const plans = await listVultrPlans();
+
+  return plans.filter((plan) => {
     const type = String(plan.type || '').toLowerCase();
     const gpuType = String(plan.gpu_type || '').trim();
     const gpuVram = Number(plan.gpu_vram_gb ?? plan.gpu_vram);
