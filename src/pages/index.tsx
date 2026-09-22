@@ -3393,9 +3393,27 @@ export default function NaylaCore() {
         privacy: item.privacy || 'private'
       }));
 
+    const documents = galeriaData
+      .filter((item) => item.tipo === 'documento')
+      .map((item) => ({
+        id: item.id,
+        url: item.url,
+        tipo: 'documento' as const,
+        nombre: item.nombre,
+        creado_en: item.creado_en,
+        etiqueta: item.etiqueta || 'D',
+        fuente: item.fuente,
+        metadata: item.metadata || {},
+        r2_key: item.r2_key || null,
+        project_id: item.project_id || null,
+        thread_id: item.thread_id || null,
+        privacy: item.privacy || 'private',
+      }));
+
     setModelos3d(modelos);
     setModelo3dActivoId(modelos[0]?.id || null);
     setGaleriaMultimedia(galeria);
+    setChatDocuments(documents);
 
     const proyectoPayload = await proyectoResponse.json().catch(() => ({})) as {
       data?: { linea_de_tiempo?: any[] };
