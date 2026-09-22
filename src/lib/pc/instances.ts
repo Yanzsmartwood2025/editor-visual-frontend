@@ -227,8 +227,6 @@ export const saveAndDestroyNaylaPcInstance = async ({
     instanceId: row.id,
     patch: {
       status: 'snapshotting',
-      auto_destroy: false,
-      expires_at: null,
       metadata: {
         ...(row.metadata || {}),
         save_snapshot_id: snapshot.id,
