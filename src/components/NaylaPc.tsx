@@ -1039,6 +1039,55 @@ export default function NaylaPc({
         </div>
       )}
 
+      {confirmSaveDestroy && activeInstance && (
+        <div role="dialog" aria-modal="true" style={{ position: 'fixed', inset: 0, zIndex: 9900, background: 'rgba(0,0,0,.82)', display: 'grid', placeItems: 'center', padding: 18 }}>
+          <div style={{ width: 'min(450px,100%)', border: '1px solid #444', borderRadius: 20, background: '#0b0b0b', padding: 18 }}>
+            <div style={{ fontSize: '1rem', fontWeight: 900 }}>Guardar esta PC y destruir el cómputo</div>
+            <div style={{ color: '#aaa', fontSize: '0.68rem', lineHeight: 1.55, marginTop: 8 }}>
+              Nayla tomará un snapshot completo del disco. Cuando Vultr confirme que quedó listo, eliminará la VM para detener el cobro de CPU, RAM e IP. Después podrás reconstruir la misma computadora con REANUDAR PC.
+            </div>
+            <div style={{ marginTop: 10, color: '#777', fontSize: '0.62rem', lineHeight: 1.5 }}>
+              El snapshot sí tiene un costo pequeño de almacenamiento y se mostrará cuando Vultr informe su tamaño comprimido.
+            </div>
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 16 }}>
+              <button type="button" disabled={Boolean(actionLoading)} onClick={() => setConfirmSaveDestroy(false)} style={{ minHeight: 40, borderRadius: 999, border: '1px solid #3a3a3a', background: '#111', color: '#fff', padding: '0 14px', fontWeight: 850, fontSize: '0.64rem', cursor: 'pointer' }}>CANCELAR</button>
+              <button type="button" disabled={Boolean(actionLoading)} onClick={() => void runInstanceAction('save_destroy')} style={{ minHeight: 40, borderRadius: 999, border: '1px solid #fff', background: '#fff', color: '#000', padding: '0 15px', fontWeight: 900, fontSize: '0.64rem', cursor: actionLoading ? 'wait' : 'pointer' }}>
+                {actionLoading === 'save_destroy' ? 'GUARDANDO…' : 'GUARDAR Y DESTRUIR'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {confirmResume && savedSnapshot && resumeQuote && (
+        <div role="dialog" aria-modal="true" style={{ position: 'fixed', inset: 0, zIndex: 9900, background: 'rgba(0,0,0,.82)', display: 'grid', placeItems: 'center', padding: 18 }}>
+          <div style={{ width: 'min(450px,100%)', border: '1px solid #444', borderRadius: 20, background: '#0b0b0b', padding: 18 }}>
+            <div style={{ fontSize: '1rem', fontWeight: 900 }}>Reanudar tu PC guardada</div>
+            <div style={{ color: '#aaa', fontSize: '0.68rem', lineHeight: 1.55, marginTop: 8 }}>
+              Nayla reconstruirá una máquina nueva usando la foto completa de tu disco. Tus programas, archivos y configuración vuelven con el snapshot.
+            </div>
+            <div style={{ marginTop: 12, border: '1px solid #292929', borderRadius: 14, padding: 12, background: '#070707' }}>
+              <div style={{ fontWeight: 900, fontSize: '0.82rem' }}>{resumeQuote.cpu} vCPU · {resumeQuote.ramGb} GB RAM · {resumeQuote.diskGb} GB</div>
+              <div style={{ color: '#777', fontSize: '0.62rem', marginTop: 5 }}>{savedSnapshot.osName || 'Sistema guardado'}</div>
+              <div style={{ marginTop: 10, fontSize: '0.92rem', fontWeight: 900 }}>
+                {resumeQuote.billingMode === 'monthly'
+                  ? money(resumeQuote.monthlyPrice) + '/mes'
+                  : resumeQuote.durationHours + ' h ≈ ' + money(resumeQuote.sessionPrice)}
+              </div>
+            </div>
+            <div style={{ color: '#777', fontSize: '0.61rem', lineHeight: 1.5, marginTop: 10 }}>
+              La reconstrucción desde snapshot puede tardar más que un arranque normal.
+            </div>
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 16 }}>
+              <button type="button" disabled={Boolean(actionLoading)} onClick={() => { setConfirmResume(false); setResumeQuote(null); }} style={{ minHeight: 40, borderRadius: 999, border: '1px solid #3a3a3a', background: '#111', color: '#fff', padding: '0 14px', fontWeight: 850, fontSize: '0.64rem', cursor: 'pointer' }}>CANCELAR</button>
+              <button type="button" disabled={Boolean(actionLoading)} onClick={() => void resumePc()} style={{ minHeight: 40, borderRadius: 999, border: '1px solid #fff', background: '#fff', color: '#000', padding: '0 15px', fontWeight: 900, fontSize: '0.64rem', cursor: actionLoading ? 'wait' : 'pointer' }}>
+                {actionLoading === 'resume' ? 'RECONSTRUYENDO…' : 'CONFIRMAR Y REANUDAR'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {confirmDestroy && activeInstance && (
         <div role="dialog" aria-modal="true" style={{ position: 'fixed', inset: 0, zIndex: 9900, background: 'rgba(0,0,0,.82)', display: 'grid', placeItems: 'center', padding: 18 }}>
           <div style={{ width: 'min(430px,100%)', border: '1px solid #4a2e2e', borderRadius: 20, background: '#0d0808', padding: 18 }}>
