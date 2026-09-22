@@ -95,9 +95,11 @@ export default async function handler(
       const saved = await saveAndDestroyNaylaPcInstance({ row: synced });
       return res.status(202).json({
         instance: toPublicNaylaPcInstance(saved.instance),
-        snapshot: toPublicNaylaPcSnapshot(saved.snapshot),
+        snapshot: saved.snapshot
+          ? toPublicNaylaPcSnapshot(saved.snapshot)
+          : null,
         message:
-          'Nayla está guardando el disco completo. La VM se destruirá automáticamente cuando el snapshot esté listo.',
+          'Nayla está sincronizando tus archivos con R2 y limpiando la caché local antes de crear el snapshot. La VM se destruirá solo cuando todo esté guardado.',
       });
     }
 
