@@ -84,19 +84,67 @@ export const wantsAllProjectPhotos = (value: string) => {
 
 export const extractSubtitleBlocks = (value: string): string[] => {
   const source = String(value || '').replace(/\r/g, '');
-  const matches = Array.from(
-    source.matchAll(/(?:^|\n)\s*BLOQUE\s+\d+\s*:?\s*\n([\s\S]*?)(?=(?:\n\s*BLOQUE\s+\d+\s*:?\s*\n)|$)/gi)
-  );
+  const lines = source.split('\n');
+  const blocks: string[] = [];
+  let current: string[] | null = null;
+
+  const flush = () => {
+    if (!current) return;
+    const text = current
+      .join('\n')
+      .trim()
+      .replace(/\n{3,}/g, '\n\n');
+    current = null;
+    if (text) blocks.push(text);
+  };
+
+  const isInstructionBoundary = (line: string, previousLine: string) => {
+    const trimmed = line.trim();
+    if (!trimmed) return false;
+    if (/^[=\-_*]{4,}$/.test(trimmed)) return true;
+
+    const normalized = normalizeIntentText(trimmed);
+    const looksLikeSectionHeader =
+      /^(instrucciones?|indicaciones?|importante|notas?|configuracion|ajustes?|reglas?|efectos?|transiciones?|formato|render|duracion|musica|audio|fotos?|videos?)\b/.test(normalized) &&
+      /[:：]$/.test(trimmed);
+
+    const upperLetters = trimmed.replace(/[^A-Za-zÁÉÍÓÚÜÑ]/g, '');
+    const isUpperHeader =
+      upperLetters.length >= 4 &&
+      upperLetters === upperLetters.toUpperCase() &&
+      /[:：]?$/.test(trimmed);
+
+    return looksLikeSectionHeader || (previousLine.trim() === '' && isUpperHeader);
+  };
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
+    const block = line.match(/^\s*BLOQUE\s+\d+\s*:?[ \t]*(.*)$/i);
+
+    if (block) {
+      flush();
+      current = [];
+      const inlineText = String(block[1] || '').trim();
+      if (inlineText) current.push(inlineText);
+      continue;
+    }
+
+    if (!current) continue;
+
+    const previousLine = index > 0 ? lines[index - 1] : '';
+    if (current.some((item) => item.trim()) && isInstructionBoundary(line, previousLine)) {
+      flush();
+      continue;
+    }
+
+    current.push(line);
+  }
+
+  flush();
 
   const unique: string[] = [];
   const seen = new Set<string>();
-
-  for (const match of matches) {
-    const text = String(match[1] || '')
-      .trim()
-      .replace(/\n{3,}/g, '\n\n');
-    if (!text) continue;
-
+  for (const text of blocks) {
     const key = normalizeIntentText(text);
     if (!key || seen.has(key)) continue;
     seen.add(key);
