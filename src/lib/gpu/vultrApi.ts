@@ -95,7 +95,7 @@ const vultrRequest = async <T>(
         payload?.error_description ||
         ('HTTP ' + response.status);
       const error = new Error(
-        'Nayla Compute no pudo consultar una de sus redes GPU: ' +
+        'Nayla Compute no pudo consultar una de sus redes de cómputo: ' +
           String(detail).slice(0, 800)
       );
       (error as Error & { status?: number }).status = response.status;
@@ -355,6 +355,27 @@ export const createVultrInstance = async ({
   return data.instance;
 };
 
+export const listVultrInstances = async (): Promise<VultrInstance[]> => {
+  const data = await vultrRequest<{ instances?: VultrInstance[] }>(
+    '/instances?per_page=500',
+    { method: 'GET' }
+  );
+  return (data.instances || []).filter(
+    (instance) => typeof instance.id === 'string' && instance.id.trim()
+  );
+};
+
+export const findVultrInstanceByLabel = async (
+  label: string
+): Promise<VultrInstance | null> => {
+  const instances = await listVultrInstances();
+  return (
+    instances.find(
+      (instance) => String(instance.label || '').trim() === label.trim()
+    ) || null
+  );
+};
+
 export const getVultrInstance = async (
   instanceId: string
 ): Promise<VultrInstance | null> => {
@@ -370,6 +391,26 @@ export const getVultrInstance = async (
     throw error;
   }
 };
+
+const postVultrInstanceAction = async (
+  instanceId: string,
+  action: 'start' | 'halt' | 'reboot'
+): Promise<void> => {
+  await vultrRequest<unknown>(
+    '/instances/' + encodeURIComponent(instanceId) + '/' + action,
+    { method: 'POST' },
+    20_000
+  );
+};
+
+export const startVultrInstance = async (instanceId: string) =>
+  postVultrInstanceAction(instanceId, 'start');
+
+export const haltVultrInstance = async (instanceId: string) =>
+  postVultrInstanceAction(instanceId, 'halt');
+
+export const rebootVultrInstance = async (instanceId: string) =>
+  postVultrInstanceAction(instanceId, 'reboot');
 
 export const deleteVultrInstance = async (
   instanceId: string
