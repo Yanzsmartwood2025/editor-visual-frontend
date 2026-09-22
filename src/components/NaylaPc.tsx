@@ -239,6 +239,26 @@ export default function NaylaPc({
     }
   }, [session]);
 
+  const loadSavedSnapshot = useCallback(async () => {
+    if (!session) return;
+    try {
+      const response = await fetch('/api/pc/snapshots', {
+        headers: firebaseHeaders(session),
+        cache: 'no-store',
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || payload.error) {
+        throw new Error(payload.error || 'No se pudo consultar la PC guardada.');
+      }
+      setSavedSnapshot(payload.snapshot || null);
+      if (typeof payload.provisioningAllowed === 'boolean') {
+        setProvisioningAllowed(payload.provisioningAllowed === true);
+      }
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'No se pudo consultar la PC guardada.');
+    }
+  }, [session]);
+
   const loadActiveInstance = useCallback(async () => {
     if (!session) return;
     setInstanceLoading(true);
@@ -267,6 +287,7 @@ export default function NaylaPc({
     void (async () => {
       await Promise.all([
         loadActiveInstance(),
+        loadSavedSnapshot(),
         (async () => {
           try {
             const response = await fetch('/api/pc/config', {
@@ -294,7 +315,7 @@ export default function NaylaPc({
         })(),
       ]);
     })();
-  }, [loadActiveInstance, session]);
+  }, [loadActiveInstance, loadSavedSnapshot, session]);
 
   useEffect(() => {
     if (!session) return;
@@ -304,6 +325,14 @@ export default function NaylaPc({
     }, 420);
     return () => window.clearTimeout(timer);
   }, [config, requestQuote, session]);
+
+  useEffect(() => {
+    if (!session || !savedSnapshot || savedSnapshot.status !== 'pending') return;
+    const timer = window.setInterval(() => {
+      void Promise.all([loadSavedSnapshot(), loadActiveInstance()]);
+    }, 12000);
+    return () => window.clearInterval(timer);
+  }, [loadActiveInstance, loadSavedSnapshot, savedSnapshot?.id, savedSnapshot?.status, session]);
 
   useEffect(() => {
     if (!session || !activeInstance || activeInstance.status === 'terminated') return;
