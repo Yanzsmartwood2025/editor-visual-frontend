@@ -96,6 +96,14 @@ select cron.schedule(
       ),
       body := jsonb_build_object('source', 'supabase_cron', 'time', now()),
       timeout_milliseconds := 30000
-    ) as request_id;
+    ) as request_id
+    where exists (
+      select 1
+      from public.nayla_pc_instances
+      where auto_destroy = true
+        and expires_at <= now()
+        and provider_instance_id is not null
+        and status in ('provisioning','running','stopped','rebooting','terminating')
+    );
   $job$
 );
