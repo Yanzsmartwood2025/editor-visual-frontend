@@ -49,6 +49,22 @@ export const toPublicNaylaPcInstance = (row: NaylaPcInstanceRow) => ({
   autoDestroy: row.auto_destroy,
   status: row.status,
   mainIp: row.main_ip || undefined,
+  desktop:
+    row.main_ip && row.metadata?.desktop_enabled === true
+      ? {
+          url:
+            'https://' +
+            row.main_ip +
+            ':' +
+            String(row.metadata?.desktop_port || 6080) +
+            '/vnc.html?autoconnect=1&resize=scale',
+          password:
+            typeof row.metadata?.desktop_password === 'string'
+              ? String(row.metadata.desktop_password)
+              : undefined,
+          tls: row.metadata?.desktop_tls || 'self_signed',
+        }
+      : undefined,
   hourlyPrice: Number(row.public_hourly_price),
   monthlyPrice: Number(row.public_monthly_price),
   sessionPrice: Number(row.public_session_price),
@@ -192,6 +208,13 @@ export const saveAndDestroyNaylaPcInstance = async ({
       providerOsId: row.provider_os_id,
       metadata: {
         source_provider_instance_id: row.provider_instance_id,
+        desktop_password:
+          typeof row.metadata?.desktop_password === 'string'
+            ? String(row.metadata.desktop_password)
+            : null,
+        desktop_enabled: row.metadata?.desktop_enabled === true,
+        desktop_port: row.metadata?.desktop_port || 6080,
+        desktop_tls: row.metadata?.desktop_tls || 'self_signed',
       },
     });
   } catch (error) {
