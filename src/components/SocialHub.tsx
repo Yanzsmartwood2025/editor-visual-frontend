@@ -3,6 +3,7 @@ import type { FirebaseSession } from '../lib/firebaseClient';
 import { firebaseHeaders } from '../lib/apiClient';
 import { SOCIAL_NETWORKS } from '../lib/social/types';
 import { cleanNaylaChatText } from '../lib/naylaText';
+import { uploadMediaFilesToBodega } from '../lib/mediaUpload';
 
 type ResultMedia = {
   id: string;
@@ -63,6 +64,43 @@ const NetworkIcon = ({ platform, size = 30 }: { platform: string; size?: number 
   );
 };
 
+const AccountAvatar = ({
+  account,
+  size = 30,
+}: {
+  account: any;
+  size?: number;
+}) => {
+  const avatar =
+    account?.avatar_url ||
+    account?.avatarUrl ||
+    account?.raw?.profilePicture ||
+    account?.raw?.avatarUrl ||
+    account?.raw?.metadata?.profileData?.profilePicture ||
+    null;
+
+  if (!avatar) return <NetworkIcon platform={account?.platform || ''} size={size} />;
+
+  return (
+    <img
+      src={String(avatar)}
+      alt={String(account?.display_name || account?.handle || account?.username || account?.platform || 'Cuenta')}
+      style={{
+        width: size,
+        height: size,
+        flex: '0 0 auto',
+        borderRadius: '50%',
+        objectFit: 'cover',
+        border: '1px solid rgba(255,255,255,.18)',
+        background: '#090909',
+      }}
+      onError={(event) => {
+        event.currentTarget.style.display = 'none';
+      }}
+    />
+  );
+};
+
 const statusText: Record<string, string> = {
   connected: 'Conectada',
   disconnected: 'Desconectada',
@@ -81,6 +119,7 @@ type NaylaOption = {
   label: string;
   subtitle?: string;
   platform?: string;
+  avatarUrl?: string | null;
 };
 
 const NaylaSelect = ({
@@ -118,7 +157,11 @@ const NaylaSelect = ({
           boxShadow: open ? '0 0 0 1px rgba(255,255,255,.08)' : 'none',
         }}
       >
-        {selected?.platform ? <NetworkIcon platform={selected.platform} size={25} /> : null}
+        {selected?.avatarUrl
+          ? <AccountAvatar account={{ platform: selected.platform, avatar_url: selected.avatarUrl, display_name: selected.label }} size={25} />
+          : selected?.platform
+            ? <NetworkIcon platform={selected.platform} size={25} />
+            : null}
         <span style={{ flex: 1, minWidth: 0 }}>
           <span style={{ display: 'block', fontSize: 10, fontWeight: selected ? 800 : 650, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {selected?.label || placeholder}
@@ -192,7 +235,11 @@ const NaylaSelect = ({
                     cursor: 'pointer',
                   }}
                 >
-                  {option.platform ? <NetworkIcon platform={option.platform} size={28} /> : null}
+                  {option.avatarUrl
+                    ? <AccountAvatar account={{ platform: option.platform, avatar_url: option.avatarUrl, display_name: option.label }} size={28} />
+                    : option.platform
+                      ? <NetworkIcon platform={option.platform} size={28} />
+                      : null}
                   <span style={{ flex: 1, minWidth: 0 }}>
                     <span style={{ display: 'block', fontSize: 11, fontWeight: active ? 900 : 750, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                       {option.label}
@@ -302,6 +349,9 @@ export default function SocialHub({ session, projectId, results, onClose }: Prop
   });
   const [naylaSettingsOpen, setNaylaSettingsOpen] = useState(false);
   const [naylaSettingsSnapshot, setNaylaSettingsSnapshot] = useState<any>(null);
+  const [naylaPlusOpen, setNaylaPlusOpen] = useState(false);
+  const [socialUploads, setSocialUploads] = useState<ResultMedia[]>([]);
+  const socialUploadInputRef = useRef<HTMLInputElement | null>(null);
   const socialChatEndRef = useRef<HTMLDivElement | null>(null);
 
   const api = async (path: string, init: RequestInit = {}) => {
@@ -345,6 +395,14 @@ export default function SocialHub({ session, projectId, results, onClose }: Prop
   }, [projectId, session?.user?.id]);
 
   useEffect(() => {
+    if (!projectId || !session) return;
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === 'visible') void load(false);
+    }, 30000);
+    return () => window.clearInterval(timer);
+  }, [projectId, session?.user?.id]);
+
+  useEffect(() => {
     if (tab !== 'ajustes') return;
     const frame = window.requestAnimationFrame(() => {
       socialChatEndRef.current?.scrollIntoView({ block: 'end', behavior: 'smooth' });
@@ -372,6 +430,15 @@ export default function SocialHub({ session, projectId, results, onClose }: Prop
   }, [projectId, session?.user?.id]);
 
   const accounts = data?.accounts || [];
+  const availableResults = useMemo(() => {
+    const map = new Map<string, ResultMedia>();
+    [...results, ...socialUploads].forEach((item) => map.set(item.id, item));
+    return Array.from(map.values()).sort((a, b) => {
+      const aNum = Number(String(a.etiqueta || '').match(/^R(\d+)$/i)?.[1] || 0);
+      const bNum = Number(String(b.etiqueta || '').match(/^R(\d+)$/i)?.[1] || 0);
+      return bNum - aNum;
+    });
+  }, [results, socialUploads]);
   const connectedPlatforms = useMemo(() => new Set(accounts.filter((a: any) => a.status === 'connected').map((a: any) => a.platform)), [accounts]);
   const recentTargets = data?.targets || [];
   const providerA = data?.providers?.find((p: any) => p.id === 'upload_post');
