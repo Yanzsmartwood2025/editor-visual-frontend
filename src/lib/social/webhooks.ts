@@ -79,7 +79,13 @@ export const storeWebhookEvent = async ({
 
 export const bestEffortCacheZernioRealtime = async (payload: any) => {
   const supabase = getWorkspaceSupabaseAdmin();
-  const accountRemoteId = String(payload?.account?.id || payload?.account?._id || payload?.accountId || '');
+  const accountRemoteId = String(
+    payload?.account?.accountId ||
+    payload?.account?.id ||
+    payload?.account?._id ||
+    payload?.accountId ||
+    ''
+  );
   if (!accountRemoteId) return;
 
   const { data: account } = await supabase
