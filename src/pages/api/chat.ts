@@ -721,12 +721,18 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       });
     }
 
-    const intentMatches = findNaylaCapabilityMatches(message);
     const effectiveHistory = scope.threadId ? persistedHistory : (history || []);
     const executionConfirmed = hasExplicitPlanConfirmation(message, effectiveHistory);
+    const priorUserPlanInstruction = executionConfirmed
+      ? findLastUserPlanInstruction(effectiveHistory)
+      : '';
+    const priorAssistantPlan = executionConfirmed
+      ? findLastAssistantPlan(effectiveHistory)
+      : '';
     const activePlanningContext = executionConfirmed
       ? [priorUserPlanInstruction, priorAssistantPlan, message].filter(Boolean).join('\n\n')
       : message;
+    const intentMatches = findNaylaCapabilityMatches(activePlanningContext);
 
     const recentPlanAttachmentRows =
       executionConfirmed && scope.threadId
@@ -755,8 +761,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       message,
     ].join('\n\n');
 
-    const requestedNaturalPhotoCount = getRequestedVisualCount(userPlanningContext);
-    const naturalProjectPhotoReference = hasNaturalProjectPhotoReference(userPlanningContext);
+    const requestedNaturalPhotoCount = getRequestedVisualCount(activePlanningContext);
+    const naturalProjectPhotoReference = hasNaturalProjectPhotoReference(activePlanningContext);
     const recentNaturalPhotoRows = naturalProjectPhotoReference
       ? await getRecentOwnedMediaForUser({
           userId: firebaseUser.uid,
@@ -940,7 +946,25 @@ MODO CONSULTIVO:
 - Si la petición es vaga, tradúcela tú a controles apropiados y recomienda 1 a 4 recursos útiles.
 - Usa texto limpio: sin Markdown visible, sin asteriscos, backticks, tablas ni nombres técnicos internos innecesarios.
 
-CAPACIDADES RELEVANTES PARA ESTE TURNO:
+MAPA DE MEDIOS:
+- F1/F2/... son identificadores estables de fotos.
+- V1/V2/... son identificadores estables de videos.
+- A1/A2/... son identificadores estables de audios.
+- M1/M2/... son identificadores estables de modelos 3D.
+- "foto 1", "primera foto" y F1 se refieren al mismo tipo de recurso cuando el contexto lo deja claro; lo mismo para video, audio y 3D.
+- Las etiquetas son referencias internas: nunca deben aparecer como texto visible, título o subtítulo salvo que el usuario pida literalmente mostrar esa etiqueta.
+- Si el usuario dice "estas fotos", "los archivos que subí" o algo equivalente, usa primero los adjuntos del plan activo. No sustituyas esos archivos por otros de la Bóveda.
+- Las restricciones explícitas del usuario son obligatorias (orden, duración, recorte, medio concreto). Todo lo no especificado es terreno creativo: elige efectos, transiciones, movimiento, ritmo y acabado usando las capacidades reales disponibles.
+- Si recibiste contexto visual, úsalo para decidir qué foto funciona mejor en cada momento y qué tratamiento le conviene. No apliques el mismo efecto mecánicamente a todas las escenas si no aporta.
+- Texto de instrucciones, encabezados como BLOQUE 1/2 y notas técnicas nunca son subtítulos. Solo el contenido literal destinado a pantalla entra en subtitles/titles.
+
+BIBLIA COMPLETA DE CAPACIDADES:
+${JSON.stringify(getNaylaCapabilityBibleForPrompt())}
+
+CATÁLOGO REAL DEL MOTOR REMOTION:
+${JSON.stringify(REMOTION_CPU_PUBLIC_CATALOG)}
+
+CAPACIDADES ESPECIALMENTE RELEVANTES PARA ESTE TURNO:
 ${JSON.stringify(intentMatches.map((item) => ({
   id: item.id,
   label: item.label,
@@ -951,12 +975,12 @@ ${JSON.stringify(intentMatches.map((item) => ({
 
 ACCIONES:
 1. BUILD_TIMELINE para editar fotos, videos o audio existentes.
-Formato mínimo:
-{"action":"BUILD_TIMELINE","assets":[{"type":"foto","source":"url","url":"URL_EXACTA","durationInSeconds":3}],"render":true}
-Cada asset puede usar efecto, transitionType, transitionDuration, fadeIn, fadeOut, overlay, overlayIntensity, professionalEffects, motionBlur, gsapMotion y proceduralMotion.
-Efectos suaves recomendados para fotos: ken-burns o cinematic. Transiciones suaves: fade. Transiciones avanzadas disponibles: film-burn, blur-slide, cross-zoom, dreamy-zoom, linear-blur y push-cut.
-Overlays comunes: vignette. professionalEffects puede incluir color-correction y glow con intensidad moderada.
-También puedes usar subtitles, titles, skiaGraphics, vectorAnimations y threeScenes si el plan confirmado realmente los requiere.
+Para medios guardados en el proyecto, prefiere etiquetas estables y deja que el servidor resuelva el archivo:
+{"action":"BUILD_TIMELINE","assets":[{"type":"foto","source":"label","label":"F1","durationInSeconds":3}],"render":true}
+Puedes mezclar F/V/A en el orden que pida el usuario o en el orden creativo que elijas cuando te dé libertad.
+Cada asset puede usar durationInSeconds, volume, fadeIn, fadeOut, delay, startFrom, trimBefore, trimAfter, loop, playbackRate, efecto, transitionType, transitionDuration, overlay, overlayIntensity, professionalEffects, motionBlur, gsapMotion y proceduralMotion.
+Puedes combinar de forma moderada varias capacidades reales cuando mejoren el resultado. No estás limitada a ken-burns/fade.
+También puedes usar subtitles, titles, skiaGraphics, vectorAnimations y threeScenes cuando aporten al plan.
 Para M1/M2 usa threeScenes y la etiqueta exacta; para una foto que solo debe parecer 3D usa profundidad/parallax, no una escena GLB.
 
 2. REMOVE_VIDEO_BACKGROUND:
@@ -977,31 +1001,25 @@ Para M1/M2 usa threeScenes y la etiqueta exacta; para una foto que solo debe par
 6. RUN_GPU_JOB solo para trabajo pesado que lo requiera:
 {"action":"RUN_GPU_JOB","workload":"video","jobType":"proceso","inputUrls":["URL_EXACTA"]}
 
-Para acciones con medios existentes usa únicamente las URLs exactas incluidas en el contexto del turno.
+Para medios F/V/A existentes usa source:"label" y su etiqueta estable. No inventes etiquetas. Las URLs se resuelven internamente y no necesitas pedirlas al usuario.
 
 POLÍTICA DE MOTOR:
 ${getNaylaExecutionPolicyPrompt(engineMode)}
 MODO_MOTOR=${engineMode}
 `;
 
-    const priorUserPlanInstruction = executionConfirmed
-      ? findLastUserPlanInstruction(effectiveHistory)
-      : '';
-    const priorAssistantPlan = executionConfirmed
-      ? findLastAssistantPlan(effectiveHistory)
-      : '';
     const fallbackExecutionContext = executionConfirmed
       ? [priorUserPlanInstruction, priorAssistantPlan, message].filter(Boolean).join('\n\n')
       : message;
     const confirmedTimelineContext = executionConfirmed
-      ? [userPlanningContext, priorAssistantPlan, message].filter(Boolean).join('\n\n')
+      ? activePlanningContext
       : message;
     const subtitleBlocks = extractSubtitleBlocks(
       executionConfirmed && priorUserPlanInstruction
         ? priorUserPlanInstruction
         : message
     );
-    const requestedTimelineSeconds = getRequestedTimelineSeconds(userPlanningContext);
+    const requestedTimelineSeconds = getRequestedTimelineSeconds(activePlanningContext);
     const confirmedTimelineShouldRender =
       executionConfirmed && timelinePlanRequestsRender(confirmedTimelineContext);
 
@@ -1051,12 +1069,40 @@ MODO_MOTOR=${engineMode}
 
     const action = parsedAction?.action === 'BUILD_TIMELINE'
       ? (() => {
-          let assets = parsedAction.assets.map((asset: any) => ({
-            ...asset,
-            url: asset?.source === 'url' && typeof asset?.url === 'string'
-              ? canonicalizeUrl(asset.url)
-              : asset?.url,
-          }));
+          let assetResolutionFailed = false;
+          let assets = parsedAction.assets.map((asset: any) => {
+            if (asset?.source === 'label' && typeof asset?.label === 'string') {
+              const label = asset.label.trim().toUpperCase();
+              const expectedType = asset.type === 'image' ? 'foto' : asset.type;
+              const media = mergedLibrary.find((item: any) =>
+                item.tipo === expectedType &&
+                typeof item.etiqueta === 'string' &&
+                item.etiqueta.trim().toUpperCase() === label
+              );
+              if (!media?.url) {
+                assetResolutionFailed = true;
+                return asset;
+              }
+              const { label: _label, ...rest } = asset;
+              return {
+                ...rest,
+                source: 'url' as const,
+                url: media.url,
+              };
+            }
+
+            if (asset?.source === 'url' && typeof asset?.url === 'string') {
+              return {
+                ...asset,
+                url: canonicalizeUrl(asset.url),
+              };
+            }
+
+            assetResolutionFailed = true;
+            return asset;
+          });
+
+          if (assetResolutionFailed) return null;
 
           const photoOnly = assets.length > 0 && assets.every((asset: any) => asset.type === 'foto' || asset.type === 'image');
           if (photoOnly && requestedTimelineSeconds && requestedTimelineSeconds > 0) {
@@ -1236,7 +1282,7 @@ MODO_MOTOR=${engineMode}
       /\b(en\s+marcha|renderiz(?:ando|aci[oó]n)|procesando|guard(?:ando|ar[aá]).*b[oó]veda|cuando\s+termine)\b/i.test(publicResponseText) &&
       /\b(video|render|timeline|edici[oó]n)\b/i.test(message)
     ) {
-      publicResponseText = 'No se inició ningún procesamiento todavía. Reformula la orden con las etiquetas F/V/A que quieres usar para que Nayla pueda crear el trabajo real.';
+      publicResponseText = 'No se inició ningún procesamiento todavía. Puedes indicarme los medios por F/V/A o hablar de forma natural sobre las fotos, videos y audios del plan activo.';
     }
 
     if (scope.threadId) {
