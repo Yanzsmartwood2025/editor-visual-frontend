@@ -70,6 +70,11 @@ type PcInstance = {
     | 'terminated'
     | 'error';
   mainIp?: string;
+  desktop?: {
+    url: string;
+    password?: string;
+    tls?: string;
+  };
   hourlyPrice: number;
   monthlyPrice: number;
   sessionPrice: number;
@@ -640,6 +645,29 @@ export default function NaylaPc({
                   </strong>
                 </div>
               </div>
+
+              {activeInstance.desktop && activeInstance.status === 'running' && (
+                <div style={{ marginTop: 12, border: '1px solid #333', borderRadius: 14, padding: 12, background: '#070707' }}>
+                  <div style={{ fontSize: '0.68rem', fontWeight: 900 }}>ESCRITORIO REMOTO</div>
+                  <div style={{ color: '#777', fontSize: '0.6rem', lineHeight: 1.45, marginTop: 5 }}>
+                    Pantalla completa con teclado, mouse y control táctil. La primera apertura puede mostrar una advertencia porque el certificado del piloto es propio de la PC.
+                  </div>
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginTop: 9 }}>
+                    <button
+                      type="button"
+                      onClick={() => window.open(activeInstance.desktop?.url, '_blank', 'noopener,noreferrer')}
+                      style={{ minHeight: 38, borderRadius: 999, border: '1px solid #fff', background: '#fff', color: '#000', padding: '0 14px', fontWeight: 900, fontSize: '0.62rem', cursor: 'pointer' }}
+                    >
+                      ABRIR ESCRITORIO
+                    </button>
+                    {activeInstance.desktop.password && (
+                      <div style={{ color: '#aaa', fontSize: '0.61rem' }}>
+                        Clave: <strong style={{ color: '#fff', letterSpacing: '0.1em' }}>{activeInstance.desktop.password}</strong>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
 
               <div style={{ marginTop: 11, display: 'flex', gap: 7, flexWrap: 'wrap' }}>
                 {activeInstance.status === 'stopped' && (
