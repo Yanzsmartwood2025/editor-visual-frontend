@@ -378,7 +378,7 @@ export default function NaylaPc({
       })();
     }, 15000);
     return () => window.clearInterval(timer);
-  }, [activeInstance?.id, activeInstance?.status, session]);
+  }, [activeInstance?.id, activeInstance?.status, loadSavedSnapshot, session]);
 
   const selected = useMemo(
     () => quote?.cards.find((card) => card.id === selectedId) || quote?.cards[0] || null,
