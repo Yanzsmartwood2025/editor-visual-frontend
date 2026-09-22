@@ -6,7 +6,7 @@ export type NaylaProject = {
   status?: string;
 };
 
-export type NaylaChannelKind = 'foto' | 'video' | 'audio' | 'modelo3d';
+export type NaylaChannelKind = 'foto' | 'video' | 'audio' | 'documento' | 'modelo3d';
 
 export type NaylaChannelAsset = {
   id: string;
@@ -69,6 +69,12 @@ const AudioIcon = () => (
     <circle cx="16" cy="16" r="3"/>
   </svg>
 );
+const DocumentIcon = () => (
+  <svg style={iconStyle} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+    <path d="M6 2h8l4 4v16H6z"/>
+    <path d="M14 2v5h5M9 12h6M9 16h6"/>
+  </svg>
+);
 const CubeIcon = () => (
   <svg style={iconStyle} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
     <path d="m12 2 9 5-9 5-9-5z"/>
@@ -109,6 +115,7 @@ const channelMeta: Array<{
   { kind: 'foto', title: 'Canal de fotos', accept: 'image/*', multiple: true, icon: <PhotoIcon /> },
   { kind: 'video', title: 'Canal de videos', accept: 'video/*', multiple: true, icon: <VideoIcon /> },
   { kind: 'audio', title: 'Canal de audio / música', accept: 'audio/*', multiple: true, icon: <AudioIcon /> },
+  { kind: 'documento', title: 'Canal de documentos', accept: '.pdf,.txt,.md,.markdown,.csv,.json,.rtf,.doc,.docx,application/pdf,text/*,application/json,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document', multiple: true, icon: <DocumentIcon /> },
   { kind: 'modelo3d', title: 'Canal 3D', accept: '.glb,model/gltf-binary', multiple: true, icon: <CubeIcon /> },
 ];
 
@@ -141,12 +148,14 @@ export function NaylaProjectMenu({
   const photoRef = useRef<HTMLInputElement>(null);
   const videoRef = useRef<HTMLInputElement>(null);
   const audioRef = useRef<HTMLInputElement>(null);
+  const documentRef = useRef<HTMLInputElement>(null);
   const modelRef = useRef<HTMLInputElement>(null);
 
   const refs: Record<NaylaChannelKind, React.RefObject<HTMLInputElement | null>> = {
     foto: photoRef,
     video: videoRef,
     audio: audioRef,
+    documento: documentRef,
     modelo3d: modelRef,
   };
 
@@ -159,6 +168,7 @@ export function NaylaProjectMenu({
       foto: [],
       video: [],
       audio: [],
+      documento: [],
       modelo3d: [],
     };
     assets.forEach((asset) => result[asset.tipo]?.push(asset));
@@ -457,7 +467,13 @@ export function NaylaProjectMenu({
                                 <img src={asset.url} alt="" style={{ width: 38, height: 38, objectFit: 'cover', borderRadius: 7, background: '#111' }} />
                               ) : (
                                 <div style={{ width: 38, height: 38, borderRadius: 7, border: '1px solid #333', display: 'grid', placeItems: 'center' }}>
-                                  {asset.tipo === 'video' ? <VideoIcon /> : asset.tipo === 'audio' ? <AudioIcon /> : <CubeIcon />}
+                                  {asset.tipo === 'video'
+                                    ? <VideoIcon />
+                                    : asset.tipo === 'audio'
+                                      ? <AudioIcon />
+                                      : asset.tipo === 'documento'
+                                        ? <DocumentIcon />
+                                        : <CubeIcon />}
                                 </div>
                               )}
                               <div style={{ minWidth: 0, flex: 1 }}>
