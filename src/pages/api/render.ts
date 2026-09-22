@@ -616,8 +616,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       .select('etiqueta')
       .eq('user_id', user.uid)
       .eq('project_id', scope.projectId)
-      .eq('tipo', 'video')
-      .like('fuente', 'render:%');
+      .like('etiqueta', 'R%');
 
     if (countError) throw countError;
 
