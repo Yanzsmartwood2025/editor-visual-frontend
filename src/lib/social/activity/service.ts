@@ -13,6 +13,7 @@ import {
   getZernioComments,
   listZernioConversations,
   listZernioMessages,
+  syncZernioExternalPosts,
 } from '../providers/zernio';
 import { cacheSocialComments, cacheSocialConversation, extractSocialComments } from './cache';
 
@@ -55,7 +56,7 @@ export const isSocialActivityReviewRequest = (message: string) => {
   if (!text) return false;
 
   const socialObject =
-    /\b(comentarios?|comentaron|mensajes?|notificaciones?|actividad|inbox|dm|dms|metricas?|estadisticas?|vistas?|alcance|interacciones?|redes?|seguidores?|impresiones?|escribieron|dijeron)\b/.test(text);
+    /\b(comentarios?|comentaron|mensajes?|notificaciones?|actividad|inbox|dm|dms|metricas?|estadisticas?|vistas?|alcance|interacciones?|redes?|seguidores?|impresiones?|likes?|me gusta|reacciones?|escribieron|dijeron)\b/.test(text);
 
   if (!socialObject) return false;
 
@@ -79,7 +80,7 @@ export const getSocialActivityReviewScope = (message: string): ReviewScope => {
     /\b(mensajes?|inbox|dm|dms|mensaje privado|mensajes privados|me escribieron|escribieron por privado)\b/.test(text);
   const mentionsNotifications = /\b(notificaciones?|avisos?)\b/.test(text);
   const mentionsMetrics =
-    /\b(metricas?|estadisticas?|vistas?|alcance|rendimiento|seguidores?|impresiones?)\b/.test(text);
+    /\b(metricas?|estadisticas?|vistas?|alcance|rendimiento|seguidores?|impresiones?|likes?|me gusta|reacciones?)\b/.test(text);
 
   const genericActivity =
     /\b(actividad|redes?)\b/.test(text) &&
@@ -356,19 +357,47 @@ const loadZernioComments = async ({
     .eq('account_id', account.id)
     .not('provider_post_id', 'is', null)
     .order('updated_at', { ascending: false })
-    .limit(8);
+    .limit(20);
 
   if (error) throw error;
 
+  const postMap = new Map<string, { postId: string; targetId: string | null }>();
+  for (const target of targets || []) {
+    const postId = String(target.provider_post_id || '');
+    if (postId) postMap.set(postId, { postId, targetId: String(target.id) });
+  }
+
+  try {
+    const external = await syncZernioExternalPosts(String(account.provider_account_id));
+    const externalPosts =
+      Array.isArray(external?.posts) ? external.posts :
+      Array.isArray(external?.synced?.posts) ? external.synced.posts :
+      Array.isArray(external?.data?.posts) ? external.data.posts :
+      [];
+
+    for (const post of externalPosts.slice(0, 30)) {
+      const postId = String(
+        post?.platformPostId ||
+        post?.platform_post_id ||
+        post?.postId ||
+        post?.id ||
+        ''
+      );
+      if (postId && !postMap.has(postId)) postMap.set(postId, { postId, targetId: null });
+    }
+  } catch {
+    // External-post discovery is a best-effort fallback. Known Nayla posts still work.
+  }
+
+  const posts = Array.from(postMap.values()).slice(0, 30);
   let comments = 0;
   const samples: ActivitySample[] = [];
-  for (const target of targets || []) {
+
+  for (const post of posts) {
     try {
-      const postId = String(target.provider_post_id || '');
-      if (!postId) continue;
       const payload = await getZernioComments({
         accountId: String(account.provider_account_id),
-        postId,
+        postId: post.postId,
       });
       const cached = await cacheSocialComments({
         userId,
@@ -376,8 +405,8 @@ const loadZernioComments = async ({
         provider: account.provider,
         platform: account.platform,
         account,
-        postId,
-        targetId: target.id,
+        postId: post.postId,
+        targetId: post.targetId,
         payload,
       });
       comments += cached.length;
@@ -387,11 +416,11 @@ const loadZernioComments = async ({
         if (sample && samples.length < 20) samples.push(sample);
       }
     } catch {
-      // Continue scanning other known posts.
+      // A single inaccessible post should not abort the rest of the scan.
     }
   }
 
-  return { comments, inspectedPosts: (targets || []).length, samples };
+  return { comments, inspectedPosts: posts.length, samples };
 };
 
 const loadUploadPostMessages = async ({
