@@ -2254,86 +2254,170 @@ export default function NaylaCore() {
   };
 
   const toggleChatAttachment = (asset: NaylaChannelAsset) => {
-    setChatAttachmentIds((prev) =>
-      prev.includes(asset.id)
-        ? prev.filter((id) => id !== asset.id)
-        : [...prev, asset.id]
-    );
+    setChatAttachmentIds((prev) => {
+      if (prev.includes(asset.id)) {
+        return prev.filter((id) => id !== asset.id);
+      }
+      if (prev.length >= CHAT_ATTACHMENT_LIMIT) {
+        showAlert(`Puedes adjuntar hasta ${CHAT_ATTACHMENT_LIMIT} archivos en un mismo mensaje.`);
+        return prev;
+      }
+      return [...prev, asset.id];
+    });
   };
 
-  const subirArchivosDesdeCanal = async (kind: NaylaChannelKind, files: FileList) => {
+  const uploadFilesIntoChat = async (
+    incomingFiles: File[] | FileList,
+    forcedKind?: NaylaChannelKind
+  ) => {
     if (!activeProjectId) return showAlert('Primero selecciona un proyecto.');
 
     const currentSession = session || await getFirebaseSession();
     if (!currentSession) return showAlert('Debes iniciar sesión para subir archivos.');
     if (!activeThreadId) return showAlert('Abre un chat antes de subir archivos.');
 
-    setChannelUploadingKind(kind);
-    try {
-      let uploadedAssets: NaylaChannelAsset[] = [];
+    const remainingSlots = Math.max(0, CHAT_ATTACHMENT_LIMIT - chatAttachmentIds.length);
+    if (!remainingSlots) {
+      return showAlert(`Ya tienes ${CHAT_ATTACHMENT_LIMIT} archivos anclados a este mensaje.`);
+    }
 
-      if (kind === 'modelo3d') {
-        const nextAssets = [...modelos3d];
+    const selectedFiles = Array.from(incomingFiles).slice(0, remainingSlots);
+    if (selectedFiles.length < Array.from(incomingFiles).length) {
+      showAlert(`Se tomarán los primeros ${remainingSlots} archivos. El máximo por mensaje es ${CHAT_ATTACHMENT_LIMIT}.`);
+    }
 
-        for (const file of Array.from(files)) {
+    if (!selectedFiles.length) return;
+
+    setChatAttachMenuOpen(false);
+    setProjectMenuOpen(false);
+    if (forcedKind) setChannelUploadingKind(forcedKind);
+    setChatUploadProgress({ total: selectedFiles.length, done: 0, failed: 0 });
+
+    let workingMedia = [...galeriaMultimedia];
+    let workingDocuments = [...chatDocuments];
+    let workingModels = [...modelos3d];
+    let successCount = 0;
+    let failedCount = 0;
+
+    for (const file of selectedFiles) {
+      try {
+        let asset: NaylaChannelAsset | null = null;
+        let kind = forcedKind;
+
+        if (!kind) {
+          const mediaKind = resolveMediaKind(file);
+          kind = mediaKind || (isSupportedDocumentFile(file) ? 'documento' : undefined);
+        }
+
+        if (!kind) {
+          throw new Error(`Tipo de archivo no soportado: ${file.name}`);
+        }
+
+        if (kind === 'modelo3d') {
           const saved = await uploadModel3DToBoveda({
             session: currentSession,
             file,
-            existingItems: nextAssets,
+            existingItems: workingModels,
             fuente: 'chat:canal-3d',
             projectId: activeProjectId,
             threadId: activeThreadId,
           });
-          nextAssets.push(saved);
-          uploadedAssets.push({
+          workingModels = [...workingModels, saved];
+          setModelos3d((prev) => prev.some((item) => item.id === saved.id) ? prev : [...prev, saved]);
+          setModelo3dActivoId((current) => current || saved.id);
+          asset = {
             id: saved.id,
             tipo: 'modelo3d',
             nombre: saved.nombre,
             url: saved.url,
             etiqueta: saved.etiqueta,
+          };
+        } else if (kind === 'documento') {
+          const savedItems = await uploadDocumentFilesToBodega({
+            session: currentSession,
+            files: [file],
+            existingItems: workingDocuments,
+            fuente: 'chat:documento',
+            projectId: activeProjectId,
+            threadId: activeThreadId,
           });
+          const saved = savedItems[0];
+          if (!saved) throw new Error(`No se pudo guardar ${file.name}.`);
+          workingDocuments = [...workingDocuments, saved];
+          setChatDocuments((prev) => prev.some((item) => item.id === saved.id) ? prev : [...prev, saved]);
+          asset = {
+            id: saved.id,
+            tipo: 'documento',
+            nombre: saved.nombre,
+            url: saved.url,
+            etiqueta: saved.etiqueta,
+          };
+        } else {
+          const savedItems = await uploadMediaFilesToBodega({
+            session: currentSession,
+            files: [file],
+            existingItems: workingMedia,
+            forcedTipo: kind,
+            fuente: `chat:canal-${kind}`,
+            projectId: activeProjectId,
+            threadId: activeThreadId,
+          });
+          const saved = savedItems[0];
+          if (!saved) throw new Error(`No se pudo guardar ${file.name}.`);
+          workingMedia = [...workingMedia, saved];
+          setGaleriaMultimedia((prev) => prev.some((item) => item.id === saved.id) ? prev : [...prev, saved]);
+          asset = {
+            id: saved.id,
+            tipo: saved.tipo as NaylaChannelKind,
+            nombre: saved.nombre,
+            url: saved.url,
+            etiqueta: saved.etiqueta,
+          };
         }
 
-        setModelos3d(nextAssets);
-        setModelo3dActivoId((current) => current || nextAssets[0]?.id || null);
-      } else {
-        const saved = await uploadMediaFilesToBodega({
-          session: currentSession,
-          files: Array.from(files),
-          existingItems: galeriaMultimedia,
-          forcedTipo: kind,
-          fuente: `chat:canal-${kind}`,
-          projectId: activeProjectId,
-          threadId: activeThreadId,
-        });
-
-        setGaleriaMultimedia((prev) => {
-          const currentIds = new Set(prev.map((item) => item.id));
-          return [...prev, ...saved.filter((item) => !currentIds.has(item.id))];
-        });
-
-        uploadedAssets = saved.map((item) => ({
-          id: item.id,
-          tipo: item.tipo as NaylaChannelKind,
-          nombre: item.nombre,
-          url: item.url,
-          etiqueta: item.etiqueta,
-        }));
+        if (asset) {
+          successCount += 1;
+          setChatAttachmentIds((prev) =>
+            prev.includes(asset!.id)
+              ? prev
+              : prev.length < CHAT_ATTACHMENT_LIMIT
+                ? [...prev, asset!.id]
+                : prev
+          );
+        }
+      } catch (error: any) {
+        failedCount += 1;
+        console.error('Error subiendo archivo al chat:', file.name, error);
+      } finally {
+        setChatUploadProgress((progress) => progress
+          ? {
+              ...progress,
+              done: Math.min(progress.total, progress.done + 1),
+              failed: failedCount,
+            }
+          : progress
+        );
       }
-
-      const uploadedIds = uploadedAssets.map((item) => item.id);
-      setChatAttachmentIds((prev) => Array.from(new Set([...prev, ...uploadedIds])));
-
-      if (uploadedIds.length) {
-        setProjectMenuOpen(false);
-        requestAnimationFrame(() => chatInputRef.current?.focus());
-      }
-    } catch (error: any) {
-      console.error('Error subiendo desde canal del chat:', error);
-      showAlert(error?.message || 'No se pudo subir el archivo.');
-    } finally {
-      setChannelUploadingKind(null);
     }
+
+    setChannelUploadingKind(null);
+    setChatUploadProgress(null);
+
+    if (successCount) {
+      requestAnimationFrame(() => chatInputRef.current?.focus());
+    }
+
+    if (failedCount) {
+      showAlert(
+        successCount
+          ? `${successCount} archivo${successCount === 1 ? '' : 's'} listo${successCount === 1 ? '' : 's'}; ${failedCount} no se pudo${failedCount === 1 ? '' : 'ieron'} subir.`
+          : 'No se pudo subir ninguno de los archivos seleccionados.'
+      );
+    }
+  };
+
+  const subirArchivosDesdeCanal = async (kind: NaylaChannelKind, files: FileList) => {
+    await uploadFilesIntoChat(files, kind);
   };
 
   const ejecutarRemoveVideoBackground = async (
