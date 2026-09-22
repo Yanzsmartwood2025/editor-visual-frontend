@@ -330,6 +330,135 @@ export const buildNaylaPcDesktopUserData = ({
   return encodeUserData(script);
 };
 
+export const buildNaylaPcRuntimeUserData = ({
+  desktopPassword,
+  driveToken,
+  instanceId,
+  driveApiBaseUrl,
+}: {
+  desktopPassword: string;
+  driveToken: string;
+  instanceId: string;
+  driveApiBaseUrl: string;
+}) => {
+  const password = desktopPassword.replace(/[^A-Za-z0-9]/g, '').slice(0, 8);
+  if (password.length < 8) {
+    throw new Error('La clave temporal del escritorio Nayla PC no es válida.');
+  }
+
+  const agent = [
+    '#!/usr/bin/env python3',
+    'import hashlib, json, mimetypes, os, pathlib, time, urllib.request',
+    "ROOT = pathlib.Path('/home/nayla/Nayla Drive')",
+    "API = os.environ.get('NAYLA_DRIVE_API', '')",
+    "TOKEN = os.environ.get('NAYLA_DRIVE_TOKEN', '')",
+    "INSTANCE = os.environ.get('NAYLA_PC_INSTANCE_ID', '')",
+    'def req(method, payload=None, url=None, data=None, headers=None):',
+    '    target = url or API',
+    '    body = data if data is not None else (json.dumps(payload).encode() if payload is not None else None)',
+    "    h = {'Authorization': 'Bearer ' + TOKEN, 'X-Nayla-PC-Instance': INSTANCE}",
+    '    if payload is not None: h[\'Content-Type\'] = \'application/json\'',
+    '    if headers: h.update(headers)',
+    '    r = urllib.request.urlopen(urllib.request.Request(target, data=body, headers=h, method=method), timeout=60)',
+    '    raw = r.read()',
+    "    return (json.loads(raw.decode()) if raw else {}), dict(r.headers)",
+    'def sha(path):',
+    '    h=hashlib.sha256()',
+    "    with open(path,'rb') as f:",
+    "        for chunk in iter(lambda:f.read(1024*1024), b''): h.update(chunk)",
+    '    return h.hexdigest()',
+    'def pull(manifest):',
+    '    for item in manifest:',
+    "        rel=item.get('relativePath','')",
+    "        url=item.get('downloadUrl','')",
+    '        if not rel or not url: continue',
+    '        dst=ROOT / rel',
+    '        dst.parent.mkdir(parents=True, exist_ok=True)',
+    "        if dst.exists() and item.get('contentSha256') and sha(dst)==item.get('contentSha256'): continue",
+    '        try:',
+    "            data,_=req('GET', url=url)",
+    '        except Exception:',
+    '            try:',
+    '                r=urllib.request.urlopen(url, timeout=60); dst.write_bytes(r.read())',
+    '            except Exception: pass',
+    'def sync_once():',
+    '    ROOT.mkdir(parents=True, exist_ok=True)',
+    "    state,_=req('GET')",
+    "    manifest=state.get('files',[])",
+    "    remote={x.get('relativePath'):x for x in manifest}",
+    '    if not any(ROOT.iterdir()):',
+    '        for item in manifest:',
+    "            rel=item.get('relativePath',''); url=item.get('downloadUrl','')",
+    '            if not rel or not url: continue',
+    '            dst=ROOT/rel; dst.parent.mkdir(parents=True,exist_ok=True)',
+    '            try: dst.write_bytes(urllib.request.urlopen(url,timeout=60).read())',
+    '            except Exception: pass',
+    '    for p in ROOT.rglob(\'*\'):',
+    '        if not p.is_file(): continue',
+    '        rel=p.relative_to(ROOT).as_posix()',
+    '        digest=sha(p)',
+    '        if remote.get(rel,{}).get(\'contentSha256\')==digest: continue',
+    "        ctype=mimetypes.guess_type(str(p))[0] or 'application/octet-stream'",
+    "        prep,_=req('POST', {'action':'presign_upload','relativePath':rel,'sizeBytes':p.stat().st_size,'contentType':ctype,'contentSha256':digest,'modifiedAt':time.strftime('%Y-%m-%dT%H:%M:%SZ',time.gmtime(p.stat().st_mtime))})",
+    "        upload=prep.get('uploadUrl')",
+    '        if not upload: continue',
+    "        data=p.read_bytes(); _,hdr=req('PUT',url=upload,data=data,headers={'Content-Type':ctype})",
+    "        req('POST', {'action':'confirm_upload','relativePath':rel,'r2Key':prep.get('r2Key'),'sizeBytes':len(data),'contentType':ctype,'contentSha256':digest,'etag':hdr.get('ETag')})",
+    'if __name__ == \'__main__\':',
+    '    try: sync_once()',
+    '    except Exception as exc: print(\'nayla-drive:\', exc)',
+  ].join('\n');
+
+  const agentPayload = Buffer.from(agent, 'utf8').toString('base64');
+  const script = [
+    '#!/usr/bin/env bash',
+    'set -euo pipefail',
+    'install -d -m 700 -o nayla -g nayla /home/nayla/.vnc',
+    "printf '%s\\n' " + shellQuote(password) + " | tigervncpasswd -f > /home/nayla/.vnc/passwd",
+    'chown nayla:nayla /home/nayla/.vnc/passwd',
+    'chmod 600 /home/nayla/.vnc/passwd',
+    'install -d -m 700 /etc/nayla',
+    "printf '%s\\n' " +
+      shellQuote('NAYLA_DRIVE_API=' + driveApiBaseUrl) +
+      ' ' +
+      shellQuote('NAYLA_DRIVE_TOKEN=' + driveToken) +
+      ' ' +
+      shellQuote('NAYLA_PC_INSTANCE_ID=' + instanceId) +
+      ' > /etc/nayla/drive.env',
+    'chmod 600 /etc/nayla/drive.env',
+    "echo " + shellQuote(agentPayload) + " | base64 -d > /usr/local/bin/nayla-drive-sync",
+    'chmod 755 /usr/local/bin/nayla-drive-sync',
+    "cat > /etc/systemd/system/nayla-drive-sync.service <<'EOF'",
+    '[Unit]',
+    'Description=Nayla Drive R2 sync',
+    'After=network-online.target',
+    'Wants=network-online.target',
+    '[Service]',
+    'Type=oneshot',
+    'User=root',
+    'EnvironmentFile=/etc/nayla/drive.env',
+    'ExecStart=/usr/local/bin/nayla-drive-sync',
+    'EOF',
+    "cat > /etc/systemd/system/nayla-drive-sync.timer <<'EOF'",
+    '[Unit]',
+    'Description=Sync Nayla Drive to R2 every 30 seconds',
+    '[Timer]',
+    'OnBootSec=20s',
+    'OnUnitActiveSec=30s',
+    'AccuracySec=5s',
+    'Persistent=true',
+    '[Install]',
+    'WantedBy=timers.target',
+    'EOF',
+    'systemctl daemon-reload',
+    'systemctl restart nayla-vnc.service || true',
+    'systemctl restart nayla-novnc.service || true',
+    'systemctl enable --now nayla-drive-sync.timer',
+  ].join('\n');
+
+  return encodeUserData(script);
+};
+
 export const buildVultrWorkerUserData = ({
   imageName,
   onstart,
@@ -448,11 +577,13 @@ export const createVultrInstanceFromSnapshot = async ({
   regionId,
   snapshotId,
   label,
+  userData,
 }: {
   planId: string;
   regionId: string;
   snapshotId: string;
   label: string;
+  userData?: string;
 }) => {
   const data = await vultrRequest<{ instance?: VultrInstance }>(
     '/instances',
@@ -465,6 +596,7 @@ export const createVultrInstanceFromSnapshot = async ({
         label: label.slice(0, 128),
         hostname: label.slice(0, 63),
         activation_email: false,
+        ...(userData ? { user_data: userData } : {}),
       }),
     },
     40_000
