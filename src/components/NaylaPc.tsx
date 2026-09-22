@@ -96,6 +96,17 @@ type PcSnapshot = {
   readyAt?: string | null;
 };
 
+type PcResumeQuote = {
+  cpu: number;
+  ramGb: number;
+  diskGb: number;
+  hourlyPrice: number;
+  monthlyPrice: number;
+  sessionPrice: number;
+  billingMode: 'hourly' | 'monthly';
+  durationHours: number;
+};
+
 const DEFAULT_CONFIG: PcConfig = {
   osFamily: 'linux',
   cpu: 2,
@@ -189,6 +200,7 @@ export default function NaylaPc({
   const [selectedId, setSelectedId] = useState('');
   const [activeInstance, setActiveInstance] = useState<PcInstance | null>(null);
   const [savedSnapshot, setSavedSnapshot] = useState<PcSnapshot | null>(null);
+  const [resumeQuote, setResumeQuote] = useState<PcResumeQuote | null>(null);
   const [provisioningAllowed, setProvisioningAllowed] = useState(false);
   const [loading, setLoading] = useState(false);
   const [instanceLoading, setInstanceLoading] = useState(false);
@@ -433,7 +445,7 @@ export default function NaylaPc({
   }, [canCreate, config, requestQuote, selected, session]);
 
   const runInstanceAction = useCallback(async (
-    action: 'start' | 'stop' | 'reboot' | 'destroy'
+    action: 'start' | 'stop' | 'reboot' | 'destroy' | 'save_destroy'
   ) => {
     if (!session || !activeInstance) return;
     setActionLoading(action);
@@ -444,7 +456,7 @@ export default function NaylaPc({
         headers: firebaseHeaders(session, { 'Content-Type': 'application/json' }),
         body: JSON.stringify({
           action,
-          confirmDestroy: action === 'destroy',
+          confirmDestroy: action === 'destroy' || action === 'save_destroy',
         }),
       });
       const payload = await response.json().catch(() => ({}));
@@ -457,7 +469,9 @@ export default function NaylaPc({
 
       const next = payload.instance as PcInstance;
       setActiveInstance(next.status === 'terminated' ? null : next);
+      if (payload.snapshot) setSavedSnapshot(payload.snapshot as PcSnapshot);
       if (action === 'destroy') setConfirmDestroy(false);
+      if (action === 'save_destroy') setConfirmSaveDestroy(false);
       if (payload.billingWarning) setError(payload.billingWarning);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'No se pudo controlar Nayla PC.');
@@ -465,6 +479,64 @@ export default function NaylaPc({
       setActionLoading('');
     }
   }, [activeInstance, session]);
+
+  const prepareResume = useCallback(async () => {
+    if (!session || !savedSnapshot || savedSnapshot.status !== 'available') return;
+    setActionLoading('resume_quote');
+    setError('');
+    try {
+      const response = await fetch('/api/pc/snapshots', {
+        method: 'POST',
+        headers: firebaseHeaders(session, { 'Content-Type': 'application/json' }),
+        body: JSON.stringify({
+          action: 'resume',
+          billingMode: config.billingMode,
+          durationHours: config.durationHours,
+          confirmResume: false,
+        }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || payload.error) {
+        throw new Error(payload.error || 'No se pudo cotizar la restauración.');
+      }
+      setResumeQuote(payload.quote as PcResumeQuote);
+      setConfirmResume(true);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'No se pudo cotizar la restauración.');
+    } finally {
+      setActionLoading('');
+    }
+  }, [config.billingMode, config.durationHours, savedSnapshot, session]);
+
+  const resumePc = useCallback(async () => {
+    if (!session || !savedSnapshot || !resumeQuote) return;
+    setActionLoading('resume');
+    setError('');
+    try {
+      const response = await fetch('/api/pc/snapshots', {
+        method: 'POST',
+        headers: firebaseHeaders(session, { 'Content-Type': 'application/json' }),
+        body: JSON.stringify({
+          action: 'resume',
+          billingMode: resumeQuote.billingMode,
+          durationHours: resumeQuote.durationHours,
+          confirmResume: true,
+        }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || payload.error) {
+        throw new Error(payload.error || 'No se pudo reanudar Nayla PC.');
+      }
+      setActiveInstance(payload.instance as PcInstance);
+      setConfirmResume(false);
+      setResumeQuote(null);
+      void loadSavedSnapshot();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'No se pudo reanudar Nayla PC.');
+    } finally {
+      setActionLoading('');
+    }
+  }, [loadSavedSnapshot, resumeQuote, savedSnapshot, session]);
 
   const patch = (next: Partial<PcConfig>) =>
     setConfig((current) => ({ ...current, ...next }));
