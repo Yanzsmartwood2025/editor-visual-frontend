@@ -2,6 +2,7 @@ import { timingSafeEqual } from 'node:crypto';
 import type { NextApiRequest, NextApiResponse } from 'next';
 import {
   finalizePendingNaylaPcSnapshots,
+  progressNaylaPcSaveRequests,
   sweepExpiredNaylaPcInstances,
 } from '../../../lib/pc/instances';
 import { getNaylaInternalSecret } from '../../../lib/pc/store';
@@ -32,14 +33,16 @@ export default async function handler(
   }
 
   try {
-    const [leases, snapshots] = await Promise.all([
+    const [leases, saves] = await Promise.all([
       sweepExpiredNaylaPcInstances(),
-      finalizePendingNaylaPcSnapshots(),
+      progressNaylaPcSaveRequests(),
     ]);
+    const snapshots = await finalizePendingNaylaPcSnapshots();
     res.setHeader('Cache-Control', 'no-store, max-age=0');
     return res.status(200).json({
       ok: true,
       leases,
+      saves,
       snapshots,
     });
   } catch (error) {
