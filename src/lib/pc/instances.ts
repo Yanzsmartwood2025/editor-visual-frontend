@@ -165,21 +165,22 @@ export const applyNaylaPcAction = async ({
 };
 
 export const sweepExpiredNaylaPcInstances = async () => {
-  const expired = await listExpiredNaylaPcInstances(20);
-  const results: Array<{ id: string; ok: boolean; error?: string }> = [];
+  const expired = await listExpiredNaylaPcInstances(5);
 
-  for (const row of expired) {
-    try {
-      await terminateNaylaPcInstance({ row, reason: 'hourly_lease_expired' });
-      results.push({ id: row.id, ok: true });
-    } catch (error) {
-      results.push({
-        id: row.id,
-        ok: false,
-        error: error instanceof Error ? error.message.slice(0, 300) : 'unknown',
-      });
-    }
-  }
+  const results = await Promise.all(
+    expired.map(async (row) => {
+      try {
+        await terminateNaylaPcInstance({ row, reason: 'hourly_lease_expired' });
+        return { id: row.id, ok: true as const };
+      } catch (error) {
+        return {
+          id: row.id,
+          ok: false as const,
+          error: error instanceof Error ? error.message.slice(0, 300) : 'unknown',
+        };
+      }
+    })
+  );
 
   return {
     checked: expired.length,
