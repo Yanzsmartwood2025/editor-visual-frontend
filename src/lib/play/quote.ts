@@ -1,5 +1,6 @@
 import { getComputeCatalog, type ComputeCandidate } from '../gpu/computeCatalog';
 import { getGpuBudgetPolicy, type GpuProfile } from '../gpu/profiles';
+import { createComputeTargetSelectionId } from '../gpu/selection';
 
 export type NaylaPlayGpuCard = {
   id: string;
@@ -101,11 +102,7 @@ export const quoteNaylaPlay = async (): Promise<NaylaPlayQuote> => {
   const cheapest = usable[0] || null;
 
   const cards: NaylaPlayGpuCard[] = usable.slice(0, 40).map((candidate) => ({
-    id: [
-      candidate.backend,
-      candidate.backendId,
-      candidate.hourlyPrice.toFixed(8),
-    ].join(':'),
+    id: createComputeTargetSelectionId(candidate),
     gpuName: candidate.gpuName,
     gpuRamGb: candidate.gpuRamGb,
     region: candidateRegion(candidate),
