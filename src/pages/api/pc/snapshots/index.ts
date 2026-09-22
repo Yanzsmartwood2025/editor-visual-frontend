@@ -319,7 +319,6 @@ export default async function handler(
     });
 
     const label = 'nayla-pc-' + pending.id;
-    let providerInstanceId = '';
 
     try {
       let provider;
@@ -330,14 +329,12 @@ export default async function handler(
           snapshotId: snapshot.provider_snapshot_id,
           label,
         });
-        providerInstanceId = provider.id;
-      } catch (error) {
+       } catch (error) {
         const recovered = await findVultrInstanceByLabel(label).catch(() => null);
         let cleanupOk = false;
 
         if (recovered?.id) {
-          providerInstanceId = recovered.id;
-          try {
+           try {
             await deleteVultrInstance(recovered.id);
             cleanupOk = true;
           } catch {
