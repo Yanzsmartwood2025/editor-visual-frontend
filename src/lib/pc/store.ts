@@ -41,6 +41,7 @@ export type NaylaPcInstanceRow = {
   provider_instance_id: string | null;
   provider_plan_id: string;
   provider_region_id: string;
+  provider_os_id: number | null;
   provider_os_id: number;
   os_family: 'linux' | 'windows';
   cpu: number;
@@ -326,6 +327,7 @@ export const createNaylaPcSnapshotRow = async (input: {
   gpuVramGb?: number | null;
   providerPlanId: string;
   providerRegionId: string;
+  providerOsId?: number | null;
   metadata?: Record<string, unknown>;
 }): Promise<NaylaPcSnapshotRow> => {
   const supabase = getWorkspaceSupabaseAdmin();
@@ -348,6 +350,7 @@ export const createNaylaPcSnapshotRow = async (input: {
       gpu_vram_gb: input.gpuVramGb || null,
       provider_plan_id: input.providerPlanId,
       provider_region_id: input.providerRegionId,
+      provider_os_id: input.providerOsId || null,
       metadata: input.metadata || {},
     })
     .select('*')
