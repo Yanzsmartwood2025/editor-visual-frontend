@@ -99,6 +99,54 @@ export const toPublicNaylaPcSnapshot = (row: NaylaPcSnapshotRow) => ({
   readyAt: row.ready_at,
 });
 
+export const markNaylaPcDesktopReady = async (
+  row: NaylaPcInstanceRow
+): Promise<NaylaPcInstanceRow> => {
+  if (row.ready_at && row.billable_started_at) {
+    if (row.status === 'running') return row;
+    return patchNaylaPcInstance({
+      instanceId: row.id,
+      patch: {
+        status: 'running',
+        last_synced_at: new Date().toISOString(),
+      },
+    });
+  }
+
+  const now = new Date();
+  const patch: Partial<NaylaPcInstanceRow> = {
+    status: 'running',
+    ready_at: row.ready_at || now.toISOString(),
+    billable_started_at: row.billable_started_at || now.toISOString(),
+    last_synced_at: now.toISOString(),
+    metadata: {
+      ...(row.metadata || {}),
+      desktop_ready_callback_at: now.toISOString(),
+    },
+  };
+
+  if (row.billing_mode === 'hourly') {
+    const safetyRaw = Number(process.env.NAYLA_PC_LEASE_SAFETY_SECONDS || 90);
+    const safetySeconds = Number.isFinite(safetyRaw)
+      ? Math.min(300, Math.max(30, safetyRaw))
+      : 90;
+    patch.auto_destroy = true;
+    patch.expires_at = new Date(
+      now.getTime() +
+        Number(row.duration_hours) * 60 * 60 * 1000 -
+        safetySeconds * 1000
+    ).toISOString();
+  } else {
+    patch.auto_destroy = false;
+    patch.expires_at = null;
+  }
+
+  return patchNaylaPcInstance({
+    instanceId: row.id,
+    patch,
+  });
+};
+
 export const syncNaylaPcInstance = async (
   row: NaylaPcInstanceRow
 ): Promise<NaylaPcInstanceRow> => {
@@ -143,24 +191,11 @@ export const syncNaylaPcInstance = async (
   const readyPatch: Partial<NaylaPcInstanceRow> = {};
 
   if (desktopReady && !row.ready_at) {
-    readyPatch.ready_at = now.toISOString();
-    readyPatch.billable_started_at = now.toISOString();
-
-    if (row.billing_mode === 'hourly') {
-      const safetyRaw = Number(process.env.NAYLA_PC_LEASE_SAFETY_SECONDS || 90);
-      const safetySeconds = Number.isFinite(safetyRaw)
-        ? Math.min(300, Math.max(30, safetyRaw))
-        : 90;
-      readyPatch.auto_destroy = true;
-      readyPatch.expires_at = new Date(
-        now.getTime() +
-          Number(row.duration_hours) * 60 * 60 * 1000 -
-          safetySeconds * 1000
-      ).toISOString();
-    } else {
-      readyPatch.auto_destroy = false;
-      readyPatch.expires_at = null;
-    }
+    return markNaylaPcDesktopReady({
+      ...row,
+      main_ip: mainIp,
+      last_synced_at: now.toISOString(),
+    });
   }
 
   return patchNaylaPcInstance({
