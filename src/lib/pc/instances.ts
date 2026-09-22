@@ -384,6 +384,8 @@ export const finalizePendingNaylaPcSnapshots = async () => {
             await deleteVultrInstance(sourceProviderInstanceId);
           }
 
+          await revokeNaylaPcDriveSessionsForInstance(row.source_instance_id).catch(() => undefined);
+
           await patchNaylaPcInstance({
             instanceId: row.source_instance_id,
             patch: {
