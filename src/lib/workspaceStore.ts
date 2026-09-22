@@ -524,7 +524,7 @@ export const getRecentOwnedMediaForUser = async ({
 }: {
   userId: string;
   projectId: string;
-  tipo?: 'foto' | 'video' | 'audio' | 'modelo3d';
+  tipo?: 'foto' | 'video' | 'audio' | 'documento' | 'modelo3d';
   limit?: number;
 }) => {
   const supabase = getWorkspaceSupabaseAdmin();
