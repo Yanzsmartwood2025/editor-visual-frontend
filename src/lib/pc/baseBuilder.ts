@@ -190,6 +190,38 @@ export const cleanupNaylaPcBaseBuild = async () => {
   };
 };
 
+export const cleanupNaylaPcBaseBuild = async () => {
+  const builder = await findVultrInstanceByLabel(NAYLA_PC_BASE_LABEL);
+  let providerDeleted = false;
+
+  if (builder?.id) {
+    await deleteVultrInstance(builder.id);
+    providerDeleted = true;
+  }
+
+  const building = await getLatestNaylaPcBaseImage(['building']);
+  if (building) {
+    await patchNaylaPcBaseImage({
+      baseImageId: building.id,
+      patch: {
+        status: 'error',
+        metadata: {
+          ...(building.metadata || {}),
+          cleanup_requested_at: new Date().toISOString(),
+          cleanup_provider_deleted: providerDeleted,
+        },
+      },
+    }).catch(() => undefined);
+  }
+
+  const remaining = await findVultrInstanceByLabel(NAYLA_PC_BASE_LABEL);
+  return {
+    state: remaining ? ('cleanup_pending' as const) : ('deleted' as const),
+    providerDeleted,
+    remainingProviderInstance: Boolean(remaining),
+  };
+};
+
 export const progressNaylaPcBaseBuild = async () => {
   const available = await getAvailableNaylaPcBaseImage('linux');
   if (available?.version === NAYLA_PC_BASE_VERSION) {
