@@ -129,6 +129,16 @@ const buildTimelineAssetSchema = z.object({
   if (asset.source === 'label' && !asset.label) {
     ctx.addIssue({ code: 'custom', path: ['label'], message: 'Un asset por etiqueta requiere label.' });
   }
+  if (asset.source === 'label' && asset.label) {
+    const expectedPrefix = asset.type === 'video' ? 'V' : asset.type === 'audio' ? 'A' : 'F';
+    if (!asset.label.toUpperCase().startsWith(expectedPrefix)) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['label'],
+        message: `La etiqueta no coincide con el tipo ${asset.type}.`,
+      });
+    }
+  }
 });
 
 export const naylaActionSchema = z.discriminatedUnion('action', [
