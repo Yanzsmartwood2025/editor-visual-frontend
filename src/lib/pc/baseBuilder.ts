@@ -14,10 +14,12 @@ import {
 } from '../gpu/vultrApi';
 import {
   createNaylaPcBaseImage,
+  deleteNaylaInternalSecret,
   getAvailableNaylaPcBaseImage,
   getLatestNaylaPcBaseImage,
   patchNaylaPcBaseImage,
   retireAvailableNaylaPcBaseImages,
+  setNaylaInternalSecret,
 } from './store';
 
 export const NAYLA_PC_BASE_LABEL = 'nayla-pc-base-ubuntu-2604-xfce-v2';
@@ -134,6 +136,13 @@ export const startNaylaPcBaseBuild = async () => {
     userData,
   });
 
+  try {
+    await setNaylaInternalSecret('pc_base_build_active', provider.id);
+  } catch (error) {
+    await deleteVultrInstance(provider.id).catch(() => undefined);
+    throw error;
+  }
+
   return {
     state: 'building' as const,
     provider,
@@ -172,6 +181,9 @@ export const cleanupNaylaPcBaseBuild = async () => {
   }
 
   const after = await findVultrInstanceByLabel(NAYLA_PC_BASE_LABEL);
+  if (!after) {
+    await deleteNaylaInternalSecret('pc_base_build_active').catch(() => undefined);
+  }
   return {
     state: after ? ('cleanup_pending' as const) : ('cleaned' as const),
     providerInstancePresent: Boolean(after),
@@ -193,6 +205,7 @@ export const progressNaylaPcBaseBuild = async () => {
           : '';
       await deleteVultrSnapshot(building.provider_snapshot_id).catch(() => undefined);
       if (builderId) await deleteVultrInstance(builderId).catch(() => undefined);
+      await deleteNaylaInternalSecret('pc_base_build_active').catch(() => undefined);
       const failed = await patchNaylaPcBaseImage({
         baseImageId: building.id,
         patch: {
@@ -209,14 +222,50 @@ export const progressNaylaPcBaseBuild = async () => {
 
     const providerSnapshot = await getVultrSnapshot(building.provider_snapshot_id);
     if (!providerSnapshot) {
+      const builderId =
+        typeof building.metadata?.builder_instance_id === 'string'
+          ? String(building.metadata.builder_instance_id)
+          : '';
+      if (builderId) await deleteVultrInstance(builderId).catch(() => undefined);
+      await deleteNaylaInternalSecret('pc_base_build_active').catch(() => undefined);
       const failed = await patchNaylaPcBaseImage({
         baseImageId: building.id,
-        patch: { status: 'error' },
+        patch: {
+          status: 'error',
+          metadata: {
+            ...(building.metadata || {}),
+            cleanup_reason: 'snapshot_missing',
+            cleanup_at: new Date().toISOString(),
+          },
+        },
       });
-      return { state: 'error' as const, base: failed };
+      return { state: 'error' as const, base: failed, autoCleaned: true };
     }
 
     const status = String(providerSnapshot.status || '').toLowerCase();
+    if (['error', 'failed'].includes(status)) {
+      const builderId =
+        typeof building.metadata?.builder_instance_id === 'string'
+          ? String(building.metadata.builder_instance_id)
+          : '';
+      await deleteVultrSnapshot(building.provider_snapshot_id).catch(() => undefined);
+      if (builderId) await deleteVultrInstance(builderId).catch(() => undefined);
+      await deleteNaylaInternalSecret('pc_base_build_active').catch(() => undefined);
+      const failed = await patchNaylaPcBaseImage({
+        baseImageId: building.id,
+        patch: {
+          status: 'error',
+          metadata: {
+            ...(building.metadata || {}),
+            cleanup_reason: 'snapshot_failed',
+            provider_snapshot_status: status,
+            cleanup_at: new Date().toISOString(),
+          },
+        },
+      });
+      return { state: 'error' as const, base: failed, autoCleaned: true };
+    }
+
     if (!['complete', 'available', 'active'].includes(status)) {
       return { state: 'snapshotting' as const, base: building, providerStatus: status };
     }
@@ -244,19 +293,29 @@ export const progressNaylaPcBaseBuild = async () => {
         ? String(ready.metadata.builder_instance_id)
         : '';
     if (builderId) await deleteVultrInstance(builderId).catch(() => undefined);
+    await deleteNaylaInternalSecret('pc_base_build_active').catch(() => undefined);
 
     return { state: 'available' as const, base: ready };
   }
 
   const builder = await findVultrInstanceByLabel(NAYLA_PC_BASE_LABEL);
-  if (!builder) return { state: 'idle' as const };
+  if (!builder) {
+    await deleteNaylaInternalSecret('pc_base_build_active').catch(() => undefined);
+    return { state: 'idle' as const };
+  }
 
   const live = await getVultrInstance(builder.id);
-  if (!live) return { state: 'idle' as const };
+  if (!live) {
+    await deleteNaylaInternalSecret('pc_base_build_active').catch(() => undefined);
+    return { state: 'idle' as const };
+  }
 
   if (ageMs(typeof live.date_created === 'string' ? live.date_created : null) > buildTimeoutMs()) {
     await deleteVultrInstance(live.id);
     const after = await findVultrInstanceByLabel(NAYLA_PC_BASE_LABEL);
+    if (!after) {
+      await deleteNaylaInternalSecret('pc_base_build_active').catch(() => undefined);
+    }
     return {
       state: after ? ('cleanup_pending' as const) : ('error' as const),
       desktopReady: false,
