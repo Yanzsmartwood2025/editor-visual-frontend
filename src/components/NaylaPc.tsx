@@ -300,7 +300,7 @@ export default function NaylaPc({
           // La siguiente sincronización volverá a intentarlo.
         }
       })();
-    }, 8000);
+    }, 15000);
     return () => window.clearInterval(timer);
   }, [activeInstance?.id, activeInstance?.status, session]);
 
