@@ -557,6 +557,21 @@ export const getAvailableNaylaPcBaseImage = async (
   return (data as NaylaPcBaseImageRow | null) || null;
 };
 
+export const listNaylaPcBaseImages = async (
+  statuses: Array<NaylaPcBaseImageRow['status']> = ['building']
+): Promise<NaylaPcBaseImageRow[]> => {
+  const supabase = getWorkspaceSupabaseAdmin();
+  const { data, error } = await supabase
+    .from('nayla_pc_base_images')
+    .select('*')
+    .in('status', statuses)
+    .order('created_at', { ascending: true })
+    .limit(50);
+
+  if (error) throw error;
+  return (data as NaylaPcBaseImageRow[]) || [];
+};
+
 export const getLatestNaylaPcBaseImage = async (
   statuses: Array<NaylaPcBaseImageRow['status']> = ['building', 'available']
 ): Promise<NaylaPcBaseImageRow | null> => {
@@ -820,6 +835,31 @@ export const setNaylaInternalSecret = async (
     );
 
   if (error) throw error;
+};
+
+export const compareAndSwapNaylaInternalSecret = async ({
+  name,
+  expectedValue,
+  nextValue,
+}: {
+  name: string;
+  expectedValue: string;
+  nextValue: string;
+}): Promise<boolean> => {
+  const supabase = getWorkspaceSupabaseAdmin();
+  const { data, error } = await supabase
+    .from('nayla_internal_secrets')
+    .update({
+      secret_value: nextValue,
+      rotated_at: new Date().toISOString(),
+    })
+    .eq('name', name)
+    .eq('secret_value', expectedValue)
+    .select('name')
+    .maybeSingle();
+
+  if (error) throw error;
+  return Boolean(data);
 };
 
 export const deleteNaylaInternalSecret = async (
