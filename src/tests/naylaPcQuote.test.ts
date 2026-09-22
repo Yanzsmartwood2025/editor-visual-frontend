@@ -14,7 +14,11 @@ import {
   listVultrPlans,
   listVultrRegions,
 } from '../lib/gpu/vultrApi';
-import { normalizeNaylaPcRequest, quoteNaylaPc } from '../lib/pc/quote';
+import {
+  normalizeNaylaPcRequest,
+  quoteNaylaPc,
+  resolveNaylaPcSelection,
+} from '../lib/pc/quote';
 
 const ORIGINAL_ENV = { ...process.env };
 
@@ -120,6 +124,42 @@ describe('Nayla PC quote', () => {
     expect(serialized).not.toContain('vultr');
     expect(serialized).not.toContain('cpu-right');
     expect(serialized).not.toContain('network-c');
+  });
+
+  it('resolves an opaque live selection back to an internal plan only on the server', async () => {
+    vi.mocked(listVultrPlans).mockResolvedValue([
+      {
+        id: 'cpu-private-plan',
+        type: 'vc2',
+        vcpu_count: 2,
+        ram: 4096,
+        disk: 80,
+        monthly_cost: 24,
+        locations: ['ewr'],
+      },
+    ] as any);
+
+    const request = {
+      cpu: 2,
+      ramGb: 4,
+      diskGb: 80,
+      gpuEnabled: false,
+      billingMode: 'hourly' as const,
+      durationHours: 3,
+      osFamily: 'linux' as const,
+    };
+
+    const quote = await quoteNaylaPc(request);
+    const resolved = await resolveNaylaPcSelection({
+      rawInput: request,
+      selectionId: quote.cards[0].id,
+    });
+
+    expect(resolved.plan.id).toBe('cpu-private-plan');
+    expect(resolved.region.id).toBe('ewr');
+    expect(resolved.os.name).toContain('Ubuntu');
+    expect(resolved.card.id).toBe(quote.cards[0].id);
+    expect(JSON.stringify(quote)).not.toContain('cpu-private-plan');
   });
 
   it('uses the GPU billing cap and flags Windows licensing as incomplete', async () => {
