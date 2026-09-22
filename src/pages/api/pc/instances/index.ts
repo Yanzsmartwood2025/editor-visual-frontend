@@ -1,4 +1,4 @@
-import { randomBytes } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import type { NextApiRequest, NextApiResponse } from 'next';
 import {
   isFirebaseAdmin,
@@ -6,7 +6,10 @@ import {
 } from '../../../../lib/firebaseAdmin';
 import {
   buildNaylaPcDesktopUserData,
+  buildNaylaPcRuntimeUserData,
+  combineVultrUserData,
   createVultrInstance,
+  createVultrInstanceFromSnapshot,
   deleteVultrInstance,
   findVultrInstanceByLabel,
 } from '../../../../lib/gpu/vultrApi';
@@ -15,10 +18,13 @@ import {
   type NaylaPcRequest,
 } from '../../../../lib/pc/quote';
 import {
+  createNaylaPcDriveSession,
   createNaylaPcProvisioningInstance,
   getActiveNaylaPcInstance,
+  getAvailableNaylaPcBaseImage,
   getDefaultNaylaPcProfile,
   patchNaylaPcInstance,
+  revokeNaylaPcDriveSessionsForInstance,
 } from '../../../../lib/pc/store';
 import {
   syncNaylaPcInstance,
@@ -32,9 +38,6 @@ const envNumber = (key: string, fallback: number) => {
 
 const maxSessionUsd = () => envNumber('NAYLA_PC_MAX_SESSION_USD', 100);
 const maxMonthlyUsd = () => envNumber('NAYLA_PC_MAX_MONTHLY_USD', 750);
-const leaseSafetySeconds = () =>
-  Math.min(300, Math.max(30, envNumber('NAYLA_PC_LEASE_SAFETY_SECONDS', 90)));
-
 const sameMoney = (a: unknown, b: number) => {
   const value = Number(a);
   return Number.isFinite(value) && Math.abs(value - b) <= 0.0005;
@@ -186,15 +189,18 @@ export default async function handler(
       .replace(/[^A-Za-z0-9]/g, '')
       .slice(0, 8)
       .padEnd(8, '7');
-    const desktopUserData = buildNaylaPcDesktopUserData({ desktopPassword });
-    const autoDestroy = resolved.request.billingMode === 'hourly';
-    const expiresAt = autoDestroy
-      ? new Date(
-          Date.now() +
-            resolved.request.durationHours * 60 * 60 * 1000 -
-            leaseSafetySeconds() * 1000
-        ).toISOString()
-      : null;
+    const driveToken = randomBytes(32).toString('base64url');
+    const driveTokenHash = createHash('sha256')
+      .update(driveToken, 'utf8')
+      .digest('hex');
+    const bootDeadlineAt = new Date(Date.now() + 30 * 60 * 1000).toISOString();
+    const baseImageCandidate = await getAvailableNaylaPcBaseImage('linux');
+    const baseImage =
+      baseImageCandidate &&
+      resolved.card.diskGb >= Number(baseImageCandidate.min_disk_gb) &&
+      resolved.card.ramGb >= Number(baseImageCandidate.min_ram_gb)
+        ? baseImageCandidate
+        : null;
 
     const pending = await createNaylaPcProvisioningInstance({
       userId: user.uid,
@@ -211,12 +217,13 @@ export default async function handler(
       gpuVramGb: resolved.card.gpuVramGb || null,
       billingMode: resolved.request.billingMode,
       durationHours: resolved.request.durationHours,
-      autoDestroy,
+      autoDestroy: true,
       publicHourlyPrice: resolved.card.hourlyPrice,
       publicMonthlyPrice: resolved.card.monthlyPrice,
       publicSessionPrice: resolved.card.estimatedSessionPrice,
       providerMonthlyCost: resolved.providerMonthlyCost,
-      expiresAt,
+      expiresAt: bootDeadlineAt,
+      bootDeadlineAt,
       metadata: {
         os_name: resolved.os.name || null,
         quote_confirmed_at: new Date().toISOString(),
@@ -224,21 +231,66 @@ export default async function handler(
         desktop_password: desktopPassword,
         desktop_port: 6080,
         desktop_tls: 'self_signed',
+        drive_enabled: true,
+        base_image_id: baseImage?.id || null,
+        base_image_version: baseImage?.version || null,
+        boot_started_at: new Date().toISOString(),
+        requested_billing_mode: resolved.request.billingMode,
       },
     });
 
     pendingId = pending.id;
     label = 'nayla-pc-' + pending.id;
 
+    const driveSessionExpiresAt = new Date(
+      Date.now() +
+        (resolved.request.billingMode === 'monthly'
+          ? 40 * 24 * 60 * 60 * 1000
+          : (resolved.request.durationHours + 48) * 60 * 60 * 1000)
+    ).toISOString();
+
+    await createNaylaPcDriveSession({
+      instanceId: pending.id,
+      userId: user.uid,
+      tokenHash: driveTokenHash,
+      expiresAt: driveSessionExpiresAt,
+    });
+
+    const driveApiBaseUrl =
+      (process.env.NAYLA_PUBLIC_BASE_URL || 'https://editor-visual-frontend-cauc.vercel.app')
+        .replace(/\/$/, '') + '/api/pc/drive/agent';
+
+    const runtimeUserData = buildNaylaPcRuntimeUserData({
+      desktopPassword,
+      driveToken,
+      instanceId: pending.id,
+      driveApiBaseUrl,
+    });
+
+    const freshDesktopUserData = combineVultrUserData(
+      buildNaylaPcDesktopUserData({ desktopPassword }),
+      runtimeUserData
+    );
+
     let provider;
     try {
-      provider = await createVultrInstance({
-        planId: resolved.plan.id,
-        regionId: resolved.region.id,
-        osId: Number(resolved.os.id),
-        label,
-        userData: desktopUserData,
-      });
+      if (baseImage) {
+        provider = await createVultrInstanceFromSnapshot({
+          planId: resolved.plan.id,
+          regionId: resolved.region.id,
+          snapshotId: baseImage.provider_snapshot_id,
+          label,
+          userData: runtimeUserData,
+        });
+      } else {
+        provider = await createVultrInstance({
+          planId: resolved.plan.id,
+          regionId: resolved.region.id,
+          osId: Number(resolved.os.id),
+          label,
+          userData: freshDesktopUserData,
+        });
+      }
       providerInstanceId = provider.id;
     } catch (error) {
       const recovered = await findVultrInstanceByLabel(label).catch(() => null);
@@ -283,6 +335,7 @@ export default async function handler(
             },
       }).catch(() => undefined);
 
+      await revokeNaylaPcDriveSessionsForInstance(pending.id).catch(() => undefined);
       throw error;
     }
 
@@ -339,13 +392,15 @@ export default async function handler(
               },
             },
       }).catch(() => undefined);
+      await revokeNaylaPcDriveSessionsForInstance(pending.id).catch(() => undefined);
       throw error;
     }
 
     return res.status(201).json({
       instance: toPublicNaylaPcInstance(saved),
-      message:
-        'Nayla PC fue aceptada por la red de cómputo. El arranque puede tardar unos minutos.',
+      message: baseImage
+        ? 'Nayla PC está arrancando desde la imagen base preparada. Tu tiempo todavía no corre.'
+        : 'Nayla PC está preparando el escritorio. Tu tiempo todavía no corre.',
     });
   } catch (error) {
     const code = (error as Error & { code?: string }).code;

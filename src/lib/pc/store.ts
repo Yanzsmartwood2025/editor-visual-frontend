@@ -61,6 +61,9 @@ export type NaylaPcInstanceRow = {
   expires_at: string | null;
   last_synced_at: string | null;
   terminated_at: string | null;
+  ready_at: string | null;
+  billable_started_at: string | null;
+  boot_deadline_at: string | null;
   metadata: Record<string, unknown>;
   created_at: string;
   updated_at: string;
@@ -98,6 +101,58 @@ export type NaylaPcSnapshotRow = {
   created_at: string;
   ready_at: string | null;
   deleted_at: string | null;
+  updated_at: string;
+  metadata: Record<string, unknown>;
+};
+
+export type NaylaPcBaseImageRow = {
+  id: string;
+  provider: string;
+  provider_snapshot_id: string;
+  os_family: 'linux' | 'windows';
+  os_name: string;
+  version: string;
+  status: 'building' | 'available' | 'retiring' | 'retired' | 'error';
+  provider_plan_id: string;
+  provider_region_id: string;
+  provider_os_id: number | null;
+  min_disk_gb: number;
+  min_ram_gb: number;
+  desktop_stack: string | null;
+  snapshot_size_bytes: number | null;
+  storage_monthly_usd: number | null;
+  created_at: string;
+  ready_at: string | null;
+  retired_at: string | null;
+  updated_at: string;
+  metadata: Record<string, unknown>;
+};
+
+export type NaylaPcDriveSessionRow = {
+  id: string;
+  instance_id: string;
+  user_id: string;
+  token_hash: string;
+  status: 'active' | 'revoked' | 'expired';
+  expires_at: string;
+  created_at: string;
+  revoked_at: string | null;
+  last_seen_at: string | null;
+};
+
+export type NaylaPcDriveFileRow = {
+  id: string;
+  user_id: string;
+  relative_path: string;
+  r2_key: string;
+  content_type: string | null;
+  size_bytes: number;
+  etag: string | null;
+  content_sha256: string | null;
+  modified_at: string | null;
+  uploaded_at: string;
+  deleted_at: string | null;
+  created_at: string;
   updated_at: string;
   metadata: Record<string, unknown>;
 };
@@ -226,6 +281,7 @@ export const createNaylaPcProvisioningInstance = async (input: {
   publicSessionPrice: number;
   providerMonthlyCost: number;
   expiresAt?: string | null;
+  bootDeadlineAt?: string | null;
   metadata?: Record<string, unknown>;
 }): Promise<NaylaPcInstanceRow> => {
   const supabase = getWorkspaceSupabaseAdmin();
@@ -255,6 +311,7 @@ export const createNaylaPcProvisioningInstance = async (input: {
       public_session_price: input.publicSessionPrice,
       provider_monthly_cost: input.providerMonthlyCost,
       expires_at: input.expiresAt || null,
+      boot_deadline_at: input.bootDeadlineAt || null,
       metadata: input.metadata || {},
     })
     .select('*')
@@ -452,6 +509,245 @@ export const listPendingNaylaPcSnapshots = async (
 
   if (error) throw error;
   return (data as NaylaPcSnapshotRow[]) || [];
+};
+
+export const getAvailableNaylaPcBaseImage = async (
+  osFamily: 'linux' | 'windows' = 'linux'
+): Promise<NaylaPcBaseImageRow | null> => {
+  const supabase = getWorkspaceSupabaseAdmin();
+  const { data, error } = await supabase
+    .from('nayla_pc_base_images')
+    .select('*')
+    .eq('os_family', osFamily)
+    .eq('status', 'available')
+    .order('ready_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) throw error;
+  return (data as NaylaPcBaseImageRow | null) || null;
+};
+
+export const getLatestNaylaPcBaseImage = async (
+  statuses: Array<NaylaPcBaseImageRow['status']> = ['building', 'available']
+): Promise<NaylaPcBaseImageRow | null> => {
+  const supabase = getWorkspaceSupabaseAdmin();
+  const { data, error } = await supabase
+    .from('nayla_pc_base_images')
+    .select('*')
+    .in('status', statuses)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) throw error;
+  return (data as NaylaPcBaseImageRow | null) || null;
+};
+
+export const createNaylaPcBaseImage = async (input: {
+  providerSnapshotId: string;
+  osFamily: 'linux' | 'windows';
+  osName: string;
+  version: string;
+  providerPlanId: string;
+  providerRegionId: string;
+  providerOsId?: number | null;
+  minDiskGb: number;
+  minRamGb: number;
+  desktopStack?: string | null;
+  metadata?: Record<string, unknown>;
+}): Promise<NaylaPcBaseImageRow> => {
+  const supabase = getWorkspaceSupabaseAdmin();
+  const { data, error } = await supabase
+    .from('nayla_pc_base_images')
+    .insert({
+      provider: 'vultr',
+      provider_snapshot_id: input.providerSnapshotId,
+      os_family: input.osFamily,
+      os_name: input.osName,
+      version: input.version,
+      status: 'building',
+      provider_plan_id: input.providerPlanId,
+      provider_region_id: input.providerRegionId,
+      provider_os_id: input.providerOsId || null,
+      min_disk_gb: input.minDiskGb,
+      min_ram_gb: input.minRamGb,
+      desktop_stack: input.desktopStack || null,
+      metadata: input.metadata || {},
+    })
+    .select('*')
+    .single();
+
+  if (error) throw error;
+  return data as NaylaPcBaseImageRow;
+};
+
+export const patchNaylaPcBaseImage = async ({
+  baseImageId,
+  patch,
+}: {
+  baseImageId: string;
+  patch: Partial<NaylaPcBaseImageRow>;
+}): Promise<NaylaPcBaseImageRow> => {
+  const supabase = getWorkspaceSupabaseAdmin();
+  const { data, error } = await supabase
+    .from('nayla_pc_base_images')
+    .update({ ...patch, updated_at: new Date().toISOString() })
+    .eq('id', baseImageId)
+    .select('*')
+    .single();
+
+  if (error) throw error;
+  return data as NaylaPcBaseImageRow;
+};
+
+export const retireAvailableNaylaPcBaseImages = async ({
+  osFamily,
+  exceptId,
+}: {
+  osFamily: 'linux' | 'windows';
+  exceptId: string;
+}) => {
+  const supabase = getWorkspaceSupabaseAdmin();
+  const { error } = await supabase
+    .from('nayla_pc_base_images')
+    .update({
+      status: 'retired',
+      retired_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    })
+    .eq('os_family', osFamily)
+    .eq('status', 'available')
+    .neq('id', exceptId);
+
+  if (error) throw error;
+};
+
+export const createNaylaPcDriveSession = async (input: {
+  instanceId: string;
+  userId: string;
+  tokenHash: string;
+  expiresAt: string;
+}): Promise<NaylaPcDriveSessionRow> => {
+  const supabase = getWorkspaceSupabaseAdmin();
+  const { data, error } = await supabase
+    .from('nayla_pc_drive_sessions')
+    .insert({
+      instance_id: input.instanceId,
+      user_id: input.userId,
+      token_hash: input.tokenHash,
+      status: 'active',
+      expires_at: input.expiresAt,
+    })
+    .select('*')
+    .single();
+
+  if (error) throw error;
+  return data as NaylaPcDriveSessionRow;
+};
+
+export const getNaylaPcDriveSessionByTokenHash = async (
+  tokenHash: string
+): Promise<NaylaPcDriveSessionRow | null> => {
+  const supabase = getWorkspaceSupabaseAdmin();
+  const { data, error } = await supabase
+    .from('nayla_pc_drive_sessions')
+    .select('*')
+    .eq('token_hash', tokenHash)
+    .eq('status', 'active')
+    .gt('expires_at', new Date().toISOString())
+    .maybeSingle();
+
+  if (error) throw error;
+  return (data as NaylaPcDriveSessionRow | null) || null;
+};
+
+export const touchNaylaPcDriveSession = async (sessionId: string) => {
+  const supabase = getWorkspaceSupabaseAdmin();
+  const { error } = await supabase
+    .from('nayla_pc_drive_sessions')
+    .update({ last_seen_at: new Date().toISOString() })
+    .eq('id', sessionId);
+
+  if (error) throw error;
+};
+
+export const revokeNaylaPcDriveSessionsForInstance = async (
+  instanceId: string
+) => {
+  const supabase = getWorkspaceSupabaseAdmin();
+  const { error } = await supabase
+    .from('nayla_pc_drive_sessions')
+    .update({
+      status: 'revoked',
+      revoked_at: new Date().toISOString(),
+    })
+    .eq('instance_id', instanceId)
+    .eq('status', 'active');
+
+  if (error) throw error;
+};
+
+export const listNaylaPcDriveFiles = async (
+  userId: string
+): Promise<NaylaPcDriveFileRow[]> => {
+  const supabase = getWorkspaceSupabaseAdmin();
+  const { data, error } = await supabase
+    .from('nayla_pc_drive_files')
+    .select('*')
+    .eq('user_id', userId)
+    .is('deleted_at', null)
+    .order('relative_path', { ascending: true })
+    .limit(5000);
+
+  if (error) throw error;
+  return (data as NaylaPcDriveFileRow[]) || [];
+};
+
+export const upsertNaylaPcDriveFile = async (input: {
+  userId: string;
+  relativePath: string;
+  r2Key: string;
+  contentType?: string | null;
+  sizeBytes: number;
+  etag?: string | null;
+  contentSha256?: string | null;
+  modifiedAt?: string | null;
+  metadata?: Record<string, unknown>;
+}): Promise<NaylaPcDriveFileRow> => {
+  const supabase = getWorkspaceSupabaseAdmin();
+  const { data: existing, error: findError } = await supabase
+    .from('nayla_pc_drive_files')
+    .select('id')
+    .eq('user_id', input.userId)
+    .eq('relative_path', input.relativePath)
+    .is('deleted_at', null)
+    .maybeSingle();
+
+  if (findError) throw findError;
+
+  const row = {
+    user_id: input.userId,
+    relative_path: input.relativePath,
+    r2_key: input.r2Key,
+    content_type: input.contentType || null,
+    size_bytes: input.sizeBytes,
+    etag: input.etag || null,
+    content_sha256: input.contentSha256 || null,
+    modified_at: input.modifiedAt || null,
+    uploaded_at: new Date().toISOString(),
+    deleted_at: null,
+    updated_at: new Date().toISOString(),
+    metadata: input.metadata || {},
+  };
+
+  const query = existing?.id
+    ? supabase.from('nayla_pc_drive_files').update(row).eq('id', existing.id)
+    : supabase.from('nayla_pc_drive_files').insert(row);
+
+  const { data, error } = await query.select('*').single();
+  if (error) throw error;
+  return data as NaylaPcDriveFileRow;
 };
 
 export const getNaylaInternalSecret = async (

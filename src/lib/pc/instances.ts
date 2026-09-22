@@ -5,6 +5,7 @@ import {
   getVultrInstance,
   getVultrSnapshot,
   haltVultrInstance,
+  probeNaylaPcDesktop,
   rebootVultrInstance,
   startVultrInstance,
   type VultrInstance,
@@ -16,6 +17,7 @@ import {
   listPendingNaylaPcSnapshots,
   patchNaylaPcInstance,
   patchNaylaPcSnapshot,
+  revokeNaylaPcDriveSessionsForInstance,
   type NaylaPcInstanceRow,
   type NaylaPcInstanceStatus,
   type NaylaPcSnapshotRow,
@@ -70,6 +72,8 @@ export const toPublicNaylaPcInstance = (row: NaylaPcInstanceRow) => ({
   monthlyPrice: Number(row.public_monthly_price),
   sessionPrice: Number(row.public_session_price),
   expiresAt: row.expires_at,
+  readyAt: row.ready_at,
+  billableStartedAt: row.billable_started_at,
   createdAt: row.created_at,
   updatedAt: row.updated_at,
   terminatedAt: row.terminated_at,
@@ -115,12 +119,58 @@ export const syncNaylaPcInstance = async (
     });
   }
 
+  const mainIp = provider.main_ip || row.main_ip;
+  const providerState = providerStatus(provider, row.status);
+  const desktopEnabled = row.metadata?.desktop_enabled === true;
+  let desktopReady = Boolean(row.ready_at);
+
+  if (
+    desktopEnabled &&
+    !desktopReady &&
+    providerState === 'running' &&
+    mainIp &&
+    mainIp !== '0.0.0.0'
+  ) {
+    desktopReady = await probeNaylaPcDesktop(
+      mainIp,
+      Number(row.metadata?.desktop_port || 6080)
+    ).catch(() => false);
+  }
+
+  const now = new Date();
+  const readyPatch: Partial<NaylaPcInstanceRow> = {};
+
+  if (desktopReady && !row.ready_at) {
+    readyPatch.ready_at = now.toISOString();
+    readyPatch.billable_started_at = now.toISOString();
+
+    if (row.billing_mode === 'hourly') {
+      const safetyRaw = Number(process.env.NAYLA_PC_LEASE_SAFETY_SECONDS || 90);
+      const safetySeconds = Number.isFinite(safetyRaw)
+        ? Math.min(300, Math.max(30, safetyRaw))
+        : 90;
+      readyPatch.auto_destroy = true;
+      readyPatch.expires_at = new Date(
+        now.getTime() +
+          Number(row.duration_hours) * 60 * 60 * 1000 -
+          safetySeconds * 1000
+      ).toISOString();
+    } else {
+      readyPatch.auto_destroy = false;
+      readyPatch.expires_at = null;
+    }
+  }
+
   return patchNaylaPcInstance({
     instanceId: row.id,
     patch: {
-      status: providerStatus(provider, row.status),
-      main_ip: provider.main_ip || row.main_ip,
-      last_synced_at: new Date().toISOString(),
+      status:
+        desktopEnabled && !desktopReady && providerState === 'running'
+          ? 'provisioning'
+          : providerState,
+      main_ip: mainIp,
+      last_synced_at: now.toISOString(),
+      ...readyPatch,
     },
   });
 };
@@ -150,6 +200,8 @@ export const terminateNaylaPcInstance = async ({
   if (current.provider_instance_id) {
     await deleteVultrInstance(current.provider_instance_id);
   }
+
+  await revokeNaylaPcDriveSessionsForInstance(row.id).catch(() => undefined);
 
   current = await patchNaylaPcInstance({
     instanceId: row.id,
@@ -331,6 +383,8 @@ export const finalizePendingNaylaPcSnapshots = async () => {
           if (sourceProviderInstanceId) {
             await deleteVultrInstance(sourceProviderInstanceId);
           }
+
+          await revokeNaylaPcDriveSessionsForInstance(row.source_instance_id).catch(() => undefined);
 
           await patchNaylaPcInstance({
             instanceId: row.source_instance_id,

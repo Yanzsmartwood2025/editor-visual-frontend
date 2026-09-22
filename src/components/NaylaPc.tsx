@@ -79,6 +79,8 @@ type PcInstance = {
   monthlyPrice: number;
   sessionPrice: number;
   expiresAt?: string | null;
+  readyAt?: string | null;
+  billableStartedAt?: string | null;
   createdAt: string;
   updatedAt: string;
   terminatedAt?: string | null;
@@ -141,7 +143,7 @@ const dateTime = (value?: string | null) => {
 
 const statusLabel = (status: PcInstance['status']) => {
   const labels: Record<PcInstance['status'], string> = {
-    provisioning: 'INICIANDO',
+    provisioning: 'PREPARANDO',
     running: 'ENCENDIDA',
     stopped: 'APAGADA',
     rebooting: 'REINICIANDO',
@@ -666,13 +668,30 @@ export default function NaylaPc({
                 </div>
                 <div style={{ border: '1px solid #292929', borderRadius: 12, padding: 10 }}>
                   <div style={{ color: '#666', fontSize: '0.55rem' }}>
-                    {activeInstance.autoDestroy ? 'AUTODESTRUCCIÓN' : 'MODO'}
+                    {!activeInstance.billableStartedAt
+                      ? 'TIEMPO CONTRATADO'
+                      : activeInstance.autoDestroy
+                        ? 'AUTODESTRUCCIÓN'
+                        : 'MODO'}
                   </div>
                   <strong style={{ fontSize: '0.75rem' }}>
-                    {activeInstance.autoDestroy ? dateTime(activeInstance.expiresAt) : 'PERMANENTE'}
+                    {!activeInstance.billableStartedAt
+                      ? 'AÚN NO CORRE'
+                      : activeInstance.autoDestroy
+                        ? dateTime(activeInstance.expiresAt)
+                        : 'PERMANENTE'}
                   </strong>
                 </div>
               </div>
+
+              {activeInstance.status === 'provisioning' && !activeInstance.billableStartedAt && (
+                <div style={{ marginTop: 12, border: '1px solid #303030', borderRadius: 14, padding: 12, background: '#080808' }}>
+                  <div style={{ fontSize: '0.68rem', fontWeight: 900 }}>PREPARANDO TU PC</div>
+                  <div style={{ color: '#999', fontSize: '0.62rem', lineHeight: 1.5, marginTop: 5 }}>
+                    Nayla está esperando que el escritorio responda. Tu tiempo contratado empieza únicamente cuando la computadora esté lista para usar.
+                  </div>
+                </div>
+              )}
 
               {activeInstance.desktop && activeInstance.status === 'running' && (
                 <div style={{ marginTop: 12, border: '1px solid #333', borderRadius: 14, padding: 12, background: '#070707' }}>
@@ -950,7 +969,7 @@ export default function NaylaPc({
               <div style={{ border: '1px solid #292929', borderRadius: 16, padding: 14, background: '#0b0b0b' }}>
                 <div style={{ fontSize: '0.7rem', color: '#888', fontWeight: 850, marginBottom: 9 }}>ARCHIVOS Y DISCO</div>
                 <div style={{ color: '#999', fontSize: '0.65rem', lineHeight: 1.55 }}>
-                  El disco seleccionado pertenece a la PC. La Bóveda de Cloudflare R2 se mantiene separada para archivos persistentes, proyectos y respaldos.
+                  La carpeta “Nayla Drive” se sincroniza con Cloudflare R2 para conservar proyectos y archivos aunque destruyas la VM. El disco local queda para sistema, programas y caché temporal.
                 </div>
               </div>
 
@@ -1077,7 +1096,7 @@ export default function NaylaPc({
           <div style={{ width: 'min(460px,100%)', border: '1px solid #3b3b3b', borderRadius: 20, background: '#0b0b0b', padding: 18, boxShadow: '0 24px 80px rgba(0,0,0,.55)' }}>
             <div style={{ fontSize: '1rem', fontWeight: 900 }}>Confirmar creación real</div>
             <div style={{ color: '#999', fontSize: '0.68rem', lineHeight: 1.55, marginTop: 8 }}>
-              Al confirmar, Nayla solicita una máquina real y el cobro del proveedor comienza. Antes de crear, el servidor vuelve a validar disponibilidad y precio.
+              Al confirmar, Nayla solicita una máquina real. Nuestro costo de proveedor empieza durante el arranque, pero tu tiempo contratado solo comienza cuando el escritorio esté listo. Antes de crear, el servidor vuelve a validar disponibilidad y precio.
             </div>
             <div style={{ marginTop: 12, border: '1px solid #292929', borderRadius: 14, padding: 12, background: '#070707' }}>
               <div style={{ fontWeight: 900, fontSize: '0.82rem' }}>{selected.cpu} vCPU · {selected.ramGb} GB RAM · {selected.diskGb} GB</div>
