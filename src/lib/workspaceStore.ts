@@ -559,7 +559,7 @@ export const getOwnedMediaByLabelsForUser = async ({
     labels
       .map((label) => String(label || '').trim().toUpperCase())
       .filter(Boolean)
-  )).slice(0, 50);
+  )).slice(0, 200);
 
   if (!normalizedLabels.length) return [];
 
