@@ -7,7 +7,6 @@ export type NaylaPlayGpuCard = {
   gpuRamGb?: number;
   region?: string;
   hourlyPrice: number;
-  internalHourlyPrice: number;
   available: boolean;
   recommended: boolean;
   performance: 'AAA' | 'AAA+';
@@ -111,7 +110,6 @@ export const quoteNaylaPlay = async (): Promise<NaylaPlayQuote> => {
     gpuRamGb: candidate.gpuRamGb,
     region: candidateRegion(candidate),
     hourlyPrice: publicHourlyPrice(candidate.hourlyPrice),
-    internalHourlyPrice: candidate.hourlyPrice,
     available: true,
     recommended:
       Boolean(cheapest) &&
