@@ -43,6 +43,30 @@ describe('Nayla natural timeline intent', () => {
     ]);
   });
 
+  it('keeps editing instructions out of the last subtitle block', () => {
+    const source = [
+      'BLOQUE 1: Primera línea',
+      '',
+      'BLOQUE 2',
+      'Segunda línea',
+      '',
+      'IMPORTANTE:',
+      'Usa transiciones suaves y no muestres esta instrucción.',
+    ].join('\n');
+
+    expect(extractSubtitleBlocks(source)).toEqual([
+      'Primera línea',
+      'Segunda línea',
+    ]);
+  });
+
+  it('accepts inline block labels without rendering the label itself', () => {
+    expect(extractSubtitleBlocks('BLOQUE 1: Hola mundo\nBLOQUE 2: Segunda frase')).toEqual([
+      'Hola mundo',
+      'Segunda frase',
+    ]);
+  });
+
   it('recognizes final render/production intent from natural plans', () => {
     expect(timelinePlanRequestsRender('¿Confirmas que proceda con este timeline y lo renderice?')).toBe(true);
     expect(timelinePlanRequestsRender('Ayúdame a crear un video con estas fotos')).toBe(true);
