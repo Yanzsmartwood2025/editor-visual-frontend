@@ -750,6 +750,30 @@ export const upsertNaylaPcDriveFile = async (input: {
   return data as NaylaPcDriveFileRow;
 };
 
+export const softDeleteNaylaPcDriveFile = async ({
+  userId,
+  relativePath,
+}: {
+  userId: string;
+  relativePath: string;
+}): Promise<NaylaPcDriveFileRow | null> => {
+  const supabase = getWorkspaceSupabaseAdmin();
+  const { data, error } = await supabase
+    .from('nayla_pc_drive_files')
+    .update({
+      deleted_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    })
+    .eq('user_id', userId)
+    .eq('relative_path', relativePath)
+    .is('deleted_at', null)
+    .select('*')
+    .maybeSingle();
+
+  if (error) throw error;
+  return (data as NaylaPcDriveFileRow | null) || null;
+};
+
 export const getNaylaInternalSecret = async (
   name: string
 ): Promise<string | null> => {
