@@ -95,7 +95,7 @@ const vultrRequest = async <T>(
         payload?.error_description ||
         ('HTTP ' + response.status);
       const error = new Error(
-        'Nayla Compute no pudo consultar una de sus redes GPU: ' +
+        'Nayla Compute no pudo consultar una de sus redes de cómputo: ' +
           String(detail).slice(0, 800)
       );
       (error as Error & { status?: number }).status = response.status;
@@ -370,6 +370,26 @@ export const getVultrInstance = async (
     throw error;
   }
 };
+
+const postVultrInstanceAction = async (
+  instanceId: string,
+  action: 'start' | 'halt' | 'reboot'
+): Promise<void> => {
+  await vultrRequest<unknown>(
+    '/instances/' + encodeURIComponent(instanceId) + '/' + action,
+    { method: 'POST' },
+    20_000
+  );
+};
+
+export const startVultrInstance = async (instanceId: string) =>
+  postVultrInstanceAction(instanceId, 'start');
+
+export const haltVultrInstance = async (instanceId: string) =>
+  postVultrInstanceAction(instanceId, 'halt');
+
+export const rebootVultrInstance = async (instanceId: string) =>
+  postVultrInstanceAction(instanceId, 'reboot');
 
 export const deleteVultrInstance = async (
   instanceId: string
