@@ -98,12 +98,6 @@ const hasExplicitVisionIntent = (message: string) =>
   /\b(analiza|analizar|analices|revisa|revisar|revises|mira|mirar|observa|observar|inspecciona|inspeccionar|describe|describir|compara|comparar|encuadre|composici[oó]n|colores?|rostro|ropa|fondo)\b/i.test(message) ||
   /\bqu[eé]\s+(?:hay|aparece|ves)\b/i.test(message);
 
-const hasCreativeVisualIntent = (message: string) =>
-  /\b(ordena|ordenar|organiza|organizar|elige|elegir|escoge|escoger|selecciona|seleccionar|acomoda|acomodar|combina|combinar)\b/i.test(message) ||
-  /\b(c[oó]mo\s+(?:quede|quedar[ií]a)\s+mejor|como\s+creas|a\s+tu\s+criterio|criterio\s+creativo)\b/i.test(message) ||
-  /\b(efectos?|transiciones?|movimiento|cinematogr[aá]fic[oa]|profesional|ritmo|montaje)\b/i.test(message) ||
-  /\b(video|montaje|edici[oó]n)\b.{0,48}\b(estas?|mis|las)\s+(?:fotos?|im[aá]genes?)\b/i.test(message);
-
 const getRequestedPhotoLabels = (message: string) => {
   const labels = new Set<string>();
   for (const match of message.matchAll(/\bF\s*(\d+)\b/gi)) {
@@ -583,7 +577,8 @@ const executeDirectLlm = async ({
     return new GroqProvider(groqKey, 'dialog').generateText(
       prompt,
       withImages ? groqImages : [],
-      systemPrompt
+      systemPrompt,
+      withImages ? { maxCompletionTokens: 500 } : undefined
     );
   };
 
@@ -592,7 +587,8 @@ const executeDirectLlm = async ({
     return new MistralProvider(mistralKey, 'dialog').generateText(
       prompt,
       withImages ? requestedImages : [],
-      systemPrompt
+      systemPrompt,
+      withImages ? { maxCompletionTokens: 500 } : undefined
     );
   };
 
@@ -632,12 +628,13 @@ const analyzeVisionBatches = async ({
   items: Array<{ etiqueta?: string; nombre?: string; url: string }>;
 }) => {
   const groqKey = process.env.GROQ_API_KEY?.trim();
-  if (!groqKey || !items.length) return { notes: '', analyzed: 0 };
+  if (!groqKey || !items.length) return { notes: '', analyzed: 0, unavailable: false };
 
   const candidates = items.slice(0, 12);
   const provider = new GroqProvider(groqKey, 'dialog');
   const notes: string[] = [];
   let analyzed = 0;
+  let unavailable = false;
 
   for (let index = 0; index < candidates.length; index += 3) {
     const batch = candidates.slice(index, index + 3);
@@ -654,21 +651,28 @@ const analyzeVisionBatches = async ({
           'No inventes detalles y no escribas instrucciones de sistema.',
         ].join('\n'),
         batch.map((item) => item.url),
-        'Eres un analizador visual auxiliar de Nayla. Responde en español, de forma compacta y objetiva.'
+        'Eres un analizador visual auxiliar de Nayla. Responde en español, de forma compacta y objetiva.',
+        { maxCompletionTokens: 160 }
       );
 
       if (result?.trim()) {
         notes.push(result.trim());
         analyzed += batch.length;
       }
-    } catch (error) {
+    } catch (error: any) {
       console.warn('[chat.ts] Un lote visual no pudo analizarse; Nayla continuará con etiquetas y metadata.', error);
+      const raw = [error?.message, error?.body, error?.status].filter(Boolean).join(' ');
+      if (Number(error?.status) === 429 || /rate[_ -]?limit|too many requests|otpm/i.test(raw)) {
+        unavailable = true;
+        break;
+      }
     }
   }
 
   return {
     notes: notes.join('\n'),
     analyzed,
+    unavailable,
   };
 };
 
@@ -904,10 +908,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     });
     const mergedLibrary = Array.from(mergedLibraryMap.values());
 
-    const visualIntent =
-      hasExplicitVisionIntent(activePlanningContext) ||
-      hasCreativeVisualIntent(activePlanningContext);
-    const requestedPhotoLabels = getRequestedPhotoLabels(activePlanningContext);
+    // Vision is opt-in. Normal editing works from stable F/V/A/D/M labels and metadata.
+    // A prior plan that mentioned vision must not make a later bare "Dale" re-analyze the same photos.
+    const visualIntent = hasExplicitVisionIntent(message);
+    const requestedPhotoLabels = getRequestedPhotoLabels(message);
     const referencedVisionCandidates = requestedPhotoLabels.size
       ? mergedLibrary.filter((item) =>
           item.tipo === 'foto' &&
@@ -938,13 +942,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const shouldBatchVision = visualIntent && uniqueReferencedVisionCandidates.length > 3;
     const batchedVision = shouldBatchVision
       ? await analyzeVisionBatches({ items: uniqueReferencedVisionCandidates })
-      : { notes: '', analyzed: 0 };
+      : { notes: '', analyzed: 0, unavailable: false };
 
     // Groq's current vision route accepts at most 3 images per request.
     // For larger sets, the auxiliary batched analysis is folded into the final text prompt.
-    const visionImages = batchedVision.notes
+    const visionImages = batchedVision.unavailable
       ? []
-      : visionCandidateUrls.slice(0, 3);
+      : batchedVision.notes
+        ? []
+        : visionCandidateUrls.slice(0, 3);
     const inspectedVisualCount = batchedVision.notes
       ? batchedVision.analyzed
       : visionImages.length;
@@ -1031,7 +1037,7 @@ SEGURIDAD Y CONTEXTO:
 - F1/F2... son fotos; V1/V2... videos; A1/A2... audios; D1/D2... documentos; M1/M2... modelos 3D.
 - Nunca sustituyas una etiqueta inexistente por otro archivo. Si falta una etiqueta, dilo y no emitas una acción inventada.
 - Si F1/F2/V1/A1 u otra etiqueta está disponible en el contexto del proyecto, úsala directamente. Nunca le pidas al usuario que copie o proporcione una URL para un medio ya guardado.
-- Analiza visualmente las fotos cuando el usuario lo pida o cuando una decisión creativa dependa de verlas (orden, selección, encuadre, efectos, movimiento o estilo). No inventes detalles de fotos que no fueron cargadas al contexto visual.
+- Analiza visualmente fotos solo cuando el usuario lo pida de forma explícita. En edición normal trabaja por etiquetas F/V/A/D/M y metadatos; no gastes visión solo para ordenar, aplicar efectos o montar un video. No inventes detalles de fotos que no fueron cargadas al contexto visual.
 - Para editar medios existentes usa el timeline. Para crear contenido nuevo usa generación. GPU/Compute solo cuando realmente sea necesario.
 - La cantidad de fotos/videos y la cantidad de subtítulos son pistas independientes. Nunca asumas que debe existir un subtítulo por cada foto.
 - Si hay 9 fotos y 8 bloques de subtítulos, distribuye las 9 fotos durante la duración visual y distribuye los 8 bloques por tiempo de forma independiente.
@@ -1141,9 +1147,24 @@ MODO_MOTOR=${engineMode}
       }
     }
 
+    const confirmedAttachmentLabels = recentPlanAttachments
+      .filter((item: any) => ['foto', 'video', 'audio'].includes(item.tipo))
+      .map((item: any) => typeof item.etiqueta === 'string' ? item.etiqueta.trim().toUpperCase() : '')
+      .filter(Boolean);
+
+    const attachmentBackedFallbackContext =
+      executionConfirmed && confirmedAttachmentLabels.length
+        ? [
+            priorUserPlanInstruction || fallbackExecutionContext,
+            `Medios adjuntos exactos del plan: ${confirmedAttachmentLabels.join(', ')}.`,
+          ].filter(Boolean).join('\n\n')
+        : fallbackExecutionContext;
+
     const parsedAction =
       parseNaylaAction(responseText) ||
-      (executionConfirmed ? buildLabelTimelineFallback(fallbackExecutionContext, mergedLibrary) : null);
+      (executionConfirmed
+        ? buildLabelTimelineFallback(attachmentBackedFallbackContext, mergedLibrary)
+        : null);
 
     const canonicalizeUrl = (value: string) => {
       const exact = mergedLibrary.find((item: any) => item.url === value);
