@@ -366,7 +366,12 @@ export default function NaylaPc({
           const payload = await response.json().catch(() => ({}));
           if (!response.ok || payload.error) return;
           const next = payload.instance as PcInstance;
-          setActiveInstance(next.status === 'terminated' ? null : next);
+          if (next.status === 'terminated') {
+            setActiveInstance(null);
+            void loadSavedSnapshot();
+          } else {
+            setActiveInstance(next);
+          }
         } catch {
           // La siguiente sincronización volverá a intentarlo.
         }
