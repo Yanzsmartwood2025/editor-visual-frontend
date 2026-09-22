@@ -10,6 +10,7 @@ import {
   listVultrOperatingSystems,
   listVultrPlans,
   listVultrRegions,
+  probeNaylaPcBuildStatus,
   probeNaylaPcDesktop,
 } from '../gpu/vultrApi';
 import {
@@ -22,8 +23,8 @@ import {
   setNaylaInternalSecret,
 } from './store';
 
-export const NAYLA_PC_BASE_LABEL = 'nayla-pc-base-ubuntu-2604-xfce-v2';
-export const NAYLA_PC_BASE_VERSION = 'ubuntu-26.04-xfce-v2';
+export const NAYLA_PC_BASE_LABEL = 'nayla-pc-base-ubuntu-2604-xfce-v3';
+export const NAYLA_PC_BASE_VERSION = 'ubuntu-26.04-xfce-v3';
 
 const ramGb = (plan: Record<string, unknown>) => {
   const mb = Number(plan.ram);
@@ -330,7 +331,15 @@ export const progressNaylaPcBaseBuild = async () => {
     '/nayla-base-ready.txt'
   );
   if (!desktopReady) {
-    return { state: 'building' as const, provider: live, desktopReady: false };
+    const buildStatus = await probeNaylaPcBuildStatus(live.main_ip, 6082).catch(
+      () => ({ reachable: false as const })
+    );
+    return {
+      state: 'building' as const,
+      provider: live,
+      desktopReady: false,
+      buildStatus,
+    };
   }
 
   const catalog = await chooseCatalog();
@@ -349,7 +358,7 @@ export const progressNaylaPcBaseBuild = async () => {
     providerOsId: Number(catalog.os.id),
     minDiskGb: Number(catalog.plan.disk),
     minRamGb: 2,
-    desktopStack: 'XFCE + Xvfb + x11vnc + noVNC',
+    desktopStack: 'XFCE + Xvfb + x11vnc + noVNC v3',
     metadata: {
       builder_instance_id: live.id,
       desktop_ready_at: new Date().toISOString(),

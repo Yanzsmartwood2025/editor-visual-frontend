@@ -1,3 +1,4 @@
+import http from 'node:http';
 import https from 'node:https';
 import type { GpuProfile } from './profiles';
 
@@ -298,6 +299,51 @@ export const probeNaylaPcDesktop = async (
   });
 };
 
+export const probeNaylaPcBuildStatus = async (
+  ip?: string | null,
+  port = 6082
+): Promise<{ reachable: boolean; stage?: string; detail?: string }> => {
+  if (!ip || ip === '0.0.0.0') return { reachable: false };
+
+  return await new Promise((resolve) => {
+    const request = http.get(
+      {
+        hostname: ip,
+        port,
+        path: '/status.json',
+        method: 'GET',
+        timeout: 4_500,
+        headers: { Host: ip },
+      },
+      (response) => {
+        let raw = '';
+        response.setEncoding('utf8');
+        response.on('data', (chunk) => {
+          if (raw.length < 4096) raw += chunk;
+        });
+        response.on('end', () => {
+          try {
+            const parsed = JSON.parse(raw);
+            resolve({
+              reachable: true,
+              stage: typeof parsed?.stage === 'string' ? parsed.stage : undefined,
+              detail: typeof parsed?.detail === 'string' ? parsed.detail : undefined,
+            });
+          } catch {
+            resolve({ reachable: true, detail: raw.slice(0, 500) || undefined });
+          }
+        });
+      }
+    );
+
+    request.on('timeout', () => {
+      request.destroy();
+      resolve({ reachable: false });
+    });
+    request.on('error', () => resolve({ reachable: false }));
+  });
+};
+
 export const buildNaylaPcDesktopUserData = ({
   desktopPassword,
 }: {
@@ -310,10 +356,29 @@ export const buildNaylaPcDesktopUserData = ({
 
   const script = [
     '#!/usr/bin/env bash',
-    'set -euo pipefail',
+    'set -Eeuo pipefail',
     'export DEBIAN_FRONTEND=noninteractive',
+    'mkdir -p /var/lib/nayla-base-status',
+    "printf '%s\\n' '{\"stage\":\"boot\",\"detail\":\"cloud-init started\"}' > /var/lib/nayla-base-status/status.json",
+    "cat > /etc/systemd/system/nayla-base-status.service <<'EOF'",
+    '[Unit]',
+    'Description=Nayla base build status',
+    'After=network.target',
+    '[Service]',
+    'Type=simple',
+    'ExecStart=/usr/bin/python3 -m http.server 6082 --bind 0.0.0.0 --directory /var/lib/nayla-base-status',
+    'Restart=always',
+    'RestartSec=2',
+    '[Install]',
+    'WantedBy=multi-user.target',
+    'EOF',
+    'systemctl daemon-reload',
+    'systemctl enable --now nayla-base-status.service',
+    "trap 'code=$?; line=$LINENO; printf \"{\\\"stage\\\":\\\"error\\\",\\\"detail\\\":\\\"line %s exit %s\\\"}\\n\" \"$line\" \"$code\" > /var/lib/nayla-base-status/status.json; exit $code' ERR",
+    "printf '%s\\n' '{\"stage\":\"packages\",\"detail\":\"installing desktop packages\"}' > /var/lib/nayla-base-status/status.json",
     'apt-get update',
-    'apt-get install -y xfce4 xfce4-terminal dbus-x11 xvfb x11vnc novnc websockify openssl ufw curl ca-certificates',
+    'apt-get install -y --no-install-recommends xfce4 xfce4-terminal dbus-x11 xvfb x11vnc novnc websockify openssl ufw curl ca-certificates',
+    "printf '%s\\n' '{\"stage\":\"services\",\"detail\":\"configuring desktop services\"}' > /var/lib/nayla-base-status/status.json",
     'id -u nayla >/dev/null 2>&1 || useradd -m -s /bin/bash nayla',
     'usermod -aG sudo nayla',
     "printf '%s\\n' 'nayla ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/nayla",
@@ -355,7 +420,8 @@ export const buildNaylaPcDesktopUserData = ({
     'User=nayla',
     'Environment=HOME=/home/nayla',
     'Environment=DISPLAY=:1',
-    'ExecStart=/usr/bin/dbus-run-session -- /usr/bin/startxfce4',
+    'ExecStartPre=/bin/sleep 2',
+    'ExecStart=/usr/bin/dbus-run-session -- /usr/bin/xfce4-session',
     'Restart=on-failure',
     'RestartSec=3',
     '[Install]',
@@ -391,22 +457,42 @@ export const buildNaylaPcDesktopUserData = ({
     'WantedBy=multi-user.target',
     'EOF',
     'systemctl daemon-reload',
-    'systemctl enable --now nayla-xvfb.service nayla-xfce.service nayla-vnc.service nayla-novnc.service',
-    "cat > /usr/local/sbin/nayla-seal-base-image <<'EOF'",
-    '#!/usr/bin/env bash',
-    'set -euo pipefail',
-    'cloud-init clean --logs --machine-id',
-    "printf '%s\\n' 'ready' > /usr/share/novnc/nayla-base-ready.txt",
-    'EOF',
-    'chmod 755 /usr/local/sbin/nayla-seal-base-image',
-    'rm -f /usr/share/novnc/nayla-base-ready.txt',
-    'systemd-run --unit=nayla-base-seal --on-active=15s /usr/local/sbin/nayla-seal-base-image >/dev/null',
+    'systemctl enable nayla-xvfb.service nayla-xfce.service nayla-vnc.service nayla-novnc.service',
+    'systemctl start nayla-xvfb.service',
+    'sleep 3',
+    'systemctl start nayla-vnc.service',
+    'systemctl start nayla-novnc.service',
+    'systemctl start nayla-xfce.service',
+    "printf '%s\\n' '{\"stage\":\"verifying\",\"detail\":\"checking local desktop services\"}' > /var/lib/nayla-base-status/status.json",
+    'for i in $(seq 1 30); do',
+    '  if systemctl is-active --quiet nayla-xvfb.service && systemctl is-active --quiet nayla-vnc.service && systemctl is-active --quiet nayla-novnc.service && systemctl is-active --quiet nayla-xfce.service && curl -kfsS --max-time 3 https://127.0.0.1:6080/vnc.html >/dev/null; then break; fi',
+    '  if [ "$i" -eq 30 ]; then',
+    '    printf \'{"stage":"error","detail":"desktop services did not become ready"}\\n\' > /var/lib/nayla-base-status/status.json',
+    '    systemctl --no-pager --full status nayla-xvfb.service nayla-xfce.service nayla-vnc.service nayla-novnc.service > /var/lib/nayla-base-status/services.txt 2>&1 || true',
+    '    exit 42',
+    '  fi',
+    '  sleep 2',
+    'done',
     'ufw --force reset',
     'ufw default deny incoming',
     'ufw default allow outgoing',
     'ufw allow 22/tcp',
     'ufw allow 6080/tcp',
+    'ufw allow 6082/tcp',
     'ufw --force enable',
+    "printf '%s\\n' 'ready' > /usr/share/novnc/nayla-base-ready.txt",
+    "printf '%s\\n' '{\"stage\":\"ready\",\"detail\":\"desktop verified locally\"}' > /var/lib/nayla-base-status/status.json",
+    "cat > /usr/local/sbin/nayla-seal-base-image <<'EOF'",
+    '#!/usr/bin/env bash',
+    'set -euo pipefail',
+    'cloud-init clean --logs --machine-id',
+    'systemctl disable --now nayla-base-status.service || true',
+    'rm -f /etc/systemd/system/nayla-base-status.service',
+    'ufw delete allow 6082/tcp || true',
+    'systemctl daemon-reload',
+    'EOF',
+    'chmod 755 /usr/local/sbin/nayla-seal-base-image',
+    'systemd-run --unit=nayla-base-seal --on-active=60s /usr/local/sbin/nayla-seal-base-image >/dev/null',
   ].join('\\n');
 
   return encodeUserData(script);
