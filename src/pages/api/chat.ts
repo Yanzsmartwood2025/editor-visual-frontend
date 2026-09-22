@@ -754,13 +754,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         : item.url,
     }));
 
-    const userPlanningContext = [
-      ...effectiveHistory
-        .filter((item) => item.role === 'user')
-        .map((item) => item.content),
-      message,
-    ].join('\n\n');
-
     const requestedNaturalPhotoCount = getRequestedVisualCount(activePlanningContext);
     const naturalProjectPhotoReference = hasNaturalProjectPhotoReference(activePlanningContext);
     const recentNaturalPhotoRows = naturalProjectPhotoReference
@@ -906,8 +899,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       visualIntent
         ? (
             visionImages.length
-              ? `Visión solicitada explícitamente: se cargaron ${visionImages.length} foto(s) para análisis visual.${visionWasTruncated ? ' Hay más fotos referenciadas que el límite visual actual; no afirmes haber inspeccionado las que no fueron cargadas.' : ''}`
-              : 'Visión solicitada explícitamente, pero no se encontró una foto válida con esa referencia. No inventes contenido visual.'
+              ? `Visión activada para este plan: se cargaron ${visionImages.length} foto(s) para análisis visual.${visionWasTruncated ? ' Hay más fotos referenciadas que el límite visual actual; no afirmes haber inspeccionado las que no fueron cargadas.' : ''}`
+              : 'Visión requerida para este plan, pero no se encontró una foto válida con esa referencia. No inventes contenido visual.'
           )
         : 'Visión NO solicitada. No describas el contenido visual de las fotos; usa etiquetas y metadatos.',
     ].join('\n\n');
@@ -932,7 +925,7 @@ SEGURIDAD Y CONTEXTO:
 - F1/F2... son fotos; V1/V2... videos; A1/A2... audios; M1/M2... modelos 3D.
 - Nunca sustituyas una etiqueta inexistente por otro archivo. Si falta una etiqueta, dilo y no emitas una acción inventada.
 - Si F1/F2/V1/A1 u otra etiqueta está disponible en el contexto del proyecto, úsala directamente. Nunca le pidas al usuario que copie o proporcione una URL para un medio ya guardado.
-- Las fotos subidas no se analizan visualmente salvo que el usuario lo pida de forma explícita.
+- Analiza visualmente las fotos cuando el usuario lo pida o cuando una decisión creativa dependa de verlas (orden, selección, encuadre, efectos, movimiento o estilo). No inventes detalles de fotos que no fueron cargadas al contexto visual.
 - Para editar medios existentes usa el timeline. Para crear contenido nuevo usa generación. GPU/Compute solo cuando realmente sea necesario.
 - La cantidad de fotos/videos y la cantidad de subtítulos son pistas independientes. Nunca asumas que debe existir un subtítulo por cada foto.
 - Si hay 9 fotos y 8 bloques de subtítulos, distribuye las 9 fotos durante la duración visual y distribuye los 8 bloques por tiempo de forma independiente.
@@ -1083,9 +1076,10 @@ MODO_MOTOR=${engineMode}
                 assetResolutionFailed = true;
                 return asset;
               }
-              const { label: _label, ...rest } = asset;
+              const resolvedAsset = { ...asset };
+              delete resolvedAsset.label;
               return {
-                ...rest,
+                ...resolvedAsset,
                 source: 'url' as const,
                 url: media.url,
               };
