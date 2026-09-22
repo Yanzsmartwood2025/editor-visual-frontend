@@ -21,6 +21,7 @@ import { GpuQuoteModal, type GpuQuoteView } from '../components/GpuQuoteModal';
 import { NaylaEngineBar } from '../components/NaylaEngineBar';
 import SocialHub from '../components/SocialHub';
 import NaylaPlay from '../components/NaylaPlay';
+import NaylaPc from '../components/NaylaPc';
 import type { NaylaEngineMode } from '../lib/naylaSystemCatalog';
 import {
   NaylaProjectMenu,
@@ -4959,6 +4960,18 @@ if (!session) {
                       Consulta disponibilidad y precio Nayla sin alquilar ninguna máquina.
                     </div>
                   </div>
+                ) : mainNav === 'pc' ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 14, padding: '10px 4px' }}>
+                    <div style={{ fontSize: '0.78rem', fontWeight: 850, letterSpacing: '0.8px', color: '#fff' }}>
+                      NAYLA PC
+                    </div>
+                    <div style={{ fontSize: '0.72rem', lineHeight: 1.6, color: '#a3a3a3' }}>
+                      Computadora en la nube abierta a pantalla completa.
+                    </div>
+                    <div style={{ border: '1px solid #2a2a2a', borderRadius: 12, padding: 12, background: '#080808', color: '#aaa', fontSize: '0.68rem' }}>
+                      Configura sistema, CPU, RAM, disco, GPU y forma de uso antes de crear la máquina.
+                    </div>
+                  </div>
                 ) : (
                   /* GALERÍA DE MEDIOS (BÓVEDA / BUSCAR) */
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(100px, 1fr))', gap: '8px' }}>
@@ -5426,6 +5439,16 @@ if (!session) {
 
       {isSubPanelOpen && mainNav === 'play' && !isCleanMode && (
         <NaylaPlay
+          session={session}
+          onClose={() => {
+            setIsSubPanelOpen(false);
+            setSubTool(null);
+          }}
+        />
+      )}
+
+      {isSubPanelOpen && mainNav === 'pc' && !isCleanMode && (
+        <NaylaPc
           session={session}
           onClose={() => {
             setIsSubPanelOpen(false);
