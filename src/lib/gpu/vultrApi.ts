@@ -555,6 +555,7 @@ export const buildNaylaPcRuntimeUserData = ({
     '                for name in ["Desktop","Documents","Downloads","Pictures","Videos","Music"]:',
     '                    (ROOT/name).mkdir(parents=True,exist_ok=True)',
     '                save_state({})',
+    '                subprocess.run(["sudo","cloud-init","clean","--logs","--machine-id"],check=True,timeout=60)',
     "                req('POST',{'action':'snapshot_cache_flushed'})",
     'if __name__ == "__main__":',
     '    try: sync_once()',
