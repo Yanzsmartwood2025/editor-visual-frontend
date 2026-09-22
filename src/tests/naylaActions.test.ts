@@ -674,6 +674,33 @@ describe('Nayla action contracts', () => {
     }))).toBeNull();
   });
 
+  it('accepts stable F/V/A labels as timeline asset references', () => {
+    const action = parseNaylaAction(JSON.stringify({
+      action: 'BUILD_TIMELINE',
+      assets: [
+        { type: 'foto', source: 'label', label: 'F1', durationInSeconds: 2 },
+        { type: 'video', source: 'label', label: 'V2', startFrom: 3, durationInSeconds: 4 },
+        { type: 'audio', source: 'label', label: 'A1', volume: 0.6 },
+      ],
+      render: true,
+    }));
+
+    expect(action).not.toBeNull();
+    expect(action).toMatchObject({
+      action: 'BUILD_TIMELINE',
+      assets: [
+        expect.objectContaining({ source: 'label', label: 'F1', durationInSeconds: 2 }),
+        expect.objectContaining({ source: 'label', label: 'V2', startFrom: 3 }),
+        expect.objectContaining({ source: 'label', label: 'A1', volume: 0.6 }),
+      ],
+    });
+
+    expect(parseNaylaAction(JSON.stringify({
+      action: 'BUILD_TIMELINE',
+      assets: [{ type: 'foto', source: 'label', label: 'V1' }],
+    }))).not.toBeNull();
+  });
+
   it('accepts explicit none values emitted by Nayla for simple timeline edits', () => {
     const action = parseNaylaAction(JSON.stringify({
       action: 'BUILD_TIMELINE',
