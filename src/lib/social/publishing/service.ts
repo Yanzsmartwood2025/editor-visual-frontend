@@ -1,6 +1,6 @@
 import { getSocialNetwork } from '../types';
-import { publishUploadPostVideo } from '../providers/uploadPost';
-import { publishZernioVideo } from '../providers/zernio';
+import { publishUploadPostPhoto, publishUploadPostVideo } from '../providers/uploadPost';
+import { publishZernioMedia } from '../providers/zernio';
 import {
   createIdempotencyKey,
   createSocialPostWithTargets,
@@ -64,14 +64,24 @@ export const publishSocialVideo = async ({
     try {
       if (!process.env.UPLOAD_POST_API_KEY) throw new Error('La conexión social principal no está disponible.');
       const idempotencyKey = createIdempotencyKey();
-      const result = await publishUploadPostVideo({
-        username: profile.upload_post_username,
-        videoUrl: media.url,
-        title,
-        caption,
-        platforms: Array.from(new Set(routeA.map((account) => account.platform))) as any,
-        idempotencyKey,
-      });
+      const routePlatforms = Array.from(new Set(routeA.map((account) => account.platform))) as any;
+      const result = media.tipo === 'foto'
+        ? await publishUploadPostPhoto({
+            username: profile.upload_post_username,
+            photoUrl: media.url,
+            title,
+            caption,
+            platforms: routePlatforms,
+            idempotencyKey,
+          })
+        : await publishUploadPostVideo({
+            username: profile.upload_post_username,
+            videoUrl: media.url,
+            title,
+            caption,
+            platforms: routePlatforms,
+            idempotencyKey,
+          });
       const results = result?.results || {};
 
       for (const account of routeA) {
@@ -130,8 +140,9 @@ export const publishSocialVideo = async ({
     try {
       if (!process.env.ZERNIO_API_KEY) throw new Error('La conexión social secundaria no está disponible.');
       const idempotencyKey = createIdempotencyKey();
-      const result = await publishZernioVideo({
-        videoUrl: media.url,
+      const result = await publishZernioMedia({
+        mediaUrl: media.url,
+        mediaType: media.tipo === 'foto' ? 'image' : 'video',
         title,
         caption,
         accounts: routeB.map((account) => ({

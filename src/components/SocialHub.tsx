@@ -3,6 +3,7 @@ import type { FirebaseSession } from '../lib/firebaseClient';
 import { firebaseHeaders } from '../lib/apiClient';
 import { SOCIAL_NETWORKS } from '../lib/social/types';
 import { cleanNaylaChatText } from '../lib/naylaText';
+import { uploadMediaFilesToBodega } from '../lib/mediaUpload';
 
 type ResultMedia = {
   id: string;
@@ -16,6 +17,7 @@ type Props = {
   session: FirebaseSession | null;
   projectId: string | null;
   results: ResultMedia[];
+  onResultsUploaded?: (items: ResultMedia[]) => void;
   onClose?: () => void;
 };
 
@@ -63,6 +65,51 @@ const NetworkIcon = ({ platform, size = 30 }: { platform: string; size?: number 
   );
 };
 
+const AccountAvatar = ({
+  account,
+  size = 30,
+}: {
+  account: any;
+  size?: number;
+}) => {
+  const avatar =
+    account?.avatar_url ||
+    account?.avatarUrl ||
+    account?.raw?.profilePicture ||
+    account?.raw?.avatarUrl ||
+    account?.raw?.metadata?.profileData?.profilePicture ||
+    null;
+
+  if (!avatar) return <NetworkIcon platform={account?.platform || ''} size={size} />;
+
+  return (
+    <img
+      src={String(avatar)}
+      alt={String(account?.display_name || account?.handle || account?.username || account?.platform || 'Cuenta')}
+      style={{
+        width: size,
+        height: size,
+        flex: '0 0 auto',
+        borderRadius: '50%',
+        objectFit: 'cover',
+        border: '1px solid rgba(255,255,255,.18)',
+        background: '#090909',
+      }}
+      onError={(event) => {
+        event.currentTarget.style.display = 'none';
+      }}
+    />
+  );
+};
+
+const getAccountAvatarUrl = (account: any): string | null =>
+  account?.avatar_url ||
+  account?.avatarUrl ||
+  account?.raw?.profilePicture ||
+  account?.raw?.avatarUrl ||
+  account?.raw?.metadata?.profileData?.profilePicture ||
+  null;
+
 const statusText: Record<string, string> = {
   connected: 'Conectada',
   disconnected: 'Desconectada',
@@ -81,6 +128,7 @@ type NaylaOption = {
   label: string;
   subtitle?: string;
   platform?: string;
+  avatarUrl?: string | null;
 };
 
 const NaylaSelect = ({
@@ -118,7 +166,11 @@ const NaylaSelect = ({
           boxShadow: open ? '0 0 0 1px rgba(255,255,255,.08)' : 'none',
         }}
       >
-        {selected?.platform ? <NetworkIcon platform={selected.platform} size={25} /> : null}
+        {selected?.avatarUrl
+          ? <AccountAvatar account={{ platform: selected.platform, avatar_url: selected.avatarUrl, display_name: selected.label }} size={25} />
+          : selected?.platform
+            ? <NetworkIcon platform={selected.platform} size={25} />
+            : null}
         <span style={{ flex: 1, minWidth: 0 }}>
           <span style={{ display: 'block', fontSize: 10, fontWeight: selected ? 800 : 650, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {selected?.label || placeholder}
@@ -192,7 +244,11 @@ const NaylaSelect = ({
                     cursor: 'pointer',
                   }}
                 >
-                  {option.platform ? <NetworkIcon platform={option.platform} size={28} /> : null}
+                  {option.avatarUrl
+                    ? <AccountAvatar account={{ platform: option.platform, avatar_url: option.avatarUrl, display_name: option.label }} size={28} />
+                    : option.platform
+                      ? <NetworkIcon platform={option.platform} size={28} />
+                      : null}
                   <span style={{ flex: 1, minWidth: 0 }}>
                     <span style={{ display: 'block', fontSize: 11, fontWeight: active ? 900 : 750, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                       {option.label}
@@ -262,7 +318,7 @@ const unwrapMetrics = (value: any): { label: string; value: string | number }[] 
     }));
 };
 
-export default function SocialHub({ session, projectId, results, onClose }: Props) {
+export default function SocialHub({ session, projectId, results, onResultsUploaded, onClose }: Props) {
   const [tab, setTab] = useState<'inicio' | 'publicar' | 'inbox' | 'metricas' | 'ajustes'>('inicio');
   const [data, setData] = useState<any>(null);
   const [busy, setBusy] = useState('');
@@ -302,6 +358,9 @@ export default function SocialHub({ session, projectId, results, onClose }: Prop
   });
   const [naylaSettingsOpen, setNaylaSettingsOpen] = useState(false);
   const [naylaSettingsSnapshot, setNaylaSettingsSnapshot] = useState<any>(null);
+  const [naylaPlusOpen, setNaylaPlusOpen] = useState(false);
+  const [socialUploads, setSocialUploads] = useState<ResultMedia[]>([]);
+  const socialUploadInputRef = useRef<HTMLInputElement | null>(null);
   const socialChatEndRef = useRef<HTMLDivElement | null>(null);
 
   const api = async (path: string, init: RequestInit = {}) => {
@@ -341,7 +400,15 @@ export default function SocialHub({ session, projectId, results, onClose }: Prop
   };
 
   useEffect(() => {
-    void load(false);
+    void load(true);
+  }, [projectId, session?.user?.id]);
+
+  useEffect(() => {
+    if (!projectId || !session) return;
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === 'visible') void load(false);
+    }, 30000);
+    return () => window.clearInterval(timer);
   }, [projectId, session?.user?.id]);
 
   useEffect(() => {
@@ -372,8 +439,24 @@ export default function SocialHub({ session, projectId, results, onClose }: Prop
   }, [projectId, session?.user?.id]);
 
   const accounts = data?.accounts || [];
+  const availableResults = useMemo(() => {
+    const map = new Map<string, ResultMedia>();
+    [...results, ...socialUploads].forEach((item) => map.set(item.id, item));
+    return Array.from(map.values()).sort((a, b) => {
+      const aNum = Number(String(a.etiqueta || '').match(/^R(\d+)$/i)?.[1] || 0);
+      const bNum = Number(String(b.etiqueta || '').match(/^R(\d+)$/i)?.[1] || 0);
+      return bNum - aNum;
+    });
+  }, [results, socialUploads]);
   const connectedPlatforms = useMemo(() => new Set(accounts.filter((a: any) => a.status === 'connected').map((a: any) => a.platform)), [accounts]);
   const recentTargets = data?.targets || [];
+  const latestMetricsByAccount = useMemo(() => {
+    const map = new Map<string, any>();
+    for (const snapshot of data?.metrics || []) {
+      if (!map.has(snapshot.account_id)) map.set(snapshot.account_id, snapshot.metrics || {});
+    }
+    return map;
+  }, [data?.metrics]);
   const providerA = data?.providers?.find((p: any) => p.id === 'upload_post');
   const providerB = data?.providers?.find((p: any) => p.id === 'zernio');
 
@@ -435,6 +518,63 @@ export default function SocialHub({ session, projectId, results, onClose }: Prop
 
     setNotice(lastError || 'No se pudo iniciar la conexión de esta red.');
     setBusy('');
+  };
+
+  const uploadSocialResults = async (files: File[]) => {
+    if (!session || !projectId || !files.length) return;
+
+    const supported = files.filter((file) =>
+      file.type.startsWith('image/') || file.type.startsWith('video/')
+    );
+    if (!supported.length) {
+      setNotice('Selecciona una foto o un video para publicar.');
+      return;
+    }
+
+    setBusy('social-upload');
+    setNotice('');
+    try {
+      const uploaded = await uploadMediaFilesToBodega({
+        session,
+        files: supported,
+        existingItems: availableResults as any,
+        projectId,
+        fuente: 'social-upload',
+        labelMode: 'result',
+      });
+
+      const publishable = uploaded
+        .filter((item) => item.tipo === 'foto' || item.tipo === 'video')
+        .map((item) => ({
+          id: item.id,
+          nombre: item.nombre,
+          etiqueta: item.etiqueta,
+          url: item.url,
+          tipo: item.tipo,
+        }));
+
+      setSocialUploads((previous) => {
+        const map = new Map(previous.map((item) => [item.id, item]));
+        publishable.forEach((item) => map.set(item.id, item));
+        return Array.from(map.values());
+      });
+      onResultsUploaded?.(publishable);
+
+      if (publishable[0]) {
+        setSelectedResult(publishable[0].id);
+        setTab('publicar');
+      }
+
+      const labels = publishable.map((item) => item.etiqueta).filter(Boolean).join(', ');
+      setNotice(labels
+        ? `${labels} ${publishable.length === 1 ? 'está listo' : 'están listos'} para publicar.`
+        : 'Archivo listo para publicar.');
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : 'No se pudo subir el archivo para publicar.');
+    } finally {
+      setBusy('');
+      if (socialUploadInputRef.current) socialUploadInputRef.current.value = '';
+    }
   };
 
   const publish = async () => {
@@ -562,6 +702,16 @@ export default function SocialHub({ session, projectId, results, onClose }: Prop
     setInboxConversation(null);
     setInboxMessages([]);
     setMessageDraft('');
+
+    const selectedAccount = accounts.find((account: any) => account.id === accountId);
+    const isTikTokPersonal =
+      selectedAccount?.platform === 'tiktok' &&
+      selectedAccount?.raw?.metadata?.profileData?.extraData?.isBusinessAccount === false;
+
+    if (isTikTokPersonal) {
+      setInboxNotice('Esta cuenta de TikTok está conectada, pero TikTok limita los mensajes privados por API a cuentas Business compatibles.');
+    }
+
     setBusy('inbox');
     try {
       const payload = await api(`/api/social/inbox?projectId=${encodeURIComponent(projectId)}&accountId=${encodeURIComponent(accountId)}`);
@@ -943,14 +1093,28 @@ export default function SocialHub({ session, projectId, results, onClose }: Prop
               <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
                 {accounts.slice(0, 10).map((account: any) => (
                   <div key={account.id} style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '7px 8px', borderRadius: 10, background: 'rgba(255,255,255,.025)' }}>
-                    <NetworkIcon platform={account.platform} size={28} />
+                    <AccountAvatar account={account} size={28} />
                     <div style={{ minWidth: 0, flex: 1 }}>
                       <div style={{ fontSize: 10, fontWeight: 850, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                         {account.display_name || account.handle || account.username || account.platform}
                       </div>
                       <div style={{ fontSize: 8, color: account.status === 'connected' ? '#9d9' : '#d99', marginTop: 2 }}>
                         {statusText[account.status] || account.status}
+                        {account.handle ? ` · @${String(account.handle).replace(/^@/, '')}` : ''}
                       </div>
+                      {(() => {
+                        const metrics = latestMetricsByAccount.get(account.id) || {};
+                        const likes = metrics['Me gusta'] ?? metrics.likes ?? metrics.Likes;
+                        const comments = metrics.Comentarios ?? metrics.comments;
+                        if (likes == null && comments == null) return null;
+                        return (
+                          <div style={{ fontSize: 8, color: '#777', marginTop: 2 }}>
+                            {likes != null ? `♥ ${likes}` : ''}
+                            {likes != null && comments != null ? ' · ' : ''}
+                            {comments != null ? `💬 ${comments}` : ''}
+                          </div>
+                        );
+                      })()}
                     </div>
                   </div>
                 ))}
@@ -1018,15 +1182,36 @@ export default function SocialHub({ session, projectId, results, onClose }: Prop
 
       {tab === 'publicar' && (
         <div style={{ ...panel, padding: 11, display: 'flex', flexDirection: 'column', gap: 10 }}>
-          <div style={{ fontSize: 10, fontWeight: 900 }}>PUBLICAR RESULTADO</div>
+          <input
+            ref={socialUploadInputRef}
+            type="file"
+            accept="image/*,video/*"
+            multiple
+            hidden
+            onChange={(event) => {
+              const files = Array.from(event.target.files || []);
+              if (files.length) void uploadSocialResults(files);
+            }}
+          />
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+            <div style={{ fontSize: 10, fontWeight: 900 }}>PUBLICAR RESULTADO</div>
+            <button
+              type="button"
+              disabled={busy === 'social-upload'}
+              onClick={() => socialUploadInputRef.current?.click()}
+              style={{ ...tinyButton(false), padding: '6px 8px', fontSize: 8 }}
+            >
+              {busy === 'social-upload' ? 'SUBIENDO…' : '+ TELÉFONO'}
+            </button>
+          </div>
           <NaylaSelect
             value={selectedResult}
             placeholder="Seleccionar R1 / R2"
             onChange={setSelectedResult}
-            options={results.map((item) => ({
+            options={availableResults.map((item) => ({
               value: item.id,
-              label: `${item.etiqueta || 'R'} · ${item.nombre || 'Video'}`,
-              subtitle: 'Resultado de Nayla',
+              label: `${item.etiqueta || 'R'} · ${item.nombre || (item.tipo === 'foto' ? 'Foto' : 'Video')}`,
+              subtitle: item.tipo === 'foto' ? 'Foto lista para publicar' : 'Video listo para publicar',
             }))}
           />
           <input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Título" style={{ background: '#0b0b0b', color: '#eee', border: '1px solid #272727', borderRadius: 9, padding: 8, fontSize: 10 }} />
@@ -1038,7 +1223,7 @@ export default function SocialHub({ session, projectId, results, onClose }: Prop
               return (
                 <label key={account.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: 7, borderRadius: 9, background: checked ? 'rgba(255,255,255,.07)' : 'rgba(255,255,255,.02)', cursor: 'pointer' }}>
                   <input type="checkbox" checked={checked} onChange={() => setSelectedAccounts((prev) => checked ? prev.filter((id) => id !== account.id) : [...prev, account.id])} />
-                  <NetworkIcon platform={account.platform} size={24} />
+                  <AccountAvatar account={account} size={24} />
                   <span style={{ fontSize: 9, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{account.display_name || account.handle || account.platform}</span>
                   <span style={{ color: '#666', fontSize: 8 }}>{statusText[account.status] || account.status}</span>
                 </label>
@@ -1069,6 +1254,7 @@ export default function SocialHub({ session, projectId, results, onClose }: Prop
                     label: account.display_name || account.handle || account.username || account.platform,
                     subtitle: account.handle ? `@${String(account.handle).replace(/^@/, '')}` : 'Cuenta conectada',
                     platform: account.platform,
+                    avatarUrl: getAccountAvatarUrl(account),
                   }))}
               />
               <NaylaSelect
@@ -1125,6 +1311,7 @@ export default function SocialHub({ session, projectId, results, onClose }: Prop
                 label: account.display_name || account.handle || account.username || 'Cuenta',
                 subtitle: 'Mensajes privados',
                 platform: account.platform,
+                avatarUrl: getAccountAvatarUrl(account),
               }))}
             />
             {inboxNotice && (
@@ -1220,6 +1407,7 @@ export default function SocialHub({ session, projectId, results, onClose }: Prop
               label: account.display_name || account.handle || account.username || 'Cuenta',
               subtitle: 'Rendimiento y alcance',
               platform: account.platform,
+              avatarUrl: getAccountAvatarUrl(account),
             }))}
           />
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,minmax(0,1fr))', gap: 6, marginTop: 9 }}>
@@ -1327,12 +1515,69 @@ export default function SocialHub({ session, projectId, results, onClose }: Prop
               <div ref={socialChatEndRef} />
             </div>
 
-            <div style={{ display: 'flex', alignItems: 'flex-end', gap: 7, marginTop: 10 }}>
+            <div style={{ display: 'flex', alignItems: 'flex-end', gap: 7, marginTop: 10, position: 'relative' }}>
+              {naylaPlusOpen && (
+                <>
+                  <button
+                    type="button"
+                    aria-label="Cerrar menú"
+                    onClick={() => setNaylaPlusOpen(false)}
+                    style={{ position: 'fixed', inset: 0, zIndex: 9990, border: 0, background: 'transparent', padding: 0 }}
+                  />
+                  <div
+                    style={{
+                      position: 'absolute',
+                      left: 0,
+                      bottom: 56,
+                      zIndex: 9991,
+                      width: 230,
+                      borderRadius: 14,
+                      border: '1px solid rgba(255,255,255,.15)',
+                      background: '#0b0b0b',
+                      boxShadow: '0 16px 42px rgba(0,0,0,.72)',
+                      padding: 7,
+                    }}
+                  >
+                    <button
+                      type="button"
+                      disabled={busy === 'social-upload'}
+                      onClick={() => {
+                        setNaylaPlusOpen(false);
+                        socialUploadInputRef.current?.click();
+                      }}
+                      style={{ ...tinyButton(false), width: '100%', textAlign: 'left', padding: '10px 11px', fontSize: 10 }}
+                    >
+                      {busy === 'social-upload' ? 'Subiendo…' : 'Subir foto o video para publicar'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setNaylaPlusOpen(false);
+                        openNaylaSettings();
+                      }}
+                      style={{ ...tinyButton(false), width: '100%', textAlign: 'left', padding: '10px 11px', fontSize: 10, marginTop: 5 }}
+                    >
+                      Opciones de Nayla
+                    </button>
+                  </div>
+                </>
+              )}
+              <input
+                ref={socialUploadInputRef}
+                type="file"
+                accept="image/*,video/*"
+                multiple
+                hidden
+                onChange={(event) => {
+                  const files = Array.from(event.target.files || []);
+                  if (files.length) void uploadSocialResults(files);
+                }}
+              />
               <button
                 type="button"
-                aria-label="Abrir opciones de Nayla"
-                title="Opciones de Nayla"
-                onClick={openNaylaSettings}
+                aria-label="Abrir acciones de Nayla"
+                title="Acciones"
+                onClick={() => setNaylaPlusOpen((open) => !open)}
                 style={{
                   ...tinyButton(false),
                   width: 48,

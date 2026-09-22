@@ -31,6 +31,7 @@ type UploadMediaToBodegaParams = {
   metadataExtra?: Partial<MediaMetadata>;
   projectId?: string;
   threadId?: string;
+  labelMode?: 'media' | 'result';
 };
 
 export const SHARED_MEDIA_PENDING_TTL_MS = 24 * 60 * 60 * 1000;
@@ -60,6 +61,17 @@ const nextLabelNumber = (
     const match = item.etiqueta.trim().toUpperCase().match(/^([FVA])(\d+)$/);
     if (!match || match[1] !== prefix) return current;
     return Math.max(current, Number(match[2]) || 0);
+  }, 0);
+  return max + 1;
+};
+
+const nextResultLabelNumber = (
+  items: Array<{ etiqueta?: string | null }>
+) => {
+  const max = items.reduce((current, item) => {
+    if (typeof item.etiqueta !== 'string') return current;
+    const match = item.etiqueta.trim().toUpperCase().match(/^R(\d+)$/);
+    return match ? Math.max(current, Number(match[1]) || 0) : current;
   }, 0);
   return max + 1;
 };
@@ -259,6 +271,7 @@ export const uploadMediaFilesToBodega = async ({
   metadataExtra = {},
   projectId,
   threadId,
+  labelMode = 'media',
 }: UploadMediaToBodegaParams): Promise<MediaItem[]> => {
   if (!session?.user?.id) throw new Error('Debes iniciar sesión para guardar archivos en la Bóveda.');
 
@@ -274,10 +287,10 @@ export const uploadMediaFilesToBodega = async ({
       if (!tipo) throw new Error(`Tipo de archivo no soportado: ${file.name}`);
 
       const inicial = tipo === 'video' ? 'V' : tipo === 'foto' ? 'F' : 'A';
-      const countTipo = nextLabelNumber(
-        [...existingItems, ...nuevosItems],
-        tipo
-      );
+      const countTipo = labelMode === 'result'
+        ? nextResultLabelNumber([...existingItems, ...nuevosItems])
+        : nextLabelNumber([...existingItems, ...nuevosItems], tipo);
+      const etiqueta = labelMode === 'result' ? `R${countTipo}` : `${inicial}${countTipo}`;
       const id = createMediaId();
       const extension = getExtension(file, tipo);
 
@@ -308,7 +321,7 @@ export const uploadMediaFilesToBodega = async ({
         nombre: file.name || `${inicial}${countTipo}.${extension}`,
         creado_en: new Date().toISOString(),
         esOverlay: false,
-        etiqueta: `${inicial}${countTipo}`,
+        etiqueta,
         fuente,
         metadata: { ...metadata, ...metadataExtra },
       });
@@ -325,6 +338,7 @@ export const uploadMediaFilesToBodega = async ({
       items: nuevosItems,
       projectId: resolvedProjectId,
       threadId: resolvedThreadId,
+      labelMode,
     }),
   });
   const payload = await response.json() as { error?: string; data?: MediaItem[] };

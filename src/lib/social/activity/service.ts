@@ -13,6 +13,7 @@ import {
   getZernioComments,
   listZernioConversations,
   listZernioMessages,
+  syncZernioExternalPosts,
 } from '../providers/zernio';
 import { cacheSocialComments, cacheSocialConversation, extractSocialComments } from './cache';
 
@@ -55,7 +56,7 @@ export const isSocialActivityReviewRequest = (message: string) => {
   if (!text) return false;
 
   const socialObject =
-    /\b(comentarios?|comentaron|mensajes?|notificaciones?|actividad|inbox|dm|dms|metricas?|estadisticas?|vistas?|alcance|interacciones?|redes?|seguidores?|impresiones?|escribieron|dijeron)\b/.test(text);
+    /\b(comentarios?|comentaron|mensajes?|notificaciones?|actividad|inbox|dm|dms|metricas?|estadisticas?|vistas?|alcance|interacciones?|redes?|seguidores?|impresiones?|likes?|me gusta|reacciones?|escribieron|dijeron)\b/.test(text);
 
   if (!socialObject) return false;
 
@@ -79,7 +80,7 @@ export const getSocialActivityReviewScope = (message: string): ReviewScope => {
     /\b(mensajes?|inbox|dm|dms|mensaje privado|mensajes privados|me escribieron|escribieron por privado)\b/.test(text);
   const mentionsNotifications = /\b(notificaciones?|avisos?)\b/.test(text);
   const mentionsMetrics =
-    /\b(metricas?|estadisticas?|vistas?|alcance|rendimiento|seguidores?|impresiones?)\b/.test(text);
+    /\b(metricas?|estadisticas?|vistas?|alcance|rendimiento|seguidores?|impresiones?|likes?|me gusta|reacciones?)\b/.test(text);
 
   const genericActivity =
     /\b(actividad|redes?)\b/.test(text) &&
@@ -112,6 +113,38 @@ const extractMedia = (payload: any) => {
       url: item?.permalink || item?.url || item?.post_url || null,
     }))
     .filter((item: any) => item.id);
+};
+
+const summarizeExternalEngagement = (payload: any, account?: any) => {
+  const posts =
+    Array.isArray(payload?.posts) ? payload.posts :
+    Array.isArray(payload?.synced?.posts) ? payload.synced.posts :
+    Array.isArray(payload?.data?.posts) ? payload.data.posts :
+    [];
+
+  const totals = posts.reduce((sum: Record<string, number>, post: any) => {
+    const analytics = post?.analytics || {};
+    for (const key of ['likes', 'comments', 'shares', 'saves', 'views']) {
+      const value = Number(analytics?.[key]);
+      if (Number.isFinite(value)) sum[key] = (sum[key] || 0) + value;
+    }
+    return sum;
+  }, {});
+
+  const profileLikes = Number(
+    account?.raw?.metadata?.profileData?.extraData?.likesCount ??
+    account?.raw?.extraData?.likesCount
+  );
+
+  const metrics: Array<{ label: string; value: string | number }> = [];
+  if (Number.isFinite(profileLikes)) metrics.push({ label: 'Me gusta', value: profileLikes });
+  if (Number.isFinite(totals.comments)) metrics.push({ label: 'Comentarios recientes', value: totals.comments });
+  if (Number.isFinite(totals.shares)) metrics.push({ label: 'Compartidos recientes', value: totals.shares });
+  if (Number.isFinite(totals.views)) metrics.push({ label: 'Vistas recientes', value: totals.views });
+  if (!Number.isFinite(profileLikes) && Number.isFinite(totals.likes)) {
+    metrics.push({ label: 'Me gusta recientes', value: totals.likes });
+  }
+  return metrics;
 };
 
 const extractConversations = (payload: any) =>
@@ -356,19 +389,54 @@ const loadZernioComments = async ({
     .eq('account_id', account.id)
     .not('provider_post_id', 'is', null)
     .order('updated_at', { ascending: false })
-    .limit(8);
+    .limit(20);
 
   if (error) throw error;
 
+  const postMap = new Map<string, { postId: string; targetId: string | null }>();
+  for (const target of targets || []) {
+    const postId = String(target.provider_post_id || '');
+    if (postId) postMap.set(postId, { postId, targetId: String(target.id) });
+  }
+
+  try {
+    const external = await syncZernioExternalPosts(String(account.provider_account_id));
+    const externalPosts =
+      Array.isArray(external?.posts) ? external.posts :
+      Array.isArray(external?.synced?.posts) ? external.synced.posts :
+      Array.isArray(external?.data?.posts) ? external.data.posts :
+      [];
+
+    for (const post of externalPosts.slice(0, 30)) {
+      const postId = String(
+        post?.platformPostId ||
+        post?.platform_post_id ||
+        post?.postId ||
+        post?.id ||
+        ''
+      );
+      const commentCount = Number(post?.analytics?.comments || 0);
+      if (
+        postId &&
+        !postMap.has(postId) &&
+        (commentCount > 0 || externalPosts.length <= 10)
+      ) {
+        postMap.set(postId, { postId, targetId: null });
+      }
+    }
+  } catch {
+    // External-post discovery is a best-effort fallback. Known Nayla posts still work.
+  }
+
+  const posts = Array.from(postMap.values()).slice(0, 12);
   let comments = 0;
   const samples: ActivitySample[] = [];
-  for (const target of targets || []) {
+
+  for (const post of posts) {
     try {
-      const postId = String(target.provider_post_id || '');
-      if (!postId) continue;
       const payload = await getZernioComments({
         accountId: String(account.provider_account_id),
-        postId,
+        postId: post.postId,
       });
       const cached = await cacheSocialComments({
         userId,
@@ -376,8 +444,8 @@ const loadZernioComments = async ({
         provider: account.provider,
         platform: account.platform,
         account,
-        postId,
-        targetId: target.id,
+        postId: post.postId,
+        targetId: post.targetId,
         payload,
       });
       comments += cached.length;
@@ -387,11 +455,11 @@ const loadZernioComments = async ({
         if (sample && samples.length < 20) samples.push(sample);
       }
     } catch {
-      // Continue scanning other known posts.
+      // A single inaccessible post should not abort the rest of the scan.
     }
   }
 
-  return { comments, inspectedPosts: (targets || []).length, samples };
+  return { comments, inspectedPosts: posts.length, samples };
 };
 
 const loadUploadPostMessages = async ({
@@ -673,15 +741,43 @@ export const reviewConnectedSocialActivity = async ({
 
     if (scope.metrics && routes.metrics) {
       try {
-        const payload = routes.metrics.provider === 'upload_post'
-          ? await getUploadPostAnalytics(profile.upload_post_username, [routes.metrics.platform])
-          : await getZernioAnalytics({
+        let metrics: Array<{ label: string; value: string | number }> = [];
+
+        if (routes.metrics.provider === 'upload_post') {
+          const payload = await getUploadPostAnalytics(profile.upload_post_username, [routes.metrics.platform]);
+          metrics = summarizeMetrics(payload);
+        } else {
+          try {
+            const payload = await getZernioAnalytics({
               profileId: profile.zernio_profile_id,
               accountId: routes.metrics.provider_account_id,
               platform: routes.metrics.platform,
             });
-        item.metrics = summarizeMetrics(payload);
-        if (!item.metrics.length) item.notes.push('La red no devolvió métricas resumidas en este momento.');
+            metrics = summarizeMetrics(payload);
+          } catch {
+            metrics = [];
+          }
+
+          if (!metrics.length) {
+            const external = await syncZernioExternalPosts(String(routes.metrics.provider_account_id));
+            metrics = summarizeExternalEngagement(external, routes.metrics);
+          }
+        }
+
+        item.metrics = metrics;
+        if (item.metrics.length) {
+          await supabase.from('social_metrics_snapshots').insert({
+            user_id: userId,
+            project_id: projectId,
+            account_id: routes.metrics.id,
+            provider: routes.metrics.provider,
+            platform: routes.metrics.platform,
+            metrics: Object.fromEntries(item.metrics.map((metric) => [metric.label, metric.value])),
+            captured_at: new Date().toISOString(),
+          });
+        } else {
+          item.notes.push('La red no devolvió métricas resumidas en este momento.');
+        }
       } catch (error) {
         item.notes.push(error instanceof Error ? error.message : 'No pude leer las métricas en esta red.');
       }

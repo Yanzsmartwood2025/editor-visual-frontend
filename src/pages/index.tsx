@@ -5429,7 +5429,14 @@ if (!session) {
         <SocialHub
           session={session}
           projectId={activeProjectId}
-          results={galeriaMultimedia.filter((item) => item.tipo === 'video' && isNaylaResultMedia(item))}
+          results={galeriaMultimedia.filter((item) => (item.tipo === 'video' || item.tipo === 'foto') && isNaylaResultMedia(item))}
+          onResultsUploaded={(items) => {
+            setGaleriaMultimedia((previous) => {
+              const map = new Map(previous.map((item) => [item.id, item]));
+              items.forEach((item: any) => map.set(item.id, item));
+              return Array.from(map.values());
+            });
+          }}
           onClose={() => {
             setIsSubPanelOpen(false);
             setSubTool(null);

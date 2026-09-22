@@ -173,16 +173,17 @@ export const getSocialAccountForUser = async ({
 export const getSocialOverview = async (userId: string, projectId: string) => {
   const profile = await ensureSocialProfile(userId, projectId);
   const supabase = getWorkspaceSupabaseAdmin();
-  const [accounts, posts, targets, comments, conversations, policy, usage] = await Promise.all([
+  const [accounts, posts, targets, comments, conversations, metrics, policy, usage] = await Promise.all([
     supabase.from('social_accounts').select('*').eq('user_id', userId).eq('project_id', projectId).order('platform'),
     supabase.from('social_posts').select('*').eq('user_id', userId).eq('project_id', projectId).order('created_at', { ascending: false }).limit(20),
     supabase.from('social_post_targets').select('*').eq('user_id', userId).eq('project_id', projectId).order('updated_at', { ascending: false }).limit(80),
     supabase.from('social_comments').select('*').eq('user_id', userId).eq('project_id', projectId).order('received_at', { ascending: false }).limit(80),
     supabase.from('social_conversations').select('*').eq('user_id', userId).eq('project_id', projectId).order('last_message_at', { ascending: false }).limit(50),
+    supabase.from('social_metrics_snapshots').select('*').eq('user_id', userId).eq('project_id', projectId).order('captured_at', { ascending: false }).limit(50),
     supabase.from('social_ai_policies').select('*').eq('social_profile_id', profile.id).maybeSingle(),
     supabase.from('social_usage_ledger').select('*').eq('user_id', userId).eq('project_id', projectId).order('created_at', { ascending: false }).limit(100),
   ]);
-  for (const result of [accounts, posts, targets, comments, conversations, policy, usage]) {
+  for (const result of [accounts, posts, targets, comments, conversations, metrics, policy, usage]) {
     if (result.error) throw result.error;
   }
   return {
@@ -192,6 +193,7 @@ export const getSocialOverview = async (userId: string, projectId: string) => {
     targets: targets.data || [],
     comments: comments.data || [],
     conversations: conversations.data || [],
+    metrics: metrics.data || [],
     policy: policy.data || null,
     usage: usage.data || [],
   };
@@ -217,7 +219,9 @@ export const getOwnedPublishMedia = async ({
     .maybeSingle();
   if (error) throw error;
   if (!data) throw new Error('El resultado seleccionado no existe en este proyecto.');
-  if (data.tipo !== 'video') throw new Error('Por ahora REDES publica resultados de video.');
+  if (!['video', 'foto'].includes(String(data.tipo))) {
+    throw new Error('REDES publica fotos y videos guardados en Resultados.');
+  }
   const url = data.r2_key
     ? createR2PresignedGetUrl({ key: data.r2_key, expiresIn: 1800 }).url
     : data.url;

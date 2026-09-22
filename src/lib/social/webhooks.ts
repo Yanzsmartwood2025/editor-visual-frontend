@@ -79,7 +79,13 @@ export const storeWebhookEvent = async ({
 
 export const bestEffortCacheZernioRealtime = async (payload: any) => {
   const supabase = getWorkspaceSupabaseAdmin();
-  const accountRemoteId = String(payload?.account?.id || payload?.account?._id || payload?.accountId || '');
+  const accountRemoteId = String(
+    payload?.account?.accountId ||
+    payload?.account?.id ||
+    payload?.account?._id ||
+    payload?.accountId ||
+    ''
+  );
   if (!accountRemoteId) return;
 
   const { data: account } = await supabase
@@ -92,6 +98,37 @@ export const bestEffortCacheZernioRealtime = async (payload: any) => {
   if (!account) return;
 
   const event = String(payload?.event || payload?.type || '');
+
+  if ((event === 'post.external.created' || event === 'post.external.updated') && payload?.post?.analytics) {
+    const analytics = payload.post.analytics || {};
+    const metricMap: Record<string, number> = {};
+    const pairs: Array<[string, unknown]> = [
+      ['Me gusta', analytics.likes],
+      ['Comentarios', analytics.comments],
+      ['Compartidos', analytics.shares],
+      ['Guardados', analytics.saves],
+      ['Vistas', analytics.views],
+      ['Alcance', analytics.reach],
+      ['Impresiones', analytics.impressions],
+    ];
+
+    for (const [label, raw] of pairs) {
+      const numeric = Number(raw);
+      if (Number.isFinite(numeric)) metricMap[label] = numeric;
+    }
+
+    if (Object.keys(metricMap).length) {
+      await supabase.from('social_metrics_snapshots').insert({
+        user_id: account.user_id,
+        project_id: account.project_id,
+        account_id: account.id,
+        provider: 'zernio',
+        platform: account.platform,
+        metrics: metricMap,
+        captured_at: new Date().toISOString(),
+      });
+    }
+  }
 
   if (event === 'comment.received' || payload?.comment) {
     const comment = payload.comment || payload.data?.comment || payload.data || {};

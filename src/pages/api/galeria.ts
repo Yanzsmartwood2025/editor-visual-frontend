@@ -77,6 +77,28 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         threadId: req.body?.threadId || first.thread_id,
       });
 
+      const labelMode = req.body?.labelMode === 'result' ? 'result' : 'media';
+      let nextResultNumber = 1;
+
+      if (labelMode === 'result') {
+        const { data: existingResults, error: resultError } = await supabase
+          .from('galeria_multimedia')
+          .select('etiqueta')
+          .eq('user_id', user.uid)
+          .eq('project_id', scope.projectId)
+          .like('etiqueta', 'R%');
+
+        if (resultError) throw resultError;
+
+        const maxResult = (existingResults || []).reduce((max, entry: any) => {
+          const match = typeof entry?.etiqueta === 'string'
+            ? entry.etiqueta.trim().toUpperCase().match(/^R(\d+)$/)
+            : null;
+          return match ? Math.max(max, Number(match[1]) || 0) : max;
+        }, 0);
+        nextResultNumber = maxResult + 1;
+      }
+
       const rows = items.map((item: Record<string, any>) => {
         const r2Key = typeof item.r2_key === 'string' ? item.r2_key : null;
         if (r2Key && !r2Key.startsWith(`${user.uid}/`)) {
@@ -95,7 +117,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           nombre: item.nombre,
           creado_en: item.creado_en || new Date().toISOString(),
           esOverlay: Boolean(item.esOverlay),
-          etiqueta: item.etiqueta || null,
+          etiqueta: labelMode === 'result' ? `R${nextResultNumber++}` : (item.etiqueta || null),
           fuente: item.fuente || null,
           memoria_id: item.memoria_id || null,
           metadata: item.metadata || {},

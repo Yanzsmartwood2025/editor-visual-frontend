@@ -140,6 +140,44 @@ export const publishUploadPostVideo = async ({
   });
 };
 
+
+export const publishUploadPostPhoto = async ({
+  username,
+  photoUrl,
+  title,
+  caption,
+  platforms,
+  idempotencyKey,
+}: {
+  username: string;
+  photoUrl: string;
+  title: string;
+  caption: string;
+  platforms: SocialPlatform[];
+  idempotencyKey: string;
+}) => {
+  const source = await fetch(photoUrl);
+  if (!source.ok) throw new Error('No se pudo preparar la foto para publicación.');
+  const blob = await source.blob();
+
+  const form = new FormData();
+  form.append('photos[]', blob, 'nayla-photo.jpg');
+  form.append('user', username);
+  form.append('title', title || caption || 'Nayla');
+  if (caption) form.append('description', caption);
+
+  for (const platform of platforms) {
+    const mapped = getSocialNetwork(platform)?.uploadPostPublish;
+    if (mapped) form.append('platform[]', mapped);
+  }
+
+  return request('/api/upload_photos', {
+    method: 'POST',
+    headers: { 'Idempotency-Key': idempotencyKey },
+    body: form,
+  });
+};
+
 export const getUploadPostAnalytics = async (username: string, platforms: SocialPlatform[]) => {
   const mapped = platforms
     .map((platform) => getSocialNetwork(platform)?.uploadPostPublish)
