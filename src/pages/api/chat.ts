@@ -5,8 +5,10 @@ import { requireFirebaseUser } from '../../lib/firebaseAdmin';
 import { sanitizeNaylaPublicText } from '../../lib/naylaSystemCatalog';
 import {
   findNaylaCapabilityMatches,
+  getNaylaCapabilityBibleForPrompt,
   NAYLA_CAPABILITY_BIBLE_VERSION,
 } from '../../lib/naylaCapabilityBible';
+import { REMOTION_CPU_PUBLIC_CATALOG } from '../../lib/remotionEffects';
 import { searchStockMedia } from '../../lib/mediaProviders/stock';
 import {
   getAvailableProvidersForAction,
@@ -34,6 +36,7 @@ import {
   getOwnedMediaByLabelsForUser,
   getOwnedMediaForUser,
   getRecentOwnedMediaForUser,
+  getRecentThreadAttachedMediaForUser,
   insertChatMessageForUser,
   listThreadMessagesForUser,
   resolveOwnedWorkspaceScope,
@@ -94,6 +97,12 @@ const generationActionNames = new Set([
 const hasExplicitVisionIntent = (message: string) =>
   /\b(analiza|analizar|analices|revisa|revisar|revises|mira|mirar|observa|observar|inspecciona|inspeccionar|describe|describir|compara|comparar|encuadre|composici[oó]n|colores?|rostro|ropa|fondo)\b/i.test(message) ||
   /\bqu[eé]\s+(?:hay|aparece|ves)\b/i.test(message);
+
+const hasCreativeVisualIntent = (message: string) =>
+  /\b(ordena|ordenar|organiza|organizar|elige|elegir|escoge|escoger|selecciona|seleccionar|acomoda|acomodar|combina|combinar)\b/i.test(message) ||
+  /\b(c[oó]mo\s+(?:quede|quedar[ií]a)\s+mejor|como\s+creas|a\s+tu\s+criterio|criterio\s+creativo)\b/i.test(message) ||
+  /\b(efectos?|transiciones?|movimiento|cinematogr[aá]fic[oa]|profesional|ritmo|montaje)\b/i.test(message) ||
+  /\b(video|montaje|edici[oó]n)\b.{0,48}\b(estas?|mis|las)\s+(?:fotos?|im[aá]genes?)\b/i.test(message);
 
 const getRequestedPhotoLabels = (message: string) => {
   const labels = new Set<string>();
@@ -715,6 +724,29 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const intentMatches = findNaylaCapabilityMatches(message);
     const effectiveHistory = scope.threadId ? persistedHistory : (history || []);
     const executionConfirmed = hasExplicitPlanConfirmation(message, effectiveHistory);
+    const activePlanningContext = executionConfirmed
+      ? [priorUserPlanInstruction, priorAssistantPlan, message].filter(Boolean).join('\n\n')
+      : message;
+
+    const recentPlanAttachmentRows =
+      executionConfirmed && scope.threadId
+        ? await getRecentThreadAttachedMediaForUser({
+            userId: firebaseUser.uid,
+            projectId: scope.projectId,
+            threadId: scope.threadId,
+          })
+        : [];
+    const recentPlanAttachments = recentPlanAttachmentRows.map((item: Record<string, any>) => ({
+      id: item.id as string,
+      tipo: item.tipo as 'foto' | 'video' | 'audio' | 'modelo3d',
+      nombre: item.nombre as string,
+      etiqueta: item.etiqueta as string | undefined,
+      fuente: item.fuente as string | undefined,
+      metadata: item.metadata || {},
+      url: item.r2_key
+        ? createR2PresignedGetUrl({ key: item.r2_key, expiresIn: 3600 }).url
+        : item.url,
+    }));
 
     const userPlanningContext = [
       ...effectiveHistory
@@ -789,17 +821,26 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     attachments.forEach((item) => {
       mergedLibraryMap.set(item.id ? `id:${item.id}` : `url:${item.url}`, item);
     });
+    recentPlanAttachments.forEach((item) => {
+      mergedLibraryMap.set(item.id ? `id:${item.id}` : `url:${item.url}`, item);
+    });
     const mergedLibrary = Array.from(mergedLibraryMap.values());
 
-    const visualIntent = hasExplicitVisionIntent(message);
-    const requestedPhotoLabels = getRequestedPhotoLabels(message);
+    const visualIntent =
+      hasExplicitVisionIntent(activePlanningContext) ||
+      hasCreativeVisualIntent(activePlanningContext);
+    const requestedPhotoLabels = getRequestedPhotoLabels(activePlanningContext);
     const referencedVisionCandidates = requestedPhotoLabels.size
       ? mergedLibrary.filter((item) =>
           item.tipo === 'foto' &&
           typeof item.etiqueta === 'string' &&
           requestedPhotoLabels.has(item.etiqueta.trim().toUpperCase())
         )
-      : attachments.filter((item) => item.tipo === 'foto');
+      : attachments.some((item) => item.tipo === 'foto')
+        ? attachments.filter((item) => item.tipo === 'foto')
+        : recentPlanAttachments.some((item) => item.tipo === 'foto')
+          ? recentPlanAttachments.filter((item) => item.tipo === 'foto')
+          : recentNaturalPhotos;
 
     const visionCandidateUrls = visualIntent
       ? Array.from(new Set([
@@ -807,16 +848,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           ...(images || []),
         ]))
       : [];
-    const visionImages = visionCandidateUrls.slice(0, 3);
+    const visionImages = visionCandidateUrls.slice(0, 8);
     const visionWasTruncated = visionCandidateUrls.length > visionImages.length;
 
     const recentPromptHistory = effectiveHistory.slice(-8);
-    const labelReferenceText = [
-      message,
-      ...recentPromptHistory
-        .filter((item) => item.role === 'user')
-        .map((item) => item.content),
-    ].join('\n');
+    const labelReferenceText = executionConfirmed
+      ? [priorUserPlanInstruction, message].filter(Boolean).join('\n')
+      : message;
     const referencedLabels = new Set(getOrderedMediaLabels(labelReferenceText));
     const promptMediaItems = referencedLabels.size
       ? mergedLibrary.filter((item: any) =>
@@ -825,9 +863,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         )
       : attachments.length
         ? attachments
-        : mergedLibrary
-            .filter((item: any) => typeof item.etiqueta === 'string' && item.etiqueta.trim())
-            .slice(0, 12);
+        : recentPlanAttachments.length
+          ? recentPlanAttachments
+          : mergedLibrary
+              .filter((item: any) => typeof item.etiqueta === 'string' && item.etiqueta.trim())
+              .slice(0, 20);
     const availablePromptLabels = new Set(
       promptMediaItems
         .map((item: any) => typeof item.etiqueta === 'string' ? item.etiqueta.trim().toUpperCase() : '')
@@ -841,8 +881,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           const label = typeof item.etiqueta === 'string' && item.etiqueta.trim()
             ? item.etiqueta.trim().toUpperCase()
             : `item-${index + 1}`;
-          const base = `${label}: tipo=${item.tipo}; nombre=${item.nombre || ''}`;
-          return executionConfirmed ? `${base}; url=${item.url}` : base;
+          return `${label}: tipo=${item.tipo}; nombre=${item.nombre || ''}`;
         }).join('\n')
       : 'ninguno';
 
@@ -957,27 +996,26 @@ MODO_MOTOR=${engineMode}
     const confirmedTimelineContext = executionConfirmed
       ? [userPlanningContext, priorAssistantPlan, message].filter(Boolean).join('\n\n')
       : message;
-    const subtitleBlocks = extractSubtitleBlocks(userPlanningContext);
+    const subtitleBlocks = extractSubtitleBlocks(
+      executionConfirmed && priorUserPlanInstruction
+        ? priorUserPlanInstruction
+        : message
+    );
     const requestedTimelineSeconds = getRequestedTimelineSeconds(userPlanningContext);
     const confirmedTimelineShouldRender =
       executionConfirmed && timelinePlanRequestsRender(confirmedTimelineContext);
 
-    const deterministicConfirmedAction =
-      executionConfirmed && isBarePlanConfirmation(message)
-        ? buildLabelTimelineFallback(confirmedTimelineContext, mergedLibrary)
-        : null;
-
     let responseText = '';
-    if (!deterministicConfirmedAction) {
-      try {
-        responseText = await executeDirectLlm({
-          provider,
-          prompt: fullPrompt,
-          images: visionImages,
-          systemPrompt: compactSystemPrompt,
-        });
-      } catch (error: any) {
-        console.error('[chat.ts] Todos los motores IA de Nayla fallaron:', error);
+    try {
+      responseText = await executeDirectLlm({
+        provider,
+        prompt: fullPrompt,
+        images: visionImages,
+        systemPrompt: compactSystemPrompt,
+      });
+    } catch (error: any) {
+      console.error('[chat.ts] Todos los motores IA de Nayla fallaron:', error);
+      if (!executionConfirmed) {
         return res.status(500).json({
           error: 'Nayla no pudo procesar esta solicitud en este momento. Inténtalo nuevamente.',
         });
@@ -985,7 +1023,6 @@ MODO_MOTOR=${engineMode}
     }
 
     const parsedAction =
-      deterministicConfirmedAction ||
       parseNaylaAction(responseText) ||
       (executionConfirmed ? buildLabelTimelineFallback(fallbackExecutionContext, mergedLibrary) : null);
 
