@@ -528,6 +528,22 @@ export const getAvailableNaylaPcBaseImage = async (
   return (data as NaylaPcBaseImageRow | null) || null;
 };
 
+export const getLatestNaylaPcBaseImage = async (
+  statuses: Array<NaylaPcBaseImageRow['status']> = ['building', 'available']
+): Promise<NaylaPcBaseImageRow | null> => {
+  const supabase = getWorkspaceSupabaseAdmin();
+  const { data, error } = await supabase
+    .from('nayla_pc_base_images')
+    .select('*')
+    .in('status', statuses)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) throw error;
+  return (data as NaylaPcBaseImageRow | null) || null;
+};
+
 export const createNaylaPcBaseImage = async (input: {
   providerSnapshotId: string;
   osFamily: 'linux' | 'windows';
