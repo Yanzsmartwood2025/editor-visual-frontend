@@ -68,11 +68,33 @@ export const listZernioAccounts = async (profileId?: string | null): Promise<Nor
       provider: 'zernio' as const,
       platform: platformFromZernio(String(account.platform || '')),
       providerAccountId: String(account._id || account.id || ''),
-      username: account.username ? String(account.username) : null,
-      handle: account.username ? String(account.username) : null,
-      displayName: account.displayName ? String(account.displayName) : null,
-      avatarUrl: account.avatarUrl ? String(account.avatarUrl) : null,
-      profileUrl: account.profileUrl ? String(account.profileUrl) : null,
+      username: account.username
+        ? String(account.username)
+        : account.metadata?.profileData?.username
+          ? String(account.metadata.profileData.username)
+          : null,
+      handle: account.username
+        ? String(account.username)
+        : account.metadata?.profileData?.username
+          ? String(account.metadata.profileData.username)
+          : null,
+      displayName: account.displayName
+        ? String(account.displayName)
+        : account.metadata?.profileData?.displayName
+          ? String(account.metadata.profileData.displayName)
+          : null,
+      avatarUrl: account.avatarUrl
+        ? String(account.avatarUrl)
+        : account.profilePicture
+          ? String(account.profilePicture)
+          : account.metadata?.profileData?.profilePicture
+            ? String(account.metadata.profileData.profilePicture)
+            : null,
+      profileUrl: account.profileUrl
+        ? String(account.profileUrl)
+        : account.metadata?.profileData?.profileUrl
+          ? String(account.metadata.profileData.profileUrl)
+          : null,
       status: account.isActive === false ? 'disconnected' as const : 'connected' as const,
       capabilities: {
         analytics: Boolean(account.hasAnalyticsAccess),
@@ -171,3 +193,69 @@ export const sendZernioMessage = async (conversationId: string, accountId: strin
     method: 'POST',
     body: JSON.stringify({ accountId, message }),
   });
+
+
+export const syncZernioExternalPosts = async (accountId: string) =>
+  request('/posts/sync-external', {
+    method: 'POST',
+    body: JSON.stringify({ accountId }),
+  });
+
+const NAYLA_WEBHOOK_EVENTS = [
+  'comment.received',
+  'message.received',
+  'message.sent',
+  'reaction.received',
+  'post.platform.published',
+  'post.platform.failed',
+  'post.tiktok.url_resolved',
+] as const;
+
+export const ensureZernioWebhook = async (url: string) => {
+  const secret = process.env.ZERNIO_WEBHOOK_SECRET?.trim();
+  if (!secret || !url) {
+    return {
+      configured: false,
+      reason: !secret ? 'missing_secret' : 'missing_url',
+    };
+  }
+
+  const payload = await request('/webhooks/settings');
+  const webhooks = Array.isArray(payload?.webhooks)
+    ? payload.webhooks
+    : Array.isArray(payload?.data)
+      ? payload.data
+      : Array.isArray(payload)
+        ? payload
+        : [];
+
+  const normalizedUrl = url.replace(/\/+$/, '');
+  const existing = webhooks.find((item: any) =>
+    String(item?.url || '').replace(/\/+$/, '') === normalizedUrl &&
+    item?.isActive !== false
+  );
+
+  if (existing) {
+    return {
+      configured: true,
+      created: false,
+      webhook: existing,
+    };
+  }
+
+  const created = await request('/webhooks/settings', {
+    method: 'POST',
+    body: JSON.stringify({
+      name: 'Nayla Social Live',
+      url: normalizedUrl,
+      events: [...NAYLA_WEBHOOK_EVENTS],
+      secret,
+    }),
+  });
+
+  return {
+    configured: true,
+    created: true,
+    webhook: created?.webhook || created,
+  };
+};
