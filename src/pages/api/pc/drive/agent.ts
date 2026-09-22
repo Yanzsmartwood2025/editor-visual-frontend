@@ -3,11 +3,15 @@ import type { NextApiRequest, NextApiResponse } from 'next';
 import {
   createR2PresignedGetUrl,
   createR2PresignedPutUrl,
+  deleteR2Object,
   headR2Object,
 } from '../../../../lib/r2';
 import {
   getNaylaPcDriveSessionByTokenHash,
+  getNaylaPcInstanceById,
   listNaylaPcDriveFiles,
+  patchNaylaPcInstance,
+  softDeleteNaylaPcDriveFile,
   touchNaylaPcDriveSession,
   upsertNaylaPcDriveFile,
 } from '../../../../lib/pc/store';
@@ -65,9 +69,21 @@ export default async function handler(
 
   try {
     if (req.method === 'GET') {
-      const rows = await listNaylaPcDriveFiles(session.user_id);
+      const [rows, instance] = await Promise.all([
+        listNaylaPcDriveFiles(session.user_id),
+        getNaylaPcInstanceById(session.instance_id),
+      ]);
+
+      const flushRequested =
+        instance?.status === 'snapshotting' &&
+        typeof instance.metadata?.drive_flush_requested_at === 'string';
+      const flushCompleted =
+        typeof instance?.metadata?.drive_flush_completed_at === 'string';
+
       return res.status(200).json({
-        files: rows.slice(0, 1500).map((row) => ({
+        prepareSnapshot: Boolean(flushRequested && !flushCompleted),
+        freezeForSnapshot: Boolean(flushRequested && flushCompleted),
+        files: rows.slice(0, 5000).map((row) => ({
           relativePath: row.relative_path,
           sizeBytes: Number(row.size_bytes),
           contentType: row.content_type || undefined,
@@ -87,14 +103,43 @@ export default async function handler(
     }
 
     const action = String(req.body?.action || '').trim().toLowerCase();
+
+    if (action === 'snapshot_cache_flushed') {
+      const instance = await getNaylaPcInstanceById(session.instance_id);
+      if (
+        !instance ||
+        instance.user_id !== session.user_id ||
+        instance.status !== 'snapshotting' ||
+        typeof instance.metadata?.drive_flush_requested_at !== 'string'
+      ) {
+        return res.status(409).json({
+          error: 'La PC ya no está preparando un snapshot.',
+        });
+      }
+
+      const completedAt = new Date().toISOString();
+      await patchNaylaPcInstance({
+        instanceId: instance.id,
+        patch: {
+          metadata: {
+            ...(instance.metadata || {}),
+            drive_flush_completed_at: completedAt,
+            save_stage: 'drive_flushed',
+          },
+        },
+      });
+
+      return res.status(200).json({ ok: true, completedAt });
+    }
+
     const relativePath = normalizeRelativePath(req.body?.relativePath);
     const r2Key = expectedR2Key(session.user_id, relativePath);
 
     if (action === 'presign_upload') {
       const sizeBytes = Number(req.body?.sizeBytes);
-      if (!Number.isFinite(sizeBytes) || sizeBytes < 0 || sizeBytes > 20 * 1024 ** 3) {
+      if (!Number.isFinite(sizeBytes) || sizeBytes < 0 || sizeBytes > 5 * 1024 ** 3) {
         return res.status(422).json({
-          error: 'El archivo excede el límite actual de Nayla Drive.',
+          error: 'Este archivo supera el límite actual de 5 GB por archivo de Nayla Drive.',
         });
       }
 
@@ -114,6 +159,24 @@ export default async function handler(
         uploadUrl: upload.uploadUrl,
         expiresIn: upload.expiresIn,
       });
+    }
+
+    if (action === 'delete_file') {
+      const row = (await listNaylaPcDriveFiles(session.user_id)).find(
+        (item) => item.relative_path === relativePath
+      );
+
+      if (!row) {
+        return res.status(200).json({ ok: true, deleted: false });
+      }
+
+      await deleteR2Object(row.r2_key);
+      await softDeleteNaylaPcDriveFile({
+        userId: session.user_id,
+        relativePath,
+      });
+
+      return res.status(200).json({ ok: true, deleted: true });
     }
 
     if (action === 'confirm_upload') {

@@ -12,9 +12,11 @@ import {
 } from '../gpu/vultrApi';
 import {
   createNaylaPcSnapshotRow,
+  getNaylaPcInstanceById,
   listExpiredNaylaPcInstances,
   listOlderAvailableNaylaPcSnapshots,
   listPendingNaylaPcSnapshots,
+  listNaylaPcSnapshottingInstances,
   patchNaylaPcInstance,
   patchNaylaPcSnapshot,
   revokeNaylaPcDriveSessionsForInstance,
@@ -224,7 +226,7 @@ export const saveAndDestroyNaylaPcInstance = async ({
   row,
 }: {
   row: NaylaPcInstanceRow;
-}): Promise<{ instance: NaylaPcInstanceRow; snapshot: NaylaPcSnapshotRow }> => {
+}): Promise<{ instance: NaylaPcInstanceRow; snapshot: NaylaPcSnapshotRow | null }> => {
   if (!row.provider_instance_id) {
     throw new Error('La PC todavía no tiene una instancia real para guardar.');
   }
@@ -232,62 +234,173 @@ export const saveAndDestroyNaylaPcInstance = async ({
     throw new Error('La PC ya se está guardando.');
   }
 
-  const description = 'nayla-pc-' + row.user_id.slice(0, 18) + '-' + Date.now();
-  const providerSnapshot = await createVultrSnapshot({
-    instanceId: row.provider_instance_id,
-    description,
-  });
-
-  let snapshot: NaylaPcSnapshotRow;
-  try {
-    snapshot = await createNaylaPcSnapshotRow({
-      userId: row.user_id,
-      sourceInstanceId: row.id,
-      providerSnapshotId: providerSnapshot.id,
-      description,
-      osFamily: row.os_family,
-      osName:
-        typeof row.metadata?.os_name === 'string'
-          ? String(row.metadata.os_name)
-          : null,
-      cpu: row.cpu,
-      ramGb: row.ram_gb,
-      diskGb: row.disk_gb,
-      gpuEnabled: row.gpu_enabled,
-      gpuName: row.gpu_name,
-      gpuVramGb: row.gpu_vram_gb,
-      providerPlanId: row.provider_plan_id,
-      providerRegionId: row.provider_region_id,
-      providerOsId: row.provider_os_id,
-      metadata: {
-        source_provider_instance_id: row.provider_instance_id,
-        desktop_password:
-          typeof row.metadata?.desktop_password === 'string'
-            ? String(row.metadata.desktop_password)
-            : null,
-        desktop_enabled: row.metadata?.desktop_enabled === true,
-        desktop_port: row.metadata?.desktop_port || 6080,
-        desktop_tls: row.metadata?.desktop_tls || 'self_signed',
-      },
-    });
-  } catch (error) {
-    await deleteVultrSnapshot(providerSnapshot.id).catch(() => undefined);
-    throw error;
-  }
-
+  const requestedAt = new Date().toISOString();
   const instance = await patchNaylaPcInstance({
     instanceId: row.id,
     patch: {
       status: 'snapshotting',
       metadata: {
         ...(row.metadata || {}),
-        save_snapshot_id: snapshot.id,
-        save_started_at: new Date().toISOString(),
+        drive_flush_requested_at: requestedAt,
+        drive_flush_completed_at: null,
+        save_snapshot_id: null,
+        save_started_at: null,
+        save_stage: 'syncing_drive',
+        save_error: null,
       },
     },
   });
 
-  return { instance, snapshot };
+  return { instance, snapshot: null };
+};
+
+export const progressNaylaPcSaveRequests = async () => {
+  const rows = await listNaylaPcSnapshottingInstances(10);
+  const results = await Promise.all(
+    rows.map(async (row) => {
+      let haltedForSnapshot = false;
+      try {
+        if (typeof row.metadata?.save_snapshot_id === 'string') {
+          return { id: row.id, ok: true as const, action: 'snapshot_exists' as const };
+        }
+
+        const requestedAt =
+          typeof row.metadata?.drive_flush_requested_at === 'string'
+            ? String(row.metadata.drive_flush_requested_at)
+            : '';
+        if (!requestedAt) {
+          return { id: row.id, ok: true as const, action: 'legacy_wait' as const };
+        }
+
+        const requestedMs = Date.parse(requestedAt);
+        const age =
+          Number.isFinite(requestedMs) ? Math.max(0, Date.now() - requestedMs) : 0;
+        const completedAt =
+          typeof row.metadata?.drive_flush_completed_at === 'string'
+            ? String(row.metadata.drive_flush_completed_at)
+            : '';
+
+        if (!completedAt) {
+          if (age > 3 * 60_000) {
+            await patchNaylaPcInstance({
+              instanceId: row.id,
+              patch: {
+                status: 'running',
+                metadata: {
+                  ...(row.metadata || {}),
+                  save_stage: 'drive_flush_timeout',
+                  save_error: 'drive_flush_timeout',
+                  drive_flush_requested_at: null,
+                },
+              },
+            });
+            return { id: row.id, ok: false as const, error: 'drive_flush_timeout' };
+          }
+          return { id: row.id, ok: true as const, action: 'waiting_drive' as const };
+        }
+
+        if (!row.provider_instance_id) {
+          throw new Error('La PC perdió su instancia antes de crear el snapshot.');
+        }
+
+        const description =
+          'nayla-pc-' + row.user_id.slice(0, 18) + '-' + Date.now();
+
+        await haltVultrInstance(row.provider_instance_id);
+        haltedForSnapshot = true;
+
+        const providerSnapshot = await createVultrSnapshot({
+          instanceId: row.provider_instance_id,
+          description,
+        });
+
+        let snapshot: NaylaPcSnapshotRow;
+        try {
+          snapshot = await createNaylaPcSnapshotRow({
+            userId: row.user_id,
+            sourceInstanceId: row.id,
+            providerSnapshotId: providerSnapshot.id,
+            description,
+            osFamily: row.os_family,
+            osName:
+              typeof row.metadata?.os_name === 'string'
+                ? String(row.metadata.os_name)
+                : null,
+            cpu: row.cpu,
+            ramGb: row.ram_gb,
+            diskGb: row.disk_gb,
+            gpuEnabled: row.gpu_enabled,
+            gpuName: row.gpu_name,
+            gpuVramGb: row.gpu_vram_gb,
+            providerPlanId: row.provider_plan_id,
+            providerRegionId: row.provider_region_id,
+            providerOsId: row.provider_os_id,
+            metadata: {
+              source_provider_instance_id: row.provider_instance_id,
+              desktop_enabled: row.metadata?.desktop_enabled === true,
+              desktop_port: row.metadata?.desktop_port || 6080,
+              desktop_tls: row.metadata?.desktop_tls || 'self_signed',
+              drive_cache_flushed_at: completedAt,
+            },
+          });
+        } catch (error) {
+          await deleteVultrSnapshot(providerSnapshot.id).catch(() => undefined);
+          throw error;
+        }
+
+        await patchNaylaPcInstance({
+          instanceId: row.id,
+          patch: {
+            metadata: {
+              ...(row.metadata || {}),
+              save_snapshot_id: snapshot.id,
+              save_started_at: new Date().toISOString(),
+              save_stage: 'provider_snapshot',
+            },
+          },
+        });
+
+        return {
+          id: row.id,
+          ok: true as const,
+          action: 'snapshot_started' as const,
+          snapshotId: snapshot.id,
+        };
+      } catch (error) {
+        if (haltedForSnapshot && row.provider_instance_id) {
+          await startVultrInstance(row.provider_instance_id).catch(() => undefined);
+        }
+
+        await patchNaylaPcInstance({
+          instanceId: row.id,
+          patch: {
+            status: 'running',
+            metadata: {
+              ...(row.metadata || {}),
+              save_stage: 'error',
+              save_error:
+                error instanceof Error ? error.message.slice(0, 300) : 'unknown',
+              drive_flush_requested_at: null,
+            },
+          },
+        }).catch(() => undefined);
+
+        return {
+          id: row.id,
+          ok: false as const,
+          error: error instanceof Error ? error.message.slice(0, 300) : 'unknown',
+        };
+      }
+    })
+  );
+
+  return {
+    checked: rows.length,
+    started: results.filter((result) => result.ok && result.action === 'snapshot_started').length,
+    waiting: results.filter((result) => result.ok && result.action === 'waiting_drive').length,
+    failed: results.filter((result) => !result.ok).length,
+    results,
+  };
 };
 
 const snapshotStorageMonthlyUsd = (sizeBytes: number) =>
@@ -324,12 +437,19 @@ export const finalizePendingNaylaPcSnapshots = async () => {
             },
           });
           if (row.source_instance_id) {
+            const source = await getNaylaPcInstanceById(row.source_instance_id).catch(() => null);
+            if (source?.provider_instance_id) {
+              await startVultrInstance(source.provider_instance_id).catch(() => undefined);
+            }
             await patchNaylaPcInstance({
               instanceId: row.source_instance_id,
               patch: {
                 status: 'running',
                 metadata: {
+                  ...(source?.metadata || {}),
+                  save_stage: 'error',
                   save_error: 'snapshot_missing',
+                  drive_flush_requested_at: null,
                 },
               },
             }).catch(() => undefined);
@@ -354,12 +474,19 @@ export const finalizePendingNaylaPcSnapshots = async () => {
           });
 
           if (row.source_instance_id) {
+            const source = await getNaylaPcInstanceById(row.source_instance_id).catch(() => null);
+            if (source?.provider_instance_id) {
+              await startVultrInstance(source.provider_instance_id).catch(() => undefined);
+            }
             await patchNaylaPcInstance({
               instanceId: row.source_instance_id,
               patch: {
                 status: 'running',
                 metadata: {
+                  ...(source?.metadata || {}),
+                  save_stage: 'error',
                   save_error: 'snapshot_failed',
+                  drive_flush_requested_at: null,
                 },
               },
             }).catch(() => undefined);
@@ -375,10 +502,11 @@ export const finalizePendingNaylaPcSnapshots = async () => {
         const sizeBytes = Number(provider.size);
 
         if (row.source_instance_id) {
+          const source = await getNaylaPcInstanceById(row.source_instance_id).catch(() => null);
           const sourceProviderInstanceId =
             typeof row.metadata?.source_provider_instance_id === 'string'
               ? String(row.metadata.source_provider_instance_id)
-              : '';
+              : source?.provider_instance_id || '';
 
           if (sourceProviderInstanceId) {
             await deleteVultrInstance(sourceProviderInstanceId);
@@ -394,7 +522,9 @@ export const finalizePendingNaylaPcSnapshots = async () => {
               terminated_at: new Date().toISOString(),
               last_synced_at: new Date().toISOString(),
               metadata: {
+                ...(source?.metadata || {}),
                 save_snapshot_id: row.id,
+                save_stage: 'complete',
                 save_completed_at: new Date().toISOString(),
               },
             },

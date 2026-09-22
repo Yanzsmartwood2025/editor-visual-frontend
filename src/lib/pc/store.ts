@@ -241,6 +241,35 @@ export const getActiveNaylaPcInstance = async (
   return (data as NaylaPcInstanceRow | null) || null;
 };
 
+export const getNaylaPcInstanceById = async (
+  instanceId: string
+): Promise<NaylaPcInstanceRow | null> => {
+  const supabase = getWorkspaceSupabaseAdmin();
+  const { data, error } = await supabase
+    .from('nayla_pc_instances')
+    .select('*')
+    .eq('id', instanceId)
+    .maybeSingle();
+
+  if (error) throw error;
+  return (data as NaylaPcInstanceRow | null) || null;
+};
+
+export const listNaylaPcSnapshottingInstances = async (
+  limit = 10
+): Promise<NaylaPcInstanceRow[]> => {
+  const supabase = getWorkspaceSupabaseAdmin();
+  const { data, error } = await supabase
+    .from('nayla_pc_instances')
+    .select('*')
+    .eq('status', 'snapshotting')
+    .order('updated_at', { ascending: true })
+    .limit(Math.max(1, Math.min(25, limit)));
+
+  if (error) throw error;
+  return (data as NaylaPcInstanceRow[]) || [];
+};
+
 export const getNaylaPcInstanceForUser = async ({
   userId,
   instanceId,
@@ -748,6 +777,61 @@ export const upsertNaylaPcDriveFile = async (input: {
   const { data, error } = await query.select('*').single();
   if (error) throw error;
   return data as NaylaPcDriveFileRow;
+};
+
+export const softDeleteNaylaPcDriveFile = async ({
+  userId,
+  relativePath,
+}: {
+  userId: string;
+  relativePath: string;
+}): Promise<NaylaPcDriveFileRow | null> => {
+  const supabase = getWorkspaceSupabaseAdmin();
+  const { data, error } = await supabase
+    .from('nayla_pc_drive_files')
+    .update({
+      deleted_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    })
+    .eq('user_id', userId)
+    .eq('relative_path', relativePath)
+    .is('deleted_at', null)
+    .select('*')
+    .maybeSingle();
+
+  if (error) throw error;
+  return (data as NaylaPcDriveFileRow | null) || null;
+};
+
+export const setNaylaInternalSecret = async (
+  name: string,
+  value: string
+): Promise<void> => {
+  const supabase = getWorkspaceSupabaseAdmin();
+  const { error } = await supabase
+    .from('nayla_internal_secrets')
+    .upsert(
+      {
+        name,
+        secret_value: value,
+        rotated_at: new Date().toISOString(),
+      },
+      { onConflict: 'name' }
+    );
+
+  if (error) throw error;
+};
+
+export const deleteNaylaInternalSecret = async (
+  name: string
+): Promise<void> => {
+  const supabase = getWorkspaceSupabaseAdmin();
+  const { error } = await supabase
+    .from('nayla_internal_secrets')
+    .delete()
+    .eq('name', name);
+
+  if (error) throw error;
 };
 
 export const getNaylaInternalSecret = async (

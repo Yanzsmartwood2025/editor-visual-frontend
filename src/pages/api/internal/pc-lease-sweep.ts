@@ -1,7 +1,9 @@
 import { timingSafeEqual } from 'node:crypto';
 import type { NextApiRequest, NextApiResponse } from 'next';
+import { progressNaylaPcBaseBuild } from '../../../lib/pc/baseBuilder';
 import {
   finalizePendingNaylaPcSnapshots,
+  progressNaylaPcSaveRequests,
   sweepExpiredNaylaPcInstances,
 } from '../../../lib/pc/instances';
 import { getNaylaInternalSecret } from '../../../lib/pc/store';
@@ -32,15 +34,22 @@ export default async function handler(
   }
 
   try {
-    const [leases, snapshots] = await Promise.all([
+    const baseBuildActive = await getNaylaInternalSecret('pc_base_build_active');
+    const [leases, saves, baseBuild] = await Promise.all([
       sweepExpiredNaylaPcInstances(),
-      finalizePendingNaylaPcSnapshots(),
+      progressNaylaPcSaveRequests(),
+      baseBuildActive
+        ? progressNaylaPcBaseBuild()
+        : Promise.resolve({ state: 'idle' as const }),
     ]);
+    const snapshots = await finalizePendingNaylaPcSnapshots();
     res.setHeader('Cache-Control', 'no-store, max-age=0');
     return res.status(200).json({
       ok: true,
       leases,
+      saves,
       snapshots,
+      baseBuild,
     });
   } catch (error) {
     const message =
