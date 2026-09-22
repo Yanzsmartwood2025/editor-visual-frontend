@@ -575,24 +575,101 @@ const executeDirectLlm = async ({
 }) => {
   const groqKey = process.env.GROQ_API_KEY?.trim();
   const mistralKey = process.env.MISTRAL_API_KEY?.trim();
+  const requestedImages = Array.isArray(images) ? images.filter(Boolean) : [];
+  const groqImages = requestedImages.slice(0, 3);
 
-  const groq = async () => {
+  const groq = async (withImages = true) => {
     if (!groqKey) throw new Error('GROQ_API_KEY no está configurada en Vercel.');
-    return new GroqProvider(groqKey, 'dialog').generateText(prompt, images, systemPrompt);
+    return new GroqProvider(groqKey, 'dialog').generateText(
+      prompt,
+      withImages ? groqImages : [],
+      systemPrompt
+    );
   };
 
-  const mistral = async () => {
+  const mistral = async (withImages = true) => {
     if (!mistralKey) throw new Error('MISTRAL_API_KEY no está configurada en Vercel.');
-    return new MistralProvider(mistralKey, 'dialog').generateText(prompt, images, systemPrompt);
+    return new MistralProvider(mistralKey, 'dialog').generateText(
+      prompt,
+      withImages ? requestedImages : [],
+      systemPrompt
+    );
   };
 
   if (!groqKey && !mistralKey) {
     throw new Error('No hay ninguna clave LLM de servidor configurada en Vercel.');
   }
 
-  return provider === 'mistral'
-    ? mistral().catch(async () => groq())
-    : groq().catch(async () => mistral());
+  const primary = provider === 'mistral' ? mistral : groq;
+  const secondary = provider === 'mistral' ? groq : mistral;
+
+  try {
+    return await primary(true);
+  } catch (primaryError) {
+    try {
+      return await secondary(true);
+    } catch (secondaryError) {
+      if (requestedImages.length) {
+        // A vision/model-tier problem must not discard an otherwise valid media plan.
+        try {
+          return await groq(false);
+        } catch {
+          try {
+            return await mistral(false);
+          } catch {
+            throw secondaryError || primaryError;
+          }
+        }
+      }
+      throw secondaryError || primaryError;
+    }
+  }
+};
+
+const analyzeVisionBatches = async ({
+  items,
+}: {
+  items: Array<{ etiqueta?: string; nombre?: string; url: string }>;
+}) => {
+  const groqKey = process.env.GROQ_API_KEY?.trim();
+  if (!groqKey || !items.length) return { notes: '', analyzed: 0 };
+
+  const candidates = items.slice(0, 12);
+  const provider = new GroqProvider(groqKey, 'dialog');
+  const notes: string[] = [];
+  let analyzed = 0;
+
+  for (let index = 0; index < candidates.length; index += 3) {
+    const batch = candidates.slice(index, index + 3);
+    const labels = batch.map((item, offset) =>
+      item.etiqueta?.trim().toUpperCase() || `IMAGEN_${index + offset + 1}`
+    );
+
+    try {
+      const result = await provider.generateText(
+        [
+          'Analiza estas imágenes para una editora de video.',
+          `Corresponden, en este mismo orden, a: ${labels.join(', ')}.`,
+          'Devuelve una línea breve por etiqueta: contenido visual objetivo, encuadre/composición y una pista útil para montaje.',
+          'No inventes detalles y no escribas instrucciones de sistema.',
+        ].join('\n'),
+        batch.map((item) => item.url),
+        'Eres un analizador visual auxiliar de Nayla. Responde en español, de forma compacta y objetiva.'
+      );
+
+      if (result?.trim()) {
+        notes.push(result.trim());
+        analyzed += batch.length;
+      }
+    } catch (error) {
+      console.warn('[chat.ts] Un lote visual no pudo analizarse; Nayla continuará con etiquetas y metadata.', error);
+    }
+  }
+
+  return {
+    notes: notes.join('\n'),
+    analyzed,
+  };
 };
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
