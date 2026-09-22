@@ -6,6 +6,7 @@ import {
   deleteR2Object,
   headR2Object,
 } from '../../../../lib/r2';
+import { markNaylaPcDesktopReady } from '../../../../lib/pc/instances';
 import {
   getNaylaPcDriveSessionByTokenHash,
   getNaylaPcInstanceById,
@@ -103,6 +104,29 @@ export default async function handler(
     }
 
     const action = String(req.body?.action || '').trim().toLowerCase();
+
+    if (action === 'desktop_ready') {
+      const instance = await getNaylaPcInstanceById(session.instance_id);
+      if (!instance || instance.user_id !== session.user_id) {
+        return res.status(409).json({ error: 'La PC ya no está disponible.' });
+      }
+
+      if (
+        !['provisioning', 'running', 'rebooting'].includes(String(instance.status))
+      ) {
+        return res.status(409).json({
+          error: 'La PC no está en un estado válido para marcar el escritorio listo.',
+        });
+      }
+
+      const ready = await markNaylaPcDesktopReady(instance);
+      return res.status(200).json({
+        ok: true,
+        readyAt: ready.ready_at,
+        billableStartedAt: ready.billable_started_at,
+        expiresAt: ready.expires_at,
+      });
+    }
 
     if (action === 'snapshot_cache_flushed') {
       const instance = await getNaylaPcInstanceById(session.instance_id);
