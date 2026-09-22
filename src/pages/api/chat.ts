@@ -920,14 +920,35 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           ? recentPlanAttachments.filter((item) => item.tipo === 'foto')
           : recentNaturalPhotos;
 
+    const uniqueReferencedVisionCandidates = Array.from(
+      new Map(
+        referencedVisionCandidates
+          .filter((item: any) => typeof item?.url === 'string' && item.url)
+          .map((item: any) => [item.url, item])
+      ).values()
+    ) as Array<{ etiqueta?: string; nombre?: string; url: string }>;
+
     const visionCandidateUrls = visualIntent
       ? Array.from(new Set([
-          ...referencedVisionCandidates.map((item) => item.url),
+          ...uniqueReferencedVisionCandidates.map((item) => item.url),
           ...(images || []),
         ]))
       : [];
-    const visionImages = visionCandidateUrls.slice(0, 8);
-    const visionWasTruncated = visionCandidateUrls.length > visionImages.length;
+
+    const shouldBatchVision = visualIntent && uniqueReferencedVisionCandidates.length > 3;
+    const batchedVision = shouldBatchVision
+      ? await analyzeVisionBatches({ items: uniqueReferencedVisionCandidates })
+      : { notes: '', analyzed: 0 };
+
+    // Groq's current vision route accepts at most 3 images per request.
+    // For larger sets, the auxiliary batched analysis is folded into the final text prompt.
+    const visionImages = batchedVision.notes
+      ? []
+      : visionCandidateUrls.slice(0, 3);
+    const inspectedVisualCount = batchedVision.notes
+      ? batchedVision.analyzed
+      : visionImages.length;
+    const visionWasTruncated = visionCandidateUrls.length > inspectedVisualCount;
 
     const recentPromptHistory = effectiveHistory.slice(-8);
     const labelReferenceText = executionConfirmed
@@ -980,11 +1001,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         : 'Timeline actual: vacío.',
       visualIntent
         ? (
-            visionImages.length
-              ? `Visión activada para este plan: se cargaron ${visionImages.length} foto(s) para análisis visual.${visionWasTruncated ? ' Hay más fotos adjuntas que el límite visual de una sola llamada; conserva todas por etiqueta y no afirmes haber inspeccionado visualmente las que no fueron cargadas en esta llamada.' : ''}`
-              : 'Visión requerida para este plan, pero no se encontró una foto válida con esa referencia. No inventes contenido visual.'
+            inspectedVisualCount
+              ? `Visión activada para este plan: se inspeccionaron ${inspectedVisualCount} foto(s).${visionWasTruncated ? ' Hay más fotos adjuntas que las inspeccionadas visualmente en este turno; conserva todas por etiqueta y no inventes detalles de las restantes.' : ''}`
+              : 'Visión requerida para este plan, pero no se pudo inspeccionar ninguna foto. Continúa usando etiquetas y metadatos sin inventar contenido visual.'
           )
         : 'Visión NO solicitada. No describas el contenido visual de las fotos; usa etiquetas y metadatos.',
+      batchedVision.notes
+        ? `Notas del análisis visual por lotes:\n${batchedVision.notes}`
+        : '',
     ].join('\n\n');
 
     const historyText = recentPromptHistory.length
