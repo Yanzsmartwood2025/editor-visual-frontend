@@ -259,7 +259,7 @@ export const listExpiredNaylaPcInstances = async (
     .select('*')
     .eq('auto_destroy', true)
     .lte('expires_at', new Date().toISOString())
-    .in('status', ['provisioning', 'running', 'stopped', 'rebooting'])
+    .in('status', ['provisioning', 'running', 'stopped', 'rebooting', 'terminating'])
     .not('provider_instance_id', 'is', null)
     .order('expires_at', { ascending: true })
     .limit(Math.max(1, Math.min(50, limit)));
