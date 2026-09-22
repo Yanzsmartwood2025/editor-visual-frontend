@@ -672,11 +672,21 @@ export default function NaylaPc({
                     </button>
                   </>
                 )}
+                {activeInstance.status !== 'snapshotting' && activeInstance.status !== 'terminating' && (
+                  <button
+                    type="button"
+                    disabled={Boolean(actionLoading)}
+                    onClick={() => setConfirmSaveDestroy(true)}
+                    style={{ border: '1px solid #4a4a4a', borderRadius: 999, padding: '9px 13px', background: '#f2f2f2', color: '#000', fontWeight: 900, fontSize: '0.62rem', cursor: actionLoading ? 'wait' : 'pointer' }}
+                  >
+                    GUARDAR Y DESTRUIR
+                  </button>
+                )}
                 <button
                   type="button"
-                  disabled={Boolean(actionLoading)}
+                  disabled={Boolean(actionLoading) || activeInstance.status === 'snapshotting'}
                   onClick={() => setConfirmDestroy(true)}
-                  style={{ border: '1px solid #4a2e2e', borderRadius: 999, padding: '9px 13px', background: '#160b0b', color: '#d7b7b7', fontWeight: 900, fontSize: '0.62rem', cursor: actionLoading ? 'wait' : 'pointer' }}
+                  style={{ border: '1px solid #4a2e2e', borderRadius: 999, padding: '9px 13px', background: '#160b0b', color: '#d7b7b7', fontWeight: 900, fontSize: '0.62rem', cursor: actionLoading || activeInstance.status === 'snapshotting' ? 'not-allowed' : 'pointer' }}
                 >
                   ELIMINAR PC
                 </button>
@@ -684,6 +694,46 @@ export default function NaylaPc({
               <div style={{ marginTop: 10, color: '#666', fontSize: '0.59rem', lineHeight: 1.45 }}>
                 Apagar conserva CPU, RAM, disco e IP reservados, por eso el proveedor continúa cobrando hasta eliminar la instancia.
               </div>
+            </div>
+          )}
+
+          {savedSnapshot && savedSnapshot.status !== 'deleted' && (
+            <div style={{ border: '1px solid #303030', borderRadius: 18, padding: 16, background: '#0b0b0b', marginBottom: 14 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}>
+                <div>
+                  <div style={{ color: '#777', fontSize: '0.6rem', letterSpacing: '0.12em', fontWeight: 850 }}>PC GUARDADA</div>
+                  <div style={{ marginTop: 5, fontSize: '0.95rem', fontWeight: 900 }}>
+                    {savedSnapshot.osName || (savedSnapshot.osFamily === 'linux' ? 'Ubuntu' : 'Windows')} · {savedSnapshot.cpu} vCPU · {savedSnapshot.ramGb} GB
+                  </div>
+                  <div style={{ color: '#777', fontSize: '0.61rem', marginTop: 5 }}>
+                    {savedSnapshot.status === 'pending'
+                      ? 'Guardando disco completo…'
+                      : savedSnapshot.status === 'available'
+                        ? 'Lista para reanudar'
+                        : savedSnapshot.status.toUpperCase()}
+                  </div>
+                </div>
+                <div style={{ textAlign: 'right' }}>
+                  <div style={{ color: '#666', fontSize: '0.55rem' }}>SNAPSHOT</div>
+                  <strong style={{ fontSize: '0.72rem' }}>
+                    {savedSnapshot.storageMonthlyUsd == null
+                      ? 'CALCULANDO'
+                      : money(savedSnapshot.storageMonthlyUsd) + '/mes'}
+                  </strong>
+                </div>
+              </div>
+              {savedSnapshot.status === 'available' && !activeInstance && (
+                <div style={{ marginTop: 12 }}>
+                  <button
+                    type="button"
+                    disabled={Boolean(actionLoading) || !provisioningAllowed}
+                    onClick={() => void prepareResume()}
+                    style={{ minHeight: 40, borderRadius: 999, border: '1px solid #fff', background: '#fff', color: '#000', padding: '0 15px', fontWeight: 900, fontSize: '0.64rem', cursor: actionLoading || !provisioningAllowed ? 'not-allowed' : 'pointer' }}
+                  >
+                    {actionLoading === 'resume_quote' ? 'COTIZANDO…' : 'REANUDAR PC'}
+                  </button>
+                </div>
+              )}
             </div>
           )}
 
