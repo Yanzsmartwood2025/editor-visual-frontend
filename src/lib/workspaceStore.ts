@@ -353,6 +353,70 @@ export const listThreadMessagesForUser = async ({
   return { scope, messages: data || [] };
 };
 
+export const getRecentThreadAttachedMediaForUser = async ({
+  userId,
+  threadId,
+  projectId,
+  messageLimit = 12,
+}: {
+  userId: string;
+  threadId: string;
+  projectId: string;
+  messageLimit?: number;
+}) => {
+  const scope = await resolveOwnedWorkspaceScope({ userId, projectId, threadId });
+  const supabase = getWorkspaceSupabaseAdmin();
+
+  const { data: recentMessages, error: messageError } = await supabase
+    .from('chat_messages')
+    .select('id,created_at')
+    .eq('user_id', userId)
+    .eq('project_id', scope.projectId)
+    .eq('thread_id', scope.threadId)
+    .eq('role', 'user')
+    .order('created_at', { ascending: false })
+    .limit(Math.max(1, Math.min(messageLimit, 40)));
+
+  if (messageError) throw messageError;
+  const messageIds = (recentMessages || []).map((item: any) => String(item.id || '')).filter(Boolean);
+  if (!messageIds.length) return [];
+
+  const { data: links, error: linkError } = await supabase
+    .from('chat_message_media')
+    .select('message_id,media_id,created_at')
+    .eq('user_id', userId)
+    .in('message_id', messageIds)
+    .order('created_at', { ascending: true });
+
+  if (linkError) throw linkError;
+  if (!links?.length) return [];
+
+  const linkedByMessage = new Map<string, string[]>();
+  for (const link of links) {
+    const messageId = String(link.message_id || '');
+    const mediaId = String(link.media_id || '');
+    if (!messageId || !mediaId) continue;
+    const list = linkedByMessage.get(messageId) || [];
+    list.push(mediaId);
+    linkedByMessage.set(messageId, list);
+  }
+
+  const latestMessageWithAttachments = messageIds.find((id) => (linkedByMessage.get(id) || []).length > 0);
+  if (!latestMessageWithAttachments) return [];
+
+  const mediaIds = linkedByMessage.get(latestMessageWithAttachments) || [];
+  const { data: media, error: mediaError } = await supabase
+    .from('galeria_multimedia')
+    .select('*')
+    .eq('user_id', userId)
+    .eq('project_id', scope.projectId)
+    .in('id', mediaIds);
+
+  if (mediaError) throw mediaError;
+  const byId = new Map((media || []).map((item: any) => [String(item.id), item]));
+  return mediaIds.map((id) => byId.get(id)).filter(Boolean);
+};
+
 export const insertChatMessageForUser = async ({
   userId,
   projectId,
