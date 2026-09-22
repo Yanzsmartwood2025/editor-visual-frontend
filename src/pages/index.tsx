@@ -10,7 +10,14 @@ import { MAIN_TOOLS, SUB_TOOLS } from '../config/editorTools';
 import { editorGlobalStyles } from '../styles/editorGlobalStyles';
 import { getVideoMetadata, getAudioDurationInSeconds } from '@remotion/media-utils';
 import { createClient } from '@supabase/supabase-js';
-import { createMediaId, uploadMediaFilesToBodega } from '../lib/mediaUpload';
+import {
+  createMediaId,
+  isSupportedDocumentFile,
+  resolveMediaKind,
+  uploadDocumentFilesToBodega,
+  uploadMediaFilesToBodega,
+  type DocumentItem,
+} from '../lib/mediaUpload';
 import { groupSpeechWordsIntoCaptions } from '../lib/autoCaptions';
 import { buildMediaMetadata, getCanvasDimensionsFromRatio, probeMediaUrl, type MediaMetadata } from '../lib/mediaMetadata';
 import { getCompositionDurationInFrames } from '../lib/timelineMetrics';
@@ -207,6 +214,8 @@ const SelectableChatText: React.FC<{ text: string; clean?: boolean }> = ({ text,
   </div>
 );
 
+const CHAT_ATTACHMENT_LIMIT = 200;
+
 const isNaylaResultMedia = (item: MediaItem) => {
   const source = String(item.fuente || '').trim().toLowerCase();
   const label = String(item.etiqueta || '').trim().toUpperCase();
@@ -326,6 +335,7 @@ export default function NaylaCore() {
   const [marcoImagenes, setMarcoImagenes] = useState<{ original: string; procesada: string; nombre: string }[]>([]);
   const [marcoProcesando, setMarcoProcesando] = useState(false);
   const [galeriaMultimedia, setGaleriaMultimedia] = useState<MediaItem[]>([]);
+  const [chatDocuments, setChatDocuments] = useState<DocumentItem[]>([]);
   const [modelos3d, setModelos3d] = useState<Model3DAsset[]>([]);
   const [modelo3dActivoId, setModelo3dActivoId] = useState<string | null>(null);
   const [subiendo3d, setSubiendo3d] = useState(false);
@@ -493,7 +503,10 @@ export default function NaylaCore() {
   const [activeThreadId, setActiveThreadId] = useState<string | null>(null);
   const activeThreadIdRef = useRef<string | null>(null);
   const [projectMenuOpen, setProjectMenuOpen] = useState(false);
+  const [chatAttachMenuOpen, setChatAttachMenuOpen] = useState(false);
+  const chatDirectUploadRef = useRef<HTMLInputElement | null>(null);
   const [chatAttachmentIds, setChatAttachmentIds] = useState<string[]>([]);
+  const [chatUploadProgress, setChatUploadProgress] = useState<{ total: number; done: number; failed: number } | null>(null);
   const [channelUploadingKind, setChannelUploadingKind] = useState<NaylaChannelKind | null>(null);
 
   useEffect(() => {
@@ -600,6 +613,13 @@ export default function NaylaCore() {
       url: item.url,
       etiqueta: item.etiqueta,
     })),
+    ...chatDocuments.map((item) => ({
+      id: item.id,
+      tipo: 'documento' as NaylaChannelKind,
+      nombre: item.nombre,
+      url: item.url,
+      etiqueta: item.etiqueta,
+    })),
     ...modelos3d.map((item) => ({
       id: item.id,
       tipo: 'modelo3d' as NaylaChannelKind,
@@ -615,6 +635,7 @@ export default function NaylaCore() {
     gpuQuoteLoading ||
     gpuQuoteConfirming ||
     channelUploadingKind !== null ||
+    chatUploadProgress !== null ||
     chatMessages.some((message) => {
       const renderActive = message.renderTask && !['completed', 'failed', 'cancelled'].includes(message.renderTask.status);
       const actionStatus = message.actionPlan?.status || '';
