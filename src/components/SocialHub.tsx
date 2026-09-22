@@ -700,6 +700,16 @@ export default function SocialHub({ session, projectId, results, onClose }: Prop
     setInboxConversation(null);
     setInboxMessages([]);
     setMessageDraft('');
+
+    const selectedAccount = accounts.find((account: any) => account.id === accountId);
+    const isTikTokPersonal =
+      selectedAccount?.platform === 'tiktok' &&
+      selectedAccount?.raw?.metadata?.profileData?.extraData?.isBusinessAccount === false;
+
+    if (isTikTokPersonal) {
+      setInboxNotice('Esta cuenta de TikTok está conectada, pero TikTok limita los mensajes privados por API a cuentas Business compatibles.');
+    }
+
     setBusy('inbox');
     try {
       const payload = await api(`/api/social/inbox?projectId=${encodeURIComponent(projectId)}&accountId=${encodeURIComponent(accountId)}`);
@@ -1170,6 +1180,17 @@ export default function SocialHub({ session, projectId, results, onClose }: Prop
 
       {tab === 'publicar' && (
         <div style={{ ...panel, padding: 11, display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <input
+            ref={socialUploadInputRef}
+            type="file"
+            accept="image/*,video/*"
+            multiple
+            hidden
+            onChange={(event) => {
+              const files = Array.from(event.target.files || []);
+              if (files.length) void uploadSocialResults(files);
+            }}
+          />
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
             <div style={{ fontSize: 10, fontWeight: 900 }}>PUBLICAR RESULTADO</div>
             <button
@@ -1384,6 +1405,7 @@ export default function SocialHub({ session, projectId, results, onClose }: Prop
               label: account.display_name || account.handle || account.username || 'Cuenta',
               subtitle: 'Rendimiento y alcance',
               platform: account.platform,
+              avatarUrl: getAccountAvatarUrl(account),
             }))}
           />
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,minmax(0,1fr))', gap: 6, marginTop: 9 }}>
