@@ -311,6 +311,50 @@ export const createVultrGpuInstance = async ({
   return data.instance;
 };
 
+export const createVultrInstance = async ({
+  planId,
+  regionId,
+  osId,
+  label,
+  userData,
+}: {
+  planId: string;
+  regionId: string;
+  osId: number;
+  label: string;
+  userData?: string;
+}) => {
+  if (!Number.isInteger(osId) || osId <= 0) {
+    throw new Error('El sistema operativo de Nayla PC no es válido.');
+  }
+
+  const body: Record<string, unknown> = {
+    region: regionId,
+    plan: planId,
+    os_id: osId,
+    label: label.slice(0, 128),
+    hostname: label.slice(0, 63),
+    activation_email: false,
+  };
+
+  if (userData) body.user_data = userData;
+
+  const data = await vultrRequest<{ instance?: VultrInstance }>(
+    '/instances',
+    {
+      method: 'POST',
+      body: JSON.stringify(body),
+    },
+    40_000
+  );
+
+  if (!data.instance?.id) {
+    throw new Error('Nayla PC no recibió un identificador válido de la instancia.');
+  }
+
+  return data.instance;
+};
+
 export const getVultrInstance = async (
   instanceId: string
 ): Promise<VultrInstance | null> => {
