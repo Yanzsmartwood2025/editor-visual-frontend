@@ -3,6 +3,22 @@ import { firebaseHeaders } from './apiClient';
 import { probeMediaFile, type MediaMetadata } from './mediaMetadata';
 
 export type MediaKind = 'foto' | 'video' | 'audio';
+export type UploadKind = MediaKind | 'modelo3d' | 'documento';
+
+export type DocumentItem = {
+  id: string;
+  url: string;
+  tipo: 'documento';
+  nombre: string;
+  creado_en: string;
+  etiqueta: string;
+  fuente?: string;
+  metadata?: Record<string, unknown>;
+  r2_key?: string | null;
+  project_id?: string | null;
+  thread_id?: string | null;
+  privacy?: 'private' | 'public';
+};
 
 export type MediaItem = {
   id: string;
@@ -151,7 +167,7 @@ const uploadThroughNaylaFallback = async ({
   mediaId: string;
   extension: string;
   contentType: string;
-  kind: MediaKind | 'modelo3d';
+  kind: UploadKind;
   projectId?: string;
   threadId?: string;
 }): Promise<R2UploadResponse> => {
@@ -192,7 +208,7 @@ export const uploadFileToR2 = async (
   mediaId: string,
   extension: string,
   scope?: {
-    kind?: MediaKind | 'modelo3d';
+    kind?: UploadKind;
     projectId?: string;
     threadId?: string;
   }
@@ -250,6 +266,154 @@ export const uploadFileToR2 = async (
     projectId: signed.projectId,
     threadId: signed.threadId,
   };
+};
+
+export const DOCUMENT_EXTENSIONS = [
+  'pdf', 'txt', 'md', 'markdown', 'csv', 'json', 'rtf', 'doc', 'docx'
+] as const;
+
+export const isSupportedDocumentFile = (file: Pick<File, 'name' | 'type'>) => {
+  const mime = String(file.type || '').toLowerCase();
+  if (
+    mime === 'application/pdf' ||
+    mime === 'application/msword' ||
+    mime === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
+    mime === 'application/rtf' ||
+    mime.startsWith('text/') ||
+    mime === 'application/json'
+  ) {
+    return true;
+  }
+
+  const extension = file.name.split('.').pop()?.toLowerCase() || '';
+  return (DOCUMENT_EXTENSIONS as readonly string[]).includes(extension);
+};
+
+const nextDocumentLabelNumber = (
+  items: Array<{ etiqueta?: string | null }>
+) => {
+  const max = items.reduce((current, item) => {
+    if (typeof item.etiqueta !== 'string') return current;
+    const match = item.etiqueta.trim().toUpperCase().match(/^D(\d+)$/);
+    return match ? Math.max(current, Number(match[1]) || 0) : current;
+  }, 0);
+  return max + 1;
+};
+
+const getDocumentExtension = (file: Pick<File, 'name' | 'type'>) => {
+  const extension = file.name.split('.').pop()?.toLowerCase();
+  if (extension && extension !== file.name.toLowerCase()) {
+    return extension.replace(/[^a-z0-9]/g, '').slice(0, 10) || 'txt';
+  }
+  if (file.type === 'application/pdf') return 'pdf';
+  if (file.type === 'application/json') return 'json';
+  if (file.type.startsWith('text/')) return 'txt';
+  return 'bin';
+};
+
+const getDocumentTextPreview = async (file: UploadableMediaFile) => {
+  const mime = String(file.type || '').toLowerCase();
+  const extension = file.name.split('.').pop()?.toLowerCase() || '';
+  const textLike =
+    mime.startsWith('text/') ||
+    mime === 'application/json' ||
+    ['txt', 'md', 'markdown', 'csv', 'json'].includes(extension);
+
+  if (!textLike || file.size > 1024 * 1024) return undefined;
+
+  try {
+    const text = await file.text();
+    return text.replace(/\0/g, '').slice(0, 12000);
+  } catch {
+    return undefined;
+  }
+};
+
+export const uploadDocumentFilesToBodega = async ({
+  session,
+  files,
+  existingItems = [],
+  fuente = 'manual-documento',
+  projectId,
+  threadId,
+}: {
+  session: FirebaseSession;
+  files: UploadableMediaFile[];
+  existingItems?: DocumentItem[];
+  fuente?: string;
+  projectId?: string;
+  threadId?: string;
+}): Promise<DocumentItem[]> => {
+  if (!session?.user?.id) throw new Error('Debes iniciar sesión para guardar documentos.');
+  if (!files.length) return [];
+
+  const nuevosItems: DocumentItem[] = [];
+  const uploadedKeys: string[] = [];
+  let resolvedProjectId = projectId;
+  let resolvedThreadId = threadId;
+
+  try {
+    for (const file of files) {
+      if (!isSupportedDocumentFile(file)) {
+        throw new Error(`Documento no soportado: ${file.name}`);
+      }
+
+      const id = createMediaId();
+      const extension = getDocumentExtension(file);
+      const uploaded = await uploadFileToR2(file, session, id, extension, {
+        kind: 'documento',
+        projectId: resolvedProjectId,
+        threadId: resolvedThreadId,
+      });
+      uploadedKeys.push(uploaded.key);
+      resolvedProjectId = uploaded.projectId || resolvedProjectId;
+      resolvedThreadId = uploaded.threadId || resolvedThreadId;
+
+      const labelNumber = nextDocumentLabelNumber([...existingItems, ...nuevosItems]);
+      const textPreview = await getDocumentTextPreview(file);
+
+      nuevosItems.push({
+        id,
+        url: uploaded.url,
+        r2_key: uploaded.key,
+        project_id: resolvedProjectId || null,
+        thread_id: resolvedThreadId || null,
+        privacy: 'private',
+        tipo: 'documento',
+        nombre: file.name || `D${labelNumber}.${extension}`,
+        creado_en: new Date().toISOString(),
+        etiqueta: `D${labelNumber}`,
+        fuente,
+        metadata: {
+          fileSize: file.size,
+          mimeType: file.type || 'application/octet-stream',
+          extension,
+          ...(textPreview ? { textPreview } : {}),
+        },
+      });
+    }
+  } catch (error) {
+    await deleteR2Files(uploadedKeys, session);
+    throw error;
+  }
+
+  const response = await fetch('/api/galeria', {
+    method: 'POST',
+    headers: firebaseHeaders(session, { 'Content-Type': 'application/json' }),
+    body: JSON.stringify({
+      items: nuevosItems,
+      projectId: resolvedProjectId,
+      threadId: resolvedThreadId,
+    }),
+  });
+  const payload = await response.json() as { error?: string; data?: DocumentItem[] };
+
+  if (!response.ok) {
+    await deleteR2Files(uploadedKeys, session);
+    throw new Error(`Error registrando documentos: ${payload.error || 'Error desconocido.'}`);
+  }
+
+  return payload.data || nuevosItems;
 };
 
 export const deleteR2Files = async (keys: string[], session: FirebaseSession) => {
