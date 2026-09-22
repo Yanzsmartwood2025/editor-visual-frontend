@@ -355,6 +355,27 @@ export const createVultrInstance = async ({
   return data.instance;
 };
 
+export const listVultrInstances = async (): Promise<VultrInstance[]> => {
+  const data = await vultrRequest<{ instances?: VultrInstance[] }>(
+    '/instances?per_page=500',
+    { method: 'GET' }
+  );
+  return (data.instances || []).filter(
+    (instance) => typeof instance.id === 'string' && instance.id.trim()
+  );
+};
+
+export const findVultrInstanceByLabel = async (
+  label: string
+): Promise<VultrInstance | null> => {
+  const instances = await listVultrInstances();
+  return (
+    instances.find(
+      (instance) => String(instance.label || '').trim() === label.trim()
+    ) || null
+  );
+};
+
 export const getVultrInstance = async (
   instanceId: string
 ): Promise<VultrInstance | null> => {
