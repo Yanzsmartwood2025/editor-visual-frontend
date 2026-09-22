@@ -2,7 +2,7 @@ import { createHmac, timingSafeEqual } from 'node:crypto';
 import type { VastOffer } from './vastApi';
 
 export type ComputeSelectionTarget = {
-  backend: 'vast' | 'runpod';
+  backend: 'vast' | 'runpod' | 'vultr';
   backendId: string;
   gpuName: string;
   gpuRamGb?: number;
@@ -13,7 +13,8 @@ const selectionSecret = () => {
   const value =
     process.env.NAYLA_COMPUTE_SELECTION_SECRET?.trim() ||
     process.env.VAST_API_KEY?.trim() ||
-    process.env.RUNPOD_API_KEY?.trim();
+    process.env.RUNPOD_API_KEY?.trim() ||
+    process.env.VULTR_API_KEY?.trim();
   if (!value) throw new Error('Nayla Compute no tiene configurado el secreto de selección.');
   return value;
 };

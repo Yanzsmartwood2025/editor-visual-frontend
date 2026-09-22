@@ -164,6 +164,7 @@ const UPSTREAM_REPLACEMENTS: Array<[RegExp, string]> = [
   [/vast\.ai/gi, 'Nayla Compute'],
   [/\bvast\b/gi, 'Nayla Compute'],
   [/\brunpod\b/gi, 'Nayla Compute'],
+  [/\bvultr\b/gi, 'Nayla Compute'],
   [/\bfal\.ai\b/gi, 'Nayla Cloud'],
   [/\bfal\b/gi, 'Nayla Cloud'],
   [/\breplicate\b/gi, 'Nayla Cloud'],

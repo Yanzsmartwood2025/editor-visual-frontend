@@ -11,8 +11,15 @@ import {
   type RunpodGpuType,
 } from './runpodApi';
 import type { ComputeSelectionTarget } from './selection';
+import {
+  getVultrAccountSummary,
+  getVultrGpuVramGb,
+  isVultrConfigured,
+  searchVultrGpuPlans,
+  type VultrGpuPlan,
+} from './vultrApi';
 
-export type ComputeBackend = 'vast' | 'runpod';
+export type ComputeBackend = 'vast' | 'runpod' | 'vultr';
 
 export type ComputeCandidate = ComputeSelectionTarget & {
   backend: ComputeBackend;
@@ -21,7 +28,13 @@ export type ComputeCandidate = ComputeSelectionTarget & {
   gpuRamGb?: number;
   hourlyPrice: number;
   balanceUsd: number;
-  raw: VastOffer | RunpodGpuType;
+  raw: VastOffer | RunpodGpuType | VultrGpuPlan;
+  regionId?: string;
+  regionLabel?: string;
+  billingMinimumMinutes?: number;
+  includedStorageGb?: number;
+  includedBandwidthGb?: number;
+  linkSpeedMbps?: number;
 };
 
 export type ComputeCatalog = {
@@ -82,6 +95,41 @@ const loadRunpodCandidates = async (
   }));
 };
 
+const loadVultrCandidates = async (
+  profile: GpuProfile
+): Promise<ComputeCandidate[]> => {
+  if (!isVultrConfigured()) return [];
+
+  const [account, options] = await Promise.all([
+    getVultrAccountSummary(),
+    searchVultrGpuPlans(profile),
+  ]);
+
+  return options.map(({ plan, region, hourlyPrice }) => ({
+    backend: 'vultr' as const,
+    backendId: plan.id + '@' + region.id,
+    gpuName:
+      String(plan.gpu_type || '').trim() ||
+      'GPU',
+    gpuRamGb: getVultrGpuVramGb(plan),
+    hourlyPrice,
+    balanceUsd: account.balance,
+    raw: plan,
+    regionId: region.id,
+    regionLabel: [region.city, region.country].filter(Boolean).join(', ') || region.id,
+    billingMinimumMinutes: 60,
+    includedStorageGb: Number.isFinite(Number(plan.disk))
+      ? Number(plan.disk)
+      : undefined,
+    includedBandwidthGb: Number.isFinite(Number(plan.bandwidth))
+      ? Number(plan.bandwidth)
+      : undefined,
+    linkSpeedMbps: Number.isFinite(Number(plan.link_speed))
+      ? Number(plan.link_speed)
+      : undefined,
+  }));
+};
+
 export const getComputeCatalog = async ({
   profile,
   minReliability,
@@ -99,6 +147,10 @@ export const getComputeCatalog = async ({
   if (isRunpodConfigured()) {
     loaders.push(loadRunpodCandidates(profile));
     labels.push('network-b');
+  }
+  if (isVultrConfigured()) {
+    loaders.push(loadVultrCandidates(profile));
+    labels.push('network-c');
   }
 
   if (!loaders.length) {

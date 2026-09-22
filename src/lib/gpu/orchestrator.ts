@@ -44,6 +44,13 @@ import {
   getRunpodPod,
   terminateRunpodPod,
 } from './runpodApi';
+import {
+  buildVultrWorkerUserData,
+  createVultrGpuInstance,
+  deleteVultrInstance,
+  getVultrInstance,
+  parseVultrCandidateId,
+} from './vultrApi';
 
 export type GpuJobInput = {
   workload: GpuWorkload;
@@ -73,8 +80,15 @@ const computeRuntimeCost = (job: GpuJobRow, end = new Date()) => {
   const hourly = Number(job.hourly_price);
   const started = job.started_at ? new Date(job.started_at).getTime() : Number.NaN;
   if (!Number.isFinite(hourly) || !Number.isFinite(started)) return null;
-  const seconds = Math.max(0, (end.getTime() - started) / 1000);
-  return Math.ceil(hourly * (seconds / 3600) * 1_000_000) / 1_000_000;
+  const elapsedSeconds = Math.max(0, (end.getTime() - started) / 1000);
+  const billingMinimumMinutes = Number(job.metadata?.billingMinimumMinutes || 0);
+  const billedSeconds = Math.max(
+    elapsedSeconds,
+    Number.isFinite(billingMinimumMinutes) && billingMinimumMinutes > 0
+      ? billingMinimumMinutes * 60
+      : 0
+  );
+  return Math.ceil(hourly * (billedSeconds / 3600) * 1_000_000) / 1_000_000;
 };
 
 const getRunpodPodId = (job: GpuJobRow): string | null => {
@@ -82,14 +96,29 @@ const getRunpodPodId = (job: GpuJobRow): string | null => {
   return typeof value === 'string' && value.trim() ? value.trim() : null;
 };
 
-const hasComputeInstance = (job: GpuJobRow) =>
-  job.provider === 'runpod' ? Boolean(getRunpodPodId(job)) : Boolean(job.instance_id);
+const getVultrInstanceId = (job: GpuJobRow): string | null => {
+  const value = job.metadata?.vultrInstanceId;
+  return typeof value === 'string' && value.trim() ? value.trim() : null;
+};
+
+const hasComputeInstance = (job: GpuJobRow) => {
+  if (job.provider === 'runpod') return Boolean(getRunpodPodId(job));
+  if (job.provider === 'vultr') return Boolean(getVultrInstanceId(job));
+  return Boolean(job.instance_id);
+};
 
 const destroyComputeInstance = async (job: GpuJobRow): Promise<void> => {
   if (job.provider === 'runpod') {
     const podId = getRunpodPodId(job);
     if (!podId) return;
     await terminateRunpodPod(podId);
+    return;
+  }
+
+  if (job.provider === 'vultr') {
+    const instanceId = getVultrInstanceId(job);
+    if (!instanceId) return;
+    await deleteVultrInstance(instanceId);
     return;
   }
 
@@ -672,6 +701,194 @@ const startRunpodGpuJob = async ({
   return publicJob(job);
 };
 
+
+const startVultrGpuJob = async ({
+  userId,
+  projectId,
+  threadId,
+  input,
+  appBaseUrl,
+  candidate,
+}: {
+  userId: string;
+  projectId?: string;
+  threadId?: string;
+  input: GpuJobInput;
+  appBaseUrl: string;
+  candidate: ComputeCandidate;
+}) => {
+  const baseUrl = normalizeAppBaseUrl(appBaseUrl);
+  const { profile, recipePlan, workerImage } = resolveGpuExecutionPlan(input);
+  const policy = getGpuBudgetPolicy();
+
+  if (!workerImage) {
+    throw new Error(
+      'La máquina para ' + input.workload +
+      ' está preparada, pero falta configurar su imagen worker en Vercel.'
+    );
+  }
+
+  const target = parseVultrCandidateId(candidate.backendId);
+  if (!target) {
+    throw new Error('La GPU seleccionada ya no tiene una ubicación válida.');
+  }
+
+  const hourlyPrice = candidate.hourlyPrice;
+  const billedRuntimeMinutes = Math.max(
+    profile.maxRuntimeMinutes + policy.bootGraceMinutes,
+    Number(candidate.billingMinimumMinutes || 0)
+  );
+  const estimatedMaxCost = estimatedWorstCaseCost(
+    hourlyPrice,
+    billedRuntimeMinutes,
+    policy.safetyMultiplier
+  );
+
+  if (hourlyPrice > profile.maxHourlyUsd) {
+    throw new Error(
+      'La GPU seleccionada supera el límite por hora configurado para este tipo de trabajo.'
+    );
+  }
+  if (estimatedMaxCost > policy.maxJobUsd) {
+    throw new Error(
+      'La GPU seleccionada supera el tope configurado por trabajo.'
+    );
+  }
+  if (candidate.balanceUsd - estimatedMaxCost < policy.minBalanceReserveUsd) {
+    throw new Error(
+      'Saldo protegido: la GPU seleccionada no entra dentro de la reserva mínima de Nayla Compute.'
+    );
+  }
+
+  const callbackToken = randomBytes(32).toString('base64url');
+  const leaseExpiresAt = new Date(
+    Date.now() + (profile.maxRuntimeMinutes + policy.bootGraceMinutes) * 60_000
+  );
+
+  let job = await insertGpuJob({
+    user_id: userId,
+    project_id: projectId || null,
+    thread_id: threadId || null,
+    provider: 'vultr',
+    workload: input.workload,
+    status: 'renting',
+    offer_id: null,
+    gpu_name: candidate.gpuName,
+    hourly_price: hourlyPrice,
+    estimated_max_cost: estimatedMaxCost,
+    balance_before: candidate.balanceUsd,
+    lease_expires_at: leaseExpiresAt.toISOString(),
+    callback_token_hash: tokenHash(callbackToken),
+    metadata: {
+      request: {
+        recipe: input.recipe || 'default',
+        prompt: input.prompt || null,
+        inputUrls: input.inputUrls || [],
+        options: input.options || {},
+        computeSelectionId: input.computeSelectionId || null,
+      },
+      profile: {
+        minGpuRamGb: profile.minGpuRamGb,
+        diskGb: profile.diskGb,
+        maxHourlyUsd: profile.maxHourlyUsd,
+        maxRuntimeMinutes: profile.maxRuntimeMinutes,
+      },
+      recipePlan: recipePlan
+        ? { id: recipePlan.id, label: recipePlan.label }
+        : null,
+      vultrPlanId: target.planId,
+      vultrRegionId: target.regionId,
+      regionLabel: candidate.regionLabel || null,
+      billingMinimumMinutes: Number(candidate.billingMinimumMinutes || 60),
+      includedStorageGb: candidate.includedStorageGb || null,
+      includedBandwidthGb: candidate.includedBandwidthGb || null,
+      linkSpeedMbps: candidate.linkSpeedMbps || null,
+    },
+  });
+
+  const outputKey =
+    profile.outputExtension
+      ? userId +
+        '/projects/' + (projectId || 'unfiled') +
+        '/' + (threadId ? 'threads/' + threadId : 'shared') +
+        '/gpu/' + input.workload + '/' +
+        job.id + '.' + profile.outputExtension
+      : null;
+
+  job = await updateGpuJob(job.id, {
+    output_url: outputKey ? createR2StorageUrl(outputKey) : null,
+    output_content_type: profile.outputContentType || null,
+    metadata: { ...job.metadata, outputKey },
+  });
+
+  const manifestUrl =
+    baseUrl + '/api/gpu/manifest?jobId=' + encodeURIComponent(job.id);
+  const callbackUrl = baseUrl + '/api/gpu/callback';
+  const label = 'nayla-gpu-' + input.workload + '-' + job.id.slice(0, 8);
+  const onstart =
+    input.workload === 'probe'
+      ? buildProbeOnstart()
+      : recipePlan
+        ? buildRecipeBootstrap(recipePlan) + '\n' + buildWorkerOnstart()
+        : buildWorkerOnstart();
+
+  const userData = buildVultrWorkerUserData({
+    imageName: workerImage,
+    onstart,
+    env: {
+      NAYLA_GPU_JOB_ID: job.id,
+      NAYLA_GPU_MANIFEST_URL: manifestUrl,
+      NAYLA_GPU_CALLBACK_URL: callbackUrl,
+      NAYLA_GPU_CALLBACK_TOKEN: callbackToken,
+    },
+  });
+
+  try {
+    const instance = await createVultrGpuInstance({
+      planId: target.planId,
+      regionId: target.regionId,
+      label,
+      userData,
+    });
+
+    const bootingJob = await updateGpuJobIfStatus(job.id, 'renting', {
+      status: 'booting',
+      started_at: new Date().toISOString(),
+      metadata: {
+        ...job.metadata,
+        vultrInstanceId: instance.id,
+        vultrRuntime: {
+          status: instance.status || null,
+          powerStatus: instance.power_status || null,
+          serverStatus: instance.server_status || null,
+          checkedAt: new Date().toISOString(),
+        },
+      },
+    });
+
+    if (bootingJob) {
+      job = bootingJob;
+    } else {
+      await deleteVultrInstance(instance.id).catch(() => undefined);
+      job = await updateGpuJob(job.id, {
+        destroyed_at: new Date().toISOString(),
+        metadata: { ...job.metadata, vultrInstanceId: instance.id },
+      });
+    }
+  } catch (error) {
+    await updateGpuJob(job.id, {
+      status: 'failed',
+      error_message: (
+        error instanceof Error ? error.message : 'No se pudo crear la GPU'
+      ).slice(0, 2000),
+      completed_at: new Date().toISOString(),
+    }).catch(() => undefined);
+    throw error;
+  }
+
+  return publicJob(job);
+};
+
 export const startComputeGpuJob = async ({
   userId,
   projectId,
@@ -713,7 +930,10 @@ export const startComputeGpuJob = async ({
   const estimatedFor = (candidate: ComputeCandidate) =>
     estimatedWorstCaseCost(
       candidate.hourlyPrice,
-      profile.maxRuntimeMinutes + policy.bootGraceMinutes,
+      Math.max(
+        profile.maxRuntimeMinutes + policy.bootGraceMinutes,
+        Number(candidate.billingMinimumMinutes || 0)
+      ),
       policy.safetyMultiplier
     );
 
@@ -757,6 +977,17 @@ export const startComputeGpuJob = async ({
       threadId,
       input: exactInput,
       appBaseUrl,
+    });
+  }
+
+  if (selected.backend === 'vultr') {
+    return startVultrGpuJob({
+      userId,
+      projectId,
+      threadId,
+      input: exactInput,
+      appBaseUrl,
+      candidate: selected,
     });
   }
 
@@ -1057,6 +1288,102 @@ export const getGpuJobStatusForUser = async ({
 
       if (
         desiredStatus === 'RUNNING' &&
+        (job.status === 'renting' || job.status === 'booting')
+      ) {
+        const updated = await updateGpuJobIfStatus(job.id, job.status, {
+          status: 'running',
+          metadata: runtimeMetadata,
+        });
+        if (updated) job = updated;
+        return publicJob(job);
+      }
+
+      job = await updateGpuJob(job.id, {
+        metadata: runtimeMetadata,
+      });
+    } catch (error) {
+      console.warn('[gpu] No se pudo reconciliar una instancia Nayla Compute:', error);
+    }
+
+    return publicJob(job);
+  }
+
+  if (job.provider === 'vultr') {
+    const instanceId = getVultrInstanceId(job);
+    if (!instanceId) return publicJob(job);
+
+    try {
+      const instance = await getVultrInstance(instanceId);
+      const latest = await getGpuJobForUser(jobId, userId);
+      if (!latest) return null;
+      job = latest;
+
+      if (terminal.includes(job.status)) {
+        return publicJob(job);
+      }
+
+      if (!instance) {
+        const now = new Date();
+        job = await updateGpuJob(job.id, {
+          status: 'failed',
+          error_message:
+            'Nayla Compute dejó de reportar la instancia antes de completar el trabajo.',
+          completed_at: now.toISOString(),
+          destroyed_at: now.toISOString(),
+          runtime_cost_estimate: computeRuntimeCost(job, now),
+        });
+        return publicJob(job);
+      }
+
+      const status = String(instance.status || 'unknown').toLowerCase();
+      const powerStatus = String(instance.power_status || 'unknown').toLowerCase();
+      const serverStatus = String(instance.server_status || 'unknown').toLowerCase();
+      const runtimeMetadata = {
+        ...job.metadata,
+        vultrRuntime: {
+          status,
+          powerStatus,
+          serverStatus,
+          mainIp: instance.main_ip || null,
+          checkedAt: new Date().toISOString(),
+        },
+      };
+
+      const stopped =
+        ['stopped', 'suspended', 'terminated', 'destroyed'].includes(status) ||
+        ['stopped', 'off'].includes(powerStatus);
+
+      if (stopped) {
+        const now = new Date();
+        let destroyedAt: string | null = null;
+        try {
+          await deleteVultrInstance(instanceId);
+          destroyedAt = new Date().toISOString();
+        } catch (destroyError) {
+          console.error('[gpu] No se pudo destruir una GPU detenida:', destroyError);
+        }
+
+        job = await updateGpuJob(job.id, {
+          status: destroyedAt ? 'failed' : 'cleanup_pending',
+          error_message:
+            'La GPU terminó antes de que el worker confirmara el resultado. Nayla activó la limpieza.',
+          completed_at: now.toISOString(),
+          destroyed_at: destroyedAt,
+          runtime_cost_estimate: computeRuntimeCost(job, now),
+          lease_expires_at: destroyedAt
+            ? job.lease_expires_at
+            : new Date(Date.now() - 1000).toISOString(),
+          metadata: {
+            ...runtimeMetadata,
+            terminalStatus: 'failed',
+          },
+        });
+        return publicJob(job);
+      }
+
+      if (
+        status === 'active' &&
+        (powerStatus === 'running' || serverStatus === 'ok') &&
         (job.status === 'renting' || job.status === 'booting')
       ) {
         const updated = await updateGpuJobIfStatus(job.id, job.status, {
