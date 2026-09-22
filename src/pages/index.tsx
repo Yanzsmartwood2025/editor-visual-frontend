@@ -20,6 +20,7 @@ import { Model3DWorkspace } from '../components/Model3DWorkspace';
 import { GpuQuoteModal, type GpuQuoteView } from '../components/GpuQuoteModal';
 import { NaylaEngineBar } from '../components/NaylaEngineBar';
 import SocialHub from '../components/SocialHub';
+import NaylaPlay from '../components/NaylaPlay';
 import type { NaylaEngineMode } from '../lib/naylaSystemCatalog';
 import {
   NaylaProjectMenu,
@@ -4952,10 +4953,10 @@ if (!session) {
                       NAYLA PLAY
                     </div>
                     <div style={{ fontSize: '0.72rem', lineHeight: 1.6, color: '#a3a3a3' }}>
-                      Módulo reservado para sesiones de videojuegos por GPU bajo demanda. Permanece separado del editor y de los renders normales.
+                      Mercado GPU de videojuegos abierto a pantalla completa.
                     </div>
-                    <div style={{ border: '1px solid #2a2a2a', borderRadius: 12, padding: 12, background: '#080808', color: '#777', fontSize: '0.68rem' }}>
-                      Próximamente: biblioteca del usuario, cotización de GPU, sesión de juego y cierre automático.
+                    <div style={{ border: '1px solid #2a2a2a', borderRadius: 12, padding: 12, background: '#080808', color: '#aaa', fontSize: '0.68rem' }}>
+                      Consulta disponibilidad y precio Nayla sin alquilar ninguna máquina.
                     </div>
                   </div>
                 ) : (
@@ -5416,6 +5417,16 @@ if (!session) {
           session={session}
           projectId={activeProjectId}
           results={galeriaMultimedia.filter((item) => item.tipo === 'video' && isNaylaResultMedia(item))}
+          onClose={() => {
+            setIsSubPanelOpen(false);
+            setSubTool(null);
+          }}
+        />
+      )}
+
+      {isSubPanelOpen && mainNav === 'play' && !isCleanMode && (
+        <NaylaPlay
+          session={session}
           onClose={() => {
             setIsSubPanelOpen(false);
             setSubTool(null);
