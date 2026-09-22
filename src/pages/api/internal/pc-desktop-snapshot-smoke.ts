@@ -251,7 +251,11 @@ export default async function handler(
       const catalog = await chooseCatalog();
       return res.status(200).json({
         ok: true,
-        spendableBalanceUsd: account.balance,
+        account: {
+          computedSpendableUsd: account.balance,
+          rawBalanceUsd: account.rawBalance,
+          pendingChargesUsd: account.pendingCharges ?? null,
+        },
         candidate: {
           cpu: Number(catalog.plan.vcpu_count),
           ramGb: ramGb(catalog.plan),
@@ -285,14 +289,15 @@ export default async function handler(
       }
 
       const account = await getVultrAccountSummary();
-      if (account.balance < 1) {
-        return res.status(409).json({
-          error: 'Saldo de seguridad insuficiente para la prueba.',
-          spendableBalanceUsd: account.balance,
+      const { plan, regionId, region, os } = await chooseCatalog();
+      const candidateHourlyUsd = Number(plan.monthly_cost) / 672;
+
+      if (!Number.isFinite(candidateHourlyUsd) || candidateHourlyUsd > 0.05) {
+        return res.status(422).json({
+          error: 'La máquina de prueba supera el límite de seguridad de $0.05/h.',
+          candidateHourlyUsd,
         });
       }
-
-      const { plan, regionId, region, os } = await chooseCatalog();
       const password = desktopPassword();
       const userData = buildNaylaPcDesktopUserData({
         desktopPassword: password,
@@ -393,7 +398,11 @@ export default async function handler(
 
         return res.status(201).json({
           ok: true,
-          spendableBalanceBeforeUsd: account.balance,
+          accountBefore: {
+            computedSpendableUsd: account.balance,
+            rawBalanceUsd: account.rawBalance,
+            pendingChargesUsd: account.pendingCharges ?? null,
+          },
           computer: {
             cpu: saved.cpu,
             ramGb: Number(saved.ram_gb),
