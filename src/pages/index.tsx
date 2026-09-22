@@ -628,7 +628,10 @@ export default function NaylaCore() {
       etiqueta: item.etiqueta,
     })),
   ];
-  const chatAttachedAssets = chatChannelAssets.filter((asset) => chatAttachmentIds.includes(asset.id));
+  const chatAssetById = new Map(chatChannelAssets.map((asset) => [asset.id, asset]));
+  const chatAttachedAssets = chatAttachmentIds
+    .map((id) => chatAssetById.get(id))
+    .filter((asset): asset is NaylaChannelAsset => Boolean(asset));
   const naylaIsWorking =
     chatProcessing ||
     cloudExecutingIds.length > 0 ||
