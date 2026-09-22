@@ -8,7 +8,9 @@ import {
 } from '../../../../lib/r2';
 import {
   getNaylaPcDriveSessionByTokenHash,
+  getNaylaPcInstanceById,
   listNaylaPcDriveFiles,
+  patchNaylaPcInstance,
   softDeleteNaylaPcDriveFile,
   touchNaylaPcDriveSession,
   upsertNaylaPcDriveFile,
@@ -67,8 +69,20 @@ export default async function handler(
 
   try {
     if (req.method === 'GET') {
-      const rows = await listNaylaPcDriveFiles(session.user_id);
+      const [rows, instance] = await Promise.all([
+        listNaylaPcDriveFiles(session.user_id),
+        getNaylaPcInstanceById(session.instance_id),
+      ]);
+
+      const flushRequested =
+        instance?.status === 'snapshotting' &&
+        typeof instance.metadata?.drive_flush_requested_at === 'string';
+      const flushCompleted =
+        typeof instance?.metadata?.drive_flush_completed_at === 'string';
+
       return res.status(200).json({
+        prepareSnapshot: Boolean(flushRequested && !flushCompleted),
+        freezeForSnapshot: Boolean(flushRequested && flushCompleted),
         files: rows.slice(0, 1500).map((row) => ({
           relativePath: row.relative_path,
           sizeBytes: Number(row.size_bytes),
@@ -89,6 +103,35 @@ export default async function handler(
     }
 
     const action = String(req.body?.action || '').trim().toLowerCase();
+
+    if (action === 'snapshot_cache_flushed') {
+      const instance = await getNaylaPcInstanceById(session.instance_id);
+      if (
+        !instance ||
+        instance.user_id !== session.user_id ||
+        instance.status !== 'snapshotting' ||
+        typeof instance.metadata?.drive_flush_requested_at !== 'string'
+      ) {
+        return res.status(409).json({
+          error: 'La PC ya no está preparando un snapshot.',
+        });
+      }
+
+      const completedAt = new Date().toISOString();
+      await patchNaylaPcInstance({
+        instanceId: instance.id,
+        patch: {
+          metadata: {
+            ...(instance.metadata || {}),
+            drive_flush_completed_at: completedAt,
+            save_stage: 'drive_flushed',
+          },
+        },
+      });
+
+      return res.status(200).json({ ok: true, completedAt });
+    }
+
     const relativePath = normalizeRelativePath(req.body?.relativePath);
     const r2Key = expectedR2Key(session.user_id, relativePath);
 
