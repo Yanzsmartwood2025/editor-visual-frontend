@@ -50,6 +50,18 @@ export type VultrInstance = {
   [key: string]: unknown;
 };
 
+export type VultrSnapshot = {
+  id: string;
+  description?: string;
+  size?: number;
+  status?: string;
+  date_created?: string;
+  os_id?: number;
+  app_id?: number;
+  [key: string]: unknown;
+};
+
+
 const getVultrApiKey = () => {
   const key = process.env.VULTR_API_KEY?.trim();
   if (!key) throw new Error('VULTR_API_KEY no está configurada en Vercel.');
@@ -353,6 +365,98 @@ export const createVultrInstance = async ({
   }
 
   return data.instance;
+};
+
+export const createVultrInstanceFromSnapshot = async ({
+  planId,
+  regionId,
+  snapshotId,
+  label,
+}: {
+  planId: string;
+  regionId: string;
+  snapshotId: string;
+  label: string;
+}) => {
+  const data = await vultrRequest<{ instance?: VultrInstance }>(
+    '/instances',
+    {
+      method: 'POST',
+      body: JSON.stringify({
+        region: regionId,
+        plan: planId,
+        snapshot_id: snapshotId,
+        label: label.slice(0, 128),
+        hostname: label.slice(0, 63),
+        activation_email: false,
+      }),
+    },
+    40_000
+  );
+
+  if (!data.instance?.id) {
+    throw new Error('Nayla PC no recibió un identificador válido al restaurar el snapshot.');
+  }
+
+  return data.instance;
+};
+
+export const createVultrSnapshot = async ({
+  instanceId,
+  description,
+}: {
+  instanceId: string;
+  description: string;
+}): Promise<VultrSnapshot> => {
+  const data = await vultrRequest<{ snapshot?: VultrSnapshot }>(
+    '/snapshots',
+    {
+      method: 'POST',
+      body: JSON.stringify({
+        instance_id: instanceId,
+        description: description.slice(0, 255),
+      }),
+    },
+    40_000
+  );
+
+  if (!data.snapshot?.id) {
+    throw new Error('Vultr no devolvió un identificador válido para el snapshot.');
+  }
+
+  return data.snapshot;
+};
+
+export const getVultrSnapshot = async (
+  snapshotId: string
+): Promise<VultrSnapshot | null> => {
+  try {
+    const data = await vultrRequest<{ snapshot?: VultrSnapshot }>(
+      '/snapshots/' + encodeURIComponent(snapshotId),
+      { method: 'GET' }
+    );
+    return data.snapshot || null;
+  } catch (error) {
+    const status = (error as Error & { status?: number }).status;
+    if (status === 404) return null;
+    throw error;
+  }
+};
+
+export const deleteVultrSnapshot = async (
+  snapshotId: string
+): Promise<void> => {
+  try {
+    await vultrRequest<unknown>(
+      '/snapshots/' + encodeURIComponent(snapshotId),
+      { method: 'DELETE' },
+      20_000
+    );
+  } catch (error) {
+    const status = (error as Error & { status?: number }).status;
+    if (status === 404) return;
+    throw error;
+  }
 };
 
 export const listVultrInstances = async (): Promise<VultrInstance[]> => {
