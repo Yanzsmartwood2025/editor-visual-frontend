@@ -22,6 +22,7 @@ export type NaylaComputeCard = {
   selectionId: string;
   gpuName: string;
   gpuRamGb?: number;
+  region?: string;
   hourlyPrice: number;
   estimatedMaxCost: number;
   available: boolean;
@@ -106,12 +107,16 @@ export const quoteComputeGpuJob = async (
     minReliability: policy.offerReliabilityMin,
   });
 
-  const quoteRuntimeMinutes = profile.maxRuntimeMinutes + policy.bootGraceMinutes;
+  const nominalRuntimeMinutes = profile.maxRuntimeMinutes + policy.bootGraceMinutes;
 
   const evaluated: EvaluatedCandidate[] = catalog.candidates.map((candidate) => {
+    const billedRuntimeMinutes = Math.max(
+      nominalRuntimeMinutes,
+      Number(candidate.billingMinimumMinutes || 0)
+    );
     const internalEstimatedMaxCost = estimatedWorstCaseCost(
       candidate.hourlyPrice,
-      quoteRuntimeMinutes,
+      billedRuntimeMinutes,
       policy.safetyMultiplier
     );
 
@@ -134,7 +139,7 @@ export const quoteComputeGpuJob = async (
       publicHourlyPrice: toNaylaComputeHourlyPrice(candidate.hourlyPrice),
       publicEstimatedMaxCost: toNaylaComputeEstimatedPrice(
         internalEstimatedMaxCost,
-        quoteRuntimeMinutes
+        billedRuntimeMinutes
       ),
       available: !unavailableReason,
       unavailableReason,
@@ -153,6 +158,7 @@ export const quoteComputeGpuJob = async (
         selectionId: candidate.selectionId,
         gpuName: candidate.gpuName,
         gpuRamGb: candidate.gpuRamGb,
+        region: candidate.regionLabel,
         hourlyPrice: candidate.publicHourlyPrice,
         estimatedMaxCost: candidate.publicEstimatedMaxCost,
         available: candidate.available,
