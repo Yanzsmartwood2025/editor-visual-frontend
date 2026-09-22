@@ -70,15 +70,25 @@ describe('Nayla Compute selection tokens', () => {
         gpuRamGb: 24,
         hourlyPrice: 0.22,
       },
+      {
+        backend: 'vultr' as const,
+        backendId: 'vcg-a40-test@ewr',
+        gpuName: 'A40',
+        gpuRamGb: 48,
+        hourlyPrice: 0.5,
+      },
     ];
 
     const vastToken = createComputeTargetSelectionId(targets[0]);
     const runpodToken = createComputeTargetSelectionId(targets[1]);
+    const vultrToken = createComputeTargetSelectionId(targets[2]);
 
-    expect(vastToken).not.toBe(runpodToken);
+    expect(new Set([vastToken, runpodToken, vultrToken]).size).toBe(3);
     expect(vastToken).not.toContain('vast');
     expect(runpodToken).not.toContain('runpod');
+    expect(vultrToken).not.toContain('vultr');
     expect(findComputeTargetBySelectionId(targets, runpodToken)?.backend).toBe('runpod');
+    expect(findComputeTargetBySelectionId(targets, vultrToken)?.backend).toBe('vultr');
   });
 
 });
