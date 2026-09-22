@@ -275,7 +275,7 @@ export const buildNaylaPcDesktopUserData = ({
     "printf '%s\\n' 'nayla ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/nayla",
     'chmod 440 /etc/sudoers.d/nayla',
     'install -d -m 700 -o nayla -g nayla /home/nayla/.vnc',
-    "printf '%s\\n' " + shellQuote(password) + " | vncpasswd -f > /home/nayla/.vnc/passwd",
+    "printf '%s\\n' " + shellQuote(password) + " | tigervncpasswd -f > /home/nayla/.vnc/passwd",
     'chown nayla:nayla /home/nayla/.vnc/passwd',
     'chmod 600 /home/nayla/.vnc/passwd',
     "cat > /home/nayla/.vnc/xstartup <<'EOF'",
