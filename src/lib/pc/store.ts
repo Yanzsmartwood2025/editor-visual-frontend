@@ -41,7 +41,6 @@ export type NaylaPcInstanceRow = {
   provider_instance_id: string | null;
   provider_plan_id: string;
   provider_region_id: string;
-  provider_os_id: number | null;
   provider_os_id: number;
   os_family: 'linux' | 'windows';
   cpu: number;
@@ -93,6 +92,7 @@ export type NaylaPcSnapshotRow = {
   gpu_vram_gb: number | null;
   provider_plan_id: string;
   provider_region_id: string;
+  provider_os_id: number | null;
   size_bytes: number | null;
   storage_monthly_usd: number | null;
   created_at: string;
