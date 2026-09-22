@@ -5429,7 +5429,7 @@ if (!session) {
         <SocialHub
           session={session}
           projectId={activeProjectId}
-          results={galeriaMultimedia.filter((item) => item.tipo === 'video' && isNaylaResultMedia(item))}
+          results={galeriaMultimedia.filter((item) => (item.tipo === 'video' || item.tipo === 'foto') && isNaylaResultMedia(item))}
           onClose={() => {
             setIsSubPanelOpen(false);
             setSubTool(null);
