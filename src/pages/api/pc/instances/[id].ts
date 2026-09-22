@@ -2,13 +2,15 @@ import type { NextApiRequest, NextApiResponse } from 'next';
 import { requireFirebaseUser } from '../../../../lib/firebaseAdmin';
 import {
   applyNaylaPcAction,
+  saveAndDestroyNaylaPcInstance,
   syncNaylaPcInstance,
   terminateNaylaPcInstance,
   toPublicNaylaPcInstance,
+  toPublicNaylaPcSnapshot,
 } from '../../../../lib/pc/instances';
 import { getNaylaPcInstanceForUser } from '../../../../lib/pc/store';
 
-const validActions = new Set(['start', 'stop', 'reboot', 'destroy']);
+const validActions = new Set(['start', 'stop', 'reboot', 'destroy', 'save_destroy']);
 
 export default async function handler(
   req: NextApiRequest,
@@ -56,7 +58,10 @@ export default async function handler(
       return res.status(400).json({ error: 'Acción de PC no válida.' });
     }
 
-    if (action === 'destroy' && req.body?.confirmDestroy !== true) {
+    if (
+      (action === 'destroy' || action === 'save_destroy') &&
+      req.body?.confirmDestroy !== true
+    ) {
       return res.status(400).json({
         error: 'Debes confirmar la eliminación permanente de la PC.',
       });
@@ -83,6 +88,16 @@ export default async function handler(
       return res.status(409).json({
         error: 'Esta PC ya fue eliminada.',
         instance: toPublicNaylaPcInstance(synced),
+      });
+    }
+
+    if (action === 'save_destroy') {
+      const saved = await saveAndDestroyNaylaPcInstance({ row: synced });
+      return res.status(202).json({
+        instance: toPublicNaylaPcInstance(saved.instance),
+        snapshot: toPublicNaylaPcSnapshot(saved.snapshot),
+        message:
+          'Nayla está guardando el disco completo. La VM se destruirá automáticamente cuando el snapshot esté listo.',
       });
     }
 
