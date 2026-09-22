@@ -265,7 +265,11 @@ export const progressNaylaPcBaseBuild = async () => {
     };
   }
 
-  const desktopReady = await probeNaylaPcDesktop(live.main_ip, 6080);
+  const desktopReady = await probeNaylaPcDesktop(
+    live.main_ip,
+    6080,
+    '/nayla-base-ready.txt'
+  );
   if (!desktopReady) {
     return { state: 'building' as const, provider: live, desktopReady: false };
   }
