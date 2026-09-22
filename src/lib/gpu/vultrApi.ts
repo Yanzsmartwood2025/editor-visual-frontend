@@ -254,6 +254,82 @@ const shellQuote = (value: string) =>
 const encodeUserData = (value: string) =>
   Buffer.from(value, 'utf8').toString('base64');
 
+export const buildNaylaPcDesktopUserData = ({
+  desktopPassword,
+}: {
+  desktopPassword: string;
+}) => {
+  const password = desktopPassword.replace(/[^A-Za-z0-9]/g, '').slice(0, 8);
+  if (password.length < 8) {
+    throw new Error('La clave temporal del escritorio Nayla PC no es válida.');
+  }
+
+  const script = [
+    '#!/usr/bin/env bash',
+    'set -euo pipefail',
+    'export DEBIAN_FRONTEND=noninteractive',
+    'apt-get update',
+    'apt-get install -y xfce4 xfce4-terminal dbus-x11 tigervnc-standalone-server tigervnc-tools novnc websockify openssl ufw',
+    'id -u nayla >/dev/null 2>&1 || useradd -m -s /bin/bash nayla',
+    'usermod -aG sudo nayla',
+    "printf '%s\\n' 'nayla ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/nayla",
+    'chmod 440 /etc/sudoers.d/nayla',
+    'install -d -m 700 -o nayla -g nayla /home/nayla/.vnc',
+    "printf '%s\\n' " + shellQuote(password) + " | vncpasswd -f > /home/nayla/.vnc/passwd",
+    'chown nayla:nayla /home/nayla/.vnc/passwd',
+    'chmod 600 /home/nayla/.vnc/passwd',
+    "cat > /home/nayla/.vnc/xstartup <<'EOF'",
+    '#!/bin/sh',
+    'unset SESSION_MANAGER',
+    'unset DBUS_SESSION_BUS_ADDRESS',
+    'startxfce4',
+    'EOF',
+    'chown nayla:nayla /home/nayla/.vnc/xstartup',
+    'chmod 755 /home/nayla/.vnc/xstartup',
+    'install -d -m 700 /etc/nayla',
+    "openssl req -x509 -newkey rsa:2048 -nodes -days 3650 -subj '/CN=Nayla-PC' -keyout /etc/nayla/novnc.key -out /etc/nayla/novnc.crt",
+    "cat > /etc/systemd/system/nayla-vnc.service <<'EOF'",
+    '[Unit]',
+    'Description=Nayla PC VNC desktop',
+    'After=network.target',
+    '[Service]',
+    'Type=forking',
+    'User=nayla',
+    'PAMName=login',
+    'PIDFile=/home/nayla/.vnc/%H:1.pid',
+    'ExecStartPre=-/usr/bin/tigervncserver -kill :1',
+    'ExecStart=/usr/bin/tigervncserver :1 -localhost yes -geometry 1440x900 -depth 24 -SecurityTypes VncAuth -PasswordFile /home/nayla/.vnc/passwd',
+    'ExecStop=/usr/bin/tigervncserver -kill :1',
+    'Restart=on-failure',
+    '[Install]',
+    'WantedBy=multi-user.target',
+    'EOF',
+    "cat > /etc/systemd/system/nayla-novnc.service <<'EOF'",
+    '[Unit]',
+    'Description=Nayla PC browser desktop',
+    'After=network.target nayla-vnc.service',
+    'Requires=nayla-vnc.service',
+    '[Service]',
+    'Type=simple',
+    'ExecStart=/usr/bin/websockify --web=/usr/share/novnc --cert=/etc/nayla/novnc.crt --key=/etc/nayla/novnc.key 0.0.0.0:6080 127.0.0.1:5901',
+    'Restart=always',
+    'RestartSec=3',
+    '[Install]',
+    'WantedBy=multi-user.target',
+    'EOF',
+    'systemctl daemon-reload',
+    'systemctl enable --now nayla-vnc.service nayla-novnc.service',
+    'ufw --force reset',
+    'ufw default deny incoming',
+    'ufw default allow outgoing',
+    'ufw allow 22/tcp',
+    'ufw allow 6080/tcp',
+    'ufw --force enable',
+  ].join('\n');
+
+  return encodeUserData(script);
+};
+
 export const buildVultrWorkerUserData = ({
   imageName,
   onstart,
