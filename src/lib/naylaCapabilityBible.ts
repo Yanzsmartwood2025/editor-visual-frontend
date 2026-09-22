@@ -12,9 +12,19 @@ export type NaylaCapability = {
   usefulFor: string[];
 };
 
-export const NAYLA_CAPABILITY_BIBLE_VERSION = '2026-09-20';
+export const NAYLA_CAPABILITY_BIBLE_VERSION = '2026-09-22';
 
 export const NAYLA_CAPABILITY_BIBLE: NaylaCapability[] = [
+  {
+    id: 'media-addressing',
+    category: 'Organización',
+    label: 'Mapa inteligente de medios F/V/A/M',
+    description: 'Mantiene identificadores estables para fotos, videos, audios y modelos 3D y permite combinarlos con lenguaje natural, orden, duración y recortes sin convertir las etiquetas en texto visible.',
+    status: 'ready',
+    engine: 'render',
+    aliases: ['f1', 'f2', 'v1', 'v2', 'a1', 'a2', 'm1', 'foto 1', 'video 1', 'audio 1', 'estas fotos', 'estos videos', 'archivos subidos'],
+    usefulFor: ['referenciar medios con precisión', 'mezclar instrucciones exactas y creatividad', 'mantener el orden del proyecto'],
+  },
   {
     id: 'edit-cut-timing',
     category: 'Edición',
