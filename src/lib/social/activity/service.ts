@@ -710,7 +710,19 @@ export const reviewConnectedSocialActivity = async ({
               platform: routes.metrics.platform,
             });
         item.metrics = summarizeMetrics(payload);
-        if (!item.metrics.length) item.notes.push('La red no devolvió métricas resumidas en este momento.');
+        if (item.metrics.length) {
+          await supabase.from('social_metrics_snapshots').insert({
+            user_id: userId,
+            project_id: projectId,
+            account_id: routes.metrics.id,
+            provider: routes.metrics.provider,
+            platform: routes.metrics.platform,
+            metrics: Object.fromEntries(item.metrics.map((metric) => [metric.label, metric.value])),
+            captured_at: new Date().toISOString(),
+          });
+        } else {
+          item.notes.push('La red no devolvió métricas resumidas en este momento.');
+        }
       } catch (error) {
         item.notes.push(error instanceof Error ? error.message : 'No pude leer las métricas en esta red.');
       }
