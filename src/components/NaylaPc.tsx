@@ -217,6 +217,7 @@ export default function NaylaPc({
   const [confirmSaveDestroy, setConfirmSaveDestroy] = useState(false);
   const [confirmDestroy, setConfirmDestroy] = useState(false);
   const [confirmResume, setConfirmResume] = useState(false);
+  const [confirmDeleteSnapshot, setConfirmDeleteSnapshot] = useState(false);
   const [error, setError] = useState('');
   const hydrated = useRef(false);
 
@@ -543,6 +544,33 @@ export default function NaylaPc({
     }
   }, [loadSavedSnapshot, resumeQuote, savedSnapshot, session]);
 
+  const deleteSavedSnapshot = useCallback(async () => {
+    if (!session || !savedSnapshot) return;
+    setActionLoading('delete_snapshot');
+    setError('');
+    try {
+      const response = await fetch('/api/pc/snapshots', {
+        method: 'POST',
+        headers: firebaseHeaders(session, { 'Content-Type': 'application/json' }),
+        body: JSON.stringify({
+          action: 'delete',
+          confirmDelete: true,
+        }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || payload.error) {
+        throw new Error(payload.error || 'No se pudo borrar la PC guardada.');
+      }
+      setSavedSnapshot(null);
+      setConfirmDeleteSnapshot(false);
+      setResumeQuote(null);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'No se pudo borrar la PC guardada.');
+    } finally {
+      setActionLoading('');
+    }
+  }, [savedSnapshot, session]);
+
   const patch = (next: Partial<PcConfig>) =>
     setConfig((current) => ({ ...current, ...next }));
 
@@ -759,6 +787,14 @@ export default function NaylaPc({
                     style={{ minHeight: 40, borderRadius: 999, border: '1px solid #fff', background: '#fff', color: '#000', padding: '0 15px', fontWeight: 900, fontSize: '0.64rem', cursor: actionLoading || !provisioningAllowed ? 'not-allowed' : 'pointer' }}
                   >
                     {actionLoading === 'resume_quote' ? 'COTIZANDO…' : 'REANUDAR PC'}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={Boolean(actionLoading)}
+                    onClick={() => setConfirmDeleteSnapshot(true)}
+                    style={{ minHeight: 40, borderRadius: 999, border: '1px solid #4a2e2e', background: '#160b0b', color: '#d7b7b7', padding: '0 14px', fontWeight: 900, fontSize: '0.62rem', cursor: actionLoading ? 'wait' : 'pointer' }}
+                  >
+                    BORRAR SNAPSHOT
                   </button>
                 </div>
               )}
@@ -1110,6 +1146,23 @@ export default function NaylaPc({
               <button type="button" disabled={Boolean(actionLoading)} onClick={() => { setConfirmResume(false); setResumeQuote(null); }} style={{ minHeight: 40, borderRadius: 999, border: '1px solid #3a3a3a', background: '#111', color: '#fff', padding: '0 14px', fontWeight: 850, fontSize: '0.64rem', cursor: 'pointer' }}>CANCELAR</button>
               <button type="button" disabled={Boolean(actionLoading)} onClick={() => void resumePc()} style={{ minHeight: 40, borderRadius: 999, border: '1px solid #fff', background: '#fff', color: '#000', padding: '0 15px', fontWeight: 900, fontSize: '0.64rem', cursor: actionLoading ? 'wait' : 'pointer' }}>
                 {actionLoading === 'resume' ? 'RECONSTRUYENDO…' : 'CONFIRMAR Y REANUDAR'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {confirmDeleteSnapshot && savedSnapshot && (
+        <div role="dialog" aria-modal="true" style={{ position: 'fixed', inset: 0, zIndex: 9900, background: 'rgba(0,0,0,.82)', display: 'grid', placeItems: 'center', padding: 18 }}>
+          <div style={{ width: 'min(430px,100%)', border: '1px solid #4a2e2e', borderRadius: 20, background: '#0d0808', padding: 18 }}>
+            <div style={{ fontSize: '1rem', fontWeight: 900 }}>Borrar la PC guardada</div>
+            <div style={{ color: '#bbb', fontSize: '0.68rem', lineHeight: 1.55, marginTop: 8 }}>
+              Esto elimina el snapshot de Vultr y detiene su costo de almacenamiento. Después ya no podrás reconstruir esta PC desde esa copia.
+            </div>
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 16 }}>
+              <button type="button" disabled={Boolean(actionLoading)} onClick={() => setConfirmDeleteSnapshot(false)} style={{ minHeight: 40, borderRadius: 999, border: '1px solid #3a3a3a', background: '#111', color: '#fff', padding: '0 14px', fontWeight: 850, fontSize: '0.64rem', cursor: 'pointer' }}>CANCELAR</button>
+              <button type="button" disabled={Boolean(actionLoading)} onClick={() => void deleteSavedSnapshot()} style={{ minHeight: 40, borderRadius: 999, border: '1px solid #6a3d3d', background: '#3b1111', color: '#fff', padding: '0 15px', fontWeight: 900, fontSize: '0.64rem', cursor: actionLoading ? 'wait' : 'pointer' }}>
+                {actionLoading === 'delete_snapshot' ? 'BORRANDO…' : 'BORRAR SNAPSHOT'}
               </button>
             </div>
           </div>
