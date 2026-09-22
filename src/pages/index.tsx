@@ -20,7 +20,8 @@ import { Model3DWorkspace } from '../components/Model3DWorkspace';
 import { GpuQuoteModal, type GpuQuoteView } from '../components/GpuQuoteModal';
 import { NaylaEngineBar } from '../components/NaylaEngineBar';
 import SocialHub from '../components/SocialHub';
-import NaylaPlay from '../components/NaylaPlay';\nimport NaylaPc from '../components/NaylaPc';
+import NaylaPlay from '../components/NaylaPlay';
+import NaylaPc from '../components/NaylaPc';
 import type { NaylaEngineMode } from '../lib/naylaSystemCatalog';
 import {
   NaylaProjectMenu,
