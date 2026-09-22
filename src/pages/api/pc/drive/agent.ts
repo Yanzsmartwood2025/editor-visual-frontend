@@ -83,7 +83,7 @@ export default async function handler(
       return res.status(200).json({
         prepareSnapshot: Boolean(flushRequested && !flushCompleted),
         freezeForSnapshot: Boolean(flushRequested && flushCompleted),
-        files: rows.slice(0, 1500).map((row) => ({
+        files: rows.slice(0, 5000).map((row) => ({
           relativePath: row.relative_path,
           sizeBytes: Number(row.size_bytes),
           contentType: row.content_type || undefined,
@@ -137,9 +137,9 @@ export default async function handler(
 
     if (action === 'presign_upload') {
       const sizeBytes = Number(req.body?.sizeBytes);
-      if (!Number.isFinite(sizeBytes) || sizeBytes < 0 || sizeBytes > 20 * 1024 ** 3) {
+      if (!Number.isFinite(sizeBytes) || sizeBytes < 0 || sizeBytes > 5 * 1024 ** 3) {
         return res.status(422).json({
-          error: 'El archivo excede el límite actual de Nayla Drive.',
+          error: 'Este archivo supera el límite actual de 5 GB por archivo de Nayla Drive.',
         });
       }
 
