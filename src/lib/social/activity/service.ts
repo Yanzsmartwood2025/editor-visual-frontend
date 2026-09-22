@@ -115,6 +115,38 @@ const extractMedia = (payload: any) => {
     .filter((item: any) => item.id);
 };
 
+const summarizeExternalEngagement = (payload: any, account?: any) => {
+  const posts =
+    Array.isArray(payload?.posts) ? payload.posts :
+    Array.isArray(payload?.synced?.posts) ? payload.synced.posts :
+    Array.isArray(payload?.data?.posts) ? payload.data.posts :
+    [];
+
+  const totals = posts.reduce((sum: Record<string, number>, post: any) => {
+    const analytics = post?.analytics || {};
+    for (const key of ['likes', 'comments', 'shares', 'saves', 'views']) {
+      const value = Number(analytics?.[key]);
+      if (Number.isFinite(value)) sum[key] = (sum[key] || 0) + value;
+    }
+    return sum;
+  }, {});
+
+  const profileLikes = Number(
+    account?.raw?.metadata?.profileData?.extraData?.likesCount ??
+    account?.raw?.extraData?.likesCount
+  );
+
+  const metrics: Array<{ label: string; value: string | number }> = [];
+  if (Number.isFinite(profileLikes)) metrics.push({ label: 'Me gusta', value: profileLikes });
+  if (Number.isFinite(totals.comments)) metrics.push({ label: 'Comentarios recientes', value: totals.comments });
+  if (Number.isFinite(totals.shares)) metrics.push({ label: 'Compartidos recientes', value: totals.shares });
+  if (Number.isFinite(totals.views)) metrics.push({ label: 'Vistas recientes', value: totals.views });
+  if (!Number.isFinite(profileLikes) && Number.isFinite(totals.likes)) {
+    metrics.push({ label: 'Me gusta recientes', value: totals.likes });
+  }
+  return metrics;
+};
+
 const extractConversations = (payload: any) =>
   Array.isArray(payload?.conversations) ? payload.conversations :
   Array.isArray(payload?.data?.conversations) ? payload.data.conversations :
@@ -383,13 +415,20 @@ const loadZernioComments = async ({
         post?.id ||
         ''
       );
-      if (postId && !postMap.has(postId)) postMap.set(postId, { postId, targetId: null });
+      const commentCount = Number(post?.analytics?.comments || 0);
+      if (
+        postId &&
+        !postMap.has(postId) &&
+        (commentCount > 0 || externalPosts.length <= 10)
+      ) {
+        postMap.set(postId, { postId, targetId: null });
+      }
     }
   } catch {
     // External-post discovery is a best-effort fallback. Known Nayla posts still work.
   }
 
-  const posts = Array.from(postMap.values()).slice(0, 30);
+  const posts = Array.from(postMap.values()).slice(0, 12);
   let comments = 0;
   const samples: ActivitySample[] = [];
 
@@ -702,14 +741,30 @@ export const reviewConnectedSocialActivity = async ({
 
     if (scope.metrics && routes.metrics) {
       try {
-        const payload = routes.metrics.provider === 'upload_post'
-          ? await getUploadPostAnalytics(profile.upload_post_username, [routes.metrics.platform])
-          : await getZernioAnalytics({
+        let metrics: Array<{ label: string; value: string | number }> = [];
+
+        if (routes.metrics.provider === 'upload_post') {
+          const payload = await getUploadPostAnalytics(profile.upload_post_username, [routes.metrics.platform]);
+          metrics = summarizeMetrics(payload);
+        } else {
+          try {
+            const payload = await getZernioAnalytics({
               profileId: profile.zernio_profile_id,
               accountId: routes.metrics.provider_account_id,
               platform: routes.metrics.platform,
             });
-        item.metrics = summarizeMetrics(payload);
+            metrics = summarizeMetrics(payload);
+          } catch {
+            metrics = [];
+          }
+
+          if (!metrics.length) {
+            const external = await syncZernioExternalPosts(String(routes.metrics.provider_account_id));
+            metrics = summarizeExternalEngagement(external, routes.metrics);
+          }
+        }
+
+        item.metrics = metrics;
         if (item.metrics.length) {
           await supabase.from('social_metrics_snapshots').insert({
             user_id: userId,
