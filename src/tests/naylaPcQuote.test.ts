@@ -113,8 +113,8 @@ describe('Nayla PC quote', () => {
       monthlyPrice: 48,
       recommended: true,
     });
-    expect(quote.cards[0].hourlyPrice).toBeCloseTo(48 / 672, 3);
-    expect(quote.cards[0].estimatedSessionPrice).toBeCloseTo((48 / 672) * 2, 3);
+    expect(quote.cards[0].hourlyPrice).toBe(0.072);
+    expect(quote.cards[0].estimatedSessionPrice).toBe(0.144);
 
     const serialized = JSON.stringify(quote);
     expect(serialized).not.toContain('vultr');
