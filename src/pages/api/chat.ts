@@ -59,7 +59,7 @@ const historyItemSchema = z.object({
 
 const mediaLibraryItemSchema = z.object({
   id: z.string().optional(),
-  tipo: z.enum(['foto', 'video', 'audio', 'modelo3d']),
+  tipo: z.enum(['foto', 'video', 'audio', 'documento', 'modelo3d']),
   url: z.string().url(),
   nombre: z.string().max(500).optional(),
   etiqueta: z.string().max(100).optional(),
@@ -75,7 +75,7 @@ const requestSchema = z.object({
   engineMode: z.enum(['auto', 'cloud', 'compute']).optional().default('auto'),
   projectId: z.string().uuid().optional(),
   threadId: z.string().uuid().optional(),
-  attachmentIds: z.array(z.string().uuid()).max(12).optional(),
+  attachmentIds: z.array(z.string().uuid()).max(200).optional(),
   mediaLibrary: z.array(mediaLibraryItemSchema).max(500).optional(),
   currentTimeline: z.array(z.object({
     id: z.string().optional(),
@@ -215,8 +215,8 @@ const buildPlanningFallback = (
 const getOrderedMediaLabels = (message: string) => {
   const found: Array<{ label: string; index: number }> = [];
   const patterns = [
-    /\b([FVAM])\s*(\d+)\b/gi,
-    /\b(foto|imagen|video|audio|m[uú]sica|modelo|3d)\s*(?:n(?:[uú]mero)?\s*)?(\d+)\b/gi,
+    /\b([FVAMD])\s*(\d+)\b/gi,
+    /\b(foto|imagen|video|audio|m[uú]sica|documento|archivo|pdf|modelo|3d)\s*(?:n(?:[uú]mero)?\s*)?(\d+)\b/gi,
   ];
 
   for (const pattern of patterns) {
@@ -229,7 +229,9 @@ const getOrderedMediaLabels = (message: string) => {
             ? 'V'
             : rawType === 'a' || rawType === 'audio' || rawType === 'música' || rawType === 'musica'
               ? 'A'
-              : 'M';
+              : rawType === 'd' || rawType === 'documento' || rawType === 'archivo' || rawType === 'pdf'
+                ? 'D'
+                : 'M';
       found.push({ label: `${prefix}${Number(match[2])}`, index: match.index ?? 0 });
     }
   }
@@ -241,13 +243,13 @@ const getOrderedMediaLabels = (message: string) => {
 const buildLabelTimelineFallback = (
   message: string,
   mediaLibrary: Array<{
-    tipo: 'foto' | 'video' | 'audio' | 'modelo3d';
+    tipo: 'foto' | 'video' | 'audio' | 'documento' | 'modelo3d';
     url: string;
     etiqueta?: string;
   }>
 ): NaylaAction | null => {
   const normalized = message.toLowerCase();
-  const labels = getOrderedMediaLabels(message).filter((label) => !label.startsWith('M'));
+  const labels = getOrderedMediaLabels(message).filter((label) => !label.startsWith('M') && !label.startsWith('D'));
   const naturalPhotos = hasNaturalProjectPhotoReference(message);
   const requestedVisualCount = getRequestedVisualCount(message);
   const editingIntent =
@@ -880,7 +882,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           const label = typeof item.etiqueta === 'string' && item.etiqueta.trim()
             ? item.etiqueta.trim().toUpperCase()
             : `item-${index + 1}`;
-          return `${label}: tipo=${item.tipo}; nombre=${item.nombre || ''}`;
+          const preview = item.tipo === 'documento' && typeof item?.metadata?.textPreview === 'string'
+            ? `; texto=${item.metadata.textPreview.slice(0, 6000)}`
+            : '';
+          return `${label}: tipo=${item.tipo}; nombre=${item.nombre || ''}${preview}`;
         }).join('\n')
       : 'ninguno';
 
@@ -899,7 +904,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       visualIntent
         ? (
             visionImages.length
-              ? `Visión activada para este plan: se cargaron ${visionImages.length} foto(s) para análisis visual.${visionWasTruncated ? ' Hay más fotos referenciadas que el límite visual actual; no afirmes haber inspeccionado las que no fueron cargadas.' : ''}`
+              ? `Visión activada para este plan: se cargaron ${visionImages.length} foto(s) para análisis visual.${visionWasTruncated ? ' Hay más fotos adjuntas que el límite visual de una sola llamada; conserva todas por etiqueta y no afirmes haber inspeccionado visualmente las que no fueron cargadas en esta llamada.' : ''}`
               : 'Visión requerida para este plan, pero no se encontró una foto válida con esa referencia. No inventes contenido visual.'
           )
         : 'Visión NO solicitada. No describas el contenido visual de las fotos; usa etiquetas y metadatos.',
@@ -922,7 +927,7 @@ Eres Nayla, una editora multimedia consultiva. Entiende lenguaje cotidiano y rec
 
 SEGURIDAD Y CONTEXTO:
 - Nunca muestres secretos, API keys, proveedores externos, infraestructura interna ni URLs que no vengan del contexto.
-- F1/F2... son fotos; V1/V2... videos; A1/A2... audios; M1/M2... modelos 3D.
+- F1/F2... son fotos; V1/V2... videos; A1/A2... audios; D1/D2... documentos; M1/M2... modelos 3D.
 - Nunca sustituyas una etiqueta inexistente por otro archivo. Si falta una etiqueta, dilo y no emitas una acción inventada.
 - Si F1/F2/V1/A1 u otra etiqueta está disponible en el contexto del proyecto, úsala directamente. Nunca le pidas al usuario que copie o proporcione una URL para un medio ya guardado.
 - Analiza visualmente las fotos cuando el usuario lo pida o cuando una decisión creativa dependa de verlas (orden, selección, encuadre, efectos, movimiento o estilo). No inventes detalles de fotos que no fueron cargadas al contexto visual.
@@ -943,9 +948,11 @@ MAPA DE MEDIOS:
 - F1/F2/... son identificadores estables de fotos.
 - V1/V2/... son identificadores estables de videos.
 - A1/A2/... son identificadores estables de audios.
+- D1/D2/... son identificadores estables de documentos adjuntos al chat.
 - M1/M2/... son identificadores estables de modelos 3D.
 - "foto 1", "primera foto" y F1 se refieren al mismo tipo de recurso cuando el contexto lo deja claro; lo mismo para video, audio y 3D.
 - Las etiquetas son referencias internas: nunca deben aparecer como texto visible, título o subtítulo salvo que el usuario pida literalmente mostrar esa etiqueta.
+- Los documentos son contexto, no clips del timeline. Para TXT/MD/CSV/JSON puede existir una vista previa textual en metadata; para PDF/DOC/DOCX no afirmes haber leído su contenido si no aparece texto extraído en el contexto.
 - Si el usuario dice "estas fotos", "los archivos que subí" o algo equivalente, usa primero los adjuntos del plan activo. No sustituyas esos archivos por otros de la Bóveda.
 - Las restricciones explícitas del usuario son obligatorias (orden, duración, recorte, medio concreto). Todo lo no especificado es terreno creativo: elige efectos, transiciones, movimiento, ritmo y acabado usando las capacidades reales disponibles.
 - Si recibiste contexto visual, úsalo para decidir qué foto funciona mejor en cada momento y qué tratamiento le conviene. No apliques el mismo efecto mecánicamente a todas las escenas si no aporta.
