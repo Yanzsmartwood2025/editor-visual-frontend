@@ -169,6 +169,7 @@ export default function NaylaPc({
   const [quote, setQuote] = useState<PcQuote | null>(null);
   const [selectedId, setSelectedId] = useState('');
   const [activeInstance, setActiveInstance] = useState<PcInstance | null>(null);
+  const [provisioningAllowed, setProvisioningAllowed] = useState(false);
   const [loading, setLoading] = useState(false);
   const [instanceLoading, setInstanceLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -229,6 +230,7 @@ export default function NaylaPc({
         throw new Error(payload.error || 'No se pudo consultar tu PC.');
       }
       setActiveInstance(payload.instance || null);
+      setProvisioningAllowed(payload.provisioningAllowed === true);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'No se pudo consultar tu PC.');
     } finally {
@@ -309,12 +311,13 @@ export default function NaylaPc({
 
   const creationBlockedReason = useMemo(() => {
     if (activeInstance) return 'Ya tienes una PC activa';
+    if (!provisioningAllowed) return 'Piloto privado: creación real solo para administrador';
     if (!selected || !quote?.ready) return 'Sin oferta compatible';
     if (config.osFamily === 'windows') return 'Windows: licencia pendiente';
     if (config.gpuEnabled) return 'GPU: imagen gráfica pendiente';
     if (!quote.pricing.complete) return 'Precio incompleto';
     return '';
-  }, [activeInstance, config.gpuEnabled, config.osFamily, quote, selected]);
+  }, [activeInstance, config.gpuEnabled, config.osFamily, provisioningAllowed, quote, selected]);
 
   const canCreate = !creationBlockedReason && Boolean(session && selected);
 
@@ -564,7 +567,7 @@ export default function NaylaPc({
           <div style={{ border: '1px solid #2b2b2b', borderRadius: 18, padding: 18, background: 'linear-gradient(180deg,#111,#090909)', marginBottom: 14 }}>
             <div style={{ fontSize: '1.25rem', fontWeight: 900, marginBottom: 6 }}>Arma tu computadora</div>
             <div style={{ color: '#999', fontSize: '0.8rem', lineHeight: 1.55 }}>
-              Elige sistema, potencia y tiempo. Cotizar no crea ni cobra ninguna máquina. La creación real solo ocurre después de tu confirmación final.
+              Elige sistema, potencia y tiempo. Cotizar no crea ni cobra ninguna máquina. La creación real está en piloto privado y solo ocurre después de una confirmación final.
             </div>
             <div style={{ marginTop: 14, display: 'grid', gridTemplateColumns: 'repeat(3,minmax(0,1fr))', gap: 8 }}>
               <div style={{ border: '1px solid #292929', borderRadius: 12, padding: 10, background: '#070707' }}>
