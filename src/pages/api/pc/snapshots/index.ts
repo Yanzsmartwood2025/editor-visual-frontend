@@ -305,6 +305,13 @@ export default async function handler(
       metadata: {
         restored_from_snapshot_id: snapshot.id,
         os_name: snapshot.os_name || null,
+        desktop_enabled: snapshot.metadata?.desktop_enabled === true,
+        desktop_password:
+          typeof snapshot.metadata?.desktop_password === 'string'
+            ? String(snapshot.metadata.desktop_password)
+            : null,
+        desktop_port: snapshot.metadata?.desktop_port || 6080,
+        desktop_tls: snapshot.metadata?.desktop_tls || 'self_signed',
       },
     });
 
