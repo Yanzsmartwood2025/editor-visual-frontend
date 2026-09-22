@@ -20,6 +20,7 @@ const providerStatus = (
   const power = String(provider.power_status || '').toLowerCase();
   const status = String(provider.status || '').toLowerCase();
 
+  if (current === 'terminating') return 'terminating';
   if (power === 'stopped' || power === 'off') return 'stopped';
   if (power === 'running') return 'running';
   if (status === 'active') return 'running';
