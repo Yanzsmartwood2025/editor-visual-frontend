@@ -12,6 +12,7 @@ import {
 } from '../gpu/vultrApi';
 import {
   createNaylaPcSnapshotRow,
+  getNaylaPcInstanceById,
   listExpiredNaylaPcInstances,
   listOlderAvailableNaylaPcSnapshots,
   listPendingNaylaPcSnapshots,
@@ -427,12 +428,16 @@ export const finalizePendingNaylaPcSnapshots = async () => {
             },
           });
           if (row.source_instance_id) {
+            const source = await getNaylaPcInstanceById(row.source_instance_id).catch(() => null);
             await patchNaylaPcInstance({
               instanceId: row.source_instance_id,
               patch: {
                 status: 'running',
                 metadata: {
+                  ...(source?.metadata || {}),
+                  save_stage: 'error',
                   save_error: 'snapshot_missing',
+                  drive_flush_requested_at: null,
                 },
               },
             }).catch(() => undefined);
@@ -457,12 +462,16 @@ export const finalizePendingNaylaPcSnapshots = async () => {
           });
 
           if (row.source_instance_id) {
+            const source = await getNaylaPcInstanceById(row.source_instance_id).catch(() => null);
             await patchNaylaPcInstance({
               instanceId: row.source_instance_id,
               patch: {
                 status: 'running',
                 metadata: {
+                  ...(source?.metadata || {}),
+                  save_stage: 'error',
                   save_error: 'snapshot_failed',
+                  drive_flush_requested_at: null,
                 },
               },
             }).catch(() => undefined);
@@ -478,10 +487,11 @@ export const finalizePendingNaylaPcSnapshots = async () => {
         const sizeBytes = Number(provider.size);
 
         if (row.source_instance_id) {
+          const source = await getNaylaPcInstanceById(row.source_instance_id).catch(() => null);
           const sourceProviderInstanceId =
             typeof row.metadata?.source_provider_instance_id === 'string'
               ? String(row.metadata.source_provider_instance_id)
-              : '';
+              : source?.provider_instance_id || '';
 
           if (sourceProviderInstanceId) {
             await deleteVultrInstance(sourceProviderInstanceId);
@@ -497,7 +507,9 @@ export const finalizePendingNaylaPcSnapshots = async () => {
               terminated_at: new Date().toISOString(),
               last_synced_at: new Date().toISOString(),
               metadata: {
+                ...(source?.metadata || {}),
                 save_snapshot_id: row.id,
+                save_stage: 'complete',
                 save_completed_at: new Date().toISOString(),
               },
             },
