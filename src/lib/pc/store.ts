@@ -28,6 +28,7 @@ export type NaylaPcInstanceStatus =
   | 'running'
   | 'stopped'
   | 'rebooting'
+  | 'snapshotting'
   | 'terminating'
   | 'terminated'
   | 'error';
@@ -63,6 +64,41 @@ export type NaylaPcInstanceRow = {
   metadata: Record<string, unknown>;
   created_at: string;
   updated_at: string;
+};
+
+export type NaylaPcSnapshotStatus =
+  | 'pending'
+  | 'available'
+  | 'restoring'
+  | 'deleting'
+  | 'deleted'
+  | 'error';
+
+export type NaylaPcSnapshotRow = {
+  id: string;
+  user_id: string;
+  source_instance_id: string | null;
+  provider: string;
+  provider_snapshot_id: string;
+  description: string;
+  status: NaylaPcSnapshotStatus;
+  os_family: 'linux' | 'windows';
+  os_name: string | null;
+  cpu: number;
+  ram_gb: number;
+  disk_gb: number;
+  gpu_enabled: boolean;
+  gpu_name: string | null;
+  gpu_vram_gb: number | null;
+  provider_plan_id: string;
+  provider_region_id: string;
+  size_bytes: number | null;
+  storage_monthly_usd: number | null;
+  created_at: string;
+  ready_at: string | null;
+  deleted_at: string | null;
+  updated_at: string;
+  metadata: Record<string, unknown>;
 };
 
 export type SaveNaylaPcProfileInput = Partial<NaylaPcRequest> & {
@@ -133,7 +169,14 @@ export const getActiveNaylaPcInstance = async (
     .from('nayla_pc_instances')
     .select('*')
     .eq('user_id', userId)
-    .in('status', ['provisioning', 'running', 'stopped', 'rebooting', 'terminating'])
+    .in('status', [
+      'provisioning',
+      'running',
+      'stopped',
+      'rebooting',
+      'snapshotting',
+      'terminating',
+    ])
     .order('created_at', { ascending: false })
     .limit(1)
     .maybeSingle();
@@ -266,6 +309,125 @@ export const listExpiredNaylaPcInstances = async (
 
   if (error) throw error;
   return (data as NaylaPcInstanceRow[]) || [];
+};
+
+export const createNaylaPcSnapshotRow = async (input: {
+  userId: string;
+  sourceInstanceId: string;
+  providerSnapshotId: string;
+  description: string;
+  osFamily: 'linux' | 'windows';
+  osName?: string | null;
+  cpu: number;
+  ramGb: number;
+  diskGb: number;
+  gpuEnabled: boolean;
+  gpuName?: string | null;
+  gpuVramGb?: number | null;
+  providerPlanId: string;
+  providerRegionId: string;
+  metadata?: Record<string, unknown>;
+}): Promise<NaylaPcSnapshotRow> => {
+  const supabase = getWorkspaceSupabaseAdmin();
+  const { data, error } = await supabase
+    .from('nayla_pc_snapshots')
+    .insert({
+      user_id: input.userId,
+      source_instance_id: input.sourceInstanceId,
+      provider: 'vultr',
+      provider_snapshot_id: input.providerSnapshotId,
+      description: input.description,
+      status: 'pending',
+      os_family: input.osFamily,
+      os_name: input.osName || null,
+      cpu: input.cpu,
+      ram_gb: input.ramGb,
+      disk_gb: input.diskGb,
+      gpu_enabled: input.gpuEnabled,
+      gpu_name: input.gpuName || null,
+      gpu_vram_gb: input.gpuVramGb || null,
+      provider_plan_id: input.providerPlanId,
+      provider_region_id: input.providerRegionId,
+      metadata: input.metadata || {},
+    })
+    .select('*')
+    .single();
+
+  if (error) throw error;
+  return data as NaylaPcSnapshotRow;
+};
+
+export const patchNaylaPcSnapshot = async ({
+  snapshotId,
+  patch,
+}: {
+  snapshotId: string;
+  patch: Partial<NaylaPcSnapshotRow>;
+}): Promise<NaylaPcSnapshotRow> => {
+  const supabase = getWorkspaceSupabaseAdmin();
+  const { data, error } = await supabase
+    .from('nayla_pc_snapshots')
+    .update({
+      ...patch,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', snapshotId)
+    .select('*')
+    .single();
+
+  if (error) throw error;
+  return data as NaylaPcSnapshotRow;
+};
+
+export const getLatestNaylaPcSnapshot = async (
+  userId: string
+): Promise<NaylaPcSnapshotRow | null> => {
+  const supabase = getWorkspaceSupabaseAdmin();
+  const { data, error } = await supabase
+    .from('nayla_pc_snapshots')
+    .select('*')
+    .eq('user_id', userId)
+    .in('status', ['pending', 'available', 'restoring', 'deleting'])
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) throw error;
+  return (data as NaylaPcSnapshotRow | null) || null;
+};
+
+export const getNaylaPcSnapshotForUser = async ({
+  userId,
+  snapshotId,
+}: {
+  userId: string;
+  snapshotId: string;
+}): Promise<NaylaPcSnapshotRow | null> => {
+  const supabase = getWorkspaceSupabaseAdmin();
+  const { data, error } = await supabase
+    .from('nayla_pc_snapshots')
+    .select('*')
+    .eq('id', snapshotId)
+    .eq('user_id', userId)
+    .maybeSingle();
+
+  if (error) throw error;
+  return (data as NaylaPcSnapshotRow | null) || null;
+};
+
+export const listPendingNaylaPcSnapshots = async (
+  limit = 10
+): Promise<NaylaPcSnapshotRow[]> => {
+  const supabase = getWorkspaceSupabaseAdmin();
+  const { data, error } = await supabase
+    .from('nayla_pc_snapshots')
+    .select('*')
+    .in('status', ['pending', 'deleting'])
+    .order('updated_at', { ascending: true })
+    .limit(Math.max(1, Math.min(25, limit)));
+
+  if (error) throw error;
+  return (data as NaylaPcSnapshotRow[]) || [];
 };
 
 export const getNaylaInternalSecret = async (
