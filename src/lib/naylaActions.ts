@@ -11,8 +11,9 @@ const urlSchema = z.string().url().max(4000);
 
 const buildTimelineAssetSchema = z.object({
   type: z.enum(['foto', 'image', 'video', 'audio']),
-  source: z.literal('url'),
-  url: urlSchema,
+  source: z.enum(['url', 'label']),
+  url: urlSchema.optional(),
+  label: z.string().trim().regex(/^[FVA]\\d+$/i).optional(),
   durationInSeconds: z.number().min(0.1).max(3600).optional(),
   volume: z.number().min(0).max(2).optional(),
   fadeIn: z.number().min(0).max(30).optional(),
@@ -121,6 +122,13 @@ const buildTimelineAssetSchema = z.object({
     color: z.string().trim().min(1).max(64).optional().default('#ffffff'),
     accentColor: z.string().trim().min(1).max(64).optional(),
   }).strict().optional(),
+}).superRefine((asset, ctx) => {
+  if (asset.source === 'url' && !asset.url) {
+    ctx.addIssue({ code: 'custom', path: ['url'], message: 'Un asset por URL requiere url.' });
+  }
+  if (asset.source === 'label' && !asset.label) {
+    ctx.addIssue({ code: 'custom', path: ['label'], message: 'Un asset por etiqueta requiere label.' });
+  }
 });
 
 export const naylaActionSchema = z.discriminatedUnion('action', [
