@@ -803,6 +803,37 @@ export const softDeleteNaylaPcDriveFile = async ({
   return (data as NaylaPcDriveFileRow | null) || null;
 };
 
+export const setNaylaInternalSecret = async (
+  name: string,
+  value: string
+): Promise<void> => {
+  const supabase = getWorkspaceSupabaseAdmin();
+  const { error } = await supabase
+    .from('nayla_internal_secrets')
+    .upsert(
+      {
+        name,
+        secret_value: value,
+        rotated_at: new Date().toISOString(),
+      },
+      { onConflict: 'name' }
+    );
+
+  if (error) throw error;
+};
+
+export const deleteNaylaInternalSecret = async (
+  name: string
+): Promise<void> => {
+  const supabase = getWorkspaceSupabaseAdmin();
+  const { error } = await supabase
+    .from('nayla_internal_secrets')
+    .delete()
+    .eq('name', name);
+
+  if (error) throw error;
+};
+
 export const getNaylaInternalSecret = async (
   name: string
 ): Promise<string | null> => {
