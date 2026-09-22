@@ -85,7 +85,7 @@ on conflict (name) do nothing;
 -- Activate this job only after /api/internal/pc-lease-sweep is deployed.
 select cron.schedule(
   'nayla-pc-lease-sweep-v1',
-  '*/5 * * * *',
+  '30 seconds',
   $job$
     select net.http_post(
       url := 'https://editor-visual-frontend-cauc.vercel.app/api/internal/pc-lease-sweep',
