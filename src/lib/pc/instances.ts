@@ -144,16 +144,20 @@ export const syncNaylaPcInstance = async (
     readyPatch.ready_at = now.toISOString();
     readyPatch.billable_started_at = now.toISOString();
 
-    if (row.billing_mode === 'hourly' && row.auto_destroy) {
+    if (row.billing_mode === 'hourly') {
       const safetyRaw = Number(process.env.NAYLA_PC_LEASE_SAFETY_SECONDS || 90);
       const safetySeconds = Number.isFinite(safetyRaw)
         ? Math.min(300, Math.max(30, safetyRaw))
         : 90;
+      readyPatch.auto_destroy = true;
       readyPatch.expires_at = new Date(
         now.getTime() +
           Number(row.duration_hours) * 60 * 60 * 1000 -
           safetySeconds * 1000
       ).toISOString();
+    } else {
+      readyPatch.auto_destroy = false;
+      readyPatch.expires_at = null;
     }
   }
 
