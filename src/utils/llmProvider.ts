@@ -1,8 +1,17 @@
 import { Groq } from 'groq-sdk';
 import { Mistral } from '@mistralai/mistralai';
 
+export type LlmGenerateOptions = {
+  maxCompletionTokens?: number;
+};
+
 export interface LLMProvider {
-  generateText(prompt: string, images?: string[], systemPrompt?: string): Promise<string>;
+  generateText(
+    prompt: string,
+    images?: string[],
+    systemPrompt?: string,
+    options?: LlmGenerateOptions
+  ): Promise<string>;
 }
 
 export class GroqProvider implements LLMProvider {
@@ -19,7 +28,12 @@ export class GroqProvider implements LLMProvider {
     }
   }
 
-  async generateText(prompt: string, images?: string[], systemPrompt?: string): Promise<string> {
+  async generateText(
+    prompt: string,
+    images?: string[],
+    systemPrompt?: string,
+    options?: LlmGenerateOptions
+  ): Promise<string> {
     const messages: any[] = [];
 
     if (systemPrompt) {
@@ -52,6 +66,9 @@ export class GroqProvider implements LLMProvider {
     const completion = await this.client.chat.completions.create({
       messages,
       model,
+      ...(options?.maxCompletionTokens
+        ? { max_completion_tokens: options.maxCompletionTokens }
+        : {}),
     });
 
     return completion.choices[0]?.message?.content || '';
@@ -72,7 +89,12 @@ export class MistralProvider implements LLMProvider {
     }
   }
 
-  async generateText(prompt: string, images?: string[], systemPrompt?: string): Promise<string> {
+  async generateText(
+    prompt: string,
+    images?: string[],
+    systemPrompt?: string,
+    options?: LlmGenerateOptions
+  ): Promise<string> {
     const messages: any[] = [];
 
     if (systemPrompt) {
@@ -92,11 +114,35 @@ export class MistralProvider implements LLMProvider {
 
     messages.push({ role: 'user', content });
 
-    const chatResponse = await this.client.chat.complete({
-      model: this.model,
-      messages: messages,
-    });
+    const complete = async (model: string) =>
+      this.client.chat.complete({
+        model,
+        messages: messages,
+        ...(options?.maxCompletionTokens
+          ? { maxTokens: options.maxCompletionTokens }
+          : {}),
+      });
 
-    return chatResponse.choices?.[0]?.message?.content as string || '';
+    try {
+      const chatResponse = await complete(this.model);
+      return chatResponse.choices?.[0]?.message?.content as string || '';
+    } catch (error: any) {
+      const raw = [
+        error?.message,
+        error?.body,
+        error?.statusCode,
+      ].filter(Boolean).join(' ');
+
+      const tierBlocked =
+        Number(error?.statusCode) === 403 &&
+        /tier_not_allowed|not available in your subscription tier|code["']?\s*[:=]\s*["']?1910/i.test(raw);
+
+      if (tierBlocked && this.model !== 'mistral-small-latest') {
+        const fallback = await complete('mistral-small-latest');
+        return fallback.choices?.[0]?.message?.content as string || '';
+      }
+
+      throw error;
+    }
   }
 }
