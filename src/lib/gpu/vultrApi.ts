@@ -493,7 +493,7 @@ export const buildNaylaPcDesktopUserData = ({
     'EOF',
     'chmod 755 /usr/local/sbin/nayla-seal-base-image',
     'systemd-run --unit=nayla-base-seal --on-active=60s /usr/local/sbin/nayla-seal-base-image >/dev/null',
-  ].join('\\n');
+  ].join('\n');
 
   return encodeUserData(script);
 };
@@ -646,7 +646,7 @@ export const buildNaylaPcRuntimeUserData = ({
     'if __name__ == "__main__":',
     '    try: sync_once()',
     '    except Exception as exc: print("nayla-drive:",exc)',
-  ].join('\\n');
+  ].join('\n');
 
   const agentPayload = Buffer.from(agent, 'utf8').toString('base64');
   const script = [
@@ -696,7 +696,7 @@ export const buildNaylaPcRuntimeUserData = ({
     'systemctl restart nayla-vnc.service || true',
     'systemctl restart nayla-novnc.service || true',
     'systemctl enable --now nayla-drive-sync.timer',
-  ].join('\\n');
+  ].join('\n');
 
   return encodeUserData(script);
 };
