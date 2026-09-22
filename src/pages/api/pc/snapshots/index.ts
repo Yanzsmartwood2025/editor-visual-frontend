@@ -5,7 +5,9 @@ import {
 } from '../../../../lib/firebaseAdmin';
 import {
   createVultrInstanceFromSnapshot,
+  deleteVultrInstance,
   deleteVultrSnapshot,
+  findVultrInstanceByLabel,
   listVultrPlans,
   listVultrRegions,
 } from '../../../../lib/gpu/vultrApi';
@@ -13,6 +15,7 @@ import {
   getActiveNaylaPcInstance,
   getDefaultNaylaPcProfile,
   getLatestNaylaPcSnapshot,
+  patchNaylaPcInstance,
   patchNaylaPcSnapshot,
   createNaylaPcProvisioningInstance,
 } from '../../../../lib/pc/store';
@@ -316,24 +319,118 @@ export default async function handler(
     });
 
     const label = 'nayla-pc-' + pending.id;
-    try {
-      const provider = await createVultrInstanceFromSnapshot({
-        planId: plan.id,
-        regionId,
-        snapshotId: snapshot.provider_snapshot_id,
-        label,
-      });
+    let providerInstanceId = '';
 
-      const { patchNaylaPcInstance } = await import('../../../../lib/pc/store');
-      const saved = await patchNaylaPcInstance({
-        instanceId: pending.id,
-        patch: {
-          provider_instance_id: provider.id,
-          status: 'provisioning',
-          main_ip: provider.main_ip || null,
-          last_synced_at: new Date().toISOString(),
-        },
-      });
+    try {
+      let provider;
+      try {
+        provider = await createVultrInstanceFromSnapshot({
+          planId: plan.id,
+          regionId,
+          snapshotId: snapshot.provider_snapshot_id,
+          label,
+        });
+        providerInstanceId = provider.id;
+      } catch (error) {
+        const recovered = await findVultrInstanceByLabel(label).catch(() => null);
+        let cleanupOk = false;
+
+        if (recovered?.id) {
+          providerInstanceId = recovered.id;
+          try {
+            await deleteVultrInstance(recovered.id);
+            cleanupOk = true;
+          } catch {
+            cleanupOk = false;
+          }
+        }
+
+        await patchNaylaPcInstance({
+          instanceId: pending.id,
+          patch:
+            recovered?.id && !cleanupOk
+              ? {
+                  provider_instance_id: recovered.id,
+                  status: 'terminating',
+                  auto_destroy: true,
+                  expires_at: new Date().toISOString(),
+                  metadata: {
+                    restore_error:
+                      error instanceof Error
+                        ? error.message.slice(0, 500)
+                        : 'unknown',
+                    orphan_cleanup_pending: true,
+                  },
+                }
+              : {
+                  status: 'error',
+                  terminated_at: cleanupOk ? new Date().toISOString() : null,
+                  metadata: {
+                    restore_error:
+                      error instanceof Error
+                        ? error.message.slice(0, 500)
+                        : 'unknown',
+                    orphan_cleanup_attempted: Boolean(recovered?.id),
+                    orphan_cleanup_ok: cleanupOk,
+                  },
+                },
+        }).catch(() => undefined);
+
+        throw error;
+      }
+
+      let saved;
+      try {
+        saved = await patchNaylaPcInstance({
+          instanceId: pending.id,
+          patch: {
+            provider_instance_id: provider.id,
+            status: 'provisioning',
+            main_ip: provider.main_ip || null,
+            last_synced_at: new Date().toISOString(),
+          },
+        });
+      } catch (error) {
+        let cleanupOk = false;
+        try {
+          await deleteVultrInstance(provider.id);
+          cleanupOk = true;
+        } catch {
+          cleanupOk = false;
+        }
+
+        await patchNaylaPcInstance({
+          instanceId: pending.id,
+          patch: cleanupOk
+            ? {
+                provider_instance_id: provider.id,
+                status: 'error',
+                terminated_at: new Date().toISOString(),
+                metadata: {
+                  restore_error:
+                    error instanceof Error
+                      ? error.message.slice(0, 500)
+                      : 'unknown',
+                  provider_cleanup_ok: true,
+                },
+              }
+            : {
+                provider_instance_id: provider.id,
+                status: 'terminating',
+                auto_destroy: true,
+                expires_at: new Date().toISOString(),
+                metadata: {
+                  restore_error:
+                    error instanceof Error
+                      ? error.message.slice(0, 500)
+                      : 'unknown',
+                  provider_cleanup_pending: true,
+                },
+              },
+        }).catch(() => undefined);
+
+        throw error;
+      }
 
       await patchNaylaPcSnapshot({
         snapshotId: snapshot.id,
@@ -351,18 +448,6 @@ export default async function handler(
         snapshot: toPublicNaylaPcSnapshot(snapshot),
       });
     } catch (error) {
-      const { patchNaylaPcInstance } = await import('../../../../lib/pc/store');
-      await patchNaylaPcInstance({
-        instanceId: pending.id,
-        patch: {
-          status: 'error',
-          terminated_at: new Date().toISOString(),
-          metadata: {
-            restore_error:
-              error instanceof Error ? error.message.slice(0, 500) : 'unknown',
-          },
-        },
-      }).catch(() => undefined);
       throw error;
     }
   } catch (error) {
