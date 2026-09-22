@@ -20,7 +20,7 @@ const querySchema = z.object({
 const postSchema = z.object({
   projectId: z.string().uuid(),
   threadId: z.string().uuid(),
-  attachmentIds: z.array(z.string().uuid()).min(1).max(24),
+  attachmentIds: z.array(z.string().uuid()).min(1).max(200),
   content: z.string().trim().max(1000).optional(),
 });
 

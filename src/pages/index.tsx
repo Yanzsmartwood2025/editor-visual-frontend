@@ -10,7 +10,14 @@ import { MAIN_TOOLS, SUB_TOOLS } from '../config/editorTools';
 import { editorGlobalStyles } from '../styles/editorGlobalStyles';
 import { getVideoMetadata, getAudioDurationInSeconds } from '@remotion/media-utils';
 import { createClient } from '@supabase/supabase-js';
-import { createMediaId, uploadMediaFilesToBodega } from '../lib/mediaUpload';
+import {
+  createMediaId,
+  isSupportedDocumentFile,
+  resolveMediaKind,
+  uploadDocumentFilesToBodega,
+  uploadMediaFilesToBodega,
+  type DocumentItem,
+} from '../lib/mediaUpload';
 import { groupSpeechWordsIntoCaptions } from '../lib/autoCaptions';
 import { buildMediaMetadata, getCanvasDimensionsFromRatio, probeMediaUrl, type MediaMetadata } from '../lib/mediaMetadata';
 import { getCompositionDurationInFrames } from '../lib/timelineMetrics';
@@ -207,6 +214,8 @@ const SelectableChatText: React.FC<{ text: string; clean?: boolean }> = ({ text,
   </div>
 );
 
+const CHAT_ATTACHMENT_LIMIT = 200;
+
 const isNaylaResultMedia = (item: MediaItem) => {
   const source = String(item.fuente || '').trim().toLowerCase();
   const label = String(item.etiqueta || '').trim().toUpperCase();
@@ -326,6 +335,7 @@ export default function NaylaCore() {
   const [marcoImagenes, setMarcoImagenes] = useState<{ original: string; procesada: string; nombre: string }[]>([]);
   const [marcoProcesando, setMarcoProcesando] = useState(false);
   const [galeriaMultimedia, setGaleriaMultimedia] = useState<MediaItem[]>([]);
+  const [chatDocuments, setChatDocuments] = useState<DocumentItem[]>([]);
   const [modelos3d, setModelos3d] = useState<Model3DAsset[]>([]);
   const [modelo3dActivoId, setModelo3dActivoId] = useState<string | null>(null);
   const [subiendo3d, setSubiendo3d] = useState(false);
@@ -493,7 +503,10 @@ export default function NaylaCore() {
   const [activeThreadId, setActiveThreadId] = useState<string | null>(null);
   const activeThreadIdRef = useRef<string | null>(null);
   const [projectMenuOpen, setProjectMenuOpen] = useState(false);
+  const [chatAttachMenuOpen, setChatAttachMenuOpen] = useState(false);
+  const chatDirectUploadRef = useRef<HTMLInputElement | null>(null);
   const [chatAttachmentIds, setChatAttachmentIds] = useState<string[]>([]);
+  const [chatUploadProgress, setChatUploadProgress] = useState<{ total: number; done: number; failed: number } | null>(null);
   const [channelUploadingKind, setChannelUploadingKind] = useState<NaylaChannelKind | null>(null);
 
   useEffect(() => {
@@ -600,6 +613,13 @@ export default function NaylaCore() {
       url: item.url,
       etiqueta: item.etiqueta,
     })),
+    ...chatDocuments.map((item) => ({
+      id: item.id,
+      tipo: 'documento' as NaylaChannelKind,
+      nombre: item.nombre,
+      url: item.url,
+      etiqueta: item.etiqueta,
+    })),
     ...modelos3d.map((item) => ({
       id: item.id,
       tipo: 'modelo3d' as NaylaChannelKind,
@@ -608,13 +628,17 @@ export default function NaylaCore() {
       etiqueta: item.etiqueta,
     })),
   ];
-  const chatAttachedAssets = chatChannelAssets.filter((asset) => chatAttachmentIds.includes(asset.id));
+  const chatAssetById = new Map(chatChannelAssets.map((asset) => [asset.id, asset]));
+  const chatAttachedAssets = chatAttachmentIds
+    .map((id) => chatAssetById.get(id))
+    .filter((asset): asset is NaylaChannelAsset => Boolean(asset));
   const naylaIsWorking =
     chatProcessing ||
     cloudExecutingIds.length > 0 ||
     gpuQuoteLoading ||
     gpuQuoteConfirming ||
     channelUploadingKind !== null ||
+    chatUploadProgress !== null ||
     chatMessages.some((message) => {
       const renderActive = message.renderTask && !['completed', 'failed', 'cancelled'].includes(message.renderTask.status);
       const actionStatus = message.actionPlan?.status || '';
@@ -2233,86 +2257,170 @@ export default function NaylaCore() {
   };
 
   const toggleChatAttachment = (asset: NaylaChannelAsset) => {
-    setChatAttachmentIds((prev) =>
-      prev.includes(asset.id)
-        ? prev.filter((id) => id !== asset.id)
-        : [...prev, asset.id]
-    );
+    setChatAttachmentIds((prev) => {
+      if (prev.includes(asset.id)) {
+        return prev.filter((id) => id !== asset.id);
+      }
+      if (prev.length >= CHAT_ATTACHMENT_LIMIT) {
+        showAlert(`Puedes adjuntar hasta ${CHAT_ATTACHMENT_LIMIT} archivos en un mismo mensaje.`);
+        return prev;
+      }
+      return [...prev, asset.id];
+    });
   };
 
-  const subirArchivosDesdeCanal = async (kind: NaylaChannelKind, files: FileList) => {
+  const uploadFilesIntoChat = async (
+    incomingFiles: File[] | FileList,
+    forcedKind?: NaylaChannelKind
+  ) => {
     if (!activeProjectId) return showAlert('Primero selecciona un proyecto.');
 
     const currentSession = session || await getFirebaseSession();
     if (!currentSession) return showAlert('Debes iniciar sesión para subir archivos.');
     if (!activeThreadId) return showAlert('Abre un chat antes de subir archivos.');
 
-    setChannelUploadingKind(kind);
-    try {
-      let uploadedAssets: NaylaChannelAsset[] = [];
+    const remainingSlots = Math.max(0, CHAT_ATTACHMENT_LIMIT - chatAttachmentIds.length);
+    if (!remainingSlots) {
+      return showAlert(`Ya tienes ${CHAT_ATTACHMENT_LIMIT} archivos anclados a este mensaje.`);
+    }
 
-      if (kind === 'modelo3d') {
-        const nextAssets = [...modelos3d];
+    const selectedFiles = Array.from(incomingFiles).slice(0, remainingSlots);
+    if (selectedFiles.length < Array.from(incomingFiles).length) {
+      showAlert(`Se tomarán los primeros ${remainingSlots} archivos. El máximo por mensaje es ${CHAT_ATTACHMENT_LIMIT}.`);
+    }
 
-        for (const file of Array.from(files)) {
+    if (!selectedFiles.length) return;
+
+    setChatAttachMenuOpen(false);
+    setProjectMenuOpen(false);
+    if (forcedKind) setChannelUploadingKind(forcedKind);
+    setChatUploadProgress({ total: selectedFiles.length, done: 0, failed: 0 });
+
+    let workingMedia = [...galeriaMultimedia];
+    let workingDocuments = [...chatDocuments];
+    let workingModels = [...modelos3d];
+    let successCount = 0;
+    let failedCount = 0;
+
+    for (const file of selectedFiles) {
+      try {
+        let asset: NaylaChannelAsset | null = null;
+        let kind = forcedKind;
+
+        if (!kind) {
+          const mediaKind = resolveMediaKind(file);
+          kind = mediaKind || (isSupportedDocumentFile(file) ? 'documento' : undefined);
+        }
+
+        if (!kind) {
+          throw new Error(`Tipo de archivo no soportado: ${file.name}`);
+        }
+
+        if (kind === 'modelo3d') {
           const saved = await uploadModel3DToBoveda({
             session: currentSession,
             file,
-            existingItems: nextAssets,
+            existingItems: workingModels,
             fuente: 'chat:canal-3d',
             projectId: activeProjectId,
             threadId: activeThreadId,
           });
-          nextAssets.push(saved);
-          uploadedAssets.push({
+          workingModels = [...workingModels, saved];
+          setModelos3d((prev) => prev.some((item) => item.id === saved.id) ? prev : [...prev, saved]);
+          setModelo3dActivoId((current) => current || saved.id);
+          asset = {
             id: saved.id,
             tipo: 'modelo3d',
             nombre: saved.nombre,
             url: saved.url,
             etiqueta: saved.etiqueta,
+          };
+        } else if (kind === 'documento') {
+          const savedItems = await uploadDocumentFilesToBodega({
+            session: currentSession,
+            files: [file],
+            existingItems: workingDocuments,
+            fuente: 'chat:documento',
+            projectId: activeProjectId,
+            threadId: activeThreadId,
           });
+          const saved = savedItems[0];
+          if (!saved) throw new Error(`No se pudo guardar ${file.name}.`);
+          workingDocuments = [...workingDocuments, saved];
+          setChatDocuments((prev) => prev.some((item) => item.id === saved.id) ? prev : [...prev, saved]);
+          asset = {
+            id: saved.id,
+            tipo: 'documento',
+            nombre: saved.nombre,
+            url: saved.url,
+            etiqueta: saved.etiqueta,
+          };
+        } else {
+          const savedItems = await uploadMediaFilesToBodega({
+            session: currentSession,
+            files: [file],
+            existingItems: workingMedia,
+            forcedTipo: kind,
+            fuente: `chat:canal-${kind}`,
+            projectId: activeProjectId,
+            threadId: activeThreadId,
+          });
+          const saved = savedItems[0];
+          if (!saved) throw new Error(`No se pudo guardar ${file.name}.`);
+          workingMedia = [...workingMedia, saved];
+          setGaleriaMultimedia((prev) => prev.some((item) => item.id === saved.id) ? prev : [...prev, saved]);
+          asset = {
+            id: saved.id,
+            tipo: saved.tipo as NaylaChannelKind,
+            nombre: saved.nombre,
+            url: saved.url,
+            etiqueta: saved.etiqueta,
+          };
         }
 
-        setModelos3d(nextAssets);
-        setModelo3dActivoId((current) => current || nextAssets[0]?.id || null);
-      } else {
-        const saved = await uploadMediaFilesToBodega({
-          session: currentSession,
-          files: Array.from(files),
-          existingItems: galeriaMultimedia,
-          forcedTipo: kind,
-          fuente: `chat:canal-${kind}`,
-          projectId: activeProjectId,
-          threadId: activeThreadId,
-        });
-
-        setGaleriaMultimedia((prev) => {
-          const currentIds = new Set(prev.map((item) => item.id));
-          return [...prev, ...saved.filter((item) => !currentIds.has(item.id))];
-        });
-
-        uploadedAssets = saved.map((item) => ({
-          id: item.id,
-          tipo: item.tipo as NaylaChannelKind,
-          nombre: item.nombre,
-          url: item.url,
-          etiqueta: item.etiqueta,
-        }));
+        if (asset) {
+          successCount += 1;
+          setChatAttachmentIds((prev) =>
+            prev.includes(asset!.id)
+              ? prev
+              : prev.length < CHAT_ATTACHMENT_LIMIT
+                ? [...prev, asset!.id]
+                : prev
+          );
+        }
+      } catch (error: any) {
+        failedCount += 1;
+        console.error('Error subiendo archivo al chat:', file.name, error);
+      } finally {
+        setChatUploadProgress((progress) => progress
+          ? {
+              ...progress,
+              done: Math.min(progress.total, progress.done + 1),
+              failed: failedCount,
+            }
+          : progress
+        );
       }
-
-      const uploadedIds = uploadedAssets.map((item) => item.id);
-      setChatAttachmentIds((prev) => Array.from(new Set([...prev, ...uploadedIds])));
-
-      if (uploadedIds.length) {
-        setProjectMenuOpen(false);
-        requestAnimationFrame(() => chatInputRef.current?.focus());
-      }
-    } catch (error: any) {
-      console.error('Error subiendo desde canal del chat:', error);
-      showAlert(error?.message || 'No se pudo subir el archivo.');
-    } finally {
-      setChannelUploadingKind(null);
     }
+
+    setChannelUploadingKind(null);
+    setChatUploadProgress(null);
+
+    if (successCount) {
+      requestAnimationFrame(() => chatInputRef.current?.focus());
+    }
+
+    if (failedCount) {
+      showAlert(
+        successCount
+          ? `${successCount} archivo${successCount === 1 ? '' : 's'} listo${successCount === 1 ? '' : 's'}; ${failedCount} no se pudo${failedCount === 1 ? '' : 'ieron'} subir.`
+          : 'No se pudo subir ninguno de los archivos seleccionados.'
+      );
+    }
+  };
+
+  const subirArchivosDesdeCanal = async (kind: NaylaChannelKind, files: FileList) => {
+    await uploadFilesIntoChat(files, kind);
   };
 
   const ejecutarRemoveVideoBackground = async (
@@ -2562,8 +2670,16 @@ export default function NaylaCore() {
 
   const sendNaylaMessage = async (messageOverride?: string) => {
     const message = (messageOverride ?? chatInput).trim();
-    if (!message) return;
-    const newMessages: NaylaChatMessage[] = [...chatMessages, { role: 'user', text: message }];
+    if (!message || chatUploadProgress) return;
+    const outgoingAttachments = [...chatAttachedAssets];
+    const newMessages: NaylaChatMessage[] = [
+      ...chatMessages,
+      {
+        role: 'user',
+        text: message,
+        attachments: outgoingAttachments.length ? outgoingAttachments : undefined,
+      },
+    ];
     chatAutoFollowRef.current = true;
     setChatMessages(newMessages);
     if (!messageOverride) {
@@ -2597,6 +2713,15 @@ export default function NaylaCore() {
              ...galeriaMultimedia.map(item => ({
                id: item.id,
                tipo: item.tipo,
+               url: item.url,
+               nombre: item.nombre,
+               etiqueta: item.etiqueta,
+               fuente: item.fuente,
+               metadata: item.metadata
+             })),
+             ...chatDocuments.map(item => ({
+               id: item.id,
+               tipo: 'documento',
                url: item.url,
                nombre: item.nombre,
                etiqueta: item.etiqueta,
@@ -3372,9 +3497,27 @@ export default function NaylaCore() {
         privacy: item.privacy || 'private'
       }));
 
+    const documents = galeriaData
+      .filter((item) => item.tipo === 'documento')
+      .map((item) => ({
+        id: item.id,
+        url: item.url,
+        tipo: 'documento' as const,
+        nombre: item.nombre,
+        creado_en: item.creado_en,
+        etiqueta: item.etiqueta || 'D',
+        fuente: item.fuente,
+        metadata: item.metadata || {},
+        r2_key: item.r2_key || null,
+        project_id: item.project_id || null,
+        thread_id: item.thread_id || null,
+        privacy: item.privacy || 'private',
+      }));
+
     setModelos3d(modelos);
     setModelo3dActivoId(modelos[0]?.id || null);
     setGaleriaMultimedia(galeria);
+    setChatDocuments(documents);
 
     const proyectoPayload = await proyectoResponse.json().catch(() => ({})) as {
       data?: { linea_de_tiempo?: any[] };
@@ -5547,6 +5690,7 @@ if (!session) {
               aria-label="Cerrar Nayla"
               onClick={() => {
                 setProjectMenuOpen(false);
+                setChatAttachMenuOpen(false);
                 setIsAiModalOpen(false);
               }}
               style={{
@@ -5702,7 +5846,7 @@ if (!session) {
                               color: '#d8d8d8',
                               fontSize: 22,
                             }}>
-                              {asset.tipo === 'audio' ? '♪' : '◇'}
+                              {asset.tipo === 'audio' ? '♪' : asset.tipo === 'documento' ? 'DOC' : '◇'}
                             </div>
                           )}
                           <div style={{ padding: '7px 8px', minWidth: 0 }}>
@@ -6022,15 +6166,44 @@ if (!session) {
             )}
           </div>
 
+          {chatUploadProgress && (
+            <div style={{
+              padding: '7px 12px',
+              borderTop: '1px solid #1f1f1f',
+              background: '#080808',
+              color: '#aaa',
+              fontSize: 11,
+              display: 'flex',
+              justifyContent: 'space-between',
+              gap: 10,
+            }}>
+              <span>Subiendo archivos…</span>
+              <span>{chatUploadProgress.done}/{chatUploadProgress.total}{chatUploadProgress.failed ? ` · ${chatUploadProgress.failed} error${chatUploadProgress.failed === 1 ? '' : 'es'}` : ''}</span>
+            </div>
+          )}
+
           {chatAttachedAssets.length > 0 && (
             <div style={{
-              display: 'flex',
-              gap: 8,
-              overflowX: 'auto',
-              padding: '9px 12px 7px',
               borderTop: '1px solid #1f1f1f',
               backgroundColor: '#080808',
             }}>
+              <div style={{
+                padding: '6px 12px 0',
+                color: '#777',
+                fontSize: 10,
+                display: 'flex',
+                justifyContent: 'space-between',
+                gap: 8,
+              }}>
+                <span>Adjuntos del próximo mensaje</span>
+                <span>{chatAttachedAssets.length}/{CHAT_ATTACHMENT_LIMIT}</span>
+              </div>
+              <div style={{
+                display: 'flex',
+                gap: 8,
+                overflowX: 'auto',
+                padding: '9px 12px 7px',
+              }}>
               {chatAttachedAssets.map((asset) => (
                 <div
                   key={asset.id}
@@ -6061,7 +6234,7 @@ if (!session) {
                     />
                   ) : (
                     <div style={{ width: '100%', height: '100%', borderRadius: 11, display: 'grid', placeItems: 'center', color: '#ddd', fontSize: 12 }}>
-                      {asset.tipo === 'audio' ? 'AUDIO' : '3D'}
+                      {asset.tipo === 'audio' ? 'AUDIO' : asset.tipo === 'documento' ? 'DOC' : '3D'}
                     </div>
                   )}
 
@@ -6105,10 +6278,23 @@ if (!session) {
                   </button>
                 </div>
               ))}
+              </div>
             </div>
           )}
 
           {/* Chat Input */}
+          <input
+            ref={chatDirectUploadRef}
+            type="file"
+            accept="image/*,video/*,audio/*,.pdf,.txt,.md,.markdown,.csv,.json,.rtf,.doc,.docx,application/pdf,text/*,application/json,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+            multiple
+            hidden
+            onChange={(event) => {
+              const files = Array.from(event.target.files || []);
+              event.currentTarget.value = '';
+              if (files.length) void uploadFilesIntoChat(files);
+            }}
+          />
           <div style={{
             padding: '12px 12px max(12px, env(safe-area-inset-bottom))',
             borderTop: '1px solid #1a1a1a',
@@ -6130,7 +6316,9 @@ if (!session) {
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && !e.shiftKey) {
                   e.preventDefault();
-                  void sendNaylaMessage();
+                  if (chatInput.trim() && !chatProcessing && !chatUploadProgress) {
+                    void sendNaylaMessage();
+                  }
                 }
               }}
               rows={isPhoneViewport ? 2 : 1}
@@ -6157,19 +6345,94 @@ if (!session) {
                 transition: 'height 90ms ease-out',
               }}
             />
+            {chatAttachMenuOpen && (
+              <>
+                <button
+                  type="button"
+                  aria-label="Cerrar menú de adjuntos"
+                  onClick={() => setChatAttachMenuOpen(false)}
+                  style={{
+                    position: 'fixed',
+                    inset: 0,
+                    zIndex: 19,
+                    border: 0,
+                    background: 'transparent',
+                    padding: 0,
+                  }}
+                />
+                <div style={{
+                  position: 'absolute',
+                  left: 12,
+                  bottom: 'calc(100% + 6px)',
+                  zIndex: 21,
+                  width: 'min(300px, calc(100vw - 24px))',
+                  padding: 7,
+                  borderRadius: 14,
+                  border: '1px solid #343434',
+                  background: '#0a0a0a',
+                  boxShadow: '0 16px 42px rgba(0,0,0,.72)',
+                  display: 'grid',
+                  gap: 6,
+                }}>
+                  <button
+                    type="button"
+                    disabled={Boolean(chatUploadProgress)}
+                    onClick={() => {
+                      setChatAttachMenuOpen(false);
+                      chatDirectUploadRef.current?.click();
+                    }}
+                    style={{
+                      minHeight: 44,
+                      border: '1px solid #343434',
+                      borderRadius: 10,
+                      background: '#f1f1f1',
+                      color: '#050505',
+                      textAlign: 'left',
+                      padding: '9px 11px',
+                      fontWeight: 800,
+                      cursor: chatUploadProgress ? 'wait' : 'pointer',
+                    }}
+                  >
+                    Subir fotos, videos, audios o documentos
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setChatAttachMenuOpen(false);
+                      setProjectMenuOpen(true);
+                    }}
+                    style={{
+                      minHeight: 42,
+                      border: '1px solid #303030',
+                      borderRadius: 10,
+                      background: '#111',
+                      color: '#eee',
+                      textAlign: 'left',
+                      padding: '9px 11px',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    Elegir archivos del proyecto
+                  </button>
+                </div>
+              </>
+            )}
             <button
               type="button"
-              aria-label="Abrir proyectos, archivos y opciones"
-              onClick={() => setProjectMenuOpen((value) => !value)}
+              aria-label="Adjuntar archivos"
+              onClick={() => {
+                setProjectMenuOpen(false);
+                setChatAttachMenuOpen((value) => !value);
+              }}
               style={{
                 width: 42,
                 height: 42,
                 flex: '0 0 42px',
                 alignSelf: 'flex-end',
                 borderRadius: '50%',
-                border: projectMenuOpen ? '1px solid #f1f1f1' : '1px solid #3a3a3a',
-                background: projectMenuOpen ? '#f1f1f1' : '#111',
-                color: projectMenuOpen ? '#050505' : '#f1f1f1',
+                border: chatAttachMenuOpen ? '1px solid #f1f1f1' : '1px solid #3a3a3a',
+                background: chatAttachMenuOpen ? '#f1f1f1' : '#111',
+                color: chatAttachMenuOpen ? '#050505' : '#f1f1f1',
                 display: 'grid',
                 placeItems: 'center',
                 cursor: 'pointer',
@@ -6183,17 +6446,17 @@ if (!session) {
             </button>
             <button
               onClick={() => void sendNaylaMessage()}
-              disabled={chatProcessing}
+              disabled={chatProcessing || Boolean(chatUploadProgress) || !chatInput.trim()}
               style={{
                 height: 46,
                 padding: '0 16px',
                 alignSelf: 'flex-end',
-                backgroundColor: chatProcessing ? '#333' : '#f2f2f2',
-                color: '#000',
+                backgroundColor: (chatProcessing || chatUploadProgress || !chatInput.trim()) ? '#333' : '#f2f2f2',
+                color: (chatProcessing || chatUploadProgress || !chatInput.trim()) ? '#888' : '#000',
                 border: 'none',
                 borderRadius: '10px',
                 fontWeight: 'bold',
-                cursor: chatProcessing ? 'not-allowed' : 'pointer',
+                cursor: (chatProcessing || chatUploadProgress || !chatInput.trim()) ? 'not-allowed' : 'pointer',
                 flexShrink: 0,
                 fontSize: '0.85rem'
               }}

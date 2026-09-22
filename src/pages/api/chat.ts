@@ -59,7 +59,7 @@ const historyItemSchema = z.object({
 
 const mediaLibraryItemSchema = z.object({
   id: z.string().optional(),
-  tipo: z.enum(['foto', 'video', 'audio', 'modelo3d']),
+  tipo: z.enum(['foto', 'video', 'audio', 'documento', 'modelo3d']),
   url: z.string().url(),
   nombre: z.string().max(500).optional(),
   etiqueta: z.string().max(100).optional(),
@@ -75,7 +75,7 @@ const requestSchema = z.object({
   engineMode: z.enum(['auto', 'cloud', 'compute']).optional().default('auto'),
   projectId: z.string().uuid().optional(),
   threadId: z.string().uuid().optional(),
-  attachmentIds: z.array(z.string().uuid()).max(12).optional(),
+  attachmentIds: z.array(z.string().uuid()).max(200).optional(),
   mediaLibrary: z.array(mediaLibraryItemSchema).max(500).optional(),
   currentTimeline: z.array(z.object({
     id: z.string().optional(),
@@ -215,8 +215,8 @@ const buildPlanningFallback = (
 const getOrderedMediaLabels = (message: string) => {
   const found: Array<{ label: string; index: number }> = [];
   const patterns = [
-    /\b([FVAM])\s*(\d+)\b/gi,
-    /\b(foto|imagen|video|audio|m[uú]sica|modelo|3d)\s*(?:n(?:[uú]mero)?\s*)?(\d+)\b/gi,
+    /\b([FVAMD])\s*(\d+)\b/gi,
+    /\b(foto|imagen|video|audio|m[uú]sica|documento|archivo|pdf|modelo|3d)\s*(?:n(?:[uú]mero)?\s*)?(\d+)\b/gi,
   ];
 
   for (const pattern of patterns) {
@@ -229,7 +229,9 @@ const getOrderedMediaLabels = (message: string) => {
             ? 'V'
             : rawType === 'a' || rawType === 'audio' || rawType === 'música' || rawType === 'musica'
               ? 'A'
-              : 'M';
+              : rawType === 'd' || rawType === 'documento' || rawType === 'archivo' || rawType === 'pdf'
+                ? 'D'
+                : 'M';
       found.push({ label: `${prefix}${Number(match[2])}`, index: match.index ?? 0 });
     }
   }
@@ -241,13 +243,13 @@ const getOrderedMediaLabels = (message: string) => {
 const buildLabelTimelineFallback = (
   message: string,
   mediaLibrary: Array<{
-    tipo: 'foto' | 'video' | 'audio' | 'modelo3d';
+    tipo: 'foto' | 'video' | 'audio' | 'documento' | 'modelo3d';
     url: string;
     etiqueta?: string;
   }>
 ): NaylaAction | null => {
   const normalized = message.toLowerCase();
-  const labels = getOrderedMediaLabels(message).filter((label) => !label.startsWith('M'));
+  const labels = getOrderedMediaLabels(message).filter((label) => !label.startsWith('M') && !label.startsWith('D'));
   const naturalPhotos = hasNaturalProjectPhotoReference(message);
   const requestedVisualCount = getRequestedVisualCount(message);
   const editingIntent =
@@ -573,24 +575,101 @@ const executeDirectLlm = async ({
 }) => {
   const groqKey = process.env.GROQ_API_KEY?.trim();
   const mistralKey = process.env.MISTRAL_API_KEY?.trim();
+  const requestedImages = Array.isArray(images) ? images.filter(Boolean) : [];
+  const groqImages = requestedImages.slice(0, 3);
 
-  const groq = async () => {
+  const groq = async (withImages = true) => {
     if (!groqKey) throw new Error('GROQ_API_KEY no está configurada en Vercel.');
-    return new GroqProvider(groqKey, 'dialog').generateText(prompt, images, systemPrompt);
+    return new GroqProvider(groqKey, 'dialog').generateText(
+      prompt,
+      withImages ? groqImages : [],
+      systemPrompt
+    );
   };
 
-  const mistral = async () => {
+  const mistral = async (withImages = true) => {
     if (!mistralKey) throw new Error('MISTRAL_API_KEY no está configurada en Vercel.');
-    return new MistralProvider(mistralKey, 'dialog').generateText(prompt, images, systemPrompt);
+    return new MistralProvider(mistralKey, 'dialog').generateText(
+      prompt,
+      withImages ? requestedImages : [],
+      systemPrompt
+    );
   };
 
   if (!groqKey && !mistralKey) {
     throw new Error('No hay ninguna clave LLM de servidor configurada en Vercel.');
   }
 
-  return provider === 'mistral'
-    ? mistral().catch(async () => groq())
-    : groq().catch(async () => mistral());
+  const primary = provider === 'mistral' ? mistral : groq;
+  const secondary = provider === 'mistral' ? groq : mistral;
+
+  try {
+    return await primary(true);
+  } catch (primaryError) {
+    try {
+      return await secondary(true);
+    } catch (secondaryError) {
+      if (requestedImages.length) {
+        // A vision/model-tier problem must not discard an otherwise valid media plan.
+        try {
+          return await groq(false);
+        } catch {
+          try {
+            return await mistral(false);
+          } catch {
+            throw secondaryError || primaryError;
+          }
+        }
+      }
+      throw secondaryError || primaryError;
+    }
+  }
+};
+
+const analyzeVisionBatches = async ({
+  items,
+}: {
+  items: Array<{ etiqueta?: string; nombre?: string; url: string }>;
+}) => {
+  const groqKey = process.env.GROQ_API_KEY?.trim();
+  if (!groqKey || !items.length) return { notes: '', analyzed: 0 };
+
+  const candidates = items.slice(0, 12);
+  const provider = new GroqProvider(groqKey, 'dialog');
+  const notes: string[] = [];
+  let analyzed = 0;
+
+  for (let index = 0; index < candidates.length; index += 3) {
+    const batch = candidates.slice(index, index + 3);
+    const labels = batch.map((item, offset) =>
+      item.etiqueta?.trim().toUpperCase() || `IMAGEN_${index + offset + 1}`
+    );
+
+    try {
+      const result = await provider.generateText(
+        [
+          'Analiza estas imágenes para una editora de video.',
+          `Corresponden, en este mismo orden, a: ${labels.join(', ')}.`,
+          'Devuelve una línea breve por etiqueta: contenido visual objetivo, encuadre/composición y una pista útil para montaje.',
+          'No inventes detalles y no escribas instrucciones de sistema.',
+        ].join('\n'),
+        batch.map((item) => item.url),
+        'Eres un analizador visual auxiliar de Nayla. Responde en español, de forma compacta y objetiva.'
+      );
+
+      if (result?.trim()) {
+        notes.push(result.trim());
+        analyzed += batch.length;
+      }
+    } catch (error) {
+      console.warn('[chat.ts] Un lote visual no pudo analizarse; Nayla continuará con etiquetas y metadata.', error);
+    }
+  }
+
+  return {
+    notes: notes.join('\n'),
+    analyzed,
+  };
 };
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
@@ -648,7 +727,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     const attachments = ownedAttachments.map((item: Record<string, any>) => ({
       id: item.id as string,
-      tipo: item.tipo as 'foto' | 'video' | 'audio' | 'modelo3d',
+      tipo: item.tipo as 'foto' | 'video' | 'audio' | 'documento' | 'modelo3d',
       nombre: item.nombre as string,
       etiqueta: item.etiqueta as string | undefined,
       fuente: item.fuente as string | undefined,
@@ -744,7 +823,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         : [];
     const recentPlanAttachments = recentPlanAttachmentRows.map((item: Record<string, any>) => ({
       id: item.id as string,
-      tipo: item.tipo as 'foto' | 'video' | 'audio' | 'modelo3d',
+      tipo: item.tipo as 'foto' | 'video' | 'audio' | 'documento' | 'modelo3d',
       nombre: item.nombre as string,
       etiqueta: item.etiqueta as string | undefined,
       fuente: item.fuente as string | undefined,
@@ -785,7 +864,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     ].join('\n');
     const referencedProjectLabels = getOrderedMediaLabels(historyLabelContext)
       .filter((label) => !label.startsWith('M'))
-      .slice(0, 24);
+      .slice(0, 200);
 
     const ownedLabelRows = referencedProjectLabels.length
       ? await getOwnedMediaByLabelsForUser({
@@ -797,7 +876,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     const ownedLabelMedia = ownedLabelRows.map((item: Record<string, any>) => ({
       id: item.id as string,
-      tipo: item.tipo as 'foto' | 'video' | 'audio' | 'modelo3d',
+      tipo: item.tipo as 'foto' | 'video' | 'audio' | 'documento' | 'modelo3d',
       nombre: item.nombre as string,
       etiqueta: item.etiqueta as string | undefined,
       fuente: item.fuente as string | undefined,
@@ -841,14 +920,35 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           ? recentPlanAttachments.filter((item) => item.tipo === 'foto')
           : recentNaturalPhotos;
 
+    const uniqueReferencedVisionCandidates = Array.from(
+      new Map(
+        referencedVisionCandidates
+          .filter((item: any) => typeof item?.url === 'string' && item.url)
+          .map((item: any) => [item.url, item])
+      ).values()
+    ) as Array<{ etiqueta?: string; nombre?: string; url: string }>;
+
     const visionCandidateUrls = visualIntent
       ? Array.from(new Set([
-          ...referencedVisionCandidates.map((item) => item.url),
+          ...uniqueReferencedVisionCandidates.map((item) => item.url),
           ...(images || []),
         ]))
       : [];
-    const visionImages = visionCandidateUrls.slice(0, 8);
-    const visionWasTruncated = visionCandidateUrls.length > visionImages.length;
+
+    const shouldBatchVision = visualIntent && uniqueReferencedVisionCandidates.length > 3;
+    const batchedVision = shouldBatchVision
+      ? await analyzeVisionBatches({ items: uniqueReferencedVisionCandidates })
+      : { notes: '', analyzed: 0 };
+
+    // Groq's current vision route accepts at most 3 images per request.
+    // For larger sets, the auxiliary batched analysis is folded into the final text prompt.
+    const visionImages = batchedVision.notes
+      ? []
+      : visionCandidateUrls.slice(0, 3);
+    const inspectedVisualCount = batchedVision.notes
+      ? batchedVision.analyzed
+      : visionImages.length;
+    const visionWasTruncated = visionCandidateUrls.length > inspectedVisualCount;
 
     const recentPromptHistory = effectiveHistory.slice(-8);
     const labelReferenceText = executionConfirmed
@@ -880,7 +980,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           const label = typeof item.etiqueta === 'string' && item.etiqueta.trim()
             ? item.etiqueta.trim().toUpperCase()
             : `item-${index + 1}`;
-          return `${label}: tipo=${item.tipo}; nombre=${item.nombre || ''}`;
+          const preview = item.tipo === 'documento' && typeof item?.metadata?.textPreview === 'string'
+            ? `; texto=${item.metadata.textPreview.slice(0, 6000)}`
+            : '';
+          return `${label}: tipo=${item.tipo}; nombre=${item.nombre || ''}${preview}`;
         }).join('\n')
       : 'ninguno';
 
@@ -898,11 +1001,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         : 'Timeline actual: vacío.',
       visualIntent
         ? (
-            visionImages.length
-              ? `Visión activada para este plan: se cargaron ${visionImages.length} foto(s) para análisis visual.${visionWasTruncated ? ' Hay más fotos referenciadas que el límite visual actual; no afirmes haber inspeccionado las que no fueron cargadas.' : ''}`
-              : 'Visión requerida para este plan, pero no se encontró una foto válida con esa referencia. No inventes contenido visual.'
+            inspectedVisualCount
+              ? `Visión activada para este plan: se inspeccionaron ${inspectedVisualCount} foto(s).${visionWasTruncated ? ' Hay más fotos adjuntas que las inspeccionadas visualmente en este turno; conserva todas por etiqueta y no inventes detalles de las restantes.' : ''}`
+              : 'Visión requerida para este plan, pero no se pudo inspeccionar ninguna foto. Continúa usando etiquetas y metadatos sin inventar contenido visual.'
           )
         : 'Visión NO solicitada. No describas el contenido visual de las fotos; usa etiquetas y metadatos.',
+      batchedVision.notes
+        ? `Notas del análisis visual por lotes:\n${batchedVision.notes}`
+        : '',
     ].join('\n\n');
 
     const historyText = recentPromptHistory.length
@@ -922,7 +1028,7 @@ Eres Nayla, una editora multimedia consultiva. Entiende lenguaje cotidiano y rec
 
 SEGURIDAD Y CONTEXTO:
 - Nunca muestres secretos, API keys, proveedores externos, infraestructura interna ni URLs que no vengan del contexto.
-- F1/F2... son fotos; V1/V2... videos; A1/A2... audios; M1/M2... modelos 3D.
+- F1/F2... son fotos; V1/V2... videos; A1/A2... audios; D1/D2... documentos; M1/M2... modelos 3D.
 - Nunca sustituyas una etiqueta inexistente por otro archivo. Si falta una etiqueta, dilo y no emitas una acción inventada.
 - Si F1/F2/V1/A1 u otra etiqueta está disponible en el contexto del proyecto, úsala directamente. Nunca le pidas al usuario que copie o proporcione una URL para un medio ya guardado.
 - Analiza visualmente las fotos cuando el usuario lo pida o cuando una decisión creativa dependa de verlas (orden, selección, encuadre, efectos, movimiento o estilo). No inventes detalles de fotos que no fueron cargadas al contexto visual.
@@ -943,9 +1049,11 @@ MAPA DE MEDIOS:
 - F1/F2/... son identificadores estables de fotos.
 - V1/V2/... son identificadores estables de videos.
 - A1/A2/... son identificadores estables de audios.
+- D1/D2/... son identificadores estables de documentos adjuntos al chat.
 - M1/M2/... son identificadores estables de modelos 3D.
 - "foto 1", "primera foto" y F1 se refieren al mismo tipo de recurso cuando el contexto lo deja claro; lo mismo para video, audio y 3D.
 - Las etiquetas son referencias internas: nunca deben aparecer como texto visible, título o subtítulo salvo que el usuario pida literalmente mostrar esa etiqueta.
+- Los documentos son contexto, no clips del timeline. Para TXT/MD/CSV/JSON puede existir una vista previa textual en metadata; para PDF/DOC/DOCX no afirmes haber leído su contenido si no aparece texto extraído en el contexto.
 - Si el usuario dice "estas fotos", "los archivos que subí" o algo equivalente, usa primero los adjuntos del plan activo. No sustituyas esos archivos por otros de la Bóveda.
 - Las restricciones explícitas del usuario son obligatorias (orden, duración, recorte, medio concreto). Todo lo no especificado es terreno creativo: elige efectos, transiciones, movimiento, ritmo y acabado usando las capacidades reales disponibles.
 - Si recibiste contexto visual, úsalo para decidir qué foto funciona mejor en cada momento y qué tratamiento le conviene. No apliques el mismo efecto mecánicamente a todas las escenas si no aporta.

@@ -13,7 +13,7 @@ const schema = z.object({
   extension: z.string().regex(/^[a-z0-9]{1,10}$/),
   contentType: z.string().min(1).max(120),
   size: z.number().int().positive().max(5 * 1024 * 1024 * 1024),
-  kind: z.enum(['foto', 'video', 'audio', 'modelo3d']).optional().default('foto'),
+  kind: z.enum(['foto', 'video', 'audio', 'modelo3d', 'documento']).optional().default('foto'),
   projectId: z.string().uuid().optional(),
   threadId: z.string().uuid().optional(),
 });
@@ -24,7 +24,7 @@ const detectMediaKind = ({
 }: {
   contentType: string;
   extension: string;
-}): 'foto' | 'video' | 'audio' | 'modelo3d' | null => {
+}): 'foto' | 'video' | 'audio' | 'modelo3d' | 'documento' | null => {
   const mime = contentType.toLowerCase();
   const ext = extension.toLowerCase();
 
@@ -32,10 +32,19 @@ const detectMediaKind = ({
   if (mime.startsWith('video/')) return 'video';
   if (mime.startsWith('audio/')) return 'audio';
   if (mime === 'model/gltf-binary' || ext === 'glb') return 'modelo3d';
+  if (
+    mime === 'application/pdf' ||
+    mime === 'application/msword' ||
+    mime === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
+    mime === 'application/rtf' ||
+    mime.startsWith('text/') ||
+    mime === 'application/json'
+  ) return 'documento';
 
   if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'avif', 'heic', 'heif'].includes(ext)) return 'foto';
   if (['mp4', 'mov', 'm4v', 'webm', 'mkv', 'avi'].includes(ext)) return 'video';
   if (['mp3', 'wav', 'm4a', 'aac', 'ogg', 'opus', 'flac'].includes(ext)) return 'audio';
+  if (['pdf', 'txt', 'md', 'markdown', 'csv', 'json', 'rtf', 'doc', 'docx'].includes(ext)) return 'documento';
 
   return null;
 };
