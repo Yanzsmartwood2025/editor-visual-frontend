@@ -54,6 +54,10 @@ create unique index if not exists nayla_pc_instances_one_active_per_user_uidx
 create index if not exists nayla_pc_instances_user_created_idx
   on public.nayla_pc_instances(user_id, created_at desc);
 
+create index if not exists nayla_pc_instances_profile_id_idx
+  on public.nayla_pc_instances(profile_id)
+  where profile_id is not null;
+
 create index if not exists nayla_pc_instances_expiry_idx
   on public.nayla_pc_instances(expires_at)
   where auto_destroy = true
