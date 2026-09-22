@@ -205,23 +205,45 @@ export default async function handler(
       providerInstanceId = provider.id;
     } catch (error) {
       const recovered = await findVultrInstanceByLabel(label).catch(() => null);
+      let recoveredCleanupOk = false;
+
       if (recovered?.id) {
         providerInstanceId = recovered.id;
-        await deleteVultrInstance(recovered.id).catch(() => undefined);
+        try {
+          await deleteVultrInstance(recovered.id);
+          recoveredCleanupOk = true;
+        } catch {
+          recoveredCleanupOk = false;
+        }
       }
 
       await patchNaylaPcInstance({
         instanceId: pending.id,
-        patch: {
-          status: 'error',
-          terminated_at: providerInstanceId ? new Date().toISOString() : null,
-          metadata: {
-            ...(pending.metadata || {}),
-            create_error:
-              error instanceof Error ? error.message.slice(0, 500) : 'unknown',
-            orphan_cleanup_attempted: Boolean(providerInstanceId),
-          },
-        },
+        patch: recovered?.id && !recoveredCleanupOk
+          ? {
+              provider_instance_id: recovered.id,
+              status: 'terminating',
+              auto_destroy: true,
+              expires_at: new Date().toISOString(),
+              metadata: {
+                ...(pending.metadata || {}),
+                create_error:
+                  error instanceof Error ? error.message.slice(0, 500) : 'unknown',
+                orphan_cleanup_attempted: true,
+                orphan_cleanup_pending: true,
+              },
+            }
+          : {
+              status: 'error',
+              terminated_at: recoveredCleanupOk ? new Date().toISOString() : null,
+              metadata: {
+                ...(pending.metadata || {}),
+                create_error:
+                  error instanceof Error ? error.message.slice(0, 500) : 'unknown',
+                orphan_cleanup_attempted: Boolean(recovered?.id),
+                orphan_cleanup_ok: recoveredCleanupOk,
+              },
+            },
       }).catch(() => undefined);
 
       throw error;
