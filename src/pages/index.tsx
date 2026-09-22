@@ -2667,8 +2667,16 @@ export default function NaylaCore() {
 
   const sendNaylaMessage = async (messageOverride?: string) => {
     const message = (messageOverride ?? chatInput).trim();
-    if (!message) return;
-    const newMessages: NaylaChatMessage[] = [...chatMessages, { role: 'user', text: message }];
+    if (!message || chatUploadProgress) return;
+    const outgoingAttachments = [...chatAttachedAssets];
+    const newMessages: NaylaChatMessage[] = [
+      ...chatMessages,
+      {
+        role: 'user',
+        text: message,
+        attachments: outgoingAttachments.length ? outgoingAttachments : undefined,
+      },
+    ];
     chatAutoFollowRef.current = true;
     setChatMessages(newMessages);
     if (!messageOverride) {
@@ -2702,6 +2710,15 @@ export default function NaylaCore() {
              ...galeriaMultimedia.map(item => ({
                id: item.id,
                tipo: item.tipo,
+               url: item.url,
+               nombre: item.nombre,
+               etiqueta: item.etiqueta,
+               fuente: item.fuente,
+               metadata: item.metadata
+             })),
+             ...chatDocuments.map(item => ({
+               id: item.id,
+               tipo: 'documento',
                url: item.url,
                nombre: item.nombre,
                etiqueta: item.etiqueta,
