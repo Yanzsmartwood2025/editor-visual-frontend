@@ -6181,13 +6181,26 @@ if (!session) {
 
           {chatAttachedAssets.length > 0 && (
             <div style={{
-              display: 'flex',
-              gap: 8,
-              overflowX: 'auto',
-              padding: '9px 12px 7px',
               borderTop: '1px solid #1f1f1f',
               backgroundColor: '#080808',
             }}>
+              <div style={{
+                padding: '6px 12px 0',
+                color: '#777',
+                fontSize: 10,
+                display: 'flex',
+                justifyContent: 'space-between',
+                gap: 8,
+              }}>
+                <span>Adjuntos del próximo mensaje</span>
+                <span>{chatAttachedAssets.length}/{CHAT_ATTACHMENT_LIMIT}</span>
+              </div>
+              <div style={{
+                display: 'flex',
+                gap: 8,
+                overflowX: 'auto',
+                padding: '9px 12px 7px',
+              }}>
               {chatAttachedAssets.map((asset) => (
                 <div
                   key={asset.id}
@@ -6262,6 +6275,7 @@ if (!session) {
                   </button>
                 </div>
               ))}
+              </div>
             </div>
           )}
 
