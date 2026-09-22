@@ -650,7 +650,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     const attachments = ownedAttachments.map((item: Record<string, any>) => ({
       id: item.id as string,
-      tipo: item.tipo as 'foto' | 'video' | 'audio' | 'modelo3d',
+      tipo: item.tipo as 'foto' | 'video' | 'audio' | 'documento' | 'modelo3d',
       nombre: item.nombre as string,
       etiqueta: item.etiqueta as string | undefined,
       fuente: item.fuente as string | undefined,
@@ -746,7 +746,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         : [];
     const recentPlanAttachments = recentPlanAttachmentRows.map((item: Record<string, any>) => ({
       id: item.id as string,
-      tipo: item.tipo as 'foto' | 'video' | 'audio' | 'modelo3d',
+      tipo: item.tipo as 'foto' | 'video' | 'audio' | 'documento' | 'modelo3d',
       nombre: item.nombre as string,
       etiqueta: item.etiqueta as string | undefined,
       fuente: item.fuente as string | undefined,
@@ -787,7 +787,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     ].join('\n');
     const referencedProjectLabels = getOrderedMediaLabels(historyLabelContext)
       .filter((label) => !label.startsWith('M'))
-      .slice(0, 24);
+      .slice(0, 200);
 
     const ownedLabelRows = referencedProjectLabels.length
       ? await getOwnedMediaByLabelsForUser({
@@ -799,7 +799,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     const ownedLabelMedia = ownedLabelRows.map((item: Record<string, any>) => ({
       id: item.id as string,
-      tipo: item.tipo as 'foto' | 'video' | 'audio' | 'modelo3d',
+      tipo: item.tipo as 'foto' | 'video' | 'audio' | 'documento' | 'modelo3d',
       nombre: item.nombre as string,
       etiqueta: item.etiqueta as string | undefined,
       fuente: item.fuente as string | undefined,
