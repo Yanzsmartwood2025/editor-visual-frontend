@@ -5687,6 +5687,7 @@ if (!session) {
               aria-label="Cerrar Nayla"
               onClick={() => {
                 setProjectMenuOpen(false);
+                setChatAttachMenuOpen(false);
                 setIsAiModalOpen(false);
               }}
               style={{
@@ -6162,6 +6163,22 @@ if (!session) {
             )}
           </div>
 
+          {chatUploadProgress && (
+            <div style={{
+              padding: '7px 12px',
+              borderTop: '1px solid #1f1f1f',
+              background: '#080808',
+              color: '#aaa',
+              fontSize: 11,
+              display: 'flex',
+              justifyContent: 'space-between',
+              gap: 10,
+            }}>
+              <span>Subiendo archivos…</span>
+              <span>{chatUploadProgress.done}/{chatUploadProgress.total}{chatUploadProgress.failed ? ` · ${chatUploadProgress.failed} error${chatUploadProgress.failed === 1 ? '' : 'es'}` : ''}</span>
+            </div>
+          )}
+
           {chatAttachedAssets.length > 0 && (
             <div style={{
               display: 'flex',
@@ -6201,7 +6218,7 @@ if (!session) {
                     />
                   ) : (
                     <div style={{ width: '100%', height: '100%', borderRadius: 11, display: 'grid', placeItems: 'center', color: '#ddd', fontSize: 12 }}>
-                      {asset.tipo === 'audio' ? 'AUDIO' : '3D'}
+                      {asset.tipo === 'audio' ? 'AUDIO' : asset.tipo === 'documento' ? 'DOC' : '3D'}
                     </div>
                   )}
 
@@ -6249,6 +6266,18 @@ if (!session) {
           )}
 
           {/* Chat Input */}
+          <input
+            ref={chatDirectUploadRef}
+            type="file"
+            accept="image/*,video/*,audio/*,.pdf,.txt,.md,.markdown,.csv,.json,.rtf,.doc,.docx,application/pdf,text/*,application/json,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+            multiple
+            hidden
+            onChange={(event) => {
+              const files = Array.from(event.target.files || []);
+              event.currentTarget.value = '';
+              if (files.length) void uploadFilesIntoChat(files);
+            }}
+          />
           <div style={{
             padding: '12px 12px max(12px, env(safe-area-inset-bottom))',
             borderTop: '1px solid #1a1a1a',
@@ -6270,7 +6299,9 @@ if (!session) {
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && !e.shiftKey) {
                   e.preventDefault();
-                  void sendNaylaMessage();
+                  if (chatInput.trim() && !chatProcessing && !chatUploadProgress) {
+                    void sendNaylaMessage();
+                  }
                 }
               }}
               rows={isPhoneViewport ? 2 : 1}
@@ -6297,19 +6328,94 @@ if (!session) {
                 transition: 'height 90ms ease-out',
               }}
             />
+            {chatAttachMenuOpen && (
+              <>
+                <button
+                  type="button"
+                  aria-label="Cerrar menú de adjuntos"
+                  onClick={() => setChatAttachMenuOpen(false)}
+                  style={{
+                    position: 'fixed',
+                    inset: 0,
+                    zIndex: 19,
+                    border: 0,
+                    background: 'transparent',
+                    padding: 0,
+                  }}
+                />
+                <div style={{
+                  position: 'absolute',
+                  left: 12,
+                  bottom: 'calc(100% + 6px)',
+                  zIndex: 21,
+                  width: 'min(300px, calc(100vw - 24px))',
+                  padding: 7,
+                  borderRadius: 14,
+                  border: '1px solid #343434',
+                  background: '#0a0a0a',
+                  boxShadow: '0 16px 42px rgba(0,0,0,.72)',
+                  display: 'grid',
+                  gap: 6,
+                }}>
+                  <button
+                    type="button"
+                    disabled={Boolean(chatUploadProgress)}
+                    onClick={() => {
+                      setChatAttachMenuOpen(false);
+                      chatDirectUploadRef.current?.click();
+                    }}
+                    style={{
+                      minHeight: 44,
+                      border: '1px solid #343434',
+                      borderRadius: 10,
+                      background: '#f1f1f1',
+                      color: '#050505',
+                      textAlign: 'left',
+                      padding: '9px 11px',
+                      fontWeight: 800,
+                      cursor: chatUploadProgress ? 'wait' : 'pointer',
+                    }}
+                  >
+                    Subir fotos, videos, audios o documentos
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setChatAttachMenuOpen(false);
+                      setProjectMenuOpen(true);
+                    }}
+                    style={{
+                      minHeight: 42,
+                      border: '1px solid #303030',
+                      borderRadius: 10,
+                      background: '#111',
+                      color: '#eee',
+                      textAlign: 'left',
+                      padding: '9px 11px',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    Elegir archivos del proyecto
+                  </button>
+                </div>
+              </>
+            )}
             <button
               type="button"
-              aria-label="Abrir proyectos, archivos y opciones"
-              onClick={() => setProjectMenuOpen((value) => !value)}
+              aria-label="Adjuntar archivos"
+              onClick={() => {
+                setProjectMenuOpen(false);
+                setChatAttachMenuOpen((value) => !value);
+              }}
               style={{
                 width: 42,
                 height: 42,
                 flex: '0 0 42px',
                 alignSelf: 'flex-end',
                 borderRadius: '50%',
-                border: projectMenuOpen ? '1px solid #f1f1f1' : '1px solid #3a3a3a',
-                background: projectMenuOpen ? '#f1f1f1' : '#111',
-                color: projectMenuOpen ? '#050505' : '#f1f1f1',
+                border: chatAttachMenuOpen ? '1px solid #f1f1f1' : '1px solid #3a3a3a',
+                background: chatAttachMenuOpen ? '#f1f1f1' : '#111',
+                color: chatAttachMenuOpen ? '#050505' : '#f1f1f1',
                 display: 'grid',
                 placeItems: 'center',
                 cursor: 'pointer',
@@ -6323,17 +6429,17 @@ if (!session) {
             </button>
             <button
               onClick={() => void sendNaylaMessage()}
-              disabled={chatProcessing}
+              disabled={chatProcessing || Boolean(chatUploadProgress) || !chatInput.trim()}
               style={{
                 height: 46,
                 padding: '0 16px',
                 alignSelf: 'flex-end',
-                backgroundColor: chatProcessing ? '#333' : '#f2f2f2',
-                color: '#000',
+                backgroundColor: (chatProcessing || chatUploadProgress || !chatInput.trim()) ? '#333' : '#f2f2f2',
+                color: (chatProcessing || chatUploadProgress || !chatInput.trim()) ? '#888' : '#000',
                 border: 'none',
                 borderRadius: '10px',
                 fontWeight: 'bold',
-                cursor: chatProcessing ? 'not-allowed' : 'pointer',
+                cursor: (chatProcessing || chatUploadProgress || !chatInput.trim()) ? 'not-allowed' : 'pointer',
                 flexShrink: 0,
                 fontSize: '0.85rem'
               }}
