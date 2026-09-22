@@ -106,6 +106,52 @@ export const listZernioAccounts = async (profileId?: string | null): Promise<Nor
     .filter((account: NormalizedSocialAccount) => Boolean(account.providerAccountId));
 };
 
+export const publishZernioMedia = async ({
+  mediaUrl,
+  mediaType,
+  caption,
+  title,
+  accounts,
+  idempotencyKey,
+}: {
+  mediaUrl: string;
+  mediaType: 'video' | 'image';
+  caption: string;
+  title: string;
+  accounts: { platform: SocialPlatform; accountId: string }[];
+  idempotencyKey: string;
+}) => {
+  return request('/posts', {
+    method: 'POST',
+    headers: { 'x-request-id': idempotencyKey },
+    body: JSON.stringify({
+      content: caption || title || '',
+      title: title || undefined,
+      mediaItems: [{ type: mediaType, url: mediaUrl }],
+      platforms: accounts.map(({ platform, accountId }) => ({
+        platform: getSocialNetwork(platform)?.zernio || platform,
+        accountId,
+        ...(platform === 'youtube' && mediaType === 'video'
+          ? { platformSpecificData: { title: (title || 'Nayla').slice(0, 100), visibility: 'public' } }
+          : {}),
+      })),
+      ...(accounts.some((account) => account.platform === 'tiktok')
+        ? {
+            tiktokSettings: {
+              privacy_level: 'PUBLIC_TO_EVERYONE',
+              allow_comment: true,
+              allow_duet: mediaType === 'video',
+              allow_stitch: mediaType === 'video',
+              content_preview_confirmed: true,
+              express_consent_given: true,
+            },
+          }
+        : {}),
+      publishNow: true,
+    }),
+  });
+};
+
 export const publishZernioVideo = async ({
   videoUrl,
   caption,
@@ -118,25 +164,14 @@ export const publishZernioVideo = async ({
   title: string;
   accounts: { platform: SocialPlatform; accountId: string }[];
   idempotencyKey: string;
-}) => {
-  return request('/posts', {
-    method: 'POST',
-    headers: { 'x-request-id': idempotencyKey },
-    body: JSON.stringify({
-      content: caption || title || '',
-      title: title || undefined,
-      mediaItems: [{ type: 'video', url: videoUrl }],
-      platforms: accounts.map(({ platform, accountId }) => ({
-        platform: getSocialNetwork(platform)?.zernio || platform,
-        accountId,
-        ...(platform === 'youtube'
-          ? { platformSpecificData: { title: (title || 'Nayla').slice(0, 100), visibility: 'public' } }
-          : {}),
-      })),
-      publishNow: true,
-    }),
-  });
-};
+}) => publishZernioMedia({
+  mediaUrl: videoUrl,
+  mediaType: 'video',
+  caption,
+  title,
+  accounts,
+  idempotencyKey,
+});
 
 export const getZernioAnalytics = async ({
   profileId,
