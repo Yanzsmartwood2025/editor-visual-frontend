@@ -249,6 +249,17 @@ export const finalizePendingNaylaPcSnapshots = async () => {
               },
             },
           });
+          if (row.source_instance_id) {
+            await patchNaylaPcInstance({
+              instanceId: row.source_instance_id,
+              patch: {
+                status: 'running',
+                metadata: {
+                  save_error: 'snapshot_missing',
+                },
+              },
+            }).catch(() => undefined);
+          }
           return { id: row.id, ok: false as const, error: 'snapshot_missing' };
         }
 
@@ -288,7 +299,33 @@ export const finalizePendingNaylaPcSnapshots = async () => {
         }
 
         const sizeBytes = Number(provider.size);
-        const updated = await patchNaylaPcSnapshot({
+
+        if (row.source_instance_id) {
+          const sourceProviderInstanceId =
+            typeof row.metadata?.source_provider_instance_id === 'string'
+              ? String(row.metadata.source_provider_instance_id)
+              : '';
+
+          if (sourceProviderInstanceId) {
+            await deleteVultrInstance(sourceProviderInstanceId);
+          }
+
+          await patchNaylaPcInstance({
+            instanceId: row.source_instance_id,
+            patch: {
+              status: 'terminated',
+              main_ip: null,
+              terminated_at: new Date().toISOString(),
+              last_synced_at: new Date().toISOString(),
+              metadata: {
+                save_snapshot_id: row.id,
+                save_completed_at: new Date().toISOString(),
+              },
+            },
+          });
+        }
+
+        await patchNaylaPcSnapshot({
           snapshotId: row.id,
           patch: {
             status: 'available',
@@ -303,31 +340,6 @@ export const finalizePendingNaylaPcSnapshots = async () => {
             },
           },
         });
-
-        if (row.source_instance_id) {
-          const sourceInstanceId =
-            typeof row.metadata?.source_provider_instance_id === 'string'
-              ? String(row.metadata.source_provider_instance_id)
-              : '';
-
-          if (sourceInstanceId) {
-            await deleteVultrInstance(sourceInstanceId);
-          }
-
-          await patchNaylaPcInstance({
-            instanceId: row.source_instance_id,
-            patch: {
-              status: 'terminated',
-              main_ip: null,
-              terminated_at: new Date().toISOString(),
-              last_synced_at: new Date().toISOString(),
-              metadata: {
-                save_snapshot_id: updated.id,
-                save_completed_at: new Date().toISOString(),
-              },
-            },
-          });
-        }
 
         return { id: row.id, ok: true as const, action: 'saved' as const };
       } catch (error) {
