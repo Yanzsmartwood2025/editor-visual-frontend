@@ -36,6 +36,7 @@ beforeEach(() => {
     { id: 'ewr', city: 'New Jersey', country: 'US' },
   ] as any);
   vi.mocked(listVultrOperatingSystems).mockResolvedValue([
+    { id: 3, name: 'Ubuntu 26.04 LTS x64', family: 'ubuntu', arch: 'x64' },
     { id: 1, name: 'Ubuntu 24.04 x64', family: 'ubuntu', arch: 'x64' },
     { id: 2, name: 'Windows Server 2025 x64', family: 'windows', arch: 'x64' },
   ] as any);
@@ -157,7 +158,7 @@ describe('Nayla PC quote', () => {
 
     expect(resolved.plan.id).toBe('cpu-private-plan');
     expect(resolved.region.id).toBe('ewr');
-    expect(resolved.os.name).toContain('Ubuntu');
+    expect(resolved.os.name).toContain('Ubuntu 26.04');
     expect(resolved.card.id).toBe(quote.cards[0].id);
     expect(JSON.stringify(quote)).not.toContain('cpu-private-plan');
   });

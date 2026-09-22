@@ -209,6 +209,7 @@ const chooseOperatingSystem = (
 
   if (family === 'linux') {
     return (
+      pool.find((os) => /ubuntu.*26\.04/i.test(String(os.name || ''))) ||
       pool.find((os) => /ubuntu.*24\.04/i.test(String(os.name || ''))) ||
       pool.find((os) => /ubuntu.*22\.04/i.test(String(os.name || ''))) ||
       pool.find((os) => /ubuntu/i.test(String(os.name || ''))) ||

@@ -1,16 +1,24 @@
 import {
+  createVultrSnapshot,
   deleteVultrInstance,
+  deleteVultrSnapshot,
   getVultrInstance,
+  getVultrSnapshot,
   haltVultrInstance,
   rebootVultrInstance,
   startVultrInstance,
   type VultrInstance,
 } from '../gpu/vultrApi';
 import {
+  createNaylaPcSnapshotRow,
   listExpiredNaylaPcInstances,
+  listOlderAvailableNaylaPcSnapshots,
+  listPendingNaylaPcSnapshots,
   patchNaylaPcInstance,
+  patchNaylaPcSnapshot,
   type NaylaPcInstanceRow,
   type NaylaPcInstanceStatus,
+  type NaylaPcSnapshotRow,
 } from './store';
 
 const providerStatus = (
@@ -20,7 +28,7 @@ const providerStatus = (
   const power = String(provider.power_status || '').toLowerCase();
   const status = String(provider.status || '').toLowerCase();
 
-  if (current === 'terminating') return 'terminating';
+  if (current === 'terminating' || current === 'snapshotting') return current;
   if (power === 'stopped' || power === 'off') return 'stopped';
   if (power === 'running') return 'running';
   if (status === 'active') return 'running';
@@ -42,6 +50,22 @@ export const toPublicNaylaPcInstance = (row: NaylaPcInstanceRow) => ({
   autoDestroy: row.auto_destroy,
   status: row.status,
   mainIp: row.main_ip || undefined,
+  desktop:
+    row.main_ip && row.metadata?.desktop_enabled === true
+      ? {
+          url:
+            'https://' +
+            row.main_ip +
+            ':' +
+            String(row.metadata?.desktop_port || 6080) +
+            '/vnc.html?autoconnect=1&resize=scale',
+          password:
+            typeof row.metadata?.desktop_password === 'string'
+              ? String(row.metadata.desktop_password)
+              : undefined,
+          tls: row.metadata?.desktop_tls || 'self_signed',
+        }
+      : undefined,
   hourlyPrice: Number(row.public_hourly_price),
   monthlyPrice: Number(row.public_monthly_price),
   sessionPrice: Number(row.public_session_price),
@@ -49,6 +73,24 @@ export const toPublicNaylaPcInstance = (row: NaylaPcInstanceRow) => ({
   createdAt: row.created_at,
   updatedAt: row.updated_at,
   terminatedAt: row.terminated_at,
+});
+
+export const toPublicNaylaPcSnapshot = (row: NaylaPcSnapshotRow) => ({
+  id: row.id,
+  status: row.status,
+  osFamily: row.os_family,
+  osName: row.os_name || undefined,
+  cpu: Number(row.cpu),
+  ramGb: Number(row.ram_gb),
+  diskGb: Number(row.disk_gb),
+  gpuEnabled: row.gpu_enabled,
+  gpuName: row.gpu_name || undefined,
+  gpuVramGb: row.gpu_vram_gb == null ? undefined : Number(row.gpu_vram_gb),
+  sizeBytes: row.size_bytes == null ? undefined : Number(row.size_bytes),
+  storageMonthlyUsd:
+    row.storage_monthly_usd == null ? undefined : Number(row.storage_monthly_usd),
+  createdAt: row.created_at,
+  readyAt: row.ready_at,
 });
 
 export const syncNaylaPcInstance = async (
@@ -126,6 +168,248 @@ export const terminateNaylaPcInstance = async ({
   return current;
 };
 
+export const saveAndDestroyNaylaPcInstance = async ({
+  row,
+}: {
+  row: NaylaPcInstanceRow;
+}): Promise<{ instance: NaylaPcInstanceRow; snapshot: NaylaPcSnapshotRow }> => {
+  if (!row.provider_instance_id) {
+    throw new Error('La PC todavía no tiene una instancia real para guardar.');
+  }
+  if (row.status === 'snapshotting') {
+    throw new Error('La PC ya se está guardando.');
+  }
+
+  const description = 'nayla-pc-' + row.user_id.slice(0, 18) + '-' + Date.now();
+  const providerSnapshot = await createVultrSnapshot({
+    instanceId: row.provider_instance_id,
+    description,
+  });
+
+  let snapshot: NaylaPcSnapshotRow;
+  try {
+    snapshot = await createNaylaPcSnapshotRow({
+      userId: row.user_id,
+      sourceInstanceId: row.id,
+      providerSnapshotId: providerSnapshot.id,
+      description,
+      osFamily: row.os_family,
+      osName:
+        typeof row.metadata?.os_name === 'string'
+          ? String(row.metadata.os_name)
+          : null,
+      cpu: row.cpu,
+      ramGb: row.ram_gb,
+      diskGb: row.disk_gb,
+      gpuEnabled: row.gpu_enabled,
+      gpuName: row.gpu_name,
+      gpuVramGb: row.gpu_vram_gb,
+      providerPlanId: row.provider_plan_id,
+      providerRegionId: row.provider_region_id,
+      providerOsId: row.provider_os_id,
+      metadata: {
+        source_provider_instance_id: row.provider_instance_id,
+        desktop_password:
+          typeof row.metadata?.desktop_password === 'string'
+            ? String(row.metadata.desktop_password)
+            : null,
+        desktop_enabled: row.metadata?.desktop_enabled === true,
+        desktop_port: row.metadata?.desktop_port || 6080,
+        desktop_tls: row.metadata?.desktop_tls || 'self_signed',
+      },
+    });
+  } catch (error) {
+    await deleteVultrSnapshot(providerSnapshot.id).catch(() => undefined);
+    throw error;
+  }
+
+  const instance = await patchNaylaPcInstance({
+    instanceId: row.id,
+    patch: {
+      status: 'snapshotting',
+      metadata: {
+        ...(row.metadata || {}),
+        save_snapshot_id: snapshot.id,
+        save_started_at: new Date().toISOString(),
+      },
+    },
+  });
+
+  return { instance, snapshot };
+};
+
+const snapshotStorageMonthlyUsd = (sizeBytes: number) =>
+  Math.ceil(((Math.max(0, sizeBytes) / 1024 ** 3) * 0.05) * 10000) / 10000;
+
+export const finalizePendingNaylaPcSnapshots = async () => {
+  const pending = await listPendingNaylaPcSnapshots(5);
+
+  const results = await Promise.all(
+    pending.map(async (row) => {
+      try {
+        if (row.status === 'deleting') {
+          await deleteVultrSnapshot(row.provider_snapshot_id);
+          await patchNaylaPcSnapshot({
+            snapshotId: row.id,
+            patch: {
+              status: 'deleted',
+              deleted_at: new Date().toISOString(),
+            },
+          });
+          return { id: row.id, ok: true as const, action: 'deleted' as const };
+        }
+
+        const provider = await getVultrSnapshot(row.provider_snapshot_id);
+        if (!provider) {
+          await patchNaylaPcSnapshot({
+            snapshotId: row.id,
+            patch: {
+              status: 'error',
+              metadata: {
+                ...(row.metadata || {}),
+                provider_missing: true,
+              },
+            },
+          });
+          if (row.source_instance_id) {
+            await patchNaylaPcInstance({
+              instanceId: row.source_instance_id,
+              patch: {
+                status: 'running',
+                metadata: {
+                  save_error: 'snapshot_missing',
+                },
+              },
+            }).catch(() => undefined);
+          }
+          return { id: row.id, ok: false as const, error: 'snapshot_missing' };
+        }
+
+        const status = String(provider.status || '').toLowerCase();
+        const ready = ['complete', 'available', 'active'].includes(status);
+        const failed = ['error', 'failed'].includes(status);
+
+        if (failed) {
+          await patchNaylaPcSnapshot({
+            snapshotId: row.id,
+            patch: {
+              status: 'error',
+              metadata: {
+                ...(row.metadata || {}),
+                provider_status: provider.status || null,
+              },
+            },
+          });
+
+          if (row.source_instance_id) {
+            await patchNaylaPcInstance({
+              instanceId: row.source_instance_id,
+              patch: {
+                status: 'running',
+                metadata: {
+                  save_error: 'snapshot_failed',
+                },
+              },
+            }).catch(() => undefined);
+          }
+
+          return { id: row.id, ok: false as const, error: 'snapshot_failed' };
+        }
+
+        if (!ready) {
+          return { id: row.id, ok: true as const, action: 'waiting' as const };
+        }
+
+        const sizeBytes = Number(provider.size);
+
+        if (row.source_instance_id) {
+          const sourceProviderInstanceId =
+            typeof row.metadata?.source_provider_instance_id === 'string'
+              ? String(row.metadata.source_provider_instance_id)
+              : '';
+
+          if (sourceProviderInstanceId) {
+            await deleteVultrInstance(sourceProviderInstanceId);
+          }
+
+          await patchNaylaPcInstance({
+            instanceId: row.source_instance_id,
+            patch: {
+              status: 'terminated',
+              main_ip: null,
+              terminated_at: new Date().toISOString(),
+              last_synced_at: new Date().toISOString(),
+              metadata: {
+                save_snapshot_id: row.id,
+                save_completed_at: new Date().toISOString(),
+              },
+            },
+          });
+        }
+
+        await patchNaylaPcSnapshot({
+          snapshotId: row.id,
+          patch: {
+            status: 'available',
+            size_bytes: Number.isFinite(sizeBytes) ? sizeBytes : null,
+            storage_monthly_usd: Number.isFinite(sizeBytes)
+              ? snapshotStorageMonthlyUsd(sizeBytes)
+              : null,
+            ready_at: new Date().toISOString(),
+            metadata: {
+              ...(row.metadata || {}),
+              provider_status: provider.status || null,
+            },
+          },
+        });
+
+        const older = await listOlderAvailableNaylaPcSnapshots({
+          userId: row.user_id,
+          excludeId: row.id,
+        });
+
+        await Promise.all(
+          older.map(async (old) => {
+            await patchNaylaPcSnapshot({
+              snapshotId: old.id,
+              patch: { status: 'deleting' },
+            });
+            try {
+              await deleteVultrSnapshot(old.provider_snapshot_id);
+              await patchNaylaPcSnapshot({
+                snapshotId: old.id,
+                patch: {
+                  status: 'deleted',
+                  deleted_at: new Date().toISOString(),
+                },
+              });
+            } catch {
+              // The next sweeper pass will retry rows left as deleting.
+            }
+          })
+        );
+
+        return { id: row.id, ok: true as const, action: 'saved' as const };
+      } catch (error) {
+        return {
+          id: row.id,
+          ok: false as const,
+          error: error instanceof Error ? error.message.slice(0, 300) : 'unknown',
+        };
+      }
+    })
+  );
+
+  return {
+    checked: pending.length,
+    saved: results.filter((result) => result.ok && result.action === 'saved').length,
+    deleted: results.filter((result) => result.ok && result.action === 'deleted').length,
+    waiting: results.filter((result) => result.ok && result.action === 'waiting').length,
+    failed: results.filter((result) => !result.ok).length,
+    results,
+  };
+};
+
 export const applyNaylaPcAction = async ({
   row,
   action,
@@ -139,6 +423,10 @@ export const applyNaylaPcAction = async ({
 
   if (!row.provider_instance_id) {
     throw new Error('La PC todavía no tiene una instancia de cómputo asignada.');
+  }
+
+  if (row.status === 'snapshotting') {
+    throw new Error('Espera a que termine de guardarse la PC.');
   }
 
   if (action === 'start') {

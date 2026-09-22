@@ -1,9 +1,11 @@
+import { randomBytes } from 'node:crypto';
 import type { NextApiRequest, NextApiResponse } from 'next';
 import {
   isFirebaseAdmin,
   requireFirebaseUser,
 } from '../../../../lib/firebaseAdmin';
 import {
+  buildNaylaPcDesktopUserData,
   createVultrInstance,
   deleteVultrInstance,
   findVultrInstanceByLabel,
@@ -179,6 +181,12 @@ export default async function handler(
     }
 
     const profile = await getDefaultNaylaPcProfile(user.uid);
+    const desktopPassword = randomBytes(6)
+      .toString('base64url')
+      .replace(/[^A-Za-z0-9]/g, '')
+      .slice(0, 8)
+      .padEnd(8, '7');
+    const desktopUserData = buildNaylaPcDesktopUserData({ desktopPassword });
     const autoDestroy = resolved.request.billingMode === 'hourly';
     const expiresAt = autoDestroy
       ? new Date(
@@ -212,6 +220,10 @@ export default async function handler(
       metadata: {
         os_name: resolved.os.name || null,
         quote_confirmed_at: new Date().toISOString(),
+        desktop_enabled: true,
+        desktop_password: desktopPassword,
+        desktop_port: 6080,
+        desktop_tls: 'self_signed',
       },
     });
 
@@ -225,6 +237,7 @@ export default async function handler(
         regionId: resolved.region.id,
         osId: Number(resolved.os.id),
         label,
+        userData: desktopUserData,
       });
       providerInstanceId = provider.id;
     } catch (error) {

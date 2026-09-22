@@ -65,10 +65,16 @@ type PcInstance = {
     | 'running'
     | 'stopped'
     | 'rebooting'
+    | 'snapshotting'
     | 'terminating'
     | 'terminated'
     | 'error';
   mainIp?: string;
+  desktop?: {
+    url: string;
+    password?: string;
+    tls?: string;
+  };
   hourlyPrice: number;
   monthlyPrice: number;
   sessionPrice: number;
@@ -76,6 +82,34 @@ type PcInstance = {
   createdAt: string;
   updatedAt: string;
   terminatedAt?: string | null;
+};
+
+type PcSnapshot = {
+  id: string;
+  status: 'pending' | 'available' | 'restoring' | 'deleting' | 'deleted' | 'error';
+  osFamily: 'linux' | 'windows';
+  osName?: string;
+  cpu: number;
+  ramGb: number;
+  diskGb: number;
+  gpuEnabled: boolean;
+  gpuName?: string;
+  gpuVramGb?: number;
+  sizeBytes?: number;
+  storageMonthlyUsd?: number;
+  createdAt: string;
+  readyAt?: string | null;
+};
+
+type PcResumeQuote = {
+  cpu: number;
+  ramGb: number;
+  diskGb: number;
+  hourlyPrice: number;
+  monthlyPrice: number;
+  sessionPrice: number;
+  billingMode: 'hourly' | 'monthly';
+  durationHours: number;
 };
 
 const DEFAULT_CONFIG: PcConfig = {
@@ -111,6 +145,7 @@ const statusLabel = (status: PcInstance['status']) => {
     running: 'ENCENDIDA',
     stopped: 'APAGADA',
     rebooting: 'REINICIANDO',
+    snapshotting: 'GUARDANDO',
     terminating: 'ELIMINANDO',
     terminated: 'ELIMINADA',
     error: 'ERROR',
@@ -169,6 +204,8 @@ export default function NaylaPc({
   const [quote, setQuote] = useState<PcQuote | null>(null);
   const [selectedId, setSelectedId] = useState('');
   const [activeInstance, setActiveInstance] = useState<PcInstance | null>(null);
+  const [savedSnapshot, setSavedSnapshot] = useState<PcSnapshot | null>(null);
+  const [resumeQuote, setResumeQuote] = useState<PcResumeQuote | null>(null);
   const [provisioningAllowed, setProvisioningAllowed] = useState(false);
   const [loading, setLoading] = useState(false);
   const [instanceLoading, setInstanceLoading] = useState(false);
@@ -177,7 +214,10 @@ export default function NaylaPc({
   const [actionLoading, setActionLoading] = useState('');
   const [saved, setSaved] = useState(false);
   const [confirmCreate, setConfirmCreate] = useState(false);
+  const [confirmSaveDestroy, setConfirmSaveDestroy] = useState(false);
   const [confirmDestroy, setConfirmDestroy] = useState(false);
+  const [confirmResume, setConfirmResume] = useState(false);
+  const [confirmDeleteSnapshot, setConfirmDeleteSnapshot] = useState(false);
   const [error, setError] = useState('');
   const hydrated = useRef(false);
 
@@ -217,6 +257,26 @@ export default function NaylaPc({
     }
   }, [session]);
 
+  const loadSavedSnapshot = useCallback(async () => {
+    if (!session) return;
+    try {
+      const response = await fetch('/api/pc/snapshots', {
+        headers: firebaseHeaders(session),
+        cache: 'no-store',
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || payload.error) {
+        throw new Error(payload.error || 'No se pudo consultar la PC guardada.');
+      }
+      setSavedSnapshot(payload.snapshot || null);
+      if (typeof payload.provisioningAllowed === 'boolean') {
+        setProvisioningAllowed(payload.provisioningAllowed === true);
+      }
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'No se pudo consultar la PC guardada.');
+    }
+  }, [session]);
+
   const loadActiveInstance = useCallback(async () => {
     if (!session) return;
     setInstanceLoading(true);
@@ -245,6 +305,7 @@ export default function NaylaPc({
     void (async () => {
       await Promise.all([
         loadActiveInstance(),
+        loadSavedSnapshot(),
         (async () => {
           try {
             const response = await fetch('/api/pc/config', {
@@ -272,7 +333,7 @@ export default function NaylaPc({
         })(),
       ]);
     })();
-  }, [loadActiveInstance, session]);
+  }, [loadActiveInstance, loadSavedSnapshot, session]);
 
   useEffect(() => {
     if (!session) return;
@@ -282,6 +343,14 @@ export default function NaylaPc({
     }, 420);
     return () => window.clearTimeout(timer);
   }, [config, requestQuote, session]);
+
+  useEffect(() => {
+    if (!session || !savedSnapshot || savedSnapshot.status !== 'pending') return;
+    const timer = window.setInterval(() => {
+      void Promise.all([loadSavedSnapshot(), loadActiveInstance()]);
+    }, 12000);
+    return () => window.clearInterval(timer);
+  }, [loadActiveInstance, loadSavedSnapshot, savedSnapshot?.id, savedSnapshot?.status, session]);
 
   useEffect(() => {
     if (!session || !activeInstance || activeInstance.status === 'terminated') return;
@@ -382,7 +451,7 @@ export default function NaylaPc({
   }, [canCreate, config, requestQuote, selected, session]);
 
   const runInstanceAction = useCallback(async (
-    action: 'start' | 'stop' | 'reboot' | 'destroy'
+    action: 'start' | 'stop' | 'reboot' | 'destroy' | 'save_destroy'
   ) => {
     if (!session || !activeInstance) return;
     setActionLoading(action);
@@ -393,7 +462,7 @@ export default function NaylaPc({
         headers: firebaseHeaders(session, { 'Content-Type': 'application/json' }),
         body: JSON.stringify({
           action,
-          confirmDestroy: action === 'destroy',
+          confirmDestroy: action === 'destroy' || action === 'save_destroy',
         }),
       });
       const payload = await response.json().catch(() => ({}));
@@ -406,7 +475,9 @@ export default function NaylaPc({
 
       const next = payload.instance as PcInstance;
       setActiveInstance(next.status === 'terminated' ? null : next);
+      if (payload.snapshot) setSavedSnapshot(payload.snapshot as PcSnapshot);
       if (action === 'destroy') setConfirmDestroy(false);
+      if (action === 'save_destroy') setConfirmSaveDestroy(false);
       if (payload.billingWarning) setError(payload.billingWarning);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'No se pudo controlar Nayla PC.');
@@ -414,6 +485,91 @@ export default function NaylaPc({
       setActionLoading('');
     }
   }, [activeInstance, session]);
+
+  const prepareResume = useCallback(async () => {
+    if (!session || !savedSnapshot || savedSnapshot.status !== 'available') return;
+    setActionLoading('resume_quote');
+    setError('');
+    try {
+      const response = await fetch('/api/pc/snapshots', {
+        method: 'POST',
+        headers: firebaseHeaders(session, { 'Content-Type': 'application/json' }),
+        body: JSON.stringify({
+          action: 'resume',
+          billingMode: config.billingMode,
+          durationHours: config.durationHours,
+          confirmResume: false,
+        }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || payload.error) {
+        throw new Error(payload.error || 'No se pudo cotizar la restauración.');
+      }
+      setResumeQuote(payload.quote as PcResumeQuote);
+      setConfirmResume(true);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'No se pudo cotizar la restauración.');
+    } finally {
+      setActionLoading('');
+    }
+  }, [config.billingMode, config.durationHours, savedSnapshot, session]);
+
+  const resumePc = useCallback(async () => {
+    if (!session || !savedSnapshot || !resumeQuote) return;
+    setActionLoading('resume');
+    setError('');
+    try {
+      const response = await fetch('/api/pc/snapshots', {
+        method: 'POST',
+        headers: firebaseHeaders(session, { 'Content-Type': 'application/json' }),
+        body: JSON.stringify({
+          action: 'resume',
+          billingMode: resumeQuote.billingMode,
+          durationHours: resumeQuote.durationHours,
+          confirmResume: true,
+        }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || payload.error) {
+        throw new Error(payload.error || 'No se pudo reanudar Nayla PC.');
+      }
+      setActiveInstance(payload.instance as PcInstance);
+      setConfirmResume(false);
+      setResumeQuote(null);
+      void loadSavedSnapshot();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'No se pudo reanudar Nayla PC.');
+    } finally {
+      setActionLoading('');
+    }
+  }, [loadSavedSnapshot, resumeQuote, savedSnapshot, session]);
+
+  const deleteSavedSnapshot = useCallback(async () => {
+    if (!session || !savedSnapshot) return;
+    setActionLoading('delete_snapshot');
+    setError('');
+    try {
+      const response = await fetch('/api/pc/snapshots', {
+        method: 'POST',
+        headers: firebaseHeaders(session, { 'Content-Type': 'application/json' }),
+        body: JSON.stringify({
+          action: 'delete',
+          confirmDelete: true,
+        }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || payload.error) {
+        throw new Error(payload.error || 'No se pudo borrar la PC guardada.');
+      }
+      setSavedSnapshot(null);
+      setConfirmDeleteSnapshot(false);
+      setResumeQuote(null);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'No se pudo borrar la PC guardada.');
+    } finally {
+      setActionLoading('');
+    }
+  }, [savedSnapshot, session]);
 
   const patch = (next: Partial<PcConfig>) =>
     setConfig((current) => ({ ...current, ...next }));
@@ -518,6 +674,29 @@ export default function NaylaPc({
                 </div>
               </div>
 
+              {activeInstance.desktop && activeInstance.status === 'running' && (
+                <div style={{ marginTop: 12, border: '1px solid #333', borderRadius: 14, padding: 12, background: '#070707' }}>
+                  <div style={{ fontSize: '0.68rem', fontWeight: 900 }}>ESCRITORIO REMOTO</div>
+                  <div style={{ color: '#777', fontSize: '0.6rem', lineHeight: 1.45, marginTop: 5 }}>
+                    Pantalla completa con teclado, mouse y control táctil. La primera apertura puede mostrar una advertencia porque el certificado del piloto es propio de la PC.
+                  </div>
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginTop: 9 }}>
+                    <button
+                      type="button"
+                      onClick={() => window.open(activeInstance.desktop?.url, '_blank', 'noopener,noreferrer')}
+                      style={{ minHeight: 38, borderRadius: 999, border: '1px solid #fff', background: '#fff', color: '#000', padding: '0 14px', fontWeight: 900, fontSize: '0.62rem', cursor: 'pointer' }}
+                    >
+                      ABRIR ESCRITORIO
+                    </button>
+                    {activeInstance.desktop.password && (
+                      <div style={{ color: '#aaa', fontSize: '0.61rem' }}>
+                        Clave: <strong style={{ color: '#fff', letterSpacing: '0.1em' }}>{activeInstance.desktop.password}</strong>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
               <div style={{ marginTop: 11, display: 'flex', gap: 7, flexWrap: 'wrap' }}>
                 {activeInstance.status === 'stopped' && (
                   <button
@@ -549,11 +728,21 @@ export default function NaylaPc({
                     </button>
                   </>
                 )}
+                {activeInstance.status !== 'snapshotting' && activeInstance.status !== 'terminating' && (
+                  <button
+                    type="button"
+                    disabled={Boolean(actionLoading)}
+                    onClick={() => setConfirmSaveDestroy(true)}
+                    style={{ border: '1px solid #4a4a4a', borderRadius: 999, padding: '9px 13px', background: '#f2f2f2', color: '#000', fontWeight: 900, fontSize: '0.62rem', cursor: actionLoading ? 'wait' : 'pointer' }}
+                  >
+                    GUARDAR Y DESTRUIR
+                  </button>
+                )}
                 <button
                   type="button"
-                  disabled={Boolean(actionLoading)}
+                  disabled={Boolean(actionLoading) || activeInstance.status === 'snapshotting'}
                   onClick={() => setConfirmDestroy(true)}
-                  style={{ border: '1px solid #4a2e2e', borderRadius: 999, padding: '9px 13px', background: '#160b0b', color: '#d7b7b7', fontWeight: 900, fontSize: '0.62rem', cursor: actionLoading ? 'wait' : 'pointer' }}
+                  style={{ border: '1px solid #4a2e2e', borderRadius: 999, padding: '9px 13px', background: '#160b0b', color: '#d7b7b7', fontWeight: 900, fontSize: '0.62rem', cursor: actionLoading || activeInstance.status === 'snapshotting' ? 'not-allowed' : 'pointer' }}
                 >
                   ELIMINAR PC
                 </button>
@@ -561,6 +750,54 @@ export default function NaylaPc({
               <div style={{ marginTop: 10, color: '#666', fontSize: '0.59rem', lineHeight: 1.45 }}>
                 Apagar conserva CPU, RAM, disco e IP reservados, por eso el proveedor continúa cobrando hasta eliminar la instancia.
               </div>
+            </div>
+          )}
+
+          {savedSnapshot && savedSnapshot.status !== 'deleted' && (
+            <div style={{ border: '1px solid #303030', borderRadius: 18, padding: 16, background: '#0b0b0b', marginBottom: 14 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}>
+                <div>
+                  <div style={{ color: '#777', fontSize: '0.6rem', letterSpacing: '0.12em', fontWeight: 850 }}>PC GUARDADA</div>
+                  <div style={{ marginTop: 5, fontSize: '0.95rem', fontWeight: 900 }}>
+                    {savedSnapshot.osName || (savedSnapshot.osFamily === 'linux' ? 'Ubuntu' : 'Windows')} · {savedSnapshot.cpu} vCPU · {savedSnapshot.ramGb} GB
+                  </div>
+                  <div style={{ color: '#777', fontSize: '0.61rem', marginTop: 5 }}>
+                    {savedSnapshot.status === 'pending'
+                      ? 'Guardando disco completo…'
+                      : savedSnapshot.status === 'available'
+                        ? 'Lista para reanudar'
+                        : savedSnapshot.status.toUpperCase()}
+                  </div>
+                </div>
+                <div style={{ textAlign: 'right' }}>
+                  <div style={{ color: '#666', fontSize: '0.55rem' }}>SNAPSHOT</div>
+                  <strong style={{ fontSize: '0.72rem' }}>
+                    {savedSnapshot.storageMonthlyUsd == null
+                      ? 'CALCULANDO'
+                      : money(savedSnapshot.storageMonthlyUsd) + '/mes'}
+                  </strong>
+                </div>
+              </div>
+              {savedSnapshot.status === 'available' && !activeInstance && (
+                <div style={{ marginTop: 12 }}>
+                  <button
+                    type="button"
+                    disabled={Boolean(actionLoading) || !provisioningAllowed}
+                    onClick={() => void prepareResume()}
+                    style={{ minHeight: 40, borderRadius: 999, border: '1px solid #fff', background: '#fff', color: '#000', padding: '0 15px', fontWeight: 900, fontSize: '0.64rem', cursor: actionLoading || !provisioningAllowed ? 'not-allowed' : 'pointer' }}
+                  >
+                    {actionLoading === 'resume_quote' ? 'COTIZANDO…' : 'REANUDAR PC'}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={Boolean(actionLoading)}
+                    onClick={() => setConfirmDeleteSnapshot(true)}
+                    style={{ minHeight: 40, borderRadius: 999, border: '1px solid #4a2e2e', background: '#160b0b', color: '#d7b7b7', padding: '0 14px', fontWeight: 900, fontSize: '0.62rem', cursor: actionLoading ? 'wait' : 'pointer' }}
+                  >
+                    BORRAR SNAPSHOT
+                  </button>
+                </div>
+              )}
             </div>
           )}
 
@@ -860,6 +1097,72 @@ export default function NaylaPc({
               <button type="button" disabled={creating} onClick={() => setConfirmCreate(false)} style={{ minHeight: 40, borderRadius: 999, border: '1px solid #3a3a3a', background: '#111', color: '#fff', padding: '0 14px', fontWeight: 850, fontSize: '0.64rem', cursor: 'pointer' }}>CANCELAR</button>
               <button type="button" disabled={creating} onClick={() => void createPc()} style={{ minHeight: 40, borderRadius: 999, border: '1px solid #fff', background: '#fff', color: '#000', padding: '0 15px', fontWeight: 900, fontSize: '0.64rem', cursor: creating ? 'wait' : 'pointer' }}>
                 {creating ? 'CREANDO…' : 'CONFIRMAR Y CREAR'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {confirmSaveDestroy && activeInstance && (
+        <div role="dialog" aria-modal="true" style={{ position: 'fixed', inset: 0, zIndex: 9900, background: 'rgba(0,0,0,.82)', display: 'grid', placeItems: 'center', padding: 18 }}>
+          <div style={{ width: 'min(450px,100%)', border: '1px solid #444', borderRadius: 20, background: '#0b0b0b', padding: 18 }}>
+            <div style={{ fontSize: '1rem', fontWeight: 900 }}>Guardar esta PC y destruir el cómputo</div>
+            <div style={{ color: '#aaa', fontSize: '0.68rem', lineHeight: 1.55, marginTop: 8 }}>
+              Nayla tomará un snapshot completo del disco. Cuando Vultr confirme que quedó listo, eliminará la VM para detener el cobro de CPU, RAM e IP. Después podrás reconstruir la misma computadora con REANUDAR PC.
+            </div>
+            <div style={{ marginTop: 10, color: '#777', fontSize: '0.62rem', lineHeight: 1.5 }}>
+              El snapshot sí tiene un costo pequeño de almacenamiento y se mostrará cuando Vultr informe su tamaño comprimido.
+            </div>
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 16 }}>
+              <button type="button" disabled={Boolean(actionLoading)} onClick={() => setConfirmSaveDestroy(false)} style={{ minHeight: 40, borderRadius: 999, border: '1px solid #3a3a3a', background: '#111', color: '#fff', padding: '0 14px', fontWeight: 850, fontSize: '0.64rem', cursor: 'pointer' }}>CANCELAR</button>
+              <button type="button" disabled={Boolean(actionLoading)} onClick={() => void runInstanceAction('save_destroy')} style={{ minHeight: 40, borderRadius: 999, border: '1px solid #fff', background: '#fff', color: '#000', padding: '0 15px', fontWeight: 900, fontSize: '0.64rem', cursor: actionLoading ? 'wait' : 'pointer' }}>
+                {actionLoading === 'save_destroy' ? 'GUARDANDO…' : 'GUARDAR Y DESTRUIR'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {confirmResume && savedSnapshot && resumeQuote && (
+        <div role="dialog" aria-modal="true" style={{ position: 'fixed', inset: 0, zIndex: 9900, background: 'rgba(0,0,0,.82)', display: 'grid', placeItems: 'center', padding: 18 }}>
+          <div style={{ width: 'min(450px,100%)', border: '1px solid #444', borderRadius: 20, background: '#0b0b0b', padding: 18 }}>
+            <div style={{ fontSize: '1rem', fontWeight: 900 }}>Reanudar tu PC guardada</div>
+            <div style={{ color: '#aaa', fontSize: '0.68rem', lineHeight: 1.55, marginTop: 8 }}>
+              Nayla reconstruirá una máquina nueva usando la foto completa de tu disco. Tus programas, archivos y configuración vuelven con el snapshot.
+            </div>
+            <div style={{ marginTop: 12, border: '1px solid #292929', borderRadius: 14, padding: 12, background: '#070707' }}>
+              <div style={{ fontWeight: 900, fontSize: '0.82rem' }}>{resumeQuote.cpu} vCPU · {resumeQuote.ramGb} GB RAM · {resumeQuote.diskGb} GB</div>
+              <div style={{ color: '#777', fontSize: '0.62rem', marginTop: 5 }}>{savedSnapshot.osName || 'Sistema guardado'}</div>
+              <div style={{ marginTop: 10, fontSize: '0.92rem', fontWeight: 900 }}>
+                {resumeQuote.billingMode === 'monthly'
+                  ? money(resumeQuote.monthlyPrice) + '/mes'
+                  : resumeQuote.durationHours + ' h ≈ ' + money(resumeQuote.sessionPrice)}
+              </div>
+            </div>
+            <div style={{ color: '#777', fontSize: '0.61rem', lineHeight: 1.5, marginTop: 10 }}>
+              La reconstrucción desde snapshot puede tardar más que un arranque normal.
+            </div>
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 16 }}>
+              <button type="button" disabled={Boolean(actionLoading)} onClick={() => { setConfirmResume(false); setResumeQuote(null); }} style={{ minHeight: 40, borderRadius: 999, border: '1px solid #3a3a3a', background: '#111', color: '#fff', padding: '0 14px', fontWeight: 850, fontSize: '0.64rem', cursor: 'pointer' }}>CANCELAR</button>
+              <button type="button" disabled={Boolean(actionLoading)} onClick={() => void resumePc()} style={{ minHeight: 40, borderRadius: 999, border: '1px solid #fff', background: '#fff', color: '#000', padding: '0 15px', fontWeight: 900, fontSize: '0.64rem', cursor: actionLoading ? 'wait' : 'pointer' }}>
+                {actionLoading === 'resume' ? 'RECONSTRUYENDO…' : 'CONFIRMAR Y REANUDAR'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {confirmDeleteSnapshot && savedSnapshot && (
+        <div role="dialog" aria-modal="true" style={{ position: 'fixed', inset: 0, zIndex: 9900, background: 'rgba(0,0,0,.82)', display: 'grid', placeItems: 'center', padding: 18 }}>
+          <div style={{ width: 'min(430px,100%)', border: '1px solid #4a2e2e', borderRadius: 20, background: '#0d0808', padding: 18 }}>
+            <div style={{ fontSize: '1rem', fontWeight: 900 }}>Borrar la PC guardada</div>
+            <div style={{ color: '#bbb', fontSize: '0.68rem', lineHeight: 1.55, marginTop: 8 }}>
+              Esto elimina el snapshot de Vultr y detiene su costo de almacenamiento. Después ya no podrás reconstruir esta PC desde esa copia.
+            </div>
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 16 }}>
+              <button type="button" disabled={Boolean(actionLoading)} onClick={() => setConfirmDeleteSnapshot(false)} style={{ minHeight: 40, borderRadius: 999, border: '1px solid #3a3a3a', background: '#111', color: '#fff', padding: '0 14px', fontWeight: 850, fontSize: '0.64rem', cursor: 'pointer' }}>CANCELAR</button>
+              <button type="button" disabled={Boolean(actionLoading)} onClick={() => void deleteSavedSnapshot()} style={{ minHeight: 40, borderRadius: 999, border: '1px solid #6a3d3d', background: '#3b1111', color: '#fff', padding: '0 15px', fontWeight: 900, fontSize: '0.64rem', cursor: actionLoading ? 'wait' : 'pointer' }}>
+                {actionLoading === 'delete_snapshot' ? 'BORRANDO…' : 'BORRAR SNAPSHOT'}
               </button>
             </div>
           </div>

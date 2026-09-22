@@ -22,7 +22,7 @@ create table if not exists public.nayla_pc_instances (
   duration_hours integer not null check (duration_hours between 1 and 24),
   auto_destroy boolean not null default false,
   status text not null default 'provisioning'
-    check (status in ('provisioning','running','stopped','rebooting','terminating','terminated','error')),
+    check (status in ('provisioning','running','stopped','rebooting','snapshotting','terminating','terminated','error')),
   main_ip text,
   public_hourly_price numeric(12,4) not null check (public_hourly_price >= 0),
   public_monthly_price numeric(12,4) not null check (public_monthly_price >= 0),
@@ -49,7 +49,7 @@ create unique index if not exists nayla_pc_instances_provider_instance_uidx
 
 create unique index if not exists nayla_pc_instances_one_active_per_user_uidx
   on public.nayla_pc_instances(user_id)
-  where status in ('provisioning','running','stopped','rebooting','terminating');
+  where status in ('provisioning','running','stopped','rebooting','snapshotting','terminating');
 
 create index if not exists nayla_pc_instances_user_created_idx
   on public.nayla_pc_instances(user_id, created_at desc);
@@ -104,6 +104,11 @@ select cron.schedule(
         and expires_at <= now()
         and provider_instance_id is not null
         and status in ('provisioning','running','stopped','rebooting','terminating')
+    )
+    or exists (
+      select 1
+      from public.nayla_pc_snapshots
+      where status in ('pending','deleting')
     );
   $job$
 );
