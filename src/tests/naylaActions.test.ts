@@ -698,7 +698,7 @@ describe('Nayla action contracts', () => {
     expect(parseNaylaAction(JSON.stringify({
       action: 'BUILD_TIMELINE',
       assets: [{ type: 'foto', source: 'label', label: 'V1' }],
-    }))).not.toBeNull();
+    }))).toBeNull();
   });
 
   it('accepts explicit none values emitted by Nayla for simple timeline edits', () => {
