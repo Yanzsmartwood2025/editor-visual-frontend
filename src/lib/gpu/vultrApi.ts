@@ -265,7 +265,8 @@ export const combineVultrUserData = (...encodedScripts: string[]) => {
 
 export const probeNaylaPcDesktop = async (
   ip?: string | null,
-  port = 6080
+  port = 6080,
+  path = '/vnc.html'
 ): Promise<boolean> => {
   if (!ip || ip === '0.0.0.0') return false;
 
@@ -274,7 +275,7 @@ export const probeNaylaPcDesktop = async (
       {
         hostname: ip,
         port,
-        path: '/vnc.html',
+        path,
         method: 'GET',
         rejectUnauthorized: false,
         timeout: 4_500,
@@ -391,6 +392,15 @@ export const buildNaylaPcDesktopUserData = ({
     'EOF',
     'systemctl daemon-reload',
     'systemctl enable --now nayla-xvfb.service nayla-xfce.service nayla-vnc.service nayla-novnc.service',
+    "cat > /usr/local/sbin/nayla-seal-base-image <<'EOF'",
+    '#!/usr/bin/env bash',
+    'set -euo pipefail',
+    'cloud-init clean --logs --machine-id',
+    "printf '%s\\n' 'ready' > /usr/share/novnc/nayla-base-ready.txt",
+    'EOF',
+    'chmod 755 /usr/local/sbin/nayla-seal-base-image',
+    'rm -f /usr/share/novnc/nayla-base-ready.txt',
+    'systemd-run --unit=nayla-base-seal --on-active=15s /usr/local/sbin/nayla-seal-base-image >/dev/null',
     'ufw --force reset',
     'ufw default deny incoming',
     'ufw default allow outgoing',
