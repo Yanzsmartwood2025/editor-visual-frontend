@@ -13,7 +13,7 @@ const buildTimelineAssetSchema = z.object({
   type: z.enum(['foto', 'image', 'video', 'audio']),
   source: z.enum(['url', 'label']),
   url: urlSchema.optional(),
-  label: z.string().trim().regex(/^[FVA]\\d+$/i).optional(),
+  label: z.string().trim().regex(/^[FVA]\d+$/i).optional(),
   durationInSeconds: z.number().min(0.1).max(3600).optional(),
   volume: z.number().min(0).max(2).optional(),
   fadeIn: z.number().min(0).max(30).optional(),
