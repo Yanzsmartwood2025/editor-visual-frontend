@@ -1,5 +1,8 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
-import { requireFirebaseUser } from '../../../../lib/firebaseAdmin';
+import {
+  isFirebaseAdmin,
+  requireFirebaseUser,
+} from '../../../../lib/firebaseAdmin';
 import {
   createVultrInstance,
   deleteVultrInstance,
@@ -51,7 +54,12 @@ export default async function handler(
   if (req.method === 'GET') {
     try {
       const active = await getActiveNaylaPcInstance(user.uid);
-      if (!active) return res.status(200).json({ instance: null });
+      if (!active) {
+        return res.status(200).json({
+          instance: null,
+          provisioningAllowed: isFirebaseAdmin(user),
+        });
+      }
 
       const synced = await syncNaylaPcInstance(active);
       if (synced.status === 'terminated') {
@@ -60,6 +68,7 @@ export default async function handler(
 
       return res.status(200).json({
         instance: toPublicNaylaPcInstance(synced),
+        provisioningAllowed: isFirebaseAdmin(user),
       });
     } catch (error) {
       const message =
@@ -70,6 +79,14 @@ export default async function handler(
 
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Método no permitido.' });
+  }
+
+  if (!isFirebaseAdmin(user)) {
+    return res.status(403).json({
+      code: 'PILOT_ONLY',
+      error:
+        'La creación real de Nayla PC está en piloto privado hasta conectar el cobro al cliente. Puedes cotizar y guardar configuraciones normalmente.',
+    });
   }
 
   const body = req.body || {};
