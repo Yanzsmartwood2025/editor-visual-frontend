@@ -168,7 +168,7 @@ export const cleanupNaylaPcBaseBuild = async () => {
     await deleteVultrInstance(builder.id);
   }
 
-  const buildingRows = (await listNaylaPcBaseImages(['building'])).filter(
+  const buildingRows = (await listNaylaPcBaseImages(['building', 'error'])).filter(
     (row) => row.version === NAYLA_PC_BASE_VERSION
   );
 
