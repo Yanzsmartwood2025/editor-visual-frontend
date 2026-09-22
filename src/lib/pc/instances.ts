@@ -12,6 +12,7 @@ import {
 import {
   createNaylaPcSnapshotRow,
   listExpiredNaylaPcInstances,
+  listOlderAvailableNaylaPcSnapshots,
   listPendingNaylaPcSnapshots,
   patchNaylaPcInstance,
   patchNaylaPcSnapshot,
@@ -363,6 +364,32 @@ export const finalizePendingNaylaPcSnapshots = async () => {
             },
           },
         });
+
+        const older = await listOlderAvailableNaylaPcSnapshots({
+          userId: row.user_id,
+          excludeId: row.id,
+        });
+
+        await Promise.all(
+          older.map(async (old) => {
+            await patchNaylaPcSnapshot({
+              snapshotId: old.id,
+              patch: { status: 'deleting' },
+            });
+            try {
+              await deleteVultrSnapshot(old.provider_snapshot_id);
+              await patchNaylaPcSnapshot({
+                snapshotId: old.id,
+                patch: {
+                  status: 'deleted',
+                  deleted_at: new Date().toISOString(),
+                },
+              });
+            } catch {
+              // The next sweeper pass will retry rows left as deleting.
+            }
+          })
+        );
 
         return { id: row.id, ok: true as const, action: 'saved' as const };
       } catch (error) {
