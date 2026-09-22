@@ -65,6 +65,7 @@ type PcInstance = {
     | 'running'
     | 'stopped'
     | 'rebooting'
+    | 'snapshotting'
     | 'terminating'
     | 'terminated'
     | 'error';
@@ -76,6 +77,23 @@ type PcInstance = {
   createdAt: string;
   updatedAt: string;
   terminatedAt?: string | null;
+};
+
+type PcSnapshot = {
+  id: string;
+  status: 'pending' | 'available' | 'restoring' | 'deleting' | 'deleted' | 'error';
+  osFamily: 'linux' | 'windows';
+  osName?: string;
+  cpu: number;
+  ramGb: number;
+  diskGb: number;
+  gpuEnabled: boolean;
+  gpuName?: string;
+  gpuVramGb?: number;
+  sizeBytes?: number;
+  storageMonthlyUsd?: number;
+  createdAt: string;
+  readyAt?: string | null;
 };
 
 const DEFAULT_CONFIG: PcConfig = {
@@ -111,6 +129,7 @@ const statusLabel = (status: PcInstance['status']) => {
     running: 'ENCENDIDA',
     stopped: 'APAGADA',
     rebooting: 'REINICIANDO',
+    snapshotting: 'GUARDANDO',
     terminating: 'ELIMINANDO',
     terminated: 'ELIMINADA',
     error: 'ERROR',
@@ -169,6 +188,7 @@ export default function NaylaPc({
   const [quote, setQuote] = useState<PcQuote | null>(null);
   const [selectedId, setSelectedId] = useState('');
   const [activeInstance, setActiveInstance] = useState<PcInstance | null>(null);
+  const [savedSnapshot, setSavedSnapshot] = useState<PcSnapshot | null>(null);
   const [provisioningAllowed, setProvisioningAllowed] = useState(false);
   const [loading, setLoading] = useState(false);
   const [instanceLoading, setInstanceLoading] = useState(false);
@@ -177,7 +197,9 @@ export default function NaylaPc({
   const [actionLoading, setActionLoading] = useState('');
   const [saved, setSaved] = useState(false);
   const [confirmCreate, setConfirmCreate] = useState(false);
+  const [confirmSaveDestroy, setConfirmSaveDestroy] = useState(false);
   const [confirmDestroy, setConfirmDestroy] = useState(false);
+  const [confirmResume, setConfirmResume] = useState(false);
   const [error, setError] = useState('');
   const hydrated = useRef(false);
 
