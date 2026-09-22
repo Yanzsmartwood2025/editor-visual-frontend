@@ -19,7 +19,7 @@ afterEach(() => {
 });
 
 describe('Vultr Compute adapter', () => {
-  it('reads prepaid balance and subtracts pending charges without exposing secrets', async () => {
+  it('reads raw Vultr billing balance without treating it as spendable credit', async () => {
     process.env.VULTR_API_KEY = 'vultr-secret';
 
     vi.stubGlobal('fetch', vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
@@ -34,7 +34,9 @@ describe('Vultr Compute adapter', () => {
     }));
 
     const account = await getVultrAccountSummary();
-    expect(account.balance).toBe(11.25);
+    expect(account.balance).toBe(12.5);
+    expect(account.rawBalance).toBe(12.5);
+    expect(account.pendingCharges).toBe(1.25);
     expect(JSON.stringify(account)).not.toContain('vultr-secret');
     expect(JSON.stringify(account)).not.toContain('must-not-escape');
   });
