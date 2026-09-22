@@ -110,7 +110,7 @@ const envNumber = (key: string, fallback: number, min: number, max: number) => {
 };
 
 const priceMultiplier = () =>
-  envNumber('NAYLA_PC_PRICE_MULTIPLIER', 1, 0.1, 10);
+  envNumber('NAYLA_PC_PRICE_MULTIPLIER', 1, 1, 10);
 
 const fixedHourlyUsd = () =>
   envNumber('NAYLA_PC_FIXED_HOURLY_USD', 0, 0, 25);
