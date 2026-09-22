@@ -1,6 +1,9 @@
 import { timingSafeEqual } from 'node:crypto';
 import type { NextApiRequest, NextApiResponse } from 'next';
-import { sweepExpiredNaylaPcInstances } from '../../../lib/pc/instances';
+import {
+  finalizePendingNaylaPcSnapshots,
+  sweepExpiredNaylaPcInstances,
+} from '../../../lib/pc/instances';
 import { getNaylaInternalSecret } from '../../../lib/pc/store';
 
 const safeEqual = (left: string, right: string) => {
@@ -29,9 +32,16 @@ export default async function handler(
   }
 
   try {
-    const result = await sweepExpiredNaylaPcInstances();
+    const [leases, snapshots] = await Promise.all([
+      sweepExpiredNaylaPcInstances(),
+      finalizePendingNaylaPcSnapshots(),
+    ]);
     res.setHeader('Cache-Control', 'no-store, max-age=0');
-    return res.status(200).json({ ok: true, ...result });
+    return res.status(200).json({
+      ok: true,
+      leases,
+      snapshots,
+    });
   } catch (error) {
     const message =
       error instanceof Error
