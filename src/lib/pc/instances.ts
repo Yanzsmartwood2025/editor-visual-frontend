@@ -96,6 +96,8 @@ export const terminateNaylaPcInstance = async ({
     instanceId: row.id,
     patch: {
       status: 'terminating',
+      auto_destroy: true,
+      expires_at: new Date().toISOString(),
       metadata: {
         ...(row.metadata || {}),
         termination_reason: reason,
