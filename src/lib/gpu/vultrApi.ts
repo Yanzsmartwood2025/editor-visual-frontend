@@ -134,13 +134,18 @@ export const getVultrAccountSummary = async () => {
 
   if (!Number.isFinite(balance)) {
     throw new Error(
-      'Nayla Compute no pudo leer el saldo disponible de una de sus redes GPU.'
+      'Nayla Compute no pudo leer el saldo de una de sus redes de cómputo.'
     );
   }
 
+  // Vultr's account ledger represents prepaid credit as a negative
+  // account balance. Pending charges are unbilled usage and must be
+  // deducted from that credit when estimating what remains available.
+  const creditBeforePending = balance < 0 ? Math.abs(balance) : 0;
   const spendable = Math.max(
     0,
-    balance - (Number.isFinite(pendingCharges) ? Math.max(0, pendingCharges) : 0)
+    creditBeforePending -
+      (Number.isFinite(pendingCharges) ? Math.max(0, pendingCharges) : 0)
   );
 
   return {
