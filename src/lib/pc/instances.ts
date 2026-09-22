@@ -189,6 +189,7 @@ export const saveAndDestroyNaylaPcInstance = async ({
       gpuVramGb: row.gpu_vram_gb,
       providerPlanId: row.provider_plan_id,
       providerRegionId: row.provider_region_id,
+      providerOsId: row.provider_os_id,
       metadata: {
         source_provider_instance_id: row.provider_instance_id,
       },
