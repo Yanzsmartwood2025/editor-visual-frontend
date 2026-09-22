@@ -5,8 +5,10 @@ import { requireFirebaseUser } from '../../lib/firebaseAdmin';
 import { sanitizeNaylaPublicText } from '../../lib/naylaSystemCatalog';
 import {
   findNaylaCapabilityMatches,
+  getNaylaCapabilityBibleForPrompt,
   NAYLA_CAPABILITY_BIBLE_VERSION,
 } from '../../lib/naylaCapabilityBible';
+import { REMOTION_CPU_PUBLIC_CATALOG } from '../../lib/remotionEffects';
 import { searchStockMedia } from '../../lib/mediaProviders/stock';
 import {
   getAvailableProvidersForAction,
@@ -34,6 +36,7 @@ import {
   getOwnedMediaByLabelsForUser,
   getOwnedMediaForUser,
   getRecentOwnedMediaForUser,
+  getRecentThreadAttachedMediaForUser,
   insertChatMessageForUser,
   listThreadMessagesForUser,
   resolveOwnedWorkspaceScope,
@@ -94,6 +97,12 @@ const generationActionNames = new Set([
 const hasExplicitVisionIntent = (message: string) =>
   /\b(analiza|analizar|analices|revisa|revisar|revises|mira|mirar|observa|observar|inspecciona|inspeccionar|describe|describir|compara|comparar|encuadre|composici[oó]n|colores?|rostro|ropa|fondo)\b/i.test(message) ||
   /\bqu[eé]\s+(?:hay|aparece|ves)\b/i.test(message);
+
+const hasCreativeVisualIntent = (message: string) =>
+  /\b(ordena|ordenar|organiza|organizar|elige|elegir|escoge|escoger|selecciona|seleccionar|acomoda|acomodar|combina|combinar)\b/i.test(message) ||
+  /\b(c[oó]mo\s+(?:quede|quedar[ií]a)\s+mejor|como\s+creas|a\s+tu\s+criterio|criterio\s+creativo)\b/i.test(message) ||
+  /\b(efectos?|transiciones?|movimiento|cinematogr[aá]fic[oa]|profesional|ritmo|montaje)\b/i.test(message) ||
+  /\b(video|montaje|edici[oó]n)\b.{0,48}\b(estas?|mis|las)\s+(?:fotos?|im[aá]genes?)\b/i.test(message);
 
 const getRequestedPhotoLabels = (message: string) => {
   const labels = new Set<string>();
@@ -712,19 +721,41 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       });
     }
 
-    const intentMatches = findNaylaCapabilityMatches(message);
     const effectiveHistory = scope.threadId ? persistedHistory : (history || []);
     const executionConfirmed = hasExplicitPlanConfirmation(message, effectiveHistory);
+    const priorUserPlanInstruction = executionConfirmed
+      ? findLastUserPlanInstruction(effectiveHistory)
+      : '';
+    const priorAssistantPlan = executionConfirmed
+      ? findLastAssistantPlan(effectiveHistory)
+      : '';
+    const activePlanningContext = executionConfirmed
+      ? [priorUserPlanInstruction, priorAssistantPlan, message].filter(Boolean).join('\n\n')
+      : message;
+    const intentMatches = findNaylaCapabilityMatches(activePlanningContext);
 
-    const userPlanningContext = [
-      ...effectiveHistory
-        .filter((item) => item.role === 'user')
-        .map((item) => item.content),
-      message,
-    ].join('\n\n');
+    const recentPlanAttachmentRows =
+      executionConfirmed && scope.threadId
+        ? await getRecentThreadAttachedMediaForUser({
+            userId: firebaseUser.uid,
+            projectId: scope.projectId,
+            threadId: scope.threadId,
+          })
+        : [];
+    const recentPlanAttachments = recentPlanAttachmentRows.map((item: Record<string, any>) => ({
+      id: item.id as string,
+      tipo: item.tipo as 'foto' | 'video' | 'audio' | 'modelo3d',
+      nombre: item.nombre as string,
+      etiqueta: item.etiqueta as string | undefined,
+      fuente: item.fuente as string | undefined,
+      metadata: item.metadata || {},
+      url: item.r2_key
+        ? createR2PresignedGetUrl({ key: item.r2_key, expiresIn: 3600 }).url
+        : item.url,
+    }));
 
-    const requestedNaturalPhotoCount = getRequestedVisualCount(userPlanningContext);
-    const naturalProjectPhotoReference = hasNaturalProjectPhotoReference(userPlanningContext);
+    const requestedNaturalPhotoCount = getRequestedVisualCount(activePlanningContext);
+    const naturalProjectPhotoReference = hasNaturalProjectPhotoReference(activePlanningContext);
     const recentNaturalPhotoRows = naturalProjectPhotoReference
       ? await getRecentOwnedMediaForUser({
           userId: firebaseUser.uid,
@@ -789,17 +820,26 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     attachments.forEach((item) => {
       mergedLibraryMap.set(item.id ? `id:${item.id}` : `url:${item.url}`, item);
     });
+    recentPlanAttachments.forEach((item) => {
+      mergedLibraryMap.set(item.id ? `id:${item.id}` : `url:${item.url}`, item);
+    });
     const mergedLibrary = Array.from(mergedLibraryMap.values());
 
-    const visualIntent = hasExplicitVisionIntent(message);
-    const requestedPhotoLabels = getRequestedPhotoLabels(message);
+    const visualIntent =
+      hasExplicitVisionIntent(activePlanningContext) ||
+      hasCreativeVisualIntent(activePlanningContext);
+    const requestedPhotoLabels = getRequestedPhotoLabels(activePlanningContext);
     const referencedVisionCandidates = requestedPhotoLabels.size
       ? mergedLibrary.filter((item) =>
           item.tipo === 'foto' &&
           typeof item.etiqueta === 'string' &&
           requestedPhotoLabels.has(item.etiqueta.trim().toUpperCase())
         )
-      : attachments.filter((item) => item.tipo === 'foto');
+      : attachments.some((item) => item.tipo === 'foto')
+        ? attachments.filter((item) => item.tipo === 'foto')
+        : recentPlanAttachments.some((item) => item.tipo === 'foto')
+          ? recentPlanAttachments.filter((item) => item.tipo === 'foto')
+          : recentNaturalPhotos;
 
     const visionCandidateUrls = visualIntent
       ? Array.from(new Set([
@@ -807,16 +847,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           ...(images || []),
         ]))
       : [];
-    const visionImages = visionCandidateUrls.slice(0, 3);
+    const visionImages = visionCandidateUrls.slice(0, 8);
     const visionWasTruncated = visionCandidateUrls.length > visionImages.length;
 
     const recentPromptHistory = effectiveHistory.slice(-8);
-    const labelReferenceText = [
-      message,
-      ...recentPromptHistory
-        .filter((item) => item.role === 'user')
-        .map((item) => item.content),
-    ].join('\n');
+    const labelReferenceText = executionConfirmed
+      ? [priorUserPlanInstruction, message].filter(Boolean).join('\n')
+      : message;
     const referencedLabels = new Set(getOrderedMediaLabels(labelReferenceText));
     const promptMediaItems = referencedLabels.size
       ? mergedLibrary.filter((item: any) =>
@@ -825,9 +862,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         )
       : attachments.length
         ? attachments
-        : mergedLibrary
-            .filter((item: any) => typeof item.etiqueta === 'string' && item.etiqueta.trim())
-            .slice(0, 12);
+        : recentPlanAttachments.length
+          ? recentPlanAttachments
+          : mergedLibrary
+              .filter((item: any) => typeof item.etiqueta === 'string' && item.etiqueta.trim())
+              .slice(0, 20);
     const availablePromptLabels = new Set(
       promptMediaItems
         .map((item: any) => typeof item.etiqueta === 'string' ? item.etiqueta.trim().toUpperCase() : '')
@@ -841,8 +880,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           const label = typeof item.etiqueta === 'string' && item.etiqueta.trim()
             ? item.etiqueta.trim().toUpperCase()
             : `item-${index + 1}`;
-          const base = `${label}: tipo=${item.tipo}; nombre=${item.nombre || ''}`;
-          return executionConfirmed ? `${base}; url=${item.url}` : base;
+          return `${label}: tipo=${item.tipo}; nombre=${item.nombre || ''}`;
         }).join('\n')
       : 'ninguno';
 
@@ -861,8 +899,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       visualIntent
         ? (
             visionImages.length
-              ? `Visión solicitada explícitamente: se cargaron ${visionImages.length} foto(s) para análisis visual.${visionWasTruncated ? ' Hay más fotos referenciadas que el límite visual actual; no afirmes haber inspeccionado las que no fueron cargadas.' : ''}`
-              : 'Visión solicitada explícitamente, pero no se encontró una foto válida con esa referencia. No inventes contenido visual.'
+              ? `Visión activada para este plan: se cargaron ${visionImages.length} foto(s) para análisis visual.${visionWasTruncated ? ' Hay más fotos referenciadas que el límite visual actual; no afirmes haber inspeccionado las que no fueron cargadas.' : ''}`
+              : 'Visión requerida para este plan, pero no se encontró una foto válida con esa referencia. No inventes contenido visual.'
           )
         : 'Visión NO solicitada. No describas el contenido visual de las fotos; usa etiquetas y metadatos.',
     ].join('\n\n');
@@ -887,7 +925,7 @@ SEGURIDAD Y CONTEXTO:
 - F1/F2... son fotos; V1/V2... videos; A1/A2... audios; M1/M2... modelos 3D.
 - Nunca sustituyas una etiqueta inexistente por otro archivo. Si falta una etiqueta, dilo y no emitas una acción inventada.
 - Si F1/F2/V1/A1 u otra etiqueta está disponible en el contexto del proyecto, úsala directamente. Nunca le pidas al usuario que copie o proporcione una URL para un medio ya guardado.
-- Las fotos subidas no se analizan visualmente salvo que el usuario lo pida de forma explícita.
+- Analiza visualmente las fotos cuando el usuario lo pida o cuando una decisión creativa dependa de verlas (orden, selección, encuadre, efectos, movimiento o estilo). No inventes detalles de fotos que no fueron cargadas al contexto visual.
 - Para editar medios existentes usa el timeline. Para crear contenido nuevo usa generación. GPU/Compute solo cuando realmente sea necesario.
 - La cantidad de fotos/videos y la cantidad de subtítulos son pistas independientes. Nunca asumas que debe existir un subtítulo por cada foto.
 - Si hay 9 fotos y 8 bloques de subtítulos, distribuye las 9 fotos durante la duración visual y distribuye los 8 bloques por tiempo de forma independiente.
@@ -901,7 +939,25 @@ MODO CONSULTIVO:
 - Si la petición es vaga, tradúcela tú a controles apropiados y recomienda 1 a 4 recursos útiles.
 - Usa texto limpio: sin Markdown visible, sin asteriscos, backticks, tablas ni nombres técnicos internos innecesarios.
 
-CAPACIDADES RELEVANTES PARA ESTE TURNO:
+MAPA DE MEDIOS:
+- F1/F2/... son identificadores estables de fotos.
+- V1/V2/... son identificadores estables de videos.
+- A1/A2/... son identificadores estables de audios.
+- M1/M2/... son identificadores estables de modelos 3D.
+- "foto 1", "primera foto" y F1 se refieren al mismo tipo de recurso cuando el contexto lo deja claro; lo mismo para video, audio y 3D.
+- Las etiquetas son referencias internas: nunca deben aparecer como texto visible, título o subtítulo salvo que el usuario pida literalmente mostrar esa etiqueta.
+- Si el usuario dice "estas fotos", "los archivos que subí" o algo equivalente, usa primero los adjuntos del plan activo. No sustituyas esos archivos por otros de la Bóveda.
+- Las restricciones explícitas del usuario son obligatorias (orden, duración, recorte, medio concreto). Todo lo no especificado es terreno creativo: elige efectos, transiciones, movimiento, ritmo y acabado usando las capacidades reales disponibles.
+- Si recibiste contexto visual, úsalo para decidir qué foto funciona mejor en cada momento y qué tratamiento le conviene. No apliques el mismo efecto mecánicamente a todas las escenas si no aporta.
+- Texto de instrucciones, encabezados como BLOQUE 1/2 y notas técnicas nunca son subtítulos. Solo el contenido literal destinado a pantalla entra en subtitles/titles.
+
+BIBLIA COMPLETA DE CAPACIDADES:
+${JSON.stringify(getNaylaCapabilityBibleForPrompt())}
+
+CATÁLOGO REAL DEL MOTOR REMOTION:
+${JSON.stringify(REMOTION_CPU_PUBLIC_CATALOG)}
+
+CAPACIDADES ESPECIALMENTE RELEVANTES PARA ESTE TURNO:
 ${JSON.stringify(intentMatches.map((item) => ({
   id: item.id,
   label: item.label,
@@ -912,12 +968,12 @@ ${JSON.stringify(intentMatches.map((item) => ({
 
 ACCIONES:
 1. BUILD_TIMELINE para editar fotos, videos o audio existentes.
-Formato mínimo:
-{"action":"BUILD_TIMELINE","assets":[{"type":"foto","source":"url","url":"URL_EXACTA","durationInSeconds":3}],"render":true}
-Cada asset puede usar efecto, transitionType, transitionDuration, fadeIn, fadeOut, overlay, overlayIntensity, professionalEffects, motionBlur, gsapMotion y proceduralMotion.
-Efectos suaves recomendados para fotos: ken-burns o cinematic. Transiciones suaves: fade. Transiciones avanzadas disponibles: film-burn, blur-slide, cross-zoom, dreamy-zoom, linear-blur y push-cut.
-Overlays comunes: vignette. professionalEffects puede incluir color-correction y glow con intensidad moderada.
-También puedes usar subtitles, titles, skiaGraphics, vectorAnimations y threeScenes si el plan confirmado realmente los requiere.
+Para medios guardados en el proyecto, prefiere etiquetas estables y deja que el servidor resuelva el archivo:
+{"action":"BUILD_TIMELINE","assets":[{"type":"foto","source":"label","label":"F1","durationInSeconds":3}],"render":true}
+Puedes mezclar F/V/A en el orden que pida el usuario o en el orden creativo que elijas cuando te dé libertad.
+Cada asset puede usar durationInSeconds, volume, fadeIn, fadeOut, delay, startFrom, trimBefore, trimAfter, loop, playbackRate, efecto, transitionType, transitionDuration, overlay, overlayIntensity, professionalEffects, motionBlur, gsapMotion y proceduralMotion.
+Puedes combinar de forma moderada varias capacidades reales cuando mejoren el resultado. No estás limitada a ken-burns/fade.
+También puedes usar subtitles, titles, skiaGraphics, vectorAnimations y threeScenes cuando aporten al plan.
 Para M1/M2 usa threeScenes y la etiqueta exacta; para una foto que solo debe parecer 3D usa profundidad/parallax, no una escena GLB.
 
 2. REMOVE_VIDEO_BACKGROUND:
@@ -938,46 +994,39 @@ Para M1/M2 usa threeScenes y la etiqueta exacta; para una foto que solo debe par
 6. RUN_GPU_JOB solo para trabajo pesado que lo requiera:
 {"action":"RUN_GPU_JOB","workload":"video","jobType":"proceso","inputUrls":["URL_EXACTA"]}
 
-Para acciones con medios existentes usa únicamente las URLs exactas incluidas en el contexto del turno.
+Para medios F/V/A existentes usa source:"label" y su etiqueta estable. No inventes etiquetas. Las URLs se resuelven internamente y no necesitas pedirlas al usuario.
 
 POLÍTICA DE MOTOR:
 ${getNaylaExecutionPolicyPrompt(engineMode)}
 MODO_MOTOR=${engineMode}
 `;
 
-    const priorUserPlanInstruction = executionConfirmed
-      ? findLastUserPlanInstruction(effectiveHistory)
-      : '';
-    const priorAssistantPlan = executionConfirmed
-      ? findLastAssistantPlan(effectiveHistory)
-      : '';
     const fallbackExecutionContext = executionConfirmed
       ? [priorUserPlanInstruction, priorAssistantPlan, message].filter(Boolean).join('\n\n')
       : message;
     const confirmedTimelineContext = executionConfirmed
-      ? [userPlanningContext, priorAssistantPlan, message].filter(Boolean).join('\n\n')
+      ? activePlanningContext
       : message;
-    const subtitleBlocks = extractSubtitleBlocks(userPlanningContext);
-    const requestedTimelineSeconds = getRequestedTimelineSeconds(userPlanningContext);
+    const subtitleBlocks = extractSubtitleBlocks(
+      executionConfirmed && priorUserPlanInstruction
+        ? priorUserPlanInstruction
+        : message
+    );
+    const requestedTimelineSeconds = getRequestedTimelineSeconds(activePlanningContext);
     const confirmedTimelineShouldRender =
       executionConfirmed && timelinePlanRequestsRender(confirmedTimelineContext);
 
-    const deterministicConfirmedAction =
-      executionConfirmed && isBarePlanConfirmation(message)
-        ? buildLabelTimelineFallback(confirmedTimelineContext, mergedLibrary)
-        : null;
-
     let responseText = '';
-    if (!deterministicConfirmedAction) {
-      try {
-        responseText = await executeDirectLlm({
-          provider,
-          prompt: fullPrompt,
-          images: visionImages,
-          systemPrompt: compactSystemPrompt,
-        });
-      } catch (error: any) {
-        console.error('[chat.ts] Todos los motores IA de Nayla fallaron:', error);
+    try {
+      responseText = await executeDirectLlm({
+        provider,
+        prompt: fullPrompt,
+        images: visionImages,
+        systemPrompt: compactSystemPrompt,
+      });
+    } catch (error: any) {
+      console.error('[chat.ts] Todos los motores IA de Nayla fallaron:', error);
+      if (!executionConfirmed) {
         return res.status(500).json({
           error: 'Nayla no pudo procesar esta solicitud en este momento. Inténtalo nuevamente.',
         });
@@ -985,7 +1034,6 @@ MODO_MOTOR=${engineMode}
     }
 
     const parsedAction =
-      deterministicConfirmedAction ||
       parseNaylaAction(responseText) ||
       (executionConfirmed ? buildLabelTimelineFallback(fallbackExecutionContext, mergedLibrary) : null);
 
@@ -1014,12 +1062,41 @@ MODO_MOTOR=${engineMode}
 
     const action = parsedAction?.action === 'BUILD_TIMELINE'
       ? (() => {
-          let assets = parsedAction.assets.map((asset: any) => ({
-            ...asset,
-            url: asset?.source === 'url' && typeof asset?.url === 'string'
-              ? canonicalizeUrl(asset.url)
-              : asset?.url,
-          }));
+          let assetResolutionFailed = false;
+          let assets = parsedAction.assets.map((asset: any) => {
+            if (asset?.source === 'label' && typeof asset?.label === 'string') {
+              const label = asset.label.trim().toUpperCase();
+              const expectedType = asset.type === 'image' ? 'foto' : asset.type;
+              const media = mergedLibrary.find((item: any) =>
+                item.tipo === expectedType &&
+                typeof item.etiqueta === 'string' &&
+                item.etiqueta.trim().toUpperCase() === label
+              );
+              if (!media?.url) {
+                assetResolutionFailed = true;
+                return asset;
+              }
+              const resolvedAsset = { ...asset };
+              delete resolvedAsset.label;
+              return {
+                ...resolvedAsset,
+                source: 'url' as const,
+                url: media.url,
+              };
+            }
+
+            if (asset?.source === 'url' && typeof asset?.url === 'string') {
+              return {
+                ...asset,
+                url: canonicalizeUrl(asset.url),
+              };
+            }
+
+            assetResolutionFailed = true;
+            return asset;
+          });
+
+          if (assetResolutionFailed) return null;
 
           const photoOnly = assets.length > 0 && assets.every((asset: any) => asset.type === 'foto' || asset.type === 'image');
           if (photoOnly && requestedTimelineSeconds && requestedTimelineSeconds > 0) {
@@ -1199,7 +1276,7 @@ MODO_MOTOR=${engineMode}
       /\b(en\s+marcha|renderiz(?:ando|aci[oó]n)|procesando|guard(?:ando|ar[aá]).*b[oó]veda|cuando\s+termine)\b/i.test(publicResponseText) &&
       /\b(video|render|timeline|edici[oó]n)\b/i.test(message)
     ) {
-      publicResponseText = 'No se inició ningún procesamiento todavía. Reformula la orden con las etiquetas F/V/A que quieres usar para que Nayla pueda crear el trabajo real.';
+      publicResponseText = 'No se inició ningún procesamiento todavía. Puedes indicarme los medios por F/V/A o hablar de forma natural sobre las fotos, videos y audios del plan activo.';
     }
 
     if (scope.threadId) {

@@ -12,6 +12,15 @@ describe('Nayla capability bible', () => {
     expect(NAYLA_CAPABILITY_BIBLE.every((item) => item.status === 'ready')).toBe(true);
   });
 
+  it('recognizes stable media labels without making them a rigid command language', () => {
+    const matches = findNaylaCapabilityMatches(
+      'usa F1 dos segundos, después V2 y deja A1 de fondo'
+    );
+
+    expect(matches.map((item) => item.id)).toContain('media-addressing');
+    expect(NAYLA_CAPABILITY_BIBLE.find((item) => item.id === 'media-addressing')?.status).toBe('ready');
+  });
+
   it('maps vague 3D language to usable depth motion before real 3D integration', () => {
     const matches = findNaylaCapabilityMatches(
       'Quiero algo que parezca 3D, con profundidad y que se cruce entre las fotos'
