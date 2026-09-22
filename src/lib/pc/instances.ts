@@ -258,6 +258,7 @@ export const progressNaylaPcSaveRequests = async () => {
   const rows = await listNaylaPcSnapshottingInstances(10);
   const results = await Promise.all(
     rows.map(async (row) => {
+      let haltedForSnapshot = false;
       try {
         if (typeof row.metadata?.save_snapshot_id === 'string') {
           return { id: row.id, ok: true as const, action: 'snapshot_exists' as const };
@@ -304,6 +305,10 @@ export const progressNaylaPcSaveRequests = async () => {
 
         const description =
           'nayla-pc-' + row.user_id.slice(0, 18) + '-' + Date.now();
+
+        await haltVultrInstance(row.provider_instance_id);
+        haltedForSnapshot = true;
+
         const providerSnapshot = await createVultrSnapshot({
           instanceId: row.provider_instance_id,
           description,
@@ -362,6 +367,10 @@ export const progressNaylaPcSaveRequests = async () => {
           snapshotId: snapshot.id,
         };
       } catch (error) {
+        if (haltedForSnapshot && row.provider_instance_id) {
+          await startVultrInstance(row.provider_instance_id).catch(() => undefined);
+        }
+
         await patchNaylaPcInstance({
           instanceId: row.id,
           patch: {
