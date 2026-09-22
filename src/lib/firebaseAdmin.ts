@@ -1,6 +1,6 @@
 import type { NextApiRequest } from 'next';
 
-export type FirebaseIdentity = { uid: string; email?: string };
+export type FirebaseIdentity = { uid: string; email?: string; emailVerified?: boolean };
 
 async function getFirebaseAdminAuth() {
   const app = await import('firebase-admin/app');
@@ -19,7 +19,11 @@ export async function requireFirebaseUser(req: NextApiRequest): Promise<Firebase
   const token = req.headers.authorization?.replace(/^Bearer\s+/i, '');
   if (!token) throw new Error('Falta el token Bearer de Firebase.');
   const decoded = await (await getFirebaseAdminAuth()).verifyIdToken(token);
-  return { uid: decoded.uid, email: decoded.email };
+  return {
+    uid: decoded.uid,
+    email: decoded.email,
+    emailVerified: decoded.email_verified === true,
+  };
 }
 
 export const isFirebaseAdmin = (identity: FirebaseIdentity) =>
