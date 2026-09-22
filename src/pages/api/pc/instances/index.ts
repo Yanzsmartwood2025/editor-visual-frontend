@@ -27,6 +27,8 @@ const envNumber = (key: string, fallback: number) => {
 
 const maxSessionUsd = () => envNumber('NAYLA_PC_MAX_SESSION_USD', 100);
 const maxMonthlyUsd = () => envNumber('NAYLA_PC_MAX_MONTHLY_USD', 750);
+const leaseSafetySeconds = () =>
+  Math.min(300, Math.max(30, envNumber('NAYLA_PC_LEASE_SAFETY_SECONDS', 90)));
 
 const sameMoney = (a: unknown, b: number) => {
   const value = Number(a);
@@ -160,7 +162,9 @@ export default async function handler(
     const autoDestroy = resolved.request.billingMode === 'hourly';
     const expiresAt = autoDestroy
       ? new Date(
-          Date.now() + resolved.request.durationHours * 60 * 60 * 1000
+          Date.now() +
+            resolved.request.durationHours * 60 * 60 * 1000 -
+            leaseSafetySeconds() * 1000
         ).toISOString()
       : null;
 
@@ -265,19 +269,42 @@ export default async function handler(
         },
       });
     } catch (error) {
-      await deleteVultrInstance(provider.id).catch(() => undefined);
+      let cleanupOk = false;
+      try {
+        await deleteVultrInstance(provider.id);
+        cleanupOk = true;
+      } catch {
+        cleanupOk = false;
+      }
+
       await patchNaylaPcInstance({
         instanceId: pending.id,
-        patch: {
-          status: 'error',
-          terminated_at: new Date().toISOString(),
-          metadata: {
-            ...(pending.metadata || {}),
-            persistence_error:
-              error instanceof Error ? error.message.slice(0, 500) : 'unknown',
-            provider_cleanup_attempted: true,
-          },
-        },
+        patch: cleanupOk
+          ? {
+              provider_instance_id: provider.id,
+              status: 'error',
+              terminated_at: new Date().toISOString(),
+              metadata: {
+                ...(pending.metadata || {}),
+                persistence_error:
+                  error instanceof Error ? error.message.slice(0, 500) : 'unknown',
+                provider_cleanup_attempted: true,
+                provider_cleanup_ok: true,
+              },
+            }
+          : {
+              provider_instance_id: provider.id,
+              status: 'terminating',
+              auto_destroy: true,
+              expires_at: new Date().toISOString(),
+              metadata: {
+                ...(pending.metadata || {}),
+                persistence_error:
+                  error instanceof Error ? error.message.slice(0, 500) : 'unknown',
+                provider_cleanup_attempted: true,
+                provider_cleanup_pending: true,
+              },
+            },
       }).catch(() => undefined);
       throw error;
     }
