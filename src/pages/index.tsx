@@ -5842,7 +5842,7 @@ if (!session) {
                               color: '#d8d8d8',
                               fontSize: 22,
                             }}>
-                              {asset.tipo === 'audio' ? '♪' : '◇'}
+                              {asset.tipo === 'audio' ? '♪' : asset.tipo === 'documento' ? 'DOC' : '◇'}
                             </div>
                           )}
                           <div style={{ padding: '7px 8px', minWidth: 0 }}>
