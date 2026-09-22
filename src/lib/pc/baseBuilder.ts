@@ -131,6 +131,34 @@ export const startNaylaPcBaseBuild = async () => {
   };
 };
 
+export const cleanupNaylaPcBaseBuild = async () => {
+  const builder = await findVultrInstanceByLabel(NAYLA_PC_BASE_LABEL);
+  if (builder?.id) {
+    await deleteVultrInstance(builder.id);
+  }
+
+  const building = await getLatestNaylaPcBaseImage(['building']);
+  if (building) {
+    await patchNaylaPcBaseImage({
+      baseImageId: building.id,
+      patch: {
+        status: 'error',
+        metadata: {
+          ...(building.metadata || {}),
+          cleanup_reason: 'manual_cleanup',
+          cleanup_at: new Date().toISOString(),
+        },
+      },
+    });
+  }
+
+  const after = await findVultrInstanceByLabel(NAYLA_PC_BASE_LABEL);
+  return {
+    state: after ? ('cleanup_pending' as const) : ('cleaned' as const),
+    providerInstancePresent: Boolean(after),
+  };
+};
+
 export const progressNaylaPcBaseBuild = async () => {
   const available = await getAvailableNaylaPcBaseImage('linux');
   if (available?.version === NAYLA_PC_BASE_VERSION) {
