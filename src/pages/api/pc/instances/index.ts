@@ -63,7 +63,10 @@ export default async function handler(
 
       const synced = await syncNaylaPcInstance(active);
       if (synced.status === 'terminated') {
-        return res.status(200).json({ instance: null });
+        return res.status(200).json({
+          instance: null,
+          provisioningAllowed: isFirebaseAdmin(user),
+        });
       }
 
       return res.status(200).json({
