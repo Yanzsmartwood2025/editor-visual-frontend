@@ -346,8 +346,12 @@ export const probeNaylaPcBuildStatus = async (
 
 export const buildNaylaPcDesktopUserData = ({
   desktopPassword,
+  statusCallbackUrl,
+  statusCallbackToken,
 }: {
   desktopPassword: string;
+  statusCallbackUrl?: string;
+  statusCallbackToken?: string;
 }) => {
   const password = desktopPassword.replace(/[^A-Za-z0-9]/g, '').slice(0, 8);
   if (password.length < 8) {
@@ -358,8 +362,17 @@ export const buildNaylaPcDesktopUserData = ({
     '#!/usr/bin/env bash',
     'set -Eeuo pipefail',
     'export DEBIAN_FRONTEND=noninteractive',
+    'NAYLA_BASE_CALLBACK_URL=' + shellQuote(String(statusCallbackUrl || '').trim()),
+    'NAYLA_BASE_CALLBACK_TOKEN=' + shellQuote(String(statusCallbackToken || '').trim()),
+    'report_stage() {',
+    '  stage="$1"; detail="$2"',
+    '  if [ -n "$NAYLA_BASE_CALLBACK_URL" ] && [ -n "$NAYLA_BASE_CALLBACK_TOKEN" ]; then',
+    '    curl -fsS --max-time 10 -X POST "$NAYLA_BASE_CALLBACK_URL" -H "Authorization: Bearer $NAYLA_BASE_CALLBACK_TOKEN" -H "Content-Type: application/json" --data "{\"stage\":\"$stage\",\"detail\":\"$detail\"}" >/dev/null 2>&1 || true',
+    '  fi',
+    '}',
     'mkdir -p /var/lib/nayla-base-status',
     "printf '%s\\n' '{\"stage\":\"boot\",\"detail\":\"cloud-init started\"}' > /var/lib/nayla-base-status/status.json",
+    'report_stage boot "cloud-init started"',
     "cat > /etc/systemd/system/nayla-base-status.service <<'EOF'",
     '[Unit]',
     'Description=Nayla base build status',
@@ -374,11 +387,13 @@ export const buildNaylaPcDesktopUserData = ({
     'EOF',
     'systemctl daemon-reload',
     'systemctl enable --now nayla-base-status.service',
-    "trap 'code=$?; line=$LINENO; printf \"{\\\"stage\\\":\\\"error\\\",\\\"detail\\\":\\\"line %s exit %s\\\"}\\n\" \"$line\" \"$code\" > /var/lib/nayla-base-status/status.json; exit $code' ERR",
+    "trap 'code=$?; line=$LINENO; printf \"{\\\"stage\\\":\\\"error\\\",\\\"detail\\\":\\\"line %s exit %s\\\"}\\n\" \"$line\" \"$code\" > /var/lib/nayla-base-status/status.json; report_stage error \"line $line exit $code\"; exit $code' ERR",
     "printf '%s\\n' '{\"stage\":\"packages\",\"detail\":\"installing desktop packages\"}' > /var/lib/nayla-base-status/status.json",
+    'report_stage packages "installing desktop packages"',
     'apt-get update',
     'apt-get install -y --no-install-recommends xfce4 xfce4-terminal dbus-x11 xvfb x11vnc novnc websockify openssl ufw curl ca-certificates',
     "printf '%s\\n' '{\"stage\":\"services\",\"detail\":\"configuring desktop services\"}' > /var/lib/nayla-base-status/status.json",
+    'report_stage services "configuring desktop services"',
     'id -u nayla >/dev/null 2>&1 || useradd -m -s /bin/bash nayla',
     'usermod -aG sudo nayla',
     "printf '%s\\n' 'nayla ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/nayla",
@@ -464,10 +479,12 @@ export const buildNaylaPcDesktopUserData = ({
     'systemctl start nayla-novnc.service',
     'systemctl start nayla-xfce.service',
     "printf '%s\\n' '{\"stage\":\"verifying\",\"detail\":\"checking local desktop services\"}' > /var/lib/nayla-base-status/status.json",
+    'report_stage verifying "checking local desktop services"',
     'for i in $(seq 1 30); do',
     '  if systemctl is-active --quiet nayla-xvfb.service && systemctl is-active --quiet nayla-vnc.service && systemctl is-active --quiet nayla-novnc.service && systemctl is-active --quiet nayla-xfce.service && curl -kfsS --max-time 3 https://127.0.0.1:6080/vnc.html >/dev/null; then break; fi',
     '  if [ "$i" -eq 30 ]; then',
     '    printf \'{"stage":"error","detail":"desktop services did not become ready"}\\n\' > /var/lib/nayla-base-status/status.json',
+    '    report_stage error "desktop services did not become ready"',
     '    systemctl --no-pager --full status nayla-xvfb.service nayla-xfce.service nayla-vnc.service nayla-novnc.service > /var/lib/nayla-base-status/services.txt 2>&1 || true',
     '    exit 42',
     '  fi',
@@ -482,6 +499,7 @@ export const buildNaylaPcDesktopUserData = ({
     'ufw --force enable',
     "printf '%s\\n' 'ready' > /usr/share/novnc/nayla-base-ready.txt",
     "printf '%s\\n' '{\"stage\":\"ready\",\"detail\":\"desktop verified locally\"}' > /var/lib/nayla-base-status/status.json",
+    'report_stage ready "desktop verified locally"',
     "cat > /usr/local/sbin/nayla-seal-base-image <<'EOF'",
     '#!/usr/bin/env bash',
     'set -euo pipefail',
