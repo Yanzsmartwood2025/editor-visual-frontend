@@ -252,6 +252,8 @@ export default async function handler(
       return res.status(200).json({
         ok: true,
         spendableBalanceUsd: account.balance,
+        rawBalanceUsd: account.rawBalance,
+        pendingChargesUsd: account.pendingCharges,
         candidate: {
           cpu: Number(catalog.plan.vcpu_count),
           ramGb: ramGb(catalog.plan),
@@ -285,12 +287,6 @@ export default async function handler(
       }
 
       const account = await getVultrAccountSummary();
-      if (account.balance < 1) {
-        return res.status(409).json({
-          error: 'Saldo de seguridad insuficiente para la prueba.',
-          spendableBalanceUsd: account.balance,
-        });
-      }
 
       const { plan, regionId, region, os } = await chooseCatalog();
       const password = desktopPassword();
@@ -394,6 +390,8 @@ export default async function handler(
         return res.status(201).json({
           ok: true,
           spendableBalanceBeforeUsd: account.balance,
+          rawBalanceBeforeUsd: account.rawBalance,
+          pendingChargesBeforeUsd: account.pendingCharges,
           computer: {
             cpu: saved.cpu,
             ramGb: Number(saved.ram_gb),
