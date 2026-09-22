@@ -438,6 +438,9 @@ export const finalizePendingNaylaPcSnapshots = async () => {
           });
           if (row.source_instance_id) {
             const source = await getNaylaPcInstanceById(row.source_instance_id).catch(() => null);
+            if (source?.provider_instance_id) {
+              await startVultrInstance(source.provider_instance_id).catch(() => undefined);
+            }
             await patchNaylaPcInstance({
               instanceId: row.source_instance_id,
               patch: {
@@ -472,6 +475,9 @@ export const finalizePendingNaylaPcSnapshots = async () => {
 
           if (row.source_instance_id) {
             const source = await getNaylaPcInstanceById(row.source_instance_id).catch(() => null);
+            if (source?.provider_instance_id) {
+              await startVultrInstance(source.provider_instance_id).catch(() => undefined);
+            }
             await patchNaylaPcInstance({
               instanceId: row.source_instance_id,
               patch: {
