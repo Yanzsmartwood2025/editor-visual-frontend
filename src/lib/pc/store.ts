@@ -418,6 +418,27 @@ export const getNaylaPcSnapshotForUser = async ({
   return (data as NaylaPcSnapshotRow | null) || null;
 };
 
+export const listOlderAvailableNaylaPcSnapshots = async ({
+  userId,
+  excludeId,
+}: {
+  userId: string;
+  excludeId: string;
+}): Promise<NaylaPcSnapshotRow[]> => {
+  const supabase = getWorkspaceSupabaseAdmin();
+  const { data, error } = await supabase
+    .from('nayla_pc_snapshots')
+    .select('*')
+    .eq('user_id', userId)
+    .eq('status', 'available')
+    .neq('id', excludeId)
+    .order('created_at', { ascending: true })
+    .limit(10);
+
+  if (error) throw error;
+  return (data as NaylaPcSnapshotRow[]) || [];
+};
+
 export const listPendingNaylaPcSnapshots = async (
   limit = 10
 ): Promise<NaylaPcSnapshotRow[]> => {
