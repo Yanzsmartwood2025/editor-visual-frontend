@@ -19,14 +19,14 @@ afterEach(() => {
 });
 
 describe('Vultr Compute adapter', () => {
-  it('reads prepaid balance and subtracts pending charges without exposing secrets', async () => {
+  it('reads negative Vultr ledger balance as prepaid credit and subtracts pending charges', async () => {
     process.env.VULTR_API_KEY = 'vultr-secret';
 
     vi.stubGlobal('fetch', vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
       expect((init?.headers as Record<string, string>)?.Authorization).toBe('Bearer vultr-secret');
       return new Response(JSON.stringify({
         account: {
-          balance: 12.5,
+          balance: -12.5,
           pending_charges: 1.25,
           api_key: 'must-not-escape',
         },
