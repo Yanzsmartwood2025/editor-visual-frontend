@@ -241,6 +241,35 @@ export const getActiveNaylaPcInstance = async (
   return (data as NaylaPcInstanceRow | null) || null;
 };
 
+export const getNaylaPcInstanceById = async (
+  instanceId: string
+): Promise<NaylaPcInstanceRow | null> => {
+  const supabase = getWorkspaceSupabaseAdmin();
+  const { data, error } = await supabase
+    .from('nayla_pc_instances')
+    .select('*')
+    .eq('id', instanceId)
+    .maybeSingle();
+
+  if (error) throw error;
+  return (data as NaylaPcInstanceRow | null) || null;
+};
+
+export const listNaylaPcSnapshottingInstances = async (
+  limit = 10
+): Promise<NaylaPcInstanceRow[]> => {
+  const supabase = getWorkspaceSupabaseAdmin();
+  const { data, error } = await supabase
+    .from('nayla_pc_instances')
+    .select('*')
+    .eq('status', 'snapshotting')
+    .order('updated_at', { ascending: true })
+    .limit(Math.max(1, Math.min(25, limit)));
+
+  if (error) throw error;
+  return (data as NaylaPcInstanceRow[]) || [];
+};
+
 export const getNaylaPcInstanceForUser = async ({
   userId,
   instanceId,
