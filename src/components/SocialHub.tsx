@@ -17,6 +17,7 @@ type Props = {
   session: FirebaseSession | null;
   projectId: string | null;
   results: ResultMedia[];
+  onResultsUploaded?: (items: ResultMedia[]) => void;
   onClose?: () => void;
 };
 
@@ -317,7 +318,7 @@ const unwrapMetrics = (value: any): { label: string; value: string | number }[] 
     }));
 };
 
-export default function SocialHub({ session, projectId, results, onClose }: Props) {
+export default function SocialHub({ session, projectId, results, onResultsUploaded, onClose }: Props) {
   const [tab, setTab] = useState<'inicio' | 'publicar' | 'inbox' | 'metricas' | 'ajustes'>('inicio');
   const [data, setData] = useState<any>(null);
   const [busy, setBusy] = useState('');
@@ -557,6 +558,7 @@ export default function SocialHub({ session, projectId, results, onClose }: Prop
         publishable.forEach((item) => map.set(item.id, item));
         return Array.from(map.values());
       });
+      onResultsUploaded?.(publishable);
 
       if (publishable[0]) {
         setSelectedResult(publishable[0].id);
