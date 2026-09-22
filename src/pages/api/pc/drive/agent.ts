@@ -3,11 +3,13 @@ import type { NextApiRequest, NextApiResponse } from 'next';
 import {
   createR2PresignedGetUrl,
   createR2PresignedPutUrl,
+  deleteR2Object,
   headR2Object,
 } from '../../../../lib/r2';
 import {
   getNaylaPcDriveSessionByTokenHash,
   listNaylaPcDriveFiles,
+  softDeleteNaylaPcDriveFile,
   touchNaylaPcDriveSession,
   upsertNaylaPcDriveFile,
 } from '../../../../lib/pc/store';
@@ -114,6 +116,24 @@ export default async function handler(
         uploadUrl: upload.uploadUrl,
         expiresIn: upload.expiresIn,
       });
+    }
+
+    if (action === 'delete_file') {
+      const row = (await listNaylaPcDriveFiles(session.user_id)).find(
+        (item) => item.relative_path === relativePath
+      );
+
+      if (!row) {
+        return res.status(200).json({ ok: true, deleted: false });
+      }
+
+      await deleteR2Object(row.r2_key);
+      await softDeleteNaylaPcDriveFile({
+        userId: session.user_id,
+        relativePath,
+      });
+
+      return res.status(200).json({ ok: true, deleted: true });
     }
 
     if (action === 'confirm_upload') {
