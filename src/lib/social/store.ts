@@ -219,7 +219,9 @@ export const getOwnedPublishMedia = async ({
     .maybeSingle();
   if (error) throw error;
   if (!data) throw new Error('El resultado seleccionado no existe en este proyecto.');
-  if (data.tipo !== 'video') throw new Error('Por ahora REDES publica resultados de video.');
+  if (!['video', 'foto'].includes(String(data.tipo))) {
+    throw new Error('REDES publica fotos y videos guardados en Resultados.');
+  }
   const url = data.r2_key
     ? createR2PresignedGetUrl({ key: data.r2_key, expiresIn: 1800 }).url
     : data.url;
