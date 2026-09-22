@@ -40,6 +40,15 @@ describe('Nayla Play quote', () => {
     vi.mocked(getComputeCatalog).mockResolvedValue({
       candidates: [
         {
+          backend: 'vast',
+          backendId: '123',
+          gpuName: 'GPU B',
+          gpuRamGb: 16,
+          hourlyPrice: 0.4,
+          balanceUsd: 10,
+          raw: { geolocation: 'US' },
+        },
+        {
           backend: 'vultr',
           backendId: 'plan@ewr',
           gpuName: 'RTX Test',
@@ -49,15 +58,6 @@ describe('Nayla Play quote', () => {
           raw: {},
           regionLabel: 'New Jersey, US',
           billingMinimumMinutes: 60,
-        },
-        {
-          backend: 'vast',
-          backendId: '123',
-          gpuName: 'GPU B',
-          gpuRamGb: 16,
-          hourlyPrice: 0.4,
-          balanceUsd: 10,
-          raw: { geolocation: 'US' },
         },
       ],
       errors: [],
