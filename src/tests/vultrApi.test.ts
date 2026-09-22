@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
+  buildNaylaPcDesktopUserData,
+  buildNaylaPcRuntimeUserData,
   buildVultrWorkerUserData,
   createVultrGpuInstance,
   deleteVultrInstance,
@@ -19,6 +21,27 @@ afterEach(() => {
 });
 
 describe('Vultr Compute adapter', () => {
+  it('uses real newlines in Nayla PC cloud-init scripts', () => {
+    const desktop = Buffer.from(
+      buildNaylaPcDesktopUserData({ desktopPassword: 'Abcd1234' }),
+      'base64'
+    ).toString('utf8');
+    expect(desktop.startsWith('#!/usr/bin/env bash\nset -Eeuo pipefail\n')).toBe(true);
+    expect(desktop).not.toContain('#!/usr/bin/env bash\\nset -Eeuo pipefail');
+
+    const runtime = Buffer.from(
+      buildNaylaPcRuntimeUserData({
+        desktopPassword: 'Abcd1234',
+        driveToken: 'test-drive-token',
+        instanceId: 'test-instance-id',
+        driveApiBaseUrl: 'https://example.com/api/pc/drive/agent',
+      }),
+      'base64'
+    ).toString('utf8');
+    expect(runtime.startsWith('#!/usr/bin/env bash\nset -euo pipefail\n')).toBe(true);
+    expect(runtime).not.toContain('#!/usr/bin/env bash\\nset -euo pipefail');
+  });
+
   it('reads raw Vultr billing balance without treating it as spendable credit', async () => {
     process.env.VULTR_API_KEY = 'vultr-secret';
 
