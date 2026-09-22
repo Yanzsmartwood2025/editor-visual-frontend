@@ -1,9 +1,11 @@
+import { createHash, randomBytes } from 'node:crypto';
 import type { NextApiRequest, NextApiResponse } from 'next';
 import {
   isFirebaseAdmin,
   requireFirebaseUser,
 } from '../../../../lib/firebaseAdmin';
 import {
+  buildNaylaPcRuntimeUserData,
   createVultrInstanceFromSnapshot,
   deleteVultrInstance,
   deleteVultrSnapshot,
@@ -12,12 +14,14 @@ import {
   listVultrRegions,
 } from '../../../../lib/gpu/vultrApi';
 import {
+  createNaylaPcDriveSession,
   getActiveNaylaPcInstance,
   getDefaultNaylaPcProfile,
   getLatestNaylaPcSnapshot,
   patchNaylaPcInstance,
   patchNaylaPcSnapshot,
   createNaylaPcProvisioningInstance,
+  revokeNaylaPcDriveSessionsForInstance,
 } from '../../../../lib/pc/store';
 import {
   toPublicNaylaPcInstance,
@@ -41,12 +45,6 @@ const maxSessionUsd = () =>
 
 const maxMonthlyUsd = () =>
   envNumber('NAYLA_PC_MAX_MONTHLY_USD', 750, 1, 10000);
-
-const leaseSafetySeconds = () =>
-  Math.min(
-    300,
-    Math.max(30, envNumber('NAYLA_PC_LEASE_SAFETY_SECONDS', 90, 1, 300))
-  );
 
 const roundMoney = (value: number) => Math.ceil(value * 1000) / 1000;
 
@@ -277,14 +275,16 @@ export default async function handler(
     }
 
     const profile = await getDefaultNaylaPcProfile(user.uid);
-    const autoDestroy = billingMode === 'hourly';
-    const expiresAt = autoDestroy
-      ? new Date(
-          Date.now() +
-            durationHours * 60 * 60 * 1000 -
-            leaseSafetySeconds() * 1000
-        ).toISOString()
-      : null;
+    const desktopPassword = randomBytes(6)
+      .toString('base64url')
+      .replace(/[^A-Za-z0-9]/g, '')
+      .slice(0, 8)
+      .padEnd(8, '7');
+    const driveToken = randomBytes(32).toString('base64url');
+    const driveTokenHash = createHash('sha256')
+      .update(driveToken, 'utf8')
+      .digest('hex');
+    const bootDeadlineAt = new Date(Date.now() + 30 * 60 * 1000).toISOString();
 
     const pending = await createNaylaPcProvisioningInstance({
       userId: user.uid,
@@ -299,26 +299,51 @@ export default async function handler(
       gpuEnabled: false,
       billingMode,
       durationHours,
-      autoDestroy,
+      autoDestroy: true,
       publicHourlyPrice: hourlyPrice,
       publicMonthlyPrice: monthlyPrice,
       publicSessionPrice: sessionPrice,
       providerMonthlyCost: providerMonthly,
-      expiresAt,
+      expiresAt: bootDeadlineAt,
+      bootDeadlineAt,
       metadata: {
         restored_from_snapshot_id: snapshot.id,
         os_name: snapshot.os_name || null,
-        desktop_enabled: snapshot.metadata?.desktop_enabled === true,
-        desktop_password:
-          typeof snapshot.metadata?.desktop_password === 'string'
-            ? String(snapshot.metadata.desktop_password)
-            : null,
+        desktop_enabled: true,
+        desktop_password: desktopPassword,
         desktop_port: snapshot.metadata?.desktop_port || 6080,
         desktop_tls: snapshot.metadata?.desktop_tls || 'self_signed',
+        drive_enabled: true,
+        requested_billing_mode: billingMode,
+        boot_started_at: new Date().toISOString(),
       },
     });
 
     const label = 'nayla-pc-' + pending.id;
+    const driveSessionExpiresAt = new Date(
+      Date.now() +
+        (billingMode === 'monthly'
+          ? 40 * 24 * 60 * 60 * 1000
+          : (durationHours + 48) * 60 * 60 * 1000)
+    ).toISOString();
+
+    await createNaylaPcDriveSession({
+      instanceId: pending.id,
+      userId: user.uid,
+      tokenHash: driveTokenHash,
+      expiresAt: driveSessionExpiresAt,
+    });
+
+    const driveApiBaseUrl =
+      (process.env.NAYLA_PUBLIC_BASE_URL || 'https://editor-visual-frontend-cauc.vercel.app')
+        .replace(/\/$/, '') + '/api/pc/drive/agent';
+
+    const runtimeUserData = buildNaylaPcRuntimeUserData({
+      desktopPassword,
+      driveToken,
+      instanceId: pending.id,
+      driveApiBaseUrl,
+    });
 
     try {
       let provider;
@@ -328,6 +353,7 @@ export default async function handler(
           regionId,
           snapshotId: snapshot.provider_snapshot_id,
           label,
+          userData: runtimeUserData,
         });
        } catch (error) {
         const recovered = await findVultrInstanceByLabel(label).catch(() => null);
@@ -373,6 +399,7 @@ export default async function handler(
                 },
         }).catch(() => undefined);
 
+        await revokeNaylaPcDriveSessionsForInstance(pending.id).catch(() => undefined);
         throw error;
       }
 
@@ -426,6 +453,7 @@ export default async function handler(
               },
         }).catch(() => undefined);
 
+        await revokeNaylaPcDriveSessionsForInstance(pending.id).catch(() => undefined);
         throw error;
       }
 
