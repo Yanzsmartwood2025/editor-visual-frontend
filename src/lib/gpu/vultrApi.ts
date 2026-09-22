@@ -1,3 +1,4 @@
+import https from 'node:https';
 import type { GpuProfile } from './profiles';
 
 const VULTR_BASE_URL =
@@ -253,6 +254,50 @@ const shellQuote = (value: string) =>
 
 const encodeUserData = (value: string) =>
   Buffer.from(value, 'utf8').toString('base64');
+
+export const combineVultrUserData = (...encodedScripts: string[]) => {
+  const scripts = encodedScripts
+    .filter(Boolean)
+    .map((value, index) => {
+      const decoded = Buffer.from(value, 'base64').toString('utf8');
+      return index === 0 ? decoded : decoded.replace(/^#![^\n]*\n/, '');
+    });
+  return encodeUserData(scripts.join('\n'));
+};
+
+export const probeNaylaPcDesktop = async (
+  ip?: string | null,
+  port = 6080
+): Promise<boolean> => {
+  if (!ip || ip === '0.0.0.0') return false;
+
+  return await new Promise<boolean>((resolve) => {
+    const request = https.get(
+      {
+        hostname: ip,
+        port,
+        path: '/vnc.html',
+        method: 'GET',
+        rejectUnauthorized: false,
+        timeout: 4_500,
+        headers: { Host: ip },
+      },
+      (response) => {
+        response.resume();
+        resolve(
+          Number(response.statusCode) >= 200 &&
+            Number(response.statusCode) < 500
+        );
+      }
+    );
+
+    request.on('timeout', () => {
+      request.destroy();
+      resolve(false);
+    });
+    request.on('error', () => resolve(false));
+  });
+};
 
 export const buildNaylaPcDesktopUserData = ({
   desktopPassword,
