@@ -53,7 +53,7 @@ jobs:
           path: /tmp/nayla-editor.log
 
   sync-checkly:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: ${{ always() && github.event_name == 'push' && github.ref == 'refs/heads/main' }}
     needs: playwright-smoke
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -66,9 +66,11 @@ jobs:
         with:
           node-version: "20"
 
-      - name: Sync production availability monitor
+      - name: Sync Checkly and publish live CI result
         env:
           CHECKLY_API_KEY: ${{ secrets.CHECKLY_API_KEY }}
           CHECKLY_ACCOUNT_ID: ${{ secrets.CHECKLY_ACCOUNT_ID }}
           CHECKLY_TARGET_URL: https://editor-visual-frontend-cauc.vercel.app/
+          DIAGNOSTICS_BASE_URL: https://editor-visual-frontend-cauc.vercel.app
+          PLAYWRIGHT_RESULT: ${{ needs.playwright-smoke.result }}
         run: node scripts/sync-checkly-monitor.mjs
