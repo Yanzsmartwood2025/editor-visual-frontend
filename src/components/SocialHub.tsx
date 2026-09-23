@@ -364,6 +364,7 @@ export default function SocialHub({ session, projectId, results, onResultsUpload
   const [naylaSettingsSnapshot, setNaylaSettingsSnapshot] = useState<any>(null);
   const [naylaPlusOpen, setNaylaPlusOpen] = useState(false);
   const [socialUploads, setSocialUploads] = useState<ResultMedia[]>([]);
+  const [socialUploadPercent, setSocialUploadPercent] = useState(0);
   const socialUploadInputRef = useRef<HTMLInputElement | null>(null);
   const socialChatEndRef = useRef<HTMLDivElement | null>(null);
 
@@ -560,6 +561,7 @@ export default function SocialHub({ session, projectId, results, onResultsUpload
     }
 
     setBusy('social-upload');
+    setSocialUploadPercent(0);
     setNotice('');
     try {
       const uploaded = await uploadMediaFilesToBodega({
@@ -569,6 +571,7 @@ export default function SocialHub({ session, projectId, results, onResultsUpload
         projectId,
         fuente: 'social-upload',
         labelMode: 'result',
+        onProgress: (progress) => setSocialUploadPercent(progress.percent),
       });
 
       const publishable = uploaded
@@ -601,6 +604,7 @@ export default function SocialHub({ session, projectId, results, onResultsUpload
       setNotice(error instanceof Error ? error.message : 'No se pudo subir el archivo para publicar.');
     } finally {
       setBusy('');
+      setSocialUploadPercent(0);
       if (socialUploadInputRef.current) socialUploadInputRef.current.value = '';
     }
   };
@@ -1291,7 +1295,7 @@ export default function SocialHub({ session, projectId, results, onResultsUpload
               onClick={() => socialUploadInputRef.current?.click()}
               style={{ ...tinyButton(false), padding: '6px 8px', fontSize: 8 }}
             >
-              {busy === 'social-upload' ? 'SUBIENDO…' : '+ TELÉFONO'}
+              {busy === 'social-upload' ? `SUBIENDO ${socialUploadPercent}%` : '+ TELÉFONO'}
             </button>
           </div>
           <NaylaSelect
@@ -1637,7 +1641,7 @@ export default function SocialHub({ session, projectId, results, onResultsUpload
                       }}
                       style={{ ...tinyButton(false), width: '100%', textAlign: 'left', padding: '10px 11px', fontSize: 10 }}
                     >
-                      {busy === 'social-upload' ? 'Subiendo…' : 'Subir foto o video para publicar'}
+                      {busy === 'social-upload' ? `Subiendo… ${socialUploadPercent}%` : 'Subir foto o video para publicar'}
                     </button>
                     <button
                       type="button"
