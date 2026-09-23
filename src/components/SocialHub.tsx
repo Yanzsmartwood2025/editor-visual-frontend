@@ -477,12 +477,20 @@ export default function SocialHub({ session, projectId, results, onResultsUpload
     return limit == null || providerUsage(providerId) < Number(limit);
   };
 
+  const routeAHasPlatformSlot = (platform: string) =>
+    !accounts.some((account: any) =>
+      account.provider === 'upload_post' &&
+      account.platform === platform &&
+      account.status !== 'disconnected'
+    );
+
   const connectNetwork = async (network: (typeof SOCIAL_NETWORKS)[number]) => {
     if (!projectId) return;
 
     const candidates: Array<'upload_post' | 'zernio'> = [];
     const routeAAvailable =
-      providerHasCapacity(providerA, 'upload_post') &&
+      Boolean(providerA?.configured) &&
+      routeAHasPlatformSlot(network.id) &&
       Boolean(network.uploadPostConnect);
     const routeBAvailable =
       providerHasCapacity(providerB, 'zernio') &&
@@ -497,18 +505,18 @@ export default function SocialHub({ session, projectId, results, onResultsUpload
         providerB?.configured &&
         network.zernio &&
         ['credentials', 'oauth_channel'].includes(network.zernioConnectMode || '');
-      const routeAFull =
+      const routeAPlatformFull =
         providerA?.configured &&
-        providerA.accountLimit != null &&
-        providerUsage('upload_post') >= Number(providerA.accountLimit);
+        Boolean(network.uploadPostConnect) &&
+        !routeAHasPlatformSlot(network.id);
       const routeBFull =
         providerB?.configured &&
         providerB.accountLimit != null &&
         providerUsage('zernio') >= Number(providerB.accountLimit);
 
       setNotice(
-        routeAFull && routeBFull
-          ? `Las dos rutas sociales están llenas (${providerUsage('upload_post')}/${providerA.accountLimit} y ${providerUsage('zernio')}/${providerB.accountLimit}).`
+        routeAPlatformFull && routeBFull
+          ? `${network.label} ya ocupa el espacio de esa red en Ruta A y Ruta B está llena (${providerUsage('zernio')}/${providerB.accountLimit}).`
           : manual
             ? `${network.label} necesita un paso de conexión especial que todavía no está habilitado en la interfaz.`
             : 'Las conexiones sociales todavía no están activas en este despliegue. Revisa las variables de entorno de Producción.'
@@ -1217,7 +1225,7 @@ export default function SocialHub({ session, projectId, results, onResultsUpload
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 9 }}>
               <div style={{ fontSize: 10, fontWeight: 900 }}>CONECTAR RED</div>
               <div style={{ fontSize: 8.5, color: '#777', textAlign: 'right' }}>
-                A {providerUsage('upload_post')}/{providerA?.accountLimit ?? '∞'} · B {providerUsage('zernio')}/{providerB?.accountLimit ?? '∞'}
+                A {providerUsage('upload_post')} redes · 1 por red · B {providerUsage('zernio')}/{providerB?.accountLimit ?? '∞'}
               </div>
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,minmax(0,1fr))', gap: 7 }}>
