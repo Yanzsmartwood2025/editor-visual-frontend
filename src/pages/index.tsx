@@ -1273,18 +1273,18 @@ export default function NaylaCore() {
     if (target?.closest('button, input, textarea, select, a')) return;
     if (subTool === 'delogo') return;
 
-    // Mouse/trackpad uses onDoubleClick. Touch/pen gets an explicit detector
-    // because Android browsers do not dispatch dblclick consistently.
-    if (e.pointerType === 'mouse') return;
-
+    // Use one detector for mouse, touch and pen. Previously touch could trigger
+    // this detector and then a synthetic dblclick, immediately toggling
+    // fullscreen back off on some Android browsers.
     const now = Date.now();
     const previous = lastVideoSurfaceTapRef.current;
     const closeEnough =
       previous &&
-      now - previous.time <= 520 &&
-      Math.hypot(e.clientX - previous.x, e.clientY - previous.y) <= 56;
+      now - previous.time <= 560 &&
+      Math.hypot(e.clientX - previous.x, e.clientY - previous.y) <= 72;
 
     if (closeEnough) {
+      e.preventDefault();
       lastVideoSurfaceTapRef.current = null;
       togglePreviewFullscreen();
       return;
@@ -1491,6 +1491,11 @@ export default function NaylaCore() {
   const isPortraitSourceVideo = sourceVideoRatio !== null && sourceVideoRatio < 1;
   const isLandscapeSourceVideo = sourceVideoRatio !== null && sourceVideoRatio > 1.15;
   const phoneVideoObjectFit = isPhoneViewport && isPortraitSourceVideo ? 'cover' : 'contain';
+  const forceCssLandscapeFullscreen =
+    isCleanMode &&
+    isPhoneViewport &&
+    isLandscapeSourceVideo &&
+    deviceOrientation === 'portrait';
 
   const validarTimelineParaRender = async (timeline: TimelineItem[]) => {
     const lineaValidada: TimelineItem[] = [];
@@ -5322,17 +5327,23 @@ if (!session) {
           <div
             ref={previewFullscreenRef}
             onPointerMove={resetPlaybackControlsTimer}
-            onDoubleClick={(e) => {
-              e.stopPropagation();
-              if (subTool !== 'delogo') togglePreviewFullscreen();
-            }}
             data-testid="video-preview-container"
             style={{
               flex: isCleanMode ? 'none' : 1,
-              width: isCleanMode ? '100dvw' : undefined,
-              height: isCleanMode ? '100dvh' : '100%',
+              width: isCleanMode
+                ? (forceCssLandscapeFullscreen ? '100dvh' : '100dvw')
+                : undefined,
+              height: isCleanMode
+                ? (forceCssLandscapeFullscreen ? '100dvw' : '100dvh')
+                : '100%',
               position: isCleanMode ? 'fixed' : 'relative',
-              inset: isCleanMode ? 0 : undefined,
+              inset: isCleanMode && !forceCssLandscapeFullscreen ? 0 : undefined,
+              top: forceCssLandscapeFullscreen ? '50%' : undefined,
+              left: forceCssLandscapeFullscreen ? '50%' : undefined,
+              transform: forceCssLandscapeFullscreen
+                ? 'translate(-50%, -50%) rotate(90deg)'
+                : undefined,
+              transformOrigin: 'center center',
               zIndex: isCleanMode ? 100000 : undefined,
               backgroundColor: '#000',
               display: 'flex',
@@ -5411,7 +5422,7 @@ if (!session) {
                 handleVideoSurfaceTap(event);
               }}
               onPointerLeave={handlePointerUp}
-              style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative' }}
+              style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative', touchAction: 'manipulation' }}
             >
               {(visualActivo || videoResultadoUrl || mediaActivaUrl) ? (
                 <>
@@ -5420,7 +5431,7 @@ if (!session) {
                       key={visualActivo.url}
                       src={visualActivo.url}
                       alt={visualActivo.nombre || 'Imagen activa'}
-                      style={{ width: '100%', height: '100%', objectFit: phoneVideoObjectFit, backgroundColor: '#000', maxWidth: '100dvw', maxHeight: '100dvh' }}
+                      style={{ width: '100%', height: '100%', objectFit: phoneVideoObjectFit, backgroundColor: '#000', maxWidth: '100%', maxHeight: '100%', touchAction: 'manipulation' }}
                       onLoad={(e) => {
                         const image = e.currentTarget;
                         if (image.naturalWidth && image.naturalHeight) {
@@ -5437,7 +5448,7 @@ if (!session) {
                     <video
                       key={videoResultadoUrl || visualActivo?.url || mediaActivaUrl || 'video-preview'}
                       src={videoResultadoUrl || visualActivo?.url || mediaActivaUrl || ''}
-                      style={{ width: '100%', height: '100%', objectFit: phoneVideoObjectFit, backgroundColor: '#000', maxWidth: '100dvw', maxHeight: '100dvh' }}
+                      style={{ width: '100%', height: '100%', objectFit: phoneVideoObjectFit, backgroundColor: '#000', maxWidth: '100%', maxHeight: '100%', touchAction: 'manipulation' }}
                       controls={false}
                       playsInline
                       muted={false}
