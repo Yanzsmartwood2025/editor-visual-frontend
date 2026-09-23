@@ -32,6 +32,8 @@ import { getFirebaseSession, observeFirebaseSession, signOutFirebase, signInWith
 import { firebaseHeaders } from '../lib/apiClient';
 import { Model3DWorkspace } from '../components/Model3DWorkspace';
 import GenerarWorkspace from '../components/generar/GenerarWorkspace';
+import DiagnosticsWorkspace from '../components/diagnostics/DiagnosticsWorkspace';
+import { isDiagnosticsAdmin } from '../lib/diagnostics';
 import { GpuQuoteModal, type GpuQuoteView } from '../components/GpuQuoteModal';
 import { NaylaEngineBar } from '../components/NaylaEngineBar';
 import SocialHub from '../components/SocialHub';
@@ -308,6 +310,8 @@ export default function NaylaCore() {
   const [mainNav, setMainNav] = useState<string>('boveda');
   const [subTool, setSubTool] = useState<string | null>(null);
   const [isVideoExpanded, setIsVideoExpanded] = useState<boolean>(false);
+  const diagnosticsAdmin = isDiagnosticsAdmin(session?.user?.email);
+  const visibleMainTools = MAIN_TOOLS.filter((tool: any) => !tool.adminOnly || diagnosticsAdmin);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -1368,6 +1372,9 @@ export default function NaylaCore() {
     setMainNav(tool.id);
     setIsChatOpen(false);
     setSubTool(null);
+    if (tool.id === 'generar' || tool.id === 'diagnostico') {
+      setIsSubPanelOpen(false);
+    }
   };
 
   const handleSubCarouselToolPress = (tool: any) => {
@@ -4825,7 +4832,7 @@ if (!session) {
               zIndex: 40,
               overflowY: 'auto'
             }}>
-              {MAIN_TOOLS.map((tool) => {
+              {visibleMainTools.map((tool) => {
                 const isActive = mainNav === tool.id && isSubPanelOpen;
                 return (
                   <button
@@ -4833,6 +4840,13 @@ if (!session) {
                     className={`main-btn ${isActive ? 'active' : ''}`}
                     title={tool.nombre}
                     onClick={() => {
+                      if (tool.id === 'generar' || tool.id === 'diagnostico') {
+                        setMainNav(tool.id);
+                        setIsSubPanelOpen(false);
+                        setSubTool(null);
+                        setToolMessage(null);
+                        return;
+                      }
                       if (mainNav === tool.id && isSubPanelOpen) {
                         setIsSubPanelOpen(false);
                       } else {
@@ -5381,6 +5395,12 @@ if (!session) {
             )}
             {mainNav === 'generar' && (
               <GenerarWorkspace onClose={() => { setMainNav('boveda'); setIsSubPanelOpen(false); setSubTool(null); }} />
+            )}
+            {mainNav === 'diagnostico' && diagnosticsAdmin && session && (
+              <DiagnosticsWorkspace
+                session={session}
+                onClose={() => { setMainNav('boveda'); setIsSubPanelOpen(false); setSubTool(null); }}
+              />
             )}
             {/* BOTÓN FLOTANTE DE NAYLA */}
             {!isCleanMode && (
