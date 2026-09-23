@@ -365,6 +365,10 @@ export default function NaylaCore() {
   const [gpuQuoteLoading, setGpuQuoteLoading] = useState(false);
   const [gpuQuoteConfirming, setGpuQuoteConfirming] = useState(false);
   const [lineaDeTiempo, setLineaDeTiempo] = useState<TimelineItem[]>([]);
+  const lineaDeTiempoRef = useRef<TimelineItem[]>([]);
+  useEffect(() => {
+    lineaDeTiempoRef.current = lineaDeTiempo;
+  }, [lineaDeTiempo]);
   const [subtitulos, setSubtitulos] = useState<SubtitleItem[]>([]);
   const [motionTitles, setMotionTitles] = useState<MotionTitleItem[]>([]);
   const [threeRenderScenes, setThreeRenderScenes] = useState<ThreeRenderScene[]>([]);
@@ -2129,28 +2133,7 @@ export default function NaylaCore() {
       }
 
       if (addToTimeline && savedItem) {
-        const alreadyInTimeline = lineaDeTiempo.some(item => item.mediaId === savedItem!.id);
-        if (!alreadyInTimeline) {
-          const timelineItem: TimelineItem = {
-            id: `stock-timeline-${Date.now()}`,
-            mediaId: savedItem.id,
-            tipo: savedItem.tipo,
-            nombre: savedItem.nombre,
-            etiqueta: savedItem.etiqueta,
-            url: savedItem.url,
-            durationInSeconds: savedItem.tipo === 'foto' ? 5 : savedItem.metadata?.durationInSeconds,
-            originalDurationInSeconds: savedItem.tipo === 'foto' ? 5 : savedItem.metadata?.durationInSeconds,
-            metadata: savedItem.metadata,
-          };
-          const next = await validarTimelineParaRender([...lineaDeTiempo, timelineItem]);
-          setLineaDeTiempo(next);
-          sincronizarLineaDeTiempo(next);
-          setClipSeleccionado(timelineItem.id);
-          if (savedItem.tipo !== 'audio') {
-            setMediaActivaUrl(savedItem.url);
-            adoptarFormatoVisual(savedItem.metadata);
-          }
-        }
+        await agregarAlTimeline(savedItem, { preventDuplicate: true });
         showAlert('Medio guardado en la Bóveda y añadido al timeline.');
       } else {
         showAlert(existing ? 'Ese medio ya estaba guardado en la Bóveda.' : 'Medio guardado en la Bóveda.');
@@ -2360,6 +2343,13 @@ export default function NaylaCore() {
   };
 
   const toggleChatAttachment = (asset: NaylaChannelAsset) => {
+    const alreadyAttached = chatAttachmentIds.includes(asset.id);
+
+    if (!alreadyAttached && (asset.tipo === 'foto' || asset.tipo === 'video' || asset.tipo === 'audio')) {
+      const media = galeriaMultimedia.find((item) => item.id === asset.id);
+      if (media) void agregarAlTimeline(media, { preventDuplicate: true });
+    }
+
     setChatAttachmentIds((prev) => {
       if (prev.includes(asset.id)) {
         return prev.filter((id) => id !== asset.id);
@@ -2489,6 +2479,7 @@ export default function NaylaCore() {
           if (!saved) throw new Error(`No se pudo guardar ${file.name}.`);
           workingMedia = [...workingMedia, saved];
           setGaleriaMultimedia((prev) => prev.some((item) => item.id === saved.id) ? prev : [...prev, saved]);
+          await agregarAlTimeline(saved, { preventDuplicate: true });
           asset = {
             id: saved.id,
             tipo: saved.tipo as NaylaChannelKind,
@@ -3828,20 +3819,14 @@ export default function NaylaCore() {
 
       setGaleriaMultimedia(prev => [...prev, ...nuevosItems]);
 
-      const primerVisualIndex = nuevosItems.findIndex(item => item.tipo === 'video' || item.tipo === 'foto');
-      const primerVisual = primerVisualIndex >= 0 ? nuevosItems[primerVisualIndex] : null;
-
-      if (primerVisual && pistaVideo.length === 0 && !mediaActivaUrl) {
-        setMediaActivaUrl(primerVisual.url);
-        setClipSeleccionado(primerVisual.id);
-        setVideoResultadoUrl(null);
-        adoptarFormatoVisual(primerVisual.metadata);
+      for (const item of nuevosItems) {
+        await agregarAlTimeline(item, { preventDuplicate: true });
       }
 
       showAlert(
         nuevosItems.length === 1
-          ? `${nuevosItems[0]?.nombre || 'Archivo'} se guardó correctamente en la Bóveda.`
-          : `${nuevosItems.length} archivos se guardaron correctamente en la Bóveda.`
+          ? `${nuevosItems[0]?.nombre || 'Archivo'} se guardó en la Bóveda y se añadió a la línea de tiempo.`
+          : `${nuevosItems.length} archivos se guardaron en la Bóveda y se añadieron a la línea de tiempo.`
       );
     } catch (err: any) {
       console.error('Error procesando subida:', err);
@@ -3929,7 +3914,10 @@ export default function NaylaCore() {
     }
   };
 
-  const agregarAlTimeline = async (item: MediaItem) => {
+  const agregarAlTimeline = async (
+    item: MediaItem,
+    options: { preventDuplicate?: boolean } = {}
+  ) => {
     let metadata: MediaMetadata = { ...(item.metadata || {}) };
 
     try {
@@ -3959,6 +3947,20 @@ export default function NaylaCore() {
 
     if (durationInSeconds) metadata.durationInSeconds = metadata.durationInSeconds || durationInSeconds;
 
+    const currentTimeline = lineaDeTiempoRef.current;
+    const existingClip = options.preventDuplicate
+      ? currentTimeline.find((clip) => clip.mediaId === item.id)
+      : undefined;
+
+    if (existingClip) {
+      setClipSeleccionado(existingClip.id);
+      if (item.tipo !== 'audio') {
+        setMediaActivaUrl(existingClip.url);
+        setVideoResultadoUrl(null);
+      }
+      return existingClip;
+    }
+
     const nuevo: TimelineItem = {
       id: createMediaId(),
       mediaId: item.id,
@@ -3970,19 +3972,25 @@ export default function NaylaCore() {
       originalDurationInSeconds: durationInSeconds,
       metadata
     };
-    const nuevaLinea = [...lineaDeTiempo, nuevo];
+
+    const hadVisual = currentTimeline.some((clip) => clip.tipo === 'foto' || clip.tipo === 'video');
+    const nuevaLinea = [...currentTimeline, nuevo];
+    lineaDeTiempoRef.current = nuevaLinea;
     setLineaDeTiempo(nuevaLinea);
 
     setClipSeleccionado(nuevo.id);
-    setMediaActivaUrl(nuevo.url);
-    setVideoResultadoUrl(null);
-    setRects([]);
+    if (nuevo.tipo !== 'audio') {
+      setMediaActivaUrl(nuevo.url);
+      setVideoResultadoUrl(null);
+      setRects([]);
+    }
 
-    if ((nuevo.tipo === 'foto' || nuevo.tipo === 'video') && pistaVideo.length === 0) {
+    if ((nuevo.tipo === 'foto' || nuevo.tipo === 'video') && !hadVisual) {
       adoptarFormatoVisual(metadata);
     }
 
-    sincronizarLineaDeTiempo(nuevaLinea);
+    await sincronizarLineaDeTiempo(nuevaLinea);
+    return nuevo;
   };
 
   const quitarDelTimeline = (id: string) => {
@@ -5308,8 +5316,8 @@ if (!session) {
                           </button>
                           <div
                             onClick={() => {
+                              void agregarAlTimeline(item, { preventDuplicate: true });
                               setMediaActivaUrl(item.url);
-                              setClipSeleccionado(item.id);
                               if (item.tipo === 'video' && String(item.fuente || '').startsWith('render:')) {
                                 setVideoResultadoUrl(item.url);
                                 setVideoResultadoNombre(item.nombre);
