@@ -332,10 +332,12 @@ export const listThreadMessagesForUser = async ({
   userId,
   threadId,
   limit = 50,
+  latest = false,
 }: {
   userId: string;
   threadId: string;
   limit?: number;
+  latest?: boolean;
 }) => {
   const scope = await resolveOwnedWorkspaceScope({ userId, threadId });
   const supabase = getWorkspaceSupabaseAdmin();
@@ -346,11 +348,11 @@ export const listThreadMessagesForUser = async ({
     .eq('user_id', userId)
     .eq('project_id', scope.projectId)
     .eq('thread_id', threadId)
-    .order('created_at', { ascending: true })
+    .order('created_at', { ascending: !latest })
     .limit(Math.max(1, Math.min(limit, 100)));
 
   if (error) throw error;
-  return { scope, messages: data || [] };
+  return { scope, messages: latest ? (data || []).reverse() : (data || []) };
 };
 
 export const getRecentThreadAttachedMediaForUser = async ({

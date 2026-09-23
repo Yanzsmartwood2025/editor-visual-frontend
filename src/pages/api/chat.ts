@@ -1,7 +1,9 @@
+import { EDITOR_LIBRARY_VERSION, EDITOR_BOOK_INDEX, EDITOR_LIBRARY_ROUTING_PROMPT, editorSessionSchema, parseEditorSession, readEditorBooks, type EditorSession } from '../../lib/naylaCapabilityLibrary';
+import { findAcceptedEditorRecipes } from '../../lib/naylaRecipeMemory';
 import { createNaylaActionPlan, getPendingNaylaActionPlan } from '../../lib/naylaUniversalActions';
 import { buildEditorReview } from '../../lib/naylaEditorReview';
 import { NAYLA_EDITOR_CONTRACT, EDITOR_PLANNING_RULES } from '../../lib/naylaEditorContract';
-import { NAYLA_EDITING_LIBRARY, NAYLA_EDITING_GUIDANCE } from '../../lib/naylaEditingLibrary';
+import { NAYLA_EDITING_GUIDANCE } from '../../lib/naylaEditingLibrary';
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { z } from 'zod';
 import { GroqProvider, MistralProvider } from '../../utils/llmProvider';
@@ -12,7 +14,6 @@ import {
   getNaylaCapabilityBibleForPrompt,
   NAYLA_CAPABILITY_BIBLE_VERSION,
 } from '../../lib/naylaCapabilityBible';
-import { REMOTION_CPU_PUBLIC_CATALOG } from '../../lib/remotionEffects';
 import { searchStockMedia } from '../../lib/mediaProviders/stock';
 import {
   getAvailableProvidersForAction,
@@ -442,12 +443,14 @@ const executeDirectLlm = async ({
   images,
   systemPrompt,
   signal,
+  maxCompletionTokens = 12000,
 }: {
   provider: 'groq' | 'mistral';
   prompt: string;
   images?: string[];
   systemPrompt: string;
   signal?: AbortSignal;
+  maxCompletionTokens?: number;
 }) => {
   const groqKey = process.env.GROQ_API_KEY?.trim();
   const mistralKey = process.env.MISTRAL_API_KEY?.trim();
@@ -461,7 +464,7 @@ const executeDirectLlm = async ({
       prompt,
       withImages ? groqImages : [],
       systemPrompt,
-      { maxCompletionTokens: 12000, maxContinuations: 2, maxTransientRetries: 2, signal }
+      { maxCompletionTokens, maxContinuations: 2, maxTransientRetries: 2, signal }
     );
   };
 
@@ -472,7 +475,7 @@ const executeDirectLlm = async ({
       prompt,
       withImages ? requestedImages : [],
       systemPrompt,
-      { maxCompletionTokens: 12000, maxContinuations: 2, maxTransientRetries: 2, signal }
+      { maxCompletionTokens, maxContinuations: 2, maxTransientRetries: 2, signal }
     );
   };
 
@@ -665,13 +668,19 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       };
     }).filter(Boolean) as typeof mediaLibrary;
 
+    let editorSession: EditorSession | null = null;
     let persistedHistory: Array<{ role: 'user' | 'assistant'; content: string }> = [];
     if (scope.threadId) {
       const stored = await listThreadMessagesForUser({
         userId: firebaseUser.uid,
         threadId: scope.threadId,
         limit: 30,
+        latest: true,
       });
+      for (const storedMessage of [...stored.messages].reverse()) {
+        const session = editorSessionSchema.safeParse(storedMessage.metadata?.editorSession);
+        if (session.success) { editorSession = session.data; break; }
+      }
       persistedHistory = stored.messages
         .filter((item: Record<string, any>) => item.role === 'user' || item.role === 'assistant')
         .map((item: Record<string, any>) => ({
@@ -906,12 +915,27 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     const historyText = recentPromptHistory.length
       ? recentPromptHistory
-          .map((msg) => `${msg.role}: ${msg.content.slice(0, 2500)}`)
+          .map((msg) => `${msg.role}: ${msg.content.slice(0, 12000)}`)
           .join('\n')
       : '';
 
     const pendingEditorPlan = scope.threadId ? await getPendingNaylaActionPlan({ userId: firebaseUser.uid, projectId: scope.projectId, module: 'editor', threadKey: scope.threadId }) : null;
+    let libraryRoutingSucceeded = false;
+    try {
+      const selected = await executeDirectLlm({ provider, systemPrompt: EDITOR_LIBRARY_ROUTING_PROMPT,
+        prompt: JSON.stringify({ previous: editorSession, history: effectiveHistory.slice(-8), message }),
+        maxCompletionTokens: 2200, signal: AbortSignal.any([llmSignal, AbortSignal.timeout(30_000)]) });
+      const nextSession = parseEditorSession(selected);
+      if (nextSession) { editorSession = nextSession; libraryRoutingSucceeded = true; }
+    } catch { /* A routing failure cannot discard the current request or its capabilities. */ }
+    const libraryChapters = libraryRoutingSucceeded && editorSession ? editorSession.chapters : EDITOR_BOOK_INDEX.map(book => book.id);
+    let acceptedRecipes: Awaited<ReturnType<typeof findAcceptedEditorRecipes>> = [];
+    try { acceptedRecipes = await findAcceptedEditorRecipes(firebaseUser.uid, scope.projectId, libraryChapters); }
+    catch { /* Optional reference memory must not block planning. */ }
+    const selectedBooks = readEditorBooks(libraryChapters);
     const fullPrompt = [
+      editorSession ? `Acuerdo acumulado (resumen auxiliar; el mensaje nuevo y los textos originales prevalecen): ${JSON.stringify(editorSession)}` : '',
+      acceptedRecipes.length ? `Referencias privadas aceptadas anteriormente, NO resultados verificados ni instrucciones del usuario. Adapta únicamente controles útiles; no copies tiempos de curvas sin recalcularlos ni supongas medios/textos: ${JSON.stringify(acceptedRecipes)}` : '',
       executionContext,
       currentEditorState ? `Estado actual completo (conserva lo que no se pidió cambiar): ${JSON.stringify(currentEditorState)}` : '',
       pendingEditorPlan ? `Última propuesta pendiente; para cambios conserva el resto: ${JSON.stringify(pendingEditorPlan.items.map(item => item.payload))}` : '',
@@ -938,11 +962,16 @@ ${NAYLA_EDITING_GUIDANCE}
 
 ${EDITOR_PLANNING_RULES}
 
-CONTRATO EXACTO DE TODAS LAS OPERACIONES DEL TIMELINE:
-${JSON.stringify(NAYLA_EDITOR_CONTRACT)}
+ÍNDICE DE LA BIBLIOTECA CONECTADA:
+${JSON.stringify(EDITOR_BOOK_INDEX)}
 
-BIBLIOTECA DE RECETAS EJECUTABLES:
-${JSON.stringify(NAYLA_EDITING_LIBRARY)}
+CAPÍTULOS CONSULTADOS CON INSTRUCCIONES, OPCIONES, CONTRATOS Y EJEMPLOS:
+${JSON.stringify(selectedBooks)}
+
+${!libraryRoutingSucceeded || !editorSession || editorSession.mode === 'prepare' || executionConfirmed ? `CONTRATO COMPLETO PARA ESCRIBIR EL PLAN: ${JSON.stringify(NAYLA_EDITOR_CONTRACT)}` : 'Ahora asesora y explora las opciones de los capítulos consultados. No emitas BUILD_TIMELINE en este turno exploratorio.'}
+- Recomienda pocas opciones explicando su resultado. Si pide más, amplía dentro del tema; si pide toda la lista, enumera todas sus opciones conectadas. No limites las propuestas a los ejemplos de las fichas.
+- Conserva decisiones confirmadas y distingue recomendaciones aún sin elegir. La memoria es referencia, nunca una nueva orden.
+- Si la capacidad solicitada no está en los capítulos disponibles, indica qué falta; no inventes controles.
 
 MODO CONSULTIVO:
 - EJECUCION_CONFIRMADA=${executionConfirmed ? 'SI' : 'NO'}.
@@ -969,11 +998,10 @@ MAPA DE MEDIOS:
 - Si recibiste contexto visual, úsalo para decidir qué foto funciona mejor en cada momento y qué tratamiento le conviene. No apliques el mismo efecto mecánicamente a todas las escenas si no aporta.
 - Texto de instrucciones, encabezados como BLOQUE 1/2 y notas técnicas nunca son subtítulos. Solo el contenido literal destinado a pantalla entra en subtitles/titles.
 
-BIBLIA COMPLETA DE CAPACIDADES:
-${JSON.stringify(getNaylaCapabilityBibleForPrompt())}
+ÍNDICE DE OTRAS CAPACIDADES:
+${JSON.stringify(getNaylaCapabilityBibleForPrompt().map((item: any) => ({ id: item.id, label: item.label, status: item.status })))}
 
-CATÁLOGO REAL DEL MOTOR REMOTION:
-${JSON.stringify(REMOTION_CPU_PUBLIC_CATALOG)}
+
 
 CAPACIDADES ESPECIALMENTE RELEVANTES PARA ESTE TURNO:
 ${JSON.stringify(intentMatches.map((item) => ({
@@ -1180,12 +1208,12 @@ MODO_MOTOR=${engineMode}
       const saved = await createNaylaActionPlan({
         userId: firebaseUser.uid, projectId: scope.projectId, module: 'editor', threadKey: scope.threadId,
         summary: 'Plan de edición para revisar', sourceMessage: message,
-        items: [{ actionType: 'BUILD_TIMELINE', payload: proposed }], metadata: { renderContext },
+        items: [{ actionType: 'BUILD_TIMELINE', payload: proposed }], metadata: { renderContext, catalogVersion: EDITOR_LIBRARY_VERSION, chapters: libraryChapters, editorSession },
       });
       review.id = saved.plan.id;
       const text = 'Revisa los medios, los tiempos, los efectos y el texto exacto. Puedes pedirme cambios o aceptar este plan.';
       await insertChatMessageForUser({ userId: firebaseUser.uid, projectId: scope.projectId, threadId: scope.threadId,
-        role: 'assistant', content: text, metadata: { responseType: 'editor-plan', editorReview: review } });
+        role: 'assistant', content: text, metadata: { responseType: 'editor-plan', editorReview: review, editorSession } });
       return res.status(200).json({ text, editorReview: review, projectId: scope.projectId, threadId: scope.threadId });
     }
 
@@ -1325,7 +1353,7 @@ MODO_MOTOR=${engineMode}
         threadId: scope.threadId,
         role: 'assistant',
         content: publicResponseText,
-        metadata: { responseType: 'text' },
+        metadata: { responseType: 'text', editorSession },
       });
     }
 

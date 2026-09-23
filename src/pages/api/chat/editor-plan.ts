@@ -22,7 +22,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     // Atomic pending -> executing transition prevents double-click/replay dispatch.
     const claimed = await claimNaylaActionPlan(planId);
     if (!claimed) return res.status(409).json({ error: 'Este plan ya se está atendiendo.' });
-    await finishNaylaActionPlan({ planId, status: decision === 'accept' ? 'completed' : 'cancelled', result: { dispatched: decision === 'accept', renderCompleted: false } });
+    await finishNaylaActionPlan({ planId, status: decision === 'accept' ? 'completed' : 'cancelled', result: { ...pending.plan.metadata, dispatched: decision === 'accept', renderCompleted: false } });
     await insertChatMessageForUser({ userId: user.uid, projectId, threadId, role: 'user', content: decision === 'accept' ? 'Acepté el plan de edición.' : 'Cancelé el plan de edición.', metadata: { editorPlanId: planId, decision } });
     res.setHeader('Cache-Control', 'private, no-store');
     // Return the stored payload; never ask an LLM to regenerate accepted content.
