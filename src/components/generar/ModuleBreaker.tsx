@@ -1,4 +1,4 @@
-import React, { Component, type ReactNode } from 'react';
+import { Component, type ReactNode } from 'react';
 
 type Props = { moduleKey: string; children: ReactNode; onReset?: () => void };
 type State = { failed: boolean };
