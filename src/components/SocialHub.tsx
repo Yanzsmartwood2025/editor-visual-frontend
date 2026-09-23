@@ -491,7 +491,8 @@ export default function SocialHub({ session, projectId, results, onResultsUpload
     const routeAAvailable =
       Boolean(providerA?.configured) &&
       routeAHasPlatformSlot(network.id) &&
-      Boolean(network.uploadPostConnect);
+      Boolean(network.uploadPostConnect) &&
+      (network.id !== 'tiktok' || providerA?.tiktokPublishingEnabled === true);
     const routeBAvailable =
       providerHasCapacity(providerB, 'zernio') &&
       Boolean(network.zernio) &&
@@ -509,17 +510,23 @@ export default function SocialHub({ session, projectId, results, onResultsUpload
         providerA?.configured &&
         Boolean(network.uploadPostConnect) &&
         !routeAHasPlatformSlot(network.id);
+      const routeATikTokBlocked =
+        network.id === 'tiktok' &&
+        providerA?.configured &&
+        providerA?.tiktokPublishingEnabled !== true;
       const routeBFull =
         providerB?.configured &&
         providerB.accountLimit != null &&
         providerUsage('zernio') >= Number(providerB.accountLimit);
 
       setNotice(
-        routeAPlatformFull && routeBFull
-          ? `${network.label} ya ocupa el espacio de esa red en Ruta A y Ruta B está llena (${providerUsage('zernio')}/${providerB.accountLimit}).`
-          : manual
-            ? `${network.label} necesita un paso de conexión especial que todavía no está habilitado en la interfaz.`
-            : 'Las conexiones sociales todavía no están activas en este despliegue. Revisa las variables de entorno de Producción.'
+        routeATikTokBlocked && routeBFull
+          ? `TikTok no publica por la Ruta A gratuita y Ruta B ya está llena (${providerUsage('zernio')}/${providerB.accountLimit}).`
+          : routeAPlatformFull && routeBFull
+            ? `${network.label} ya ocupa el espacio de esa red en Ruta A y Ruta B está llena (${providerUsage('zernio')}/${providerB.accountLimit}).`
+            : manual
+              ? `${network.label} necesita un paso de conexión especial que todavía no está habilitado en la interfaz.`
+              : 'Las conexiones sociales todavía no están activas en este despliegue. Revisa las variables de entorno de Producción.'
       );
       return;
     }
