@@ -17,6 +17,7 @@ import {
   uploadDocumentFilesToBodega,
   uploadMediaFilesToBodega,
   type DocumentItem,
+  type UploadProgressSnapshot,
 } from '../lib/mediaUpload';
 import { groupSpeechWordsIntoCaptions } from '../lib/autoCaptions';
 import { buildMediaMetadata, getCanvasDimensionsFromRatio, probeMediaUrl, type MediaMetadata } from '../lib/mediaMetadata';
@@ -525,7 +526,13 @@ export default function NaylaCore() {
   const [chatAttachMenuOpen, setChatAttachMenuOpen] = useState(false);
   const chatDirectUploadRef = useRef<HTMLInputElement | null>(null);
   const [chatAttachmentIds, setChatAttachmentIds] = useState<string[]>([]);
-  const [chatUploadProgress, setChatUploadProgress] = useState<{ total: number; done: number; failed: number } | null>(null);
+  const [chatUploadProgress, setChatUploadProgress] = useState<{
+    total: number;
+    done: number;
+    failed: number;
+    percent: number;
+    currentFile?: string;
+  } | null>(null);
   const [channelUploadingKind, setChannelUploadingKind] = useState<NaylaChannelKind | null>(null);
 
   useEffect(() => {
@@ -3746,6 +3753,7 @@ export default function NaylaCore() {
   };
 
   const [subiendoArchivo, setSubiendoArchivo] = useState(false);
+  const [vaultUploadProgress, setVaultUploadProgress] = useState<UploadProgressSnapshot | null>(null);
 
   const handleSubirMultimedia = async (e: React.ChangeEvent<HTMLInputElement>, tipo: 'foto' | 'video' | 'audio') => {
     if (!e.target.files || e.target.files.length === 0) return;
