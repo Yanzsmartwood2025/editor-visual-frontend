@@ -4005,12 +4005,21 @@ export default function NaylaCore() {
     setLineaDeTiempo(nuevaLinea);
 
     setClipSeleccionado(nuevo.id);
-    setMediaActivaUrl(nuevo.url);
-    setVideoResultadoUrl(null);
     setRects([]);
 
-    if ((nuevo.tipo === 'foto' || nuevo.tipo === 'video') && pistaVideo.length === 0) {
-      adoptarFormatoVisual(metadata);
+    // El audio pertenece a su pista y no debe sustituir el medio visual del
+    // reproductor. Solo fotos/videos pasan a ser la fuente del visor.
+    if (nuevo.tipo === 'foto' || nuevo.tipo === 'video') {
+      setMediaActivaUrl(nuevo.url);
+      setVideoResultadoUrl(null);
+      setVideoResultadoNombre(null);
+      setVideoResultadoEtiqueta(null);
+      setPlaybackError(null);
+      setPlaybackPositionSeconds(getVisualClipStartSeconds(nuevaLinea, nuevo.id));
+
+      if (pistaVideo.length === 0) {
+        adoptarFormatoVisual(metadata);
+      }
     }
 
     sincronizarLineaDeTiempo(nuevaLinea);
@@ -5696,7 +5705,14 @@ if (!session) {
           {!videoResultadoUrl && (
             <div
               className="neon-btn"
-              onClick={(e) => { e.stopPropagation(); setMainNav('boveda'); setIsSubPanelOpen(true); }}
+              onClick={(e) => {
+                e.stopPropagation();
+                setMainNav('boveda');
+                setSubTool(SUB_TOOLS.boveda?.[0]?.id || null);
+                setFiltroGaleria('todo');
+                setToolMessage(null);
+                setIsSubPanelOpen(true);
+              }}
               style={{ position: 'absolute', left: 8, top: 8, width: '36px', height: '44px', borderRadius: '8px', zIndex: 60, borderStyle: 'dashed', cursor: 'pointer', fontSize: '1.2rem' }}
             >
               +
