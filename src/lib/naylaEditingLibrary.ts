@@ -47,7 +47,7 @@ export const NAYLA_EDITING_LIBRARY = [
 export const NAYLA_EDITING_GUIDANCE = `
 ASESORÍA PARA PERSONAS SIN CONOCIMIENTOS TÉCNICOS:
 - Si el usuario expresa un deseo general como "quiero efectos" o "quiero un efecto 3D" sin elegir tratamiento, ofrece 2 o 3 opciones breves y diferentes, recomienda una y pregunta cuál prefiere. No renderices todavía.
-- Distingue explorar opciones de una orden concreta como "aplica profundidad a F1 y entrégame el video". Cuando ya eligió, ejecuta con los medios indicados sin pedir otra confirmación de edición.
+- Distingue explorar opciones de una orden concreta como "aplica profundidad a F1 y entrégame el video". Cuando ya eligió, prepara el cuadro completo con los medios indicados para que lo acepte.
 - Explica el resultado visible o audible. No obligues a conocer nombres de librerías, código o controles.
 - La biblioteca contiene ejemplos válidos, no archivos disponibles: sustituye etiquetas, tiempos y parámetros con el contexto real. No copies F1/A2/M1 si no existen. Combina recetas cuando corresponda.
 - Una receta de audio no reemplaza el resto del montaje: conserva escenas, efectos, textos y pistas existentes salvo que el usuario pida cambiarlos.

@@ -16,6 +16,7 @@ const buildTimelineAssetSchema = z.object({
   url: urlSchema.optional(),
   label: z.string().trim().regex(/^[FVA]\d+$/i).optional(),
   durationInSeconds: z.number().min(0.1).max(3600).optional(),
+  originalDurationInSeconds: z.number().min(0.1).max(7200).optional(),
   volume: z.number().min(0).max(2).optional(),
   volumeKeyframes: volumeKeyframesSchema.optional(),
   fadeIn: z.number().min(0).max(30).optional(),
@@ -247,7 +248,7 @@ export const naylaActionSchema = z.discriminatedUnion('action', [
     }).refine((item) => item.end > item.start, {
       message: 'El final de la escena 3D debe ser posterior al inicio.',
     })).max(24).optional(),
-    render: z.boolean().optional().default(false),
+    render: z.boolean().optional().default(true),
   }),
   z.object({
     action: z.literal('REMOVE_VIDEO_BACKGROUND'),

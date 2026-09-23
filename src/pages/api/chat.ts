@@ -1,3 +1,6 @@
+import { createNaylaActionPlan, getPendingNaylaActionPlan } from '../../lib/naylaUniversalActions';
+import { buildEditorReview } from '../../lib/naylaEditorReview';
+import { NAYLA_EDITOR_CONTRACT, EDITOR_PLANNING_RULES } from '../../lib/naylaEditorContract';
 import { NAYLA_EDITING_LIBRARY, NAYLA_EDITING_GUIDANCE } from '../../lib/naylaEditingLibrary';
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { z } from 'zod';
@@ -25,9 +28,6 @@ import { createR2PresignedGetUrl } from '../../lib/r2';
 import { canStartGpuCompute, getNaylaExecutionPolicyPrompt } from '../../lib/naylaExecutionPolicy';
 import { assistantRequestsPlanConfirmation, isUniversalNaylaConfirmation } from '../../lib/naylaPlanConfirmation';
 import {
-  buildEvenSubtitleTiming,
-  extractSubtitleBlocks,
-  getRequestedTimelineSeconds,
   getRequestedVisualCount,
   hasNaturalProjectPhotoReference,
   timelinePlanRequestsRender,
@@ -77,6 +77,7 @@ const requestSchema = z.object({
   threadId: z.string().uuid().optional(),
   attachmentIds: z.array(z.string().uuid()).max(200).optional(),
   mediaLibrary: z.array(mediaLibraryItemSchema).max(500).optional(),
+  currentEditorState: z.record(z.string(), z.unknown()).optional(),
   currentTimeline: z.array(z.object({
     id: z.string().optional(),
     tipo: z.enum(['foto', 'video', 'audio']),
@@ -593,6 +594,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       attachmentIds = [],
       mediaLibrary,
       currentTimeline,
+      currentEditorState,
     } = parsedBody.data;
 
     const scope = await resolveOwnedWorkspaceScope({
@@ -908,8 +910,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           .join('\n')
       : '';
 
+    const pendingEditorPlan = scope.threadId ? await getPendingNaylaActionPlan({ userId: firebaseUser.uid, projectId: scope.projectId, module: 'editor', threadKey: scope.threadId }) : null;
     const fullPrompt = [
       executionContext,
+      currentEditorState ? `Estado actual completo (conserva lo que no se pidió cambiar): ${JSON.stringify(currentEditorState)}` : '',
+      pendingEditorPlan ? `Última propuesta pendiente; para cambios conserva el resto: ${JSON.stringify(pendingEditorPlan.items.map(item => item.payload))}` : '',
       executionConfirmed ? `Plan confirmado completo:\n${activePlanningContext}` : '',
       historyText ? `Historial:\n${historyText}` : '',
       `Usuario: ${message}`,
@@ -931,12 +936,17 @@ SEGURIDAD Y CONTEXTO:
 
 ${NAYLA_EDITING_GUIDANCE}
 
+${EDITOR_PLANNING_RULES}
+
+CONTRATO EXACTO DE TODAS LAS OPERACIONES DEL TIMELINE:
+${JSON.stringify(NAYLA_EDITOR_CONTRACT)}
+
 BIBLIOTECA DE RECETAS EJECUTABLES:
 ${JSON.stringify(NAYLA_EDITING_LIBRARY)}
 
 MODO CONSULTIVO:
 - EJECUCION_CONFIRMADA=${executionConfirmed ? 'SI' : 'NO'}.
-- Si es NO y el usuario pide realizar una edición de medios existentes, responde con el JSON BUILD_TIMELINE y ejecútala directamente. No exijas frases especiales ni una confirmación redundante. Si pide el video terminado, usa render:true.
+- Si el usuario pide una edición concreta, prepara el JSON BUILD_TIMELINE para revisión. Si pide el video terminado, usa render:true; el sistema esperará el botón Aceptar antes de ejecutarlo.
 - Si pregunta, compara opciones o pide ideas, conversa y propone un plan breve. Pregunta solo si falta información imprescindible. Las acciones de generación externa y Compute mantienen su confirmación.
 - Si es SI, el usuario está confirmando un plan previo. Responde únicamente con un JSON válido de una acción.
 - No digas que algo está procesando, renderizando o guardándose hasta que el servidor lo confirme.
@@ -1013,12 +1023,6 @@ MODO_MOTOR=${engineMode}
     const confirmedTimelineContext = executionConfirmed
       ? activePlanningContext
       : message;
-    const subtitleBlocks = extractSubtitleBlocks(
-      executionConfirmed && priorUserPlanInstruction
-        ? priorUserPlanInstruction
-        : message
-    );
-    const requestedTimelineSeconds = getRequestedTimelineSeconds(activePlanningContext);
     const confirmedTimelineShouldRender =
       executionConfirmed && timelinePlanRequestsRender(confirmedTimelineContext);
 
@@ -1102,9 +1106,10 @@ MODO_MOTOR=${engineMode}
                 return asset;
               }
               const resolvedAsset = { ...asset };
-              delete resolvedAsset.label;
+
               return {
                 ...resolvedAsset,
+                ...(Number(media.metadata?.durationInSeconds) > 0 ? { originalDurationInSeconds: Number(media.metadata.durationInSeconds) } : {}),
                 source: 'url' as const,
                 url: media.url,
               };
@@ -1123,30 +1128,11 @@ MODO_MOTOR=${engineMode}
 
           if (assetResolutionFailed) return null;
 
-          const photoOnly = assets.length > 0 && assets.every((asset: any) => asset.type === 'foto' || asset.type === 'image');
-          if (photoOnly && requestedTimelineSeconds && requestedTimelineSeconds > 0) {
-            const perPhoto = requestedTimelineSeconds / assets.length;
-            assets = assets.map((asset: any) => ({
-              ...asset,
-              durationInSeconds: perPhoto,
-            }));
-          }
-
-          const existingDuration = assets.reduce(
-            (sum: number, asset: any) => sum + Math.max(0, Number(asset.durationInSeconds) || 0),
-            0
-          );
-          const subtitleDuration =
-            requestedTimelineSeconds ||
-            (existingDuration > 0 ? existingDuration : Math.max(1, assets.length * 5));
-
           return {
             ...parsedAction,
             assets,
             render: Boolean(parsedAction.render || confirmedTimelineShouldRender),
-            ...(subtitleBlocks.length
-              ? { subtitles: buildEvenSubtitleTiming(subtitleBlocks, subtitleDuration) }
-              : {}),
+
           } as NaylaAction;
         })()
       : parsedAction?.action === 'REMOVE_VIDEO_BACKGROUND'
@@ -1174,6 +1160,33 @@ MODO_MOTOR=${engineMode}
                 : null;
             })()
           : parsedAction;
+
+    if (action?.action === 'BUILD_TIMELINE') {
+      if (!scope.threadId) return res.status(400).json({ error: 'Abre un chat para revisar y aceptar el plan.' });
+      const proposed = {
+        ...action,
+        subtitles: action.subtitles || [], titles: action.titles || [],
+        threeScenes: action.threeScenes || [], vectorAnimations: action.vectorAnimations || [], skiaGraphics: action.skiaGraphics || [],
+      };
+      const review = buildEditorReview(proposed);
+      const renderContext = { logos: currentEditorState?.logos || [], settings: currentEditorState?.settings || {}, canvasRatio: currentEditorState?.canvasRatio || '9/16', exportQuality: currentEditorState?.exportQuality || '1080p' };
+      review.format = `${renderContext.canvasRatio} · ${renderContext.exportQuality}`;
+      if (Array.isArray(renderContext.logos)) for (const [index, logo] of renderContext.logos.entries()) {
+        const end = Number(logo.finSec) || review.duration;
+        review.rows.push({ section: 'Logos conservados', resource: `Logo ${index + 1}`, start: Number(logo.inicioSec) || 0, end, details: 'Se conserva el logo actual con su posición, escala y opacidad.' });
+        review.duration = Math.max(review.duration, end);
+      }
+      const saved = await createNaylaActionPlan({
+        userId: firebaseUser.uid, projectId: scope.projectId, module: 'editor', threadKey: scope.threadId,
+        summary: 'Plan de edición para revisar', sourceMessage: message,
+        items: [{ actionType: 'BUILD_TIMELINE', payload: proposed }], metadata: { renderContext },
+      });
+      review.id = saved.plan.id;
+      const text = 'Revisa los medios, los tiempos, los efectos y el texto exacto. Puedes pedirme cambios o aceptar este plan.';
+      await insertChatMessageForUser({ userId: firebaseUser.uid, projectId: scope.projectId, threadId: scope.threadId,
+        role: 'assistant', content: text, metadata: { responseType: 'editor-plan', editorReview: review } });
+      return res.status(200).json({ text, editorReview: review, projectId: scope.projectId, threadId: scope.threadId });
+    }
 
     if (action?.action === 'RUN_GPU_JOB' && !canStartGpuCompute(engineMode)) {
       const cloudFirstText =

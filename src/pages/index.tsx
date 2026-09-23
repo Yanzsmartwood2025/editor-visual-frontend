@@ -1,4 +1,7 @@
 // @ts-nocheck
+import { formatPlaybackTime } from '../lib/playbackTime';
+import { NaylaEditorReview } from '../components/NaylaEditorReview';
+import type { EditorReview } from '../lib/naylaEditorReview';
 /* eslint-disable */
 import React, { useState, useEffect, useRef } from 'react';
 import { cleanNaylaChatText } from '../lib/naylaText';
@@ -151,6 +154,7 @@ type NaylaStockCard = {
 };
 
 type NaylaChatMessage = {
+  editorReview?: EditorReview;
   role: 'user' | 'ai';
   text: string;
   cards?: NaylaStockCard[];
@@ -368,6 +372,8 @@ export default function NaylaCore() {
   const [showIntro, setShowIntro] = useState(true);
     const [isProcessing, setIsProcessing] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
+  const [playbackSeconds, setPlaybackSeconds] = useState(0);
+  const [playbackDuration, setPlaybackDuration] = useState(0);
   const [mediaActivaUrl, setMediaActivaUrl] = useState<string | null>(null);
   const [videoResultadoUrl, setVideoResultadoUrl] = useState<string | null>(null);
   const [videoResultadoNombre, setVideoResultadoNombre] = useState<string | null>(null);
@@ -393,6 +399,12 @@ export default function NaylaCore() {
     galeriaMultimedia.find(item => item.url === mediaActivaUrl && (item.tipo === 'video' || item.tipo === 'foto')) ||
     pistaVideo[0] ||
     null;
+  useEffect(() => {
+    setPlaybackSeconds(0);
+    setPlaybackDuration(0);
+    setIsPlaying(false);
+  }, [videoResultadoUrl, visualActivo?.url, mediaActivaUrl]);
+
 
   const adoptarFormatoVisual = (metadata?: MediaMetadata) => {
     if (metadata?.aspectRatioLabel) {
@@ -1461,7 +1473,8 @@ export default function NaylaCore() {
     titlesOverride?: MotionTitleItem[],
     threeScenesOverride?: ThreeRenderScene[],
     vectorAnimationsOverride?: VectorAnimationItem[],
-    skiaGraphicsOverride?: SkiaGraphicItem[]
+    skiaGraphicsOverride?: SkiaGraphicItem[],
+    renderContext?: { logos?: LogoItem[]; settings?: { fadeOutFinal?: number } }
   ) => {
     const renderProjectId = scopeOverride?.projectId ?? activeProjectId;
     const renderThreadId = scopeOverride?.threadId ?? activeThreadId;
@@ -1477,11 +1490,13 @@ export default function NaylaCore() {
     const renderThreeScenes = threeScenesOverride ?? threeRenderScenes;
     const renderVectorAnimations = vectorAnimationsOverride ?? vectorAnimations;
     const renderSkiaGraphics = skiaGraphicsOverride ?? skiaGraphics;
+    const renderLogos = renderContext?.logos ?? logos;
+    const renderSettings = renderContext?.settings ?? globalSettings;
     const durationInFrames = getCompositionDurationInFrames(
       lineaValidada,
       30,
       renderSubtitles,
-      logos,
+      renderLogos,
       renderTitles,
       renderThreeScenes,
       renderVectorAnimations,
@@ -1508,12 +1523,12 @@ export default function NaylaCore() {
       threeScenes: renderThreeScenes,
       vectorAnimations: renderVectorAnimations,
       skiaGraphics: renderSkiaGraphics,
-      logos: logos,
+      logos: renderLogos,
       canvasRatio: renderRatio,
       canvasWidth: canvas.width,
       canvasHeight: canvas.height,
       exportQuality,
-      settings: globalSettings
+      settings: renderSettings
     };
 
     // Progress is tracked by the single activeRenderPollKey effect above.
@@ -1657,6 +1672,7 @@ export default function NaylaCore() {
         url,
         durationInSeconds: baseDuration,
         originalDurationInSeconds:
+          asset.originalDurationInSeconds ||
           mediaExistente?.originalDurationInSeconds ||
           mediaExistente?.durationInSeconds ||
           baseDuration,
@@ -1937,14 +1953,15 @@ export default function NaylaCore() {
     if (actionData.render === true) {
       await solicitarRenderTimeline(
         timelineValidado,
-        undefined,
-        formatoDetectado,
+        actionData.renderContext?.exportQuality,
+        actionData.renderContext?.canvasRatio || formatoDetectado,
         scopeOverride,
         hasSubtitleDirective ? actionSubtitles : undefined,
         hasTitleDirective ? actionTitles : undefined,
         hasThreeSceneDirective ? actionThreeScenes : undefined,
         hasVectorAnimationDirective ? actionVectorAnimations : undefined,
-        hasSkiaGraphicDirective ? actionSkiaGraphics : undefined
+        hasSkiaGraphicDirective ? actionSkiaGraphics : undefined,
+        actionData.renderContext
       );
     } else {
       showAlert('Nayla armó el timeline con los medios existentes.');
@@ -2669,6 +2686,30 @@ export default function NaylaCore() {
     };
   };
 
+  const [editorPlanBusy, setEditorPlanBusy] = useState(false);
+  const editorPlanBusyRef = useRef(false);
+  const decideEditorPlan = async (planId: string, decision: 'accept' | 'cancel') => {
+    if (editorPlanBusyRef.current || chatProcessing) return;
+    editorPlanBusyRef.current = true;
+    setEditorPlanBusy(true);
+    const projectId = activeProjectId;
+    const threadId = activeThreadId;
+    try {
+      const currentSession = session || await getFirebaseSession();
+      if (!currentSession || !projectId || !threadId) throw new Error('Abre el proyecto y el chat del plan.');
+      const response = await fetch('/api/chat/editor-plan', { method: 'POST', headers: firebaseHeaders(currentSession, { 'Content-Type': 'application/json' }), body: JSON.stringify({ projectId, threadId, planId, decision }) });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'No se pudo aceptar el plan.');
+      if (activeThreadIdRef.current === threadId) setChatMessages(prev => prev.map(msg => msg.editorReview?.id === planId ? { ...msg, editorReview: { ...msg.editorReview, status: data.status } } : msg));
+      if (decision === 'accept') await ejecutarBuildTimeline(data, { projectId, threadId });
+    } catch (error: any) {
+      if (activeThreadIdRef.current === threadId) setChatMessages(prev => [...prev, { role: 'ai', text: error.message || 'No se pudo completar el plan.' }]);
+    } finally {
+      editorPlanBusyRef.current = false;
+      setEditorPlanBusy(false);
+    }
+  };
+
   const sendNaylaMessage = async (messageOverride?: string) => {
     const message = (messageOverride ?? chatInput).trim();
     if (!message || chatUploadProgress) return;
@@ -2740,6 +2781,7 @@ export default function NaylaCore() {
                metadata: item.metadata
              }))
            ],
+           currentEditorState: { subtitles: subtitulos, titles: motionTitles, threeScenes: threeRenderScenes, vectorAnimations, skiaGraphics, logos, settings: globalSettings, canvasRatio, exportQuality: calidadExportacion },
            currentTimeline: lineaDeTiempo.map(item => ({
              ...item,
              id: item.id,
@@ -2802,11 +2844,12 @@ export default function NaylaCore() {
         setGpuQuote(data.quote);
       }
 
-      setChatMessages(prev => [...prev, {
+      setChatMessages(prev => [...prev.map(msg => data.editorReview && msg.editorReview?.status === 'pending' ? { ...msg, editorReview: { ...msg.editorReview, status: 'cancelled' as const } } : msg), {
         role: 'ai',
         text: aiText,
         cards: data.action === 'SEARCH_MEDIA' && Array.isArray(data.results) ? data.results : undefined,
         actionPlan,
+        editorReview: data.editorReview,
         renderTask: data.action === 'BUILD_TIMELINE' && data.render === true
           ? {
               status: 'preparing',
@@ -3362,6 +3405,7 @@ export default function NaylaCore() {
       .map((message) => ({
         role: message.role === 'user' ? 'user' as const : 'ai' as const,
         text: String(message.content || ''),
+        editorReview: message.metadata?.editorReview,
         attachments: Array.isArray(message.attachments)
           ? message.attachments.map((item: any) => ({
               id: String(item.id),
@@ -3901,14 +3945,19 @@ export default function NaylaCore() {
     else setToolMessage('PRÓXIMAMENTE');
   };
 
-  const togglePlay = () => {
-    if (playerRef.current) {
-      if (!playerRef.current.paused) { playerRef.current.pause(); setIsPlaying(false); }
-      else { const playPromise = playerRef.current.play(); if (playPromise !== undefined) { playPromise.catch(error => console.log('Autoplay prevented:', error)); } setIsPlaying(true); }
+  const togglePlay = async () => {
+    const player = playerRef.current;
+    if (!player) return;
+    if (!player.paused) player.pause();
+    else {
+      try { await player.play(); }
+      catch { setIsPlaying(false); showAlert('No se pudo iniciar la reproducción. Intenta nuevamente.'); }
     }
   };
 
   const handleVideoEnded = () => {
+    setIsPlaying(false);
+    if (videoResultadoUrl) return;
     if (!clipSeleccionado) return;
     const currentIndex = lineaDeTiempo.findIndex(t => t.id === clipSeleccionado);
     if (currentIndex !== -1 && currentIndex < lineaDeTiempo.length - 1) {
@@ -5322,8 +5371,16 @@ if (!session) {
                       muted={false}
                       ref={playerRef as any}
                       onEnded={handleVideoEnded}
+                      onPlay={() => setIsPlaying(true)}
+                      onPause={() => setIsPlaying(false)}
+                      onTimeUpdate={(e) => setPlaybackSeconds(e.currentTarget.currentTime)}
+                      onSeeking={(e) => setPlaybackSeconds(e.currentTarget.currentTime)}
+                      onDurationChange={(e) => setPlaybackDuration(Number.isFinite(e.currentTarget.duration) ? e.currentTarget.duration : 0)}
+                      onEmptied={() => { setPlaybackSeconds(0); setPlaybackDuration(0); setIsPlaying(false); }}
                       onLoadedMetadata={(e) => {
                         const video = e.currentTarget;
+                        setPlaybackSeconds(video.currentTime);
+                        setPlaybackDuration(Number.isFinite(video.duration) ? video.duration : 0);
                         if (video.videoWidth && video.videoHeight) {
                           const detected = buildMediaMetadata(video.videoWidth, video.videoHeight, Number.isFinite(video.duration) ? video.duration : undefined);
                           setSourceVideoRatio(video.videoWidth / video.videoHeight);
@@ -5382,7 +5439,7 @@ if (!session) {
                   : ((showPlaybackControls || !isPlaying) ? 'auto' : 'none')
               }}
             >
-              {!isCleanMode && <span style={{ color: '#888', fontSize: '0.65rem', fontFamily: 'monospace' }}>00:00:00</span>}
+              {!isCleanMode && <span aria-label="Tiempo de reproducción" style={{ color: '#ddd', fontSize: '0.7rem', fontFamily: 'monospace', fontVariantNumeric: 'tabular-nums' }}>{formatPlaybackTime(playbackSeconds)} / {formatPlaybackTime(playbackDuration)}</span>}
               <div style={{ display: 'flex', alignItems: 'center', gap: isCleanMode ? '18px' : '12px' }}>
                 <button onClick={(e) => { e.stopPropagation(); seekBy(-10); }} style={{ background: 'none', border: 'none', color: '#ffffff', fontSize: '0.9rem', cursor: 'pointer', outline: 'none' }}>↺10</button>
                 <button
@@ -5416,7 +5473,7 @@ if (!session) {
                 </button>
                 <button onClick={(e) => { e.stopPropagation(); seekBy(10); }} style={{ background: 'none', border: 'none', color: '#ffffff', fontSize: '0.9rem', cursor: 'pointer', outline: 'none' }}>10↻</button>
               </div>
-              {!isCleanMode && <span style={{ color: '#888', fontSize: '0.65rem', fontFamily: 'monospace' }}>00:00:00</span>}
+              {!isCleanMode && <span aria-label="Tiempo de reproducción" style={{ color: '#ddd', fontSize: '0.7rem', fontFamily: 'monospace', fontVariantNumeric: 'tabular-nums' }}>{formatPlaybackTime(playbackSeconds)} / {formatPlaybackTime(playbackDuration)}</span>}
             </div>
           </div>
         </div>
@@ -5808,6 +5865,7 @@ if (!session) {
                   lineHeight: '1.55'
                 }}>
                   {msg.text ? <SelectableChatText text={msg.text} clean={msg.role === 'ai'} /> : null}
+                  {msg.editorReview && <NaylaEditorReview plan={msg.editorReview} busy={editorPlanBusy || chatProcessing} onDecision={(decision) => void decideEditorPlan(msg.editorReview!.id, decision)} />}
                   {msg.attachments?.length ? (
                     <div style={{
                       display: 'grid',
