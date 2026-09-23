@@ -16,7 +16,7 @@ Required to activate each route:
 ```
 UPLOAD_POST_API_KEY=
 UPLOAD_POST_WEBHOOK_SECRET=
-UPLOAD_POST_ACCOUNT_LIMIT=2
+UPLOAD_POST_PROFILE_LIMIT=2
 
 ZERNIO_API_KEY=
 ZERNIO_WEBHOOK_SECRET=
@@ -25,7 +25,7 @@ ZERNIO_ACCOUNT_LIMIT=2
 
 Provider keys are server-only. Never expose them with `NEXT_PUBLIC_`.
 
-The account limits are routing guardrails, not provider billing limits. Nayla uses Route A while it has local capacity, then offers Route B for additional accounts. Set a limit to `0` to disable the local cap. Each connected account keeps its provider identity, so publishing is sent through the route that owns that account.
+Upload-Post Free is profile-based: the current free tier includes 2 provider profiles, and each profile can connect one account per supported platform. Nayla currently uses one Upload-Post profile per project, so Route A is not capped at two social accounts; it can hold one connected account on each different platform. If the same platform already occupies Route A, Nayla can use Route B when it has free capacity. Zernio's free tier currently includes 2 connected social accounts. Each connected account keeps its provider identity, so publishing is sent through the route that owns that account.
 
 ## API
 
