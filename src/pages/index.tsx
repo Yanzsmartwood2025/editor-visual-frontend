@@ -3768,6 +3768,15 @@ export default function NaylaCore() {
 
     const files = Array.from(e.target.files);
     setSubiendoArchivo(true);
+    setVaultUploadProgress({
+      percent: 0,
+      loadedBytes: 0,
+      totalBytes: files.reduce((sum, file) => sum + file.size, 0),
+      fileIndex: 1,
+      fileCount: files.length,
+      fileName: files[0]?.name || '',
+      phase: 'uploading',
+    });
 
     try {
       const nuevosItems = await uploadMediaFilesToBodega({
@@ -3778,6 +3787,7 @@ export default function NaylaCore() {
         fuente: 'manual',
         projectId: activeProjectId || undefined,
         threadId: activeThreadId || undefined,
+        onProgress: setVaultUploadProgress,
       });
 
       setGaleriaMultimedia(prev => [...prev, ...nuevosItems]);
@@ -3791,15 +3801,21 @@ export default function NaylaCore() {
         setVideoResultadoUrl(null);
         adoptarFormatoVisual(primerVisual.metadata);
       }
+
+      showAlert(
+        nuevosItems.length === 1
+          ? `${nuevosItems[0]?.nombre || 'Archivo'} se guardó correctamente en la Bóveda.`
+          : `${nuevosItems.length} archivos se guardaron correctamente en la Bóveda.`
+      );
     } catch (err: any) {
       console.error('Error procesando subida:', err);
       showAlert(err?.message || 'Hubo un error al procesar los archivos.');
     } finally {
       e.target.value = '';
       setSubiendoArchivo(false);
+      setVaultUploadProgress(null);
     }
   };
-
   const eliminarItemsGaleria = async (ids: string[]) => {
     if (!session || ids.length === 0) return;
 
