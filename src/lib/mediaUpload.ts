@@ -38,6 +38,18 @@ export type MediaItem = {
 
 export type UploadableMediaFile = Pick<File, 'name' | 'type'> & Blob;
 
+export type UploadProgressSnapshot = {
+  percent: number;
+  loadedBytes: number;
+  totalBytes: number;
+  fileIndex: number;
+  fileCount: number;
+  fileName: string;
+  phase: 'uploading' | 'registering' | 'done';
+};
+
+export type UploadProgressHandler = (progress: UploadProgressSnapshot) => void;
+
 type UploadMediaToBodegaParams = {
   session: FirebaseSession;
   files: UploadableMediaFile[];
@@ -48,6 +60,7 @@ type UploadMediaToBodegaParams = {
   projectId?: string;
   threadId?: string;
   labelMode?: 'media' | 'result';
+  onProgress?: UploadProgressHandler;
 };
 
 export const SHARED_MEDIA_PENDING_TTL_MS = 24 * 60 * 60 * 1000;
@@ -211,6 +224,7 @@ export const uploadFileToR2 = async (
     kind?: UploadKind;
     projectId?: string;
     threadId?: string;
+    onProgress?: (loadedBytes: number, totalBytes: number) => void;
   }
 ): Promise<R2UploadResponse> => {
   const contentType = (file.type || 'application/octet-stream').toLowerCase();
@@ -234,20 +248,25 @@ export const uploadFileToR2 = async (
     throw new Error(signed.error || `No se pudo autorizar la subida de ${file.name} a la Bóveda.`);
   }
 
-  let uploadResponse: Response | null = null;
-  try {
-    uploadResponse = await fetch(signed.uploadUrl, {
-      method: 'PUT',
-      headers: {
-        'Content-Type': signed.contentType || contentType,
-      },
-      body: file,
-    });
-  } catch {
-    uploadResponse = null;
-  }
+  const uploadOk = await new Promise<boolean>((resolve) => {
+    try {
+      const xhr = new XMLHttpRequest();
+      xhr.open('PUT', signed.uploadUrl);
+      xhr.setRequestHeader('Content-Type', signed.contentType || contentType);
+      xhr.upload.onprogress = (event) => {
+        const total = event.lengthComputable && event.total > 0 ? event.total : file.size;
+        scope?.onProgress?.(Math.min(event.loaded, total), total);
+      };
+      xhr.onload = () => resolve(xhr.status >= 200 && xhr.status < 300);
+      xhr.onerror = () => resolve(false);
+      xhr.onabort = () => resolve(false);
+      xhr.send(file);
+    } catch {
+      resolve(false);
+    }
+  });
 
-  if (!uploadResponse?.ok) {
+  if (!uploadOk) {
     return uploadThroughNaylaFallback({
       file,
       session,
@@ -257,8 +276,13 @@ export const uploadFileToR2 = async (
       kind: scope?.kind || 'foto',
       projectId: signed.projectId || scope?.projectId,
       threadId: signed.threadId || scope?.threadId,
+    }).then((result) => {
+      scope?.onProgress?.(file.size, file.size);
+      return result;
     });
   }
+
+  scope?.onProgress?.(file.size, file.size);
 
   return {
     key: signed.key,
@@ -336,6 +360,7 @@ export const uploadDocumentFilesToBodega = async ({
   fuente = 'manual-documento',
   projectId,
   threadId,
+  onProgress,
 }: {
   session: FirebaseSession;
   files: UploadableMediaFile[];
@@ -343,6 +368,7 @@ export const uploadDocumentFilesToBodega = async ({
   fuente?: string;
   projectId?: string;
   threadId?: string;
+  onProgress?: UploadProgressHandler;
 }): Promise<DocumentItem[]> => {
   if (!session?.user?.id) throw new Error('Debes iniciar sesión para guardar documentos.');
   if (!files.length) return [];
@@ -351,9 +377,12 @@ export const uploadDocumentFilesToBodega = async ({
   const uploadedKeys: string[] = [];
   let resolvedProjectId = projectId;
   let resolvedThreadId = threadId;
+  const totalBytes = files.reduce((sum, file) => sum + file.size, 0);
+  let completedBytes = 0;
 
   try {
-    for (const file of files) {
+    for (let fileIndex = 0; fileIndex < files.length; fileIndex++) {
+      const file = files[fileIndex];
       if (!isSupportedDocumentFile(file)) {
         throw new Error(`Documento no soportado: ${file.name}`);
       }
@@ -364,7 +393,21 @@ export const uploadDocumentFilesToBodega = async ({
         kind: 'documento',
         projectId: resolvedProjectId,
         threadId: resolvedThreadId,
+        onProgress: (loadedBytes) => {
+          const overallLoaded = completedBytes + Math.min(file.size, loadedBytes);
+          const percent = totalBytes > 0 ? Math.min(98, Math.floor((overallLoaded / totalBytes) * 98)) : 0;
+          onProgress?.({
+            percent,
+            loadedBytes: overallLoaded,
+            totalBytes,
+            fileIndex: fileIndex + 1,
+            fileCount: files.length,
+            fileName: file.name,
+            phase: 'uploading',
+          });
+        },
       });
+      completedBytes += file.size;
       uploadedKeys.push(uploaded.key);
       resolvedProjectId = uploaded.projectId || resolvedProjectId;
       resolvedThreadId = uploaded.threadId || resolvedThreadId;
@@ -397,6 +440,15 @@ export const uploadDocumentFilesToBodega = async ({
     throw error;
   }
 
+  onProgress?.({
+    percent: 99,
+    loadedBytes: totalBytes,
+    totalBytes,
+    fileIndex: files.length,
+    fileCount: files.length,
+    fileName: files[files.length - 1]?.name || '',
+    phase: 'registering',
+  });
   const response = await fetch('/api/galeria', {
     method: 'POST',
     headers: firebaseHeaders(session, { 'Content-Type': 'application/json' }),
@@ -413,6 +465,15 @@ export const uploadDocumentFilesToBodega = async ({
     throw new Error(`Error registrando documentos: ${payload.error || 'Error desconocido.'}`);
   }
 
+  onProgress?.({
+    percent: 100,
+    loadedBytes: totalBytes,
+    totalBytes,
+    fileIndex: files.length,
+    fileCount: files.length,
+    fileName: files[files.length - 1]?.name || '',
+    phase: 'done',
+  });
   return payload.data || nuevosItems;
 };
 
@@ -436,6 +497,7 @@ export const uploadMediaFilesToBodega = async ({
   projectId,
   threadId,
   labelMode = 'media',
+  onProgress,
 }: UploadMediaToBodegaParams): Promise<MediaItem[]> => {
   if (!session?.user?.id) throw new Error('Debes iniciar sesión para guardar archivos en la Bóveda.');
 
@@ -443,6 +505,8 @@ export const uploadMediaFilesToBodega = async ({
   const uploadedKeys: string[] = [];
   let resolvedProjectId = projectId;
   let resolvedThreadId = threadId;
+  const totalBytes = files.reduce((sum, file) => sum + file.size, 0);
+  let completedBytes = 0;
 
   try {
     for (let i = 0; i < files.length; i++) {
@@ -469,7 +533,21 @@ export const uploadMediaFilesToBodega = async ({
         kind: tipo,
         projectId: resolvedProjectId,
         threadId: resolvedThreadId,
+        onProgress: (loadedBytes) => {
+          const overallLoaded = completedBytes + Math.min(file.size, loadedBytes);
+          const percent = totalBytes > 0 ? Math.min(98, Math.floor((overallLoaded / totalBytes) * 98)) : 0;
+          onProgress?.({
+            percent,
+            loadedBytes: overallLoaded,
+            totalBytes,
+            fileIndex: i + 1,
+            fileCount: files.length,
+            fileName: file.name,
+            phase: 'uploading',
+          });
+        },
       });
+      completedBytes += file.size;
       uploadedKeys.push(uploaded.key);
       resolvedProjectId = uploaded.projectId || resolvedProjectId;
       resolvedThreadId = uploaded.threadId || resolvedThreadId;
@@ -495,6 +573,15 @@ export const uploadMediaFilesToBodega = async ({
     throw error;
   }
 
+  onProgress?.({
+    percent: 99,
+    loadedBytes: totalBytes,
+    totalBytes,
+    fileIndex: files.length,
+    fileCount: files.length,
+    fileName: files[files.length - 1]?.name || '',
+    phase: 'registering',
+  });
   const response = await fetch('/api/galeria', {
     method: 'POST',
     headers: firebaseHeaders(session, { 'Content-Type': 'application/json' }),
@@ -512,5 +599,14 @@ export const uploadMediaFilesToBodega = async ({
     throw new Error(`Error registrando archivos en la Bóveda: ${payload.error || 'Error desconocido.'}`);
   }
 
+  onProgress?.({
+    percent: 100,
+    loadedBytes: totalBytes,
+    totalBytes,
+    fileIndex: files.length,
+    fileCount: files.length,
+    fileName: files[files.length - 1]?.name || '',
+    phase: 'done',
+  });
   return payload.data || nuevosItems;
 };

@@ -17,6 +17,7 @@ import {
   uploadDocumentFilesToBodega,
   uploadMediaFilesToBodega,
   type DocumentItem,
+  type UploadProgressSnapshot,
 } from '../lib/mediaUpload';
 import { groupSpeechWordsIntoCaptions } from '../lib/autoCaptions';
 import { buildMediaMetadata, getCanvasDimensionsFromRatio, probeMediaUrl, type MediaMetadata } from '../lib/mediaMetadata';
@@ -525,7 +526,13 @@ export default function NaylaCore() {
   const [chatAttachMenuOpen, setChatAttachMenuOpen] = useState(false);
   const chatDirectUploadRef = useRef<HTMLInputElement | null>(null);
   const [chatAttachmentIds, setChatAttachmentIds] = useState<string[]>([]);
-  const [chatUploadProgress, setChatUploadProgress] = useState<{ total: number; done: number; failed: number } | null>(null);
+  const [chatUploadProgress, setChatUploadProgress] = useState<{
+    total: number;
+    done: number;
+    failed: number;
+    percent: number;
+    currentFile?: string;
+  } | null>(null);
   const [channelUploadingKind, setChannelUploadingKind] = useState<NaylaChannelKind | null>(null);
 
   useEffect(() => {
@@ -1266,18 +1273,18 @@ export default function NaylaCore() {
     if (target?.closest('button, input, textarea, select, a')) return;
     if (subTool === 'delogo') return;
 
-    // Mouse/trackpad uses onDoubleClick. Touch/pen gets an explicit detector
-    // because Android browsers do not dispatch dblclick consistently.
-    if (e.pointerType === 'mouse') return;
-
+    // Use one detector for mouse, touch and pen. Previously touch could trigger
+    // this detector and then a synthetic dblclick, immediately toggling
+    // fullscreen back off on some Android browsers.
     const now = Date.now();
     const previous = lastVideoSurfaceTapRef.current;
     const closeEnough =
       previous &&
-      now - previous.time <= 520 &&
-      Math.hypot(e.clientX - previous.x, e.clientY - previous.y) <= 56;
+      now - previous.time <= 560 &&
+      Math.hypot(e.clientX - previous.x, e.clientY - previous.y) <= 72;
 
     if (closeEnough) {
+      e.preventDefault();
       lastVideoSurfaceTapRef.current = null;
       togglePreviewFullscreen();
       return;
@@ -1484,6 +1491,11 @@ export default function NaylaCore() {
   const isPortraitSourceVideo = sourceVideoRatio !== null && sourceVideoRatio < 1;
   const isLandscapeSourceVideo = sourceVideoRatio !== null && sourceVideoRatio > 1.15;
   const phoneVideoObjectFit = isPhoneViewport && isPortraitSourceVideo ? 'cover' : 'contain';
+  const forceCssLandscapeFullscreen =
+    isCleanMode &&
+    isPhoneViewport &&
+    isLandscapeSourceVideo &&
+    deviceOrientation === 'portrait';
 
   const validarTimelineParaRender = async (timeline: TimelineItem[]) => {
     const lineaValidada: TimelineItem[] = [];
@@ -2376,15 +2388,30 @@ export default function NaylaCore() {
     setChatAttachMenuOpen(false);
     setProjectMenuOpen(false);
     if (forcedKind) setChannelUploadingKind(forcedKind);
-    setChatUploadProgress({ total: selectedFiles.length, done: 0, failed: 0 });
+    setChatUploadProgress({ total: selectedFiles.length, done: 0, failed: 0, percent: 0 });
 
     let workingMedia = [...galeriaMultimedia];
     let workingDocuments = [...chatDocuments];
     let workingModels = [...modelos3d];
     let successCount = 0;
     let failedCount = 0;
+    const totalUploadBytes = selectedFiles.reduce((sum, file) => sum + file.size, 0);
+    let completedUploadBytes = 0;
 
     for (const file of selectedFiles) {
+      setChatUploadProgress((progress) => progress ? { ...progress, currentFile: file.name } : progress);
+
+      const updateCurrentFileProgress = (progress: UploadProgressSnapshot) => {
+        const loaded = completedUploadBytes + Math.min(file.size, progress.loadedBytes);
+        const percent = totalUploadBytes > 0
+          ? Math.min(99, Math.floor((loaded / totalUploadBytes) * 100))
+          : 0;
+        setChatUploadProgress((current) => current
+          ? { ...current, percent, currentFile: file.name }
+          : current
+        );
+      };
+
       try {
         let asset: NaylaChannelAsset | null = null;
         let kind = forcedKind;
@@ -2425,6 +2452,7 @@ export default function NaylaCore() {
             fuente: 'chat:documento',
             projectId: activeProjectId,
             threadId: activeThreadId,
+            onProgress: updateCurrentFileProgress,
           });
           const saved = savedItems[0];
           if (!saved) throw new Error(`No se pudo guardar ${file.name}.`);
@@ -2446,6 +2474,7 @@ export default function NaylaCore() {
             fuente: `chat:canal-${kind}`,
             projectId: activeProjectId,
             threadId: activeThreadId,
+            onProgress: updateCurrentFileProgress,
           });
           const saved = savedItems[0];
           if (!saved) throw new Error(`No se pudo guardar ${file.name}.`);
@@ -2474,11 +2503,17 @@ export default function NaylaCore() {
         failedCount += 1;
         console.error('Error subiendo archivo al chat:', file.name, error);
       } finally {
+        completedUploadBytes += file.size;
+        const overallPercent = totalUploadBytes > 0
+          ? Math.min(100, Math.floor((completedUploadBytes / totalUploadBytes) * 100))
+          : 100;
         setChatUploadProgress((progress) => progress
           ? {
               ...progress,
               done: Math.min(progress.total, progress.done + 1),
               failed: failedCount,
+              percent: overallPercent,
+              currentFile: file.name,
             }
           : progress
         );
@@ -2500,7 +2535,6 @@ export default function NaylaCore() {
       );
     }
   };
-
   const subirArchivosDesdeCanal = async (kind: NaylaChannelKind, files: FileList) => {
     await uploadFilesIntoChat(files, kind);
   };
@@ -3746,6 +3780,7 @@ export default function NaylaCore() {
   };
 
   const [subiendoArchivo, setSubiendoArchivo] = useState(false);
+  const [vaultUploadProgress, setVaultUploadProgress] = useState<UploadProgressSnapshot | null>(null);
 
   const handleSubirMultimedia = async (e: React.ChangeEvent<HTMLInputElement>, tipo: 'foto' | 'video' | 'audio') => {
     if (!e.target.files || e.target.files.length === 0) return;
@@ -3760,6 +3795,15 @@ export default function NaylaCore() {
 
     const files = Array.from(e.target.files);
     setSubiendoArchivo(true);
+    setVaultUploadProgress({
+      percent: 0,
+      loadedBytes: 0,
+      totalBytes: files.reduce((sum, file) => sum + file.size, 0),
+      fileIndex: 1,
+      fileCount: files.length,
+      fileName: files[0]?.name || '',
+      phase: 'uploading',
+    });
 
     try {
       const nuevosItems = await uploadMediaFilesToBodega({
@@ -3770,6 +3814,7 @@ export default function NaylaCore() {
         fuente: 'manual',
         projectId: activeProjectId || undefined,
         threadId: activeThreadId || undefined,
+        onProgress: setVaultUploadProgress,
       });
 
       setGaleriaMultimedia(prev => [...prev, ...nuevosItems]);
@@ -3783,15 +3828,21 @@ export default function NaylaCore() {
         setVideoResultadoUrl(null);
         adoptarFormatoVisual(primerVisual.metadata);
       }
+
+      showAlert(
+        nuevosItems.length === 1
+          ? `${nuevosItems[0]?.nombre || 'Archivo'} se guardó correctamente en la Bóveda.`
+          : `${nuevosItems.length} archivos se guardaron correctamente en la Bóveda.`
+      );
     } catch (err: any) {
       console.error('Error procesando subida:', err);
       showAlert(err?.message || 'Hubo un error al procesar los archivos.');
     } finally {
       e.target.value = '';
       setSubiendoArchivo(false);
+      setVaultUploadProgress(null);
     }
   };
-
   const eliminarItemsGaleria = async (ids: string[]) => {
     if (!session || ids.length === 0) return;
 
@@ -4846,8 +4897,8 @@ if (!session) {
                     return (
                       <label key={tool.id} className="sub-btn">
                         <div className="icon-container">{tool.icon}</div>
-                        <span>{tool.nombre}</span>
-                        <input type="file" multiple accept="video/*,image/*" onChange={(e) => handleSubirMultimedia(e, 'video')} style={{ display: 'none' }} />
+                        <span>{subiendoArchivo ? `Subiendo ${vaultUploadProgress?.percent ?? 0}%` : tool.nombre}</span>
+                        <input type="file" multiple accept="video/*,image/*" disabled={subiendoArchivo} onChange={(e) => handleSubirMultimedia(e, 'video')} style={{ display: 'none' }} />
                       </label>
                     );
                   }
@@ -4855,8 +4906,8 @@ if (!session) {
                     return (
                       <label key={tool.id} className="sub-btn">
                         <div className="icon-container">{tool.icon}</div>
-                        <span>{tool.nombre}</span>
-                        <input type="file" multiple accept="audio/*" onChange={(e) => handleSubirMultimedia(e, 'audio')} style={{ display: 'none' }} />
+                        <span>{subiendoArchivo ? `Subiendo ${vaultUploadProgress?.percent ?? 0}%` : tool.nombre}</span>
+                        <input type="file" multiple accept="audio/*" disabled={subiendoArchivo} onChange={(e) => handleSubirMultimedia(e, 'audio')} style={{ display: 'none' }} />
                       </label>
                     );
                   }
@@ -5276,17 +5327,23 @@ if (!session) {
           <div
             ref={previewFullscreenRef}
             onPointerMove={resetPlaybackControlsTimer}
-            onDoubleClick={(e) => {
-              e.stopPropagation();
-              if (subTool !== 'delogo') togglePreviewFullscreen();
-            }}
             data-testid="video-preview-container"
             style={{
               flex: isCleanMode ? 'none' : 1,
-              width: isCleanMode ? '100dvw' : undefined,
-              height: isCleanMode ? '100dvh' : '100%',
+              width: isCleanMode
+                ? (forceCssLandscapeFullscreen ? '100dvh' : '100dvw')
+                : undefined,
+              height: isCleanMode
+                ? (forceCssLandscapeFullscreen ? '100dvw' : '100dvh')
+                : '100%',
               position: isCleanMode ? 'fixed' : 'relative',
-              inset: isCleanMode ? 0 : undefined,
+              inset: isCleanMode && !forceCssLandscapeFullscreen ? 0 : undefined,
+              top: forceCssLandscapeFullscreen ? '50%' : undefined,
+              left: forceCssLandscapeFullscreen ? '50%' : undefined,
+              transform: forceCssLandscapeFullscreen
+                ? 'translate(-50%, -50%) rotate(90deg)'
+                : undefined,
+              transformOrigin: 'center center',
               zIndex: isCleanMode ? 100000 : undefined,
               backgroundColor: '#000',
               display: 'flex',
@@ -5365,7 +5422,7 @@ if (!session) {
                 handleVideoSurfaceTap(event);
               }}
               onPointerLeave={handlePointerUp}
-              style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative' }}
+              style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative', touchAction: 'manipulation' }}
             >
               {(visualActivo || videoResultadoUrl || mediaActivaUrl) ? (
                 <>
@@ -5374,7 +5431,7 @@ if (!session) {
                       key={visualActivo.url}
                       src={visualActivo.url}
                       alt={visualActivo.nombre || 'Imagen activa'}
-                      style={{ width: '100%', height: '100%', objectFit: phoneVideoObjectFit, backgroundColor: '#000', maxWidth: '100dvw', maxHeight: '100dvh' }}
+                      style={{ width: '100%', height: '100%', objectFit: phoneVideoObjectFit, backgroundColor: '#000', maxWidth: '100%', maxHeight: '100%', touchAction: 'manipulation' }}
                       onLoad={(e) => {
                         const image = e.currentTarget;
                         if (image.naturalWidth && image.naturalHeight) {
@@ -5391,7 +5448,7 @@ if (!session) {
                     <video
                       key={videoResultadoUrl || visualActivo?.url || mediaActivaUrl || 'video-preview'}
                       src={videoResultadoUrl || visualActivo?.url || mediaActivaUrl || ''}
-                      style={{ width: '100%', height: '100%', objectFit: phoneVideoObjectFit, backgroundColor: '#000', maxWidth: '100dvw', maxHeight: '100dvh' }}
+                      style={{ width: '100%', height: '100%', objectFit: phoneVideoObjectFit, backgroundColor: '#000', maxWidth: '100%', maxHeight: '100%', touchAction: 'manipulation' }}
                       controls={false}
                       playsInline
                       muted={false}
@@ -6285,7 +6342,9 @@ if (!session) {
               justifyContent: 'space-between',
               gap: 10,
             }}>
-              <span>Subiendo archivos…</span>
+              <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                Subiendo {chatUploadProgress.currentFile || 'archivos'}… {chatUploadProgress.percent}%
+              </span>
               <span>{chatUploadProgress.done}/{chatUploadProgress.total}{chatUploadProgress.failed ? ` · ${chatUploadProgress.failed} error${chatUploadProgress.failed === 1 ? '' : 'es'}` : ''}</span>
             </div>
           )}
@@ -6889,6 +6948,40 @@ if (!session) {
                     : 'ELIMINAR'}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {vaultUploadProgress && (
+        <div
+          role="status"
+          aria-live="polite"
+          style={{
+            position: 'fixed',
+            left: '50%',
+            bottom: '24px',
+            transform: 'translateX(-50%)',
+            width: 'min(420px, calc(100vw - 28px))',
+            zIndex: 99998,
+            background: 'rgba(8,8,8,.96)',
+            border: '1px solid rgba(255,255,255,.24)',
+            borderRadius: 14,
+            padding: '12px 14px',
+            boxShadow: '0 12px 40px rgba(0,0,0,.55)',
+            color: '#fff',
+          }}
+        >
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, fontSize: 11, marginBottom: 8 }}>
+            <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {vaultUploadProgress.phase === 'registering' ? 'Guardando en la Bóveda…' : `Subiendo ${vaultUploadProgress.fileName}`}
+            </span>
+            <strong>{vaultUploadProgress.percent}%</strong>
+          </div>
+          <div style={{ height: 5, borderRadius: 999, background: '#262626', overflow: 'hidden' }}>
+            <div style={{ height: '100%', width: `${vaultUploadProgress.percent}%`, background: '#eee', transition: 'width .15s linear' }} />
+          </div>
+          <div style={{ marginTop: 6, color: '#888', fontSize: 9.5 }}>
+            Archivo {vaultUploadProgress.fileIndex} de {vaultUploadProgress.fileCount}
           </div>
         </div>
       )}

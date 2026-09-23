@@ -4,7 +4,8 @@ import { socialProviderStatuses } from '../../../lib/social/serverStatus';
 export default function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== 'GET') return res.status(405).json({ error: 'Usa GET.' });
 
-  const routes = socialProviderStatuses().filter((provider) => provider.configured).length;
+  const providers = socialProviderStatuses();
+  const routes = providers.filter((provider) => provider.configured).length;
   const webhookSecrets = [
     Boolean(process.env.UPLOAD_POST_WEBHOOK_SECRET?.trim()),
     Boolean(process.env.ZERNIO_WEBHOOK_SECRET?.trim()),
@@ -15,6 +16,7 @@ export default function handler(req: NextApiRequest, res: NextApiResponse) {
     ready: routes > 0,
     redundant: routes > 1,
     routes,
+    providers,
     realtime: {
       ready: webhookSecrets === 2,
       configured: webhookSecrets,

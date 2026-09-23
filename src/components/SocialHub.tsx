@@ -323,6 +323,10 @@ export default function SocialHub({ session, projectId, results, onResultsUpload
   const [data, setData] = useState<any>(null);
   const [busy, setBusy] = useState('');
   const [notice, setNotice] = useState('');
+  const [publishFeedback, setPublishFeedback] = useState<{
+    tone: 'success' | 'warning' | 'error';
+    message: string;
+  } | null>(null);
   const [selectedResult, setSelectedResult] = useState('');
   const [selectedAccounts, setSelectedAccounts] = useState<string[]>([]);
   const [title, setTitle] = useState('');
@@ -360,6 +364,7 @@ export default function SocialHub({ session, projectId, results, onResultsUpload
   const [naylaSettingsSnapshot, setNaylaSettingsSnapshot] = useState<any>(null);
   const [naylaPlusOpen, setNaylaPlusOpen] = useState(false);
   const [socialUploads, setSocialUploads] = useState<ResultMedia[]>([]);
+  const [socialUploadPercent, setSocialUploadPercent] = useState(0);
   const socialUploadInputRef = useRef<HTMLInputElement | null>(null);
   const socialChatEndRef = useRef<HTMLDivElement | null>(null);
 
@@ -460,28 +465,68 @@ export default function SocialHub({ session, projectId, results, onResultsUpload
   const providerA = data?.providers?.find((p: any) => p.id === 'upload_post');
   const providerB = data?.providers?.find((p: any) => p.id === 'zernio');
 
+  const providerUsage = (provider: 'upload_post' | 'zernio') =>
+    accounts.filter((account: any) =>
+      account.provider === provider &&
+      account.status !== 'disconnected'
+    ).length;
+
+  const providerHasCapacity = (provider: any, providerId: 'upload_post' | 'zernio') => {
+    if (!provider?.configured) return false;
+    const limit = provider.accountLimit;
+    return limit == null || providerUsage(providerId) < Number(limit);
+  };
+
+  const routeAHasPlatformSlot = (platform: string) =>
+    !accounts.some((account: any) =>
+      account.provider === 'upload_post' &&
+      account.platform === platform &&
+      account.status !== 'disconnected'
+    );
+
   const connectNetwork = async (network: (typeof SOCIAL_NETWORKS)[number]) => {
     if (!projectId) return;
 
     const candidates: Array<'upload_post' | 'zernio'> = [];
-    if (providerA?.configured && network.uploadPostConnect) candidates.push('upload_post');
-    if (
-      providerB?.configured &&
-      network.zernio &&
-      ['oauth', 'telegram_code'].includes(network.zernioConnectMode || 'oauth')
-    ) {
-      candidates.push('zernio');
-    }
+    const routeAAvailable =
+      Boolean(providerA?.configured) &&
+      routeAHasPlatformSlot(network.id) &&
+      Boolean(network.uploadPostConnect) &&
+      (network.id !== 'tiktok' || providerA?.tiktokPublishingEnabled === true);
+    const routeBAvailable =
+      providerHasCapacity(providerB, 'zernio') &&
+      Boolean(network.zernio) &&
+      ['oauth', 'telegram_code'].includes(network.zernioConnectMode || 'oauth');
+
+    if (routeAAvailable) candidates.push('upload_post');
+    if (routeBAvailable) candidates.push('zernio');
 
     if (!candidates.length) {
       const manual =
         providerB?.configured &&
         network.zernio &&
         ['credentials', 'oauth_channel'].includes(network.zernioConnectMode || '');
+      const routeAPlatformFull =
+        providerA?.configured &&
+        Boolean(network.uploadPostConnect) &&
+        !routeAHasPlatformSlot(network.id);
+      const routeATikTokBlocked =
+        network.id === 'tiktok' &&
+        providerA?.configured &&
+        providerA?.tiktokPublishingEnabled !== true;
+      const routeBFull =
+        providerB?.configured &&
+        providerB.accountLimit != null &&
+        providerUsage('zernio') >= Number(providerB.accountLimit);
+
       setNotice(
-        manual
-          ? `${network.label} necesita un paso de conexión especial que todavía no está habilitado en la interfaz.`
-          : 'Las conexiones sociales todavía no están activas en este despliegue. Revisa las variables de entorno de Producción.'
+        routeATikTokBlocked && routeBFull
+          ? `TikTok no publica por la Ruta A gratuita y Ruta B ya está llena (${providerUsage('zernio')}/${providerB.accountLimit}).`
+          : routeAPlatformFull && routeBFull
+            ? `${network.label} ya ocupa el espacio de esa red en Ruta A y Ruta B está llena (${providerUsage('zernio')}/${providerB.accountLimit}).`
+            : manual
+              ? `${network.label} necesita un paso de conexión especial que todavía no está habilitado en la interfaz.`
+              : 'Las conexiones sociales todavía no están activas en este despliegue. Revisa las variables de entorno de Producción.'
       );
       return;
     }
@@ -519,7 +564,6 @@ export default function SocialHub({ session, projectId, results, onResultsUpload
     setNotice(lastError || 'No se pudo iniciar la conexión de esta red.');
     setBusy('');
   };
-
   const uploadSocialResults = async (files: File[]) => {
     if (!session || !projectId || !files.length) return;
 
@@ -532,6 +576,7 @@ export default function SocialHub({ session, projectId, results, onResultsUpload
     }
 
     setBusy('social-upload');
+    setSocialUploadPercent(0);
     setNotice('');
     try {
       const uploaded = await uploadMediaFilesToBodega({
@@ -541,6 +586,7 @@ export default function SocialHub({ session, projectId, results, onResultsUpload
         projectId,
         fuente: 'social-upload',
         labelMode: 'result',
+        onProgress: (progress) => setSocialUploadPercent(progress.percent),
       });
 
       const publishable = uploaded
@@ -573,6 +619,7 @@ export default function SocialHub({ session, projectId, results, onResultsUpload
       setNotice(error instanceof Error ? error.message : 'No se pudo subir el archivo para publicar.');
     } finally {
       setBusy('');
+      setSocialUploadPercent(0);
       if (socialUploadInputRef.current) socialUploadInputRef.current.value = '';
     }
   };
@@ -584,6 +631,7 @@ export default function SocialHub({ session, projectId, results, onResultsUpload
     }
     setBusy('publish');
     setNotice('');
+    setPublishFeedback(null);
     try {
       const payload = await api('/api/social/publish', {
         method: 'POST',
@@ -595,16 +643,39 @@ export default function SocialHub({ session, projectId, results, onResultsUpload
           caption,
         }),
       });
-      setNotice(`Publicación enviada: ${payload.published || 0} listas · ${payload.processing || 0} procesando · ${payload.failed || 0} fallidas.`);
+
+      const published = Number(payload.published || 0);
+      const processing = Number(payload.processing || 0);
+      const failed = Number(payload.failed || 0);
+      const summary = `${published} publicada${published === 1 ? '' : 's'} · ${processing} procesando · ${failed} fallida${failed === 1 ? '' : 's'}`;
+
+      if (published > 0 && processing === 0 && failed === 0) {
+        setPublishFeedback({
+          tone: 'success',
+          message: `✓ Publicación completada con éxito. ${summary}.`,
+        });
+      } else if (published > 0 || processing > 0) {
+        setPublishFeedback({
+          tone: 'warning',
+          message: `Publicación enviada. ${summary}. Revisa Actividad reciente si algún destino sigue procesando.`,
+        });
+      } else {
+        setPublishFeedback({
+          tone: 'error',
+          message: `No se pudo publicar. ${summary}.`,
+        });
+      }
+
       await load(true);
       setTab('inicio');
     } catch (error) {
-      setNotice(error instanceof Error ? error.message : 'No se pudo publicar.');
+      const message = error instanceof Error ? error.message : 'No se pudo publicar.';
+      setPublishFeedback({ tone: 'error', message: `✕ ${message}` });
+      setNotice(message);
     } finally {
       setBusy('');
     }
   };
-
   const fetchCommentMedia = async (accountId: string) => {
     if (!projectId || !accountId) return;
     setCommentAccount(accountId);
@@ -1076,6 +1147,39 @@ export default function SocialHub({ session, projectId, results, onResultsUpload
         ))}
       </div>
 
+      {publishFeedback && (
+        <div
+          role="status"
+          aria-live="polite"
+          style={{
+            ...panel,
+            padding: '12px 13px',
+            fontSize: 11.5,
+            color: '#fff',
+            lineHeight: 1.5,
+            border: '1px solid rgba(255,255,255,.24)',
+            background: publishFeedback.tone === 'success'
+              ? 'rgba(255,255,255,.10)'
+              : publishFeedback.tone === 'warning'
+                ? 'rgba(255,255,255,.065)'
+                : 'rgba(255,255,255,.045)',
+            display: 'flex',
+            gap: 10,
+            alignItems: 'flex-start',
+          }}
+        >
+          <span style={{ flex: 1 }}>{publishFeedback.message}</span>
+          <button
+            type="button"
+            aria-label="Cerrar aviso"
+            onClick={() => setPublishFeedback(null)}
+            style={{ background: 'transparent', border: 0, color: '#aaa', cursor: 'pointer', fontSize: 16, lineHeight: 1 }}
+          >
+            ×
+          </button>
+        </div>
+      )}
+
       {notice && (
         <div style={{ ...panel, padding: '9px 10px', fontSize: 10, color: '#d6d6d6', lineHeight: 1.45 }}>
           {notice}
@@ -1125,7 +1229,12 @@ export default function SocialHub({ session, projectId, results, onResultsUpload
           </div>
 
           <div style={{ ...panel, padding: 10 }}>
-            <div style={{ fontSize: 10, fontWeight: 900, marginBottom: 9 }}>CONECTAR RED</div>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 9 }}>
+              <div style={{ fontSize: 10, fontWeight: 900 }}>CONECTAR RED</div>
+              <div style={{ fontSize: 8.5, color: '#777', textAlign: 'right' }}>
+                A {providerUsage('upload_post')} redes · 1 por red · B {providerUsage('zernio')}/{providerB?.accountLimit ?? '∞'}
+              </div>
+            </div>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,minmax(0,1fr))', gap: 7 }}>
               {SOCIAL_NETWORKS.map((network) => (
                 <div key={network.id} style={{ minWidth: 0, padding: '8px 4px', borderRadius: 11, background: connectedPlatforms.has(network.id) ? 'rgba(255,255,255,.07)' : 'rgba(255,255,255,.022)', border: '1px solid rgba(255,255,255,.06)', textAlign: 'center' }}>
@@ -1201,7 +1310,7 @@ export default function SocialHub({ session, projectId, results, onResultsUpload
               onClick={() => socialUploadInputRef.current?.click()}
               style={{ ...tinyButton(false), padding: '6px 8px', fontSize: 8 }}
             >
-              {busy === 'social-upload' ? 'SUBIENDO…' : '+ TELÉFONO'}
+              {busy === 'social-upload' ? `SUBIENDO ${socialUploadPercent}%` : '+ TELÉFONO'}
             </button>
           </div>
           <NaylaSelect
@@ -1547,7 +1656,7 @@ export default function SocialHub({ session, projectId, results, onResultsUpload
                       }}
                       style={{ ...tinyButton(false), width: '100%', textAlign: 'left', padding: '10px 11px', fontSize: 10 }}
                     >
-                      {busy === 'social-upload' ? 'Subiendo…' : 'Subir foto o video para publicar'}
+                      {busy === 'social-upload' ? `Subiendo… ${socialUploadPercent}%` : 'Subir foto o video para publicar'}
                     </button>
                     <button
                       type="button"
