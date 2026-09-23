@@ -1,4 +1,4 @@
-import React, { Suspense, lazy, useState } from 'react';
+import { Suspense, lazy, useState } from 'react';
 import { ModuleBreaker } from './ModuleBreaker';
 import type { GenerarEngine, GenerarModule } from './types';
 
