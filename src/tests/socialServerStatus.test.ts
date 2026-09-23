@@ -18,6 +18,7 @@ describe('social provider status routing', () => {
       accountLimit: null,
       profileLimit: 2,
       perPlatformAccountLimit: 1,
+      tiktokPublishingEnabled: false,
     });
     expect(providers.find((provider) => provider.id === 'zernio')).toMatchObject({
       configured: true,
@@ -30,9 +31,11 @@ describe('social provider status routing', () => {
     vi.stubEnv('ZERNIO_API_KEY', 'route-b');
     vi.stubEnv('UPLOAD_POST_PROFILE_LIMIT', '4');
     vi.stubEnv('ZERNIO_ACCOUNT_LIMIT', '0');
+    vi.stubEnv('UPLOAD_POST_TIKTOK_ENABLED', 'true');
 
     const providers = socialProviderStatuses();
     expect(providers.find((provider) => provider.id === 'upload_post')?.profileLimit).toBe(4);
+    expect(providers.find((provider) => provider.id === 'upload_post')?.tiktokPublishingEnabled).toBe(true);
     expect(providers.find((provider) => provider.id === 'zernio')?.accountLimit).toBeNull();
   });
 
