@@ -5317,7 +5317,7 @@ if (!session) {
                           <div
                             onClick={() => {
                               void agregarAlTimeline(item, { preventDuplicate: true });
-                              setMediaActivaUrl(item.url);
+                              if (item.tipo !== 'audio') setMediaActivaUrl(item.url);
                               if (item.tipo === 'video' && String(item.fuente || '').startsWith('render:')) {
                                 setVideoResultadoUrl(item.url);
                                 setVideoResultadoNombre(item.nombre);
