@@ -461,7 +461,7 @@ const executeDirectLlm = async ({
       prompt,
       withImages ? groqImages : [],
       systemPrompt,
-      { maxCompletionTokens: 12000, signal }
+      { maxCompletionTokens: 12000, maxContinuations: 2, maxTransientRetries: 2, signal }
     );
   };
 
@@ -472,7 +472,7 @@ const executeDirectLlm = async ({
       prompt,
       withImages ? requestedImages : [],
       systemPrompt,
-      { maxCompletionTokens: 12000, signal }
+      { maxCompletionTokens: 12000, maxContinuations: 2, maxTransientRetries: 2, signal }
     );
   };
 
@@ -1170,6 +1170,7 @@ MODO_MOTOR=${engineMode}
       };
       const review = buildEditorReview(proposed);
       const renderContext = { logos: currentEditorState?.logos || [], settings: currentEditorState?.settings || {}, canvasRatio: currentEditorState?.canvasRatio || '9/16', exportQuality: currentEditorState?.exportQuality || '1080p' };
+      review.execution = { ...proposed, renderContext };
       review.format = `${renderContext.canvasRatio} · ${renderContext.exportQuality}`;
       if (Array.isArray(renderContext.logos)) for (const [index, logo] of renderContext.logos.entries()) {
         const end = Number(logo.finSec) || review.duration;

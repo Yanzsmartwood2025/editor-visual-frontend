@@ -1,9 +1,9 @@
 import { Groq } from 'groq-sdk';
 import { Mistral } from '@mistralai/mistralai';
+import { completeWithRecovery, type RecoveryOptions } from './llmRecovery';
 
-export type LlmGenerateOptions = {
+export type LlmGenerateOptions = RecoveryOptions & {
   maxCompletionTokens?: number;
-  signal?: AbortSignal;
 };
 
 export interface LLMProvider {
@@ -64,18 +64,19 @@ export class GroqProvider implements LLMProvider {
       ? (process.env.GROQ_VISION_MODEL || 'qwen/qwen3.8-27b')
       : this.model;
 
-    const completion = await this.client.chat.completions.create({
-      messages,
-      model,
-      ...(options?.maxCompletionTokens
-        ? { max_completion_tokens: options.maxCompletionTokens }
-        : {}),
-    }, { signal: options?.signal });
+    return completeWithRecovery(async () => {
+      const completion = await this.client.chat.completions.create({
+        messages: [...messages],
+        model,
+        ...(options?.maxCompletionTokens
+          ? { max_completion_tokens: options.maxCompletionTokens }
+          : {}),
+      }, { signal: options?.signal });
 
-    if (completion.choices[0]?.finish_reason === 'length') {
-      throw new Error('La respuesta del modelo superó el límite de salida.');
-    }
-    return completion.choices[0]?.message?.content || '';
+      return { text: completion.choices[0]?.message?.content || '', truncated: completion.choices[0]?.finish_reason === 'length' };
+    }, (partial) => {
+      messages.push({ role: 'assistant', content: partial }, { role: 'user', content: 'Continúa exactamente desde el carácter siguiente. No repitas contenido, no reinicies el JSON y no añadas explicaciones ni bloques Markdown.' });
+    }, options);
   }
 }
 
@@ -121,38 +122,36 @@ export class MistralProvider implements LLMProvider {
     const complete = async (model: string) =>
       this.client.chat.complete({
         model,
-        messages: messages,
+        messages: [...messages],
         ...(options?.maxCompletionTokens
           ? { maxTokens: options.maxCompletionTokens }
           : {}),
       }, { fetchOptions: { signal: options?.signal ? AbortSignal.any([options.signal, AbortSignal.timeout(25_000)]) : AbortSignal.timeout(25_000) } });
 
-    try {
-      const chatResponse = await complete(this.model);
-      if (chatResponse.choices?.[0]?.finishReason === 'length') {
-        throw new Error('La respuesta del modelo superó el límite de salida.');
-      }
-      return chatResponse.choices?.[0]?.message?.content as string || '';
-    } catch (error: any) {
-      const raw = [
-        error?.message,
-        error?.body,
-        error?.statusCode,
-      ].filter(Boolean).join(' ');
+    return completeWithRecovery(async () => {
+      try {
+        const chatResponse = await complete(this.model);
+        return { text: chatResponse.choices?.[0]?.message?.content as string || '', truncated: chatResponse.choices?.[0]?.finishReason === 'length' };
+      } catch (error: any) {
+        const raw = [
+          error?.message,
+          error?.body,
+          error?.statusCode,
+        ].filter(Boolean).join(' ');
 
-      const tierBlocked =
-        Number(error?.statusCode) === 403 &&
-        /tier_not_allowed|not available in your subscription tier|code["']?\s*[:=]\s*["']?1910/i.test(raw);
+        const tierBlocked =
+          Number(error?.statusCode) === 403 &&
+          /tier_not_allowed|not available in your subscription tier|code["']?\s*[:=]\s*["']?1910/i.test(raw);
 
-      if (tierBlocked && this.model !== 'mistral-small-latest') {
-        const fallback = await complete('mistral-small-latest');
-        if (fallback.choices?.[0]?.finishReason === 'length') {
-          throw new Error('La respuesta del modelo superó el límite de salida.');
+        if (tierBlocked && this.model !== 'mistral-small-latest') {
+          const fallback = await complete('mistral-small-latest');
+          return { text: fallback.choices?.[0]?.message?.content as string || '', truncated: fallback.choices?.[0]?.finishReason === 'length' };
         }
-        return fallback.choices?.[0]?.message?.content as string || '';
-      }
 
-      throw error;
-    }
+        throw error;
+      }
+    }, (partial) => {
+      messages.push({ role: 'assistant', content: partial }, { role: 'user', content: 'Continúa exactamente desde el carácter siguiente. No repitas contenido, no reinicies el JSON y no añadas explicaciones ni bloques Markdown.' });
+    }, options);
   }
 }

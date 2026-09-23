@@ -31,4 +31,18 @@ describe('complete creative responses', () => {
     await new MistralProvider('test').generateText('describe', ['https://example.com/f.jpg'], 'system', { maxCompletionTokens: 160 });
     expect(mocks.mistral.mock.calls[0][0].maxTokens).toBe(160);
   });
+  it('continues a cut JSON response with the original instructions still present', async () => {
+    mocks.groq.mockResolvedValueOnce({ choices: [{ finish_reason: 'length', message: { content: '{"action":' } }] })
+      .mockResolvedValueOnce({ choices: [{ finish_reason: 'stop', message: { content: '"BUILD_TIMELINE"}' } }] });
+    const result = await new GroqProvider('test').generateText('make the agreed video', [], 'keep every effect', { maxContinuations: 2 });
+    expect(JSON.parse(result)).toEqual({ action: 'BUILD_TIMELINE' });
+    const messages = mocks.groq.mock.calls[1][0].messages;
+    expect(messages[0].content).toBe('keep every effect');
+    expect(messages[2]).toEqual({ role: 'assistant', content: '{"action":' });
+  });
+  it('continues Mistral responses too', async () => {
+    mocks.mistral.mockResolvedValueOnce({ choices: [{ finishReason: 'length', message: { content: '{"assets":[' } }] })
+      .mockResolvedValueOnce({ choices: [{ finishReason: 'stop', message: { content: ']}' } }] });
+    await expect(new MistralProvider('test').generateText('edit', [], 'system', { maxContinuations: 2 })).resolves.toBe('{"assets":[]}');
+  });
 });

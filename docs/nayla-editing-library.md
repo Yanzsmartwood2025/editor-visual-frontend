@@ -27,6 +27,14 @@ The unsafe server-side block extraction that overwrote subtitles and style has b
 
 Video rendering now defaults to true; false is for an explicitly timeline-only plan. The native video clock uses metadata, duration and timeupdate events. Playback state follows play/pause events and final renders do not jump into the next raw clip on ending. This is a native source/final video player, not an interactive Remotion composition preview of an unrendered timeline.
 
+## Code inspection and automatic recovery
+
+The review card opens a separate modal with the complete saved JSON action and render context. This is the editor's validated instruction format, not generated React source or a claim to expose the final HTTP render body. Approval dispatches the stored action; showing code does not run it. Historical cards created without the execution snapshot still show their original table.
+
+Creative requests allow 12,000 output tokens per call, up to two continuations on a length stop, and two transient retries per provider invocation. Continuations retain the original conversation and append only the missing suffix. The existing schema validation and one repair pass gate dispatch. Rate-limit/server errors respect Retry-After up to 30 seconds; longer waits fail rather than retry too early. Abort and the existing shared 180-second chat budget bound the whole operation. No model selection or production environment was changed. This does not implement a durable background job, live token streaming, or guaranteed semantic completeness. The original request remains in chat when recovery fails.
+
+Recovery verification covers both providers, rate-limit delay, cancellation, continuation exhaustion and nonretryable errors. Live-provider recovery and modal browser verification remain to be performed.
+
 ## Broader research and remaining coverage
 
 - Shotstack: https://shotstack.io/docs/guide/agents/conventions/ — agents author exact schema-constrained JSON and validate it.

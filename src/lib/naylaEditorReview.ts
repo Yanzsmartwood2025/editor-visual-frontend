@@ -2,7 +2,7 @@ import type { NaylaAction } from './naylaActions';
 import { buildVisualTimelineMetrics, getItemDurationInFrames, getItemDelayInFrames } from './timelineMetrics';
 
 export type EditorReviewRow = { section: string; resource: string; start: number; end: number; details: string; text?: string };
-export type EditorReview = { id: string; status: 'pending' | 'accepted' | 'cancelled'; duration: number; format?: string; render: boolean; rows: EditorReviewRow[] };
+export type EditorReview = { id: string; status: 'pending' | 'accepted' | 'cancelled'; duration: number; format?: string; render: boolean; rows: EditorReviewRow[]; execution?: Extract<NaylaAction, { action: 'BUILD_TIMELINE' }> & { renderContext?: Record<string, unknown> } };
 const names: Record<string, string> = {
   efecto: 'Movimiento / aspecto', transitionType: 'Transición', transitionDuration: 'Duración de transición',
   volume: 'Volumen', volumeKeyframes: 'Curva de volumen', fadeIn: 'Entrada', fadeOut: 'Salida',
