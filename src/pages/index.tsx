@@ -21,6 +21,12 @@ import {
 import { groupSpeechWordsIntoCaptions } from '../lib/autoCaptions';
 import { buildMediaMetadata, getCanvasDimensionsFromRatio, probeMediaUrl, type MediaMetadata } from '../lib/mediaMetadata';
 import { getCompositionDurationInFrames } from '../lib/timelineMetrics';
+import {
+  formatPlaybackClock,
+  getVisualClipStartSeconds,
+  getVisualTimelineDurationSeconds,
+  resolveVisualTimelineTime,
+} from '../lib/playerTimeline';
 import { getFirebaseSession, observeFirebaseSession, signOutFirebase, signInWithCustomTokenValue, type FirebaseSession } from '../lib/firebaseClient';
 import { firebaseHeaders } from '../lib/apiClient';
 import { Model3DWorkspace } from '../components/Model3DWorkspace';
@@ -368,6 +374,8 @@ export default function NaylaCore() {
   const [showIntro, setShowIntro] = useState(true);
     const [isProcessing, setIsProcessing] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
+  const [playbackPositionSeconds, setPlaybackPositionSeconds] = useState(0);
+  const [nativePlaybackDurationSeconds, setNativePlaybackDurationSeconds] = useState(0);
   const [mediaActivaUrl, setMediaActivaUrl] = useState<string | null>(null);
   const [videoResultadoUrl, setVideoResultadoUrl] = useState<string | null>(null);
   const [videoResultadoNombre, setVideoResultadoNombre] = useState<string | null>(null);
@@ -393,6 +401,15 @@ export default function NaylaCore() {
     galeriaMultimedia.find(item => item.url === mediaActivaUrl && (item.tipo === 'video' || item.tipo === 'foto')) ||
     pistaVideo[0] ||
     null;
+
+  const activeTimelineClip = visualActivo
+    ? pistaVideo.find((item) => item.id === visualActivo.id || item.url === visualActivo.url) || null
+    : null;
+  const visualTimelineDurationSeconds = getVisualTimelineDurationSeconds(pistaVideo);
+  const playbackTotalSeconds =
+    videoResultadoUrl || !activeTimelineClip
+      ? nativePlaybackDurationSeconds
+      : (visualTimelineDurationSeconds || nativePlaybackDurationSeconds);
 
   const adoptarFormatoVisual = (metadata?: MediaMetadata) => {
     if (metadata?.aspectRatioLabel) {
@@ -469,6 +486,8 @@ export default function NaylaCore() {
   const containerRef = useRef<HTMLDivElement>(null);
   const previewFullscreenRef = useRef<HTMLDivElement>(null);
   const playerRef = useRef<HTMLVideoElement>(null);
+  const pendingPlaybackSeekRef = useRef<number | null>(null);
+  const resumePlaybackAfterSourceChangeRef = useRef(false);
   const timelineRef = useRef<HTMLDivElement>(null);
   const mainToolsCarouselRef = useRef<HTMLDivElement>(null);
   const subToolsCarouselRef = useRef<HTMLDivElement>(null);
@@ -1195,8 +1214,16 @@ export default function NaylaCore() {
             fullscreenPreview.webkitRequestFullscreen?.bind(fullscreenPreview);
           if (request) await request();
         }
+
+        if (isPhoneViewport && sourceVideoRatio !== null) {
+          const orientation = screen.orientation as any;
+          const preferredOrientation = sourceVideoRatio > 1.15 ? 'landscape' : 'portrait';
+          if (orientation?.lock) {
+            await orientation.lock(preferredOrientation);
+          }
+        }
       } catch {
-        // Some mobile browsers reject native fullscreen; the CSS immersive mode remains active.
+        // Some mobile browsers reject native fullscreen/orientation lock; CSS immersive mode remains active.
       }
 
       requestAnimationFrame(() => {
@@ -1393,15 +1420,70 @@ export default function NaylaCore() {
     setIsPlaying(false);
   }, [mainNav]);
 
+  const seekPlaybackToSeconds = (seconds: number) => {
+    const safeSeconds = Number.isFinite(seconds) ? Math.max(0, seconds) : 0;
+
+    if (videoResultadoUrl || !pistaVideo.length) {
+      const duration =
+        nativePlaybackDurationSeconds ||
+        (playerRef.current && Number.isFinite(playerRef.current.duration) ? playerRef.current.duration : safeSeconds);
+      const target = Math.min(Math.max(0, duration || safeSeconds), safeSeconds);
+      if (playerRef.current) playerRef.current.currentTime = target;
+      setPlaybackPositionSeconds(target);
+      return;
+    }
+
+    const resolved = resolveVisualTimelineTime(pistaVideo, safeSeconds);
+    if (!resolved) return;
+
+    setPlaybackPositionSeconds(resolved.absoluteTime);
+
+    if (resolved.clip.tipo === 'foto') {
+      setClipSeleccionado(resolved.clip.id);
+      setMediaActivaUrl(resolved.clip.url);
+      setVideoResultadoUrl(null);
+      setVideoResultadoNombre(null);
+      setVideoResultadoEtiqueta(null);
+      setIsPlaying(false);
+      return;
+    }
+
+    const sameClip = activeTimelineClip?.id === resolved.clip.id;
+    if (sameClip && playerRef.current) {
+      playerRef.current.currentTime = resolved.localTime;
+      return;
+    }
+
+    pendingPlaybackSeekRef.current = resolved.localTime;
+    resumePlaybackAfterSourceChangeRef.current = isPlaying;
+    setClipSeleccionado(resolved.clip.id);
+    setMediaActivaUrl(resolved.clip.url);
+    setVideoResultadoUrl(null);
+    setVideoResultadoNombre(null);
+    setVideoResultadoEtiqueta(null);
+  };
+
   const seekBy = (seconds: number) => {
-    if (!playerRef.current) return;
-    const duration = Number.isFinite(playerRef.current.duration) ? playerRef.current.duration : Number.POSITIVE_INFINITY;
-    playerRef.current.currentTime = Math.min(duration, Math.max(0, playerRef.current.currentTime + seconds));
+    seekPlaybackToSeconds(playbackPositionSeconds + seconds);
+  };
+
+  const syncPlaybackClockFromVideo = (video: HTMLVideoElement) => {
+    const localTime = Number.isFinite(video.currentTime) ? Math.max(0, video.currentTime) : 0;
+    const duration = Number.isFinite(video.duration) && video.duration > 0 ? video.duration : 0;
+    if (duration) setNativePlaybackDurationSeconds(duration);
+
+    if (videoResultadoUrl || !activeTimelineClip) {
+      setPlaybackPositionSeconds(localTime);
+      return;
+    }
+
+    const offset = getVisualClipStartSeconds(pistaVideo, activeTimelineClip.id);
+    setPlaybackPositionSeconds(Math.min(visualTimelineDurationSeconds || Number.POSITIVE_INFINITY, offset + localTime));
   };
 
   const isPortraitSourceVideo = sourceVideoRatio !== null && sourceVideoRatio < 1;
   const isLandscapeSourceVideo = sourceVideoRatio !== null && sourceVideoRatio > 1.15;
-  const phoneVideoObjectFit = 'contain';
+  const phoneVideoObjectFit = isPhoneViewport && isPortraitSourceVideo ? 'cover' : 'contain';
 
   const validarTimelineParaRender = async (timeline: TimelineItem[]) => {
     const lineaValidada: TimelineItem[] = [];
@@ -3217,30 +3299,10 @@ export default function NaylaCore() {
 
 
   useEffect(() => {
-    if (!playerRef.current || !timelineRef.current || isUserScrolling) return;
-
-    // We poll the player's current frame because Remotion player doesn't have an onFrameChange callback right now.
-    // However, it does have `getCurrentFrame()`. Let's use requestAnimationFrame.
-    let animationFrameId: number;
-    const syncScroll = () => {
-      if (playerRef.current && timelineRef.current && !isUserScrolling) {
-         const frame = Math.round(playerRef.current.currentTime * 30);
-         const fps = 30;
-         const seconds = frame / fps;
-         // Our scale is 20px per second.
-         const containerWidth = timelineRef.current.clientWidth;
-         const scrollPos = (seconds * 20) - (containerWidth / 2);
-         timelineRef.current.scrollLeft = Math.max(0, scrollPos);
-      }
-      animationFrameId = requestAnimationFrame(syncScroll);
-    };
-
-    if (isPlaying) {
-      animationFrameId = requestAnimationFrame(syncScroll);
-    }
-
-    return () => cancelAnimationFrame(animationFrameId);
-  }, [isPlaying, isUserScrolling]);
+    if (!timelineRef.current || isUserScrolling || videoResultadoUrl) return;
+    // Left/right padding place time 0 exactly under the centered playhead.
+    timelineRef.current.scrollLeft = Math.max(0, playbackPositionSeconds * 20);
+  }, [playbackPositionSeconds, isUserScrolling, videoResultadoUrl]);
 
   useEffect(() => {
     let unsubscribe: (() => void) | undefined;
@@ -3899,34 +3961,50 @@ export default function NaylaCore() {
   };
 
   const togglePlay = () => {
-    if (playerRef.current) {
-      if (!playerRef.current.paused) { playerRef.current.pause(); setIsPlaying(false); }
-      else { const playPromise = playerRef.current.play(); if (playPromise !== undefined) { playPromise.catch(error => console.log('Autoplay prevented:', error)); } setIsPlaying(true); }
+    if (!playerRef.current) return;
+    if (!playerRef.current.paused) {
+      playerRef.current.pause();
+      return;
+    }
+
+    const playPromise = playerRef.current.play();
+    if (playPromise !== undefined) {
+      playPromise.catch(error => console.log('Autoplay prevented:', error));
     }
   };
 
   const handleVideoEnded = () => {
-    if (!clipSeleccionado) return;
-    const currentIndex = lineaDeTiempo.findIndex(t => t.id === clipSeleccionado);
-    if (currentIndex !== -1 && currentIndex < lineaDeTiempo.length - 1) {
-      // Es un clip de la línea de tiempo y hay uno siguiente
-      const nextClip = lineaDeTiempo[currentIndex + 1];
-      if (nextClip.tipo === 'video' || nextClip.tipo === 'foto') {
-        setClipSeleccionado(nextClip.id);
-        setMediaActivaUrl(nextClip.url);
-        setVideoResultadoUrl(null);
-        setVideoResultadoNombre(null);
-        setVideoResultadoEtiqueta(null);
-        // Play is handled automatically in a useEffect or by the user hitting play again if we don't want autoplay
-        // But for "reproducción de corrido" we should autoplay:
-        setTimeout(() => {
-          if (playerRef.current) {
-            const playPromise = playerRef.current.play(); if (playPromise !== undefined) { playPromise.catch(error => console.log('Autoplay prevented:', error)); }
-            setIsPlaying(true);
-          }
-        }, 100);
-      }
+    if (videoResultadoUrl || !activeTimelineClip) {
+      setIsPlaying(false);
+      setPlaybackPositionSeconds(playbackTotalSeconds || nativePlaybackDurationSeconds);
+      return;
     }
+
+    const currentIndex = pistaVideo.findIndex((clip) => clip.id === activeTimelineClip.id);
+    const nextClip = currentIndex >= 0 ? pistaVideo[currentIndex + 1] : null;
+
+    if (!nextClip) {
+      setIsPlaying(false);
+      setPlaybackPositionSeconds(visualTimelineDurationSeconds);
+      return;
+    }
+
+    if (nextClip.tipo === 'foto') {
+      setClipSeleccionado(nextClip.id);
+      setMediaActivaUrl(nextClip.url);
+      setIsPlaying(false);
+      setPlaybackPositionSeconds(getVisualClipStartSeconds(pistaVideo, nextClip.id));
+      return;
+    }
+
+    pendingPlaybackSeekRef.current = 0;
+    resumePlaybackAfterSourceChangeRef.current = true;
+    setClipSeleccionado(nextClip.id);
+    setMediaActivaUrl(nextClip.url);
+    setVideoResultadoUrl(null);
+    setVideoResultadoNombre(null);
+    setVideoResultadoEtiqueta(null);
+    setPlaybackPositionSeconds(getVisualClipStartSeconds(pistaVideo, nextClip.id));
   };
 
   const handleDescargar = (calidad?: string) => {
@@ -5313,20 +5391,51 @@ if (!session) {
                     <video
                       key={videoResultadoUrl || visualActivo?.url || mediaActivaUrl || 'video-preview'}
                       src={videoResultadoUrl || visualActivo?.url || mediaActivaUrl || ''}
-                      style={{ width: '100%', height: '100%', objectFit: 'contain', backgroundColor: '#000', maxWidth: '100dvw', maxHeight: '100dvh' }}
+                      style={{ width: '100%', height: '100%', objectFit: phoneVideoObjectFit, backgroundColor: '#000', maxWidth: '100dvw', maxHeight: '100dvh' }}
                       controls={false}
                       playsInline
                       muted={false}
                       ref={playerRef as any}
                       onEnded={handleVideoEnded}
+                      onPlay={() => setIsPlaying(true)}
+                      onPause={() => setIsPlaying(false)}
+                      onTimeUpdate={(e) => syncPlaybackClockFromVideo(e.currentTarget)}
+                      onDurationChange={(e) => {
+                        const duration = e.currentTarget.duration;
+                        if (Number.isFinite(duration) && duration > 0) {
+                          setNativePlaybackDurationSeconds(duration);
+                        }
+                      }}
                       onLoadedMetadata={(e) => {
                         const video = e.currentTarget;
+                        if (Number.isFinite(video.duration) && video.duration > 0) {
+                          setNativePlaybackDurationSeconds(video.duration);
+                        }
                         if (video.videoWidth && video.videoHeight) {
                           const detected = buildMediaMetadata(video.videoWidth, video.videoHeight, Number.isFinite(video.duration) ? video.duration : undefined);
                           setSourceVideoRatio(video.videoWidth / video.videoHeight);
                           setVideoMetadata({ width: video.videoWidth, height: video.videoHeight });
                           if (!visualActivo?.metadata?.aspectRatioLabel && pistaVideo.length <= 1 && !videoResultadoUrl) {
                             adoptarFormatoVisual(detected);
+                          }
+                        }
+
+                        if (pendingPlaybackSeekRef.current !== null) {
+                          const target = Math.min(
+                            Number.isFinite(video.duration) ? video.duration : pendingPlaybackSeekRef.current,
+                            Math.max(0, pendingPlaybackSeekRef.current)
+                          );
+                          video.currentTime = target;
+                          pendingPlaybackSeekRef.current = null;
+                        }
+
+                        syncPlaybackClockFromVideo(video);
+
+                        if (resumePlaybackAfterSourceChangeRef.current) {
+                          resumePlaybackAfterSourceChangeRef.current = false;
+                          const playPromise = video.play();
+                          if (playPromise !== undefined) {
+                            playPromise.catch(error => console.log('Autoplay prevented:', error));
                           }
                         }
                       }}
@@ -5379,7 +5488,9 @@ if (!session) {
                   : ((showPlaybackControls || !isPlaying) ? 'auto' : 'none')
               }}
             >
-              {!isCleanMode && <span style={{ color: '#888', fontSize: '0.65rem', fontFamily: 'monospace' }}>00:00:00</span>}
+              <span style={{ color: '#c4c4c4', fontSize: '0.68rem', fontFamily: 'monospace', minWidth: '54px', textAlign: 'right' }}>
+                {formatPlaybackClock(playbackPositionSeconds)}
+              </span>
               <div style={{ display: 'flex', alignItems: 'center', gap: isCleanMode ? '18px' : '12px' }}>
                 <button onClick={(e) => { e.stopPropagation(); seekBy(-10); }} style={{ background: 'none', border: 'none', color: '#ffffff', fontSize: '0.9rem', cursor: 'pointer', outline: 'none' }}>↺10</button>
                 <button
@@ -5413,7 +5524,9 @@ if (!session) {
                 </button>
                 <button onClick={(e) => { e.stopPropagation(); seekBy(10); }} style={{ background: 'none', border: 'none', color: '#ffffff', fontSize: '0.9rem', cursor: 'pointer', outline: 'none' }}>10↻</button>
               </div>
-              {!isCleanMode && <span style={{ color: '#888', fontSize: '0.65rem', fontFamily: 'monospace' }}>00:00:00</span>}
+              <span style={{ color: '#c4c4c4', fontSize: '0.68rem', fontFamily: 'monospace', minWidth: '54px' }}>
+                {formatPlaybackClock(playbackTotalSeconds)}
+              </span>
             </div>
           </div>
         </div>
@@ -5432,26 +5545,26 @@ if (!session) {
           overflow: 'hidden'
         }} onClick={() => setClipSeleccionado(null)}>
           <div style={{ position: 'absolute', left: '50%', top: 0, bottom: 0, width: '2px', backgroundColor: '#fff', zIndex: 50, pointerEvents: 'none', boxShadow: '0 0 10px rgba(255,255,255,0.8)' }} />
+          {!videoResultadoUrl && (
+            <div
+              className="neon-btn"
+              onClick={(e) => { e.stopPropagation(); setMainNav('boveda'); setIsSubPanelOpen(true); }}
+              style={{ position: 'absolute', left: 8, top: 8, width: '36px', height: '44px', borderRadius: '8px', zIndex: 60, borderStyle: 'dashed', cursor: 'pointer', fontSize: '1.2rem' }}
+            >
+              +
+            </div>
+          )}
           <div className="timeline-track" ref={timelineRef}
             onScroll={(e) => {
               if (!isUserScrolling) return;
-              if (!playerRef.current) return;
               const scrollPos = e.currentTarget.scrollLeft;
-              const seconds = scrollPos / 20;
-              const frame = Math.round(seconds * 30);
-              playerRef.current.currentTime = (Math.max(0, frame)) / 30;
+              seekPlaybackToSeconds(scrollPos / 20);
             }}
             onPointerDown={() => setIsUserScrolling(true)}
             onPointerUp={() => { setTimeout(() => setIsUserScrolling(false), 50); }}
             onPointerLeave={() => { setTimeout(() => setIsUserScrolling(false), 50); }}
             style={{ paddingLeft: '50%', paddingRight: '50%' }}
             onClick={(e) => e.stopPropagation()}>
-            {!videoResultadoUrl && (
-              <div className="neon-btn"
-                onClick={(e) => { e.stopPropagation(); setMainNav('boveda'); setIsSubPanelOpen(true); }}
-                style={{ width: '36px', height: '44px', minWidth: '36px', borderRadius: '8px', flexShrink: 0, marginRight: hayClips ? '6px' : '0', borderStyle: 'dashed', cursor: 'pointer', fontSize: '1.2rem' }}>+</div>
-            )}
-
             {videoResultadoUrl ? (
               <>
               <button
@@ -5537,14 +5650,9 @@ if (!session) {
                       setVideoResultadoUrl(null);
                       setVideoResultadoNombre(null);
                       setVideoResultadoEtiqueta(null);
-                      if (playerRef.current) {
-                        let frameCount = 0;
-                        for (let i = 0; i < lineaDeTiempo.length; i++) {
-                          if (lineaDeTiempo[i].id === clip.id) break;
-                          frameCount += Math.round((lineaDeTiempo[i].durationInSeconds || 5) * 30);
-                        }
-                        playerRef.current.currentTime = (frameCount) / 30;
-                      }
+                      pendingPlaybackSeekRef.current = 0;
+                      resumePlaybackAfterSourceChangeRef.current = false;
+                      setPlaybackPositionSeconds(getVisualClipStartSeconds(pistaVideo, clip.id));
                     }}
                     onRemove={() => quitarDelTimeline(clip.id)}
                   />
