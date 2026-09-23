@@ -1,4 +1,3 @@
-import React from 'react';
 import type { GenerarEngine, GenerarModule } from './types';
 
 export default function ModulePlaceholder({ engine, module }: { engine: GenerarEngine; module: GenerarModule }) {
