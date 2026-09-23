@@ -31,6 +31,7 @@ import {
 import { getFirebaseSession, observeFirebaseSession, signOutFirebase, signInWithCustomTokenValue, type FirebaseSession } from '../lib/firebaseClient';
 import { firebaseHeaders } from '../lib/apiClient';
 import { Model3DWorkspace } from '../components/Model3DWorkspace';
+import GenerarWorkspace from '../components/generar/GenerarWorkspace';
 import { GpuQuoteModal, type GpuQuoteView } from '../components/GpuQuoteModal';
 import { NaylaEngineBar } from '../components/NaylaEngineBar';
 import SocialHub from '../components/SocialHub';
@@ -5377,6 +5378,9 @@ if (!session) {
                   onNaylaAction={(mode, prompt) => void handle3DNaylaAction(mode, prompt)}
                 />
               </div>
+            )}
+            {mainNav === 'generar' && (
+              <GenerarWorkspace onClose={() => { setMainNav('boveda'); setIsSubPanelOpen(false); setSubTool(null); }} />
             )}
             {/* BOTÓN FLOTANTE DE NAYLA */}
             {!isCleanMode && (
