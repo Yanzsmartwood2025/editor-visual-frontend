@@ -30,7 +30,6 @@ import {
   getRequestedVisualCount,
   hasNaturalProjectPhotoReference,
   timelinePlanRequestsRender,
-  wantsAllProjectPhotos,
 } from '../../lib/naylaTimelineIntent';
 import {
   getOwnedMediaByLabelsForUser,
@@ -95,8 +94,10 @@ const generationActionNames = new Set([
 ]);
 
 const hasExplicitVisionIntent = (message: string) =>
-  /\b(analiza|analizar|analices|revisa|revisar|revises|mira|mirar|observa|observar|inspecciona|inspeccionar|describe|describir|compara|comparar|encuadre|composici[oó]n|colores?|rostro|ropa|fondo)\b/i.test(message) ||
-  /\bqu[eé]\s+(?:hay|aparece|ves)\b/i.test(message);
+  !/\b(?:no|sin)\s+(?:analizar|analices|revisar|revises|mirar|mires|ver|vision)\b/i.test(message) &&
+  /\b(?:fotos?|im[aá]genes?|F\s*\d+)\b/i.test(message) &&
+  (/\b(analiza|analizar|analices|revisa|revisar|revises|mira|mirar|observa|observar|inspecciona|inspeccionar|describe|describir|compara|comparar)\b/i.test(message) ||
+  /\bqu[eé]\s+(?:hay|aparece|ves)\b/i.test(message));
 
 const getRequestedPhotoLabels = (message: string) => {
   const labels = new Set<string>();
@@ -184,7 +185,7 @@ const findLastAssistantPlan = (
     })?.content || '';
 
 const actionNeedsConsultativeApproval = (action: NaylaAction) =>
-  action.action !== 'SEARCH_MEDIA';
+  action.action !== 'SEARCH_MEDIA' && action.action !== 'BUILD_TIMELINE';
 
 const buildPlanningFallback = (
   matches: ReturnType<typeof findNaylaCapabilityMatches>
@@ -232,129 +233,6 @@ const getOrderedMediaLabels = (message: string) => {
 
   found.sort((a, b) => a.index - b.index);
   return Array.from(new Set(found.map((item) => item.label)));
-};
-
-const buildLabelTimelineFallback = (
-  message: string,
-  mediaLibrary: Array<{
-    tipo: 'foto' | 'video' | 'audio' | 'documento' | 'modelo3d';
-    url: string;
-    etiqueta?: string;
-  }>
-): NaylaAction | null => {
-  const normalized = message.toLowerCase();
-  const labels = getOrderedMediaLabels(message).filter((label) => !label.startsWith('M') && !label.startsWith('D'));
-  const naturalPhotos = hasNaturalProjectPhotoReference(message);
-  const requestedVisualCount = getRequestedVisualCount(message);
-  const editingIntent =
-    (
-      /\b(crea|crear|haz|hacer|arma|armar|monta|montar|edita|editar|compone|componer|renderiza|renderizar|genera|generar)\b/.test(normalized) &&
-      /\b(video|timeline|edici[oó]n|montaje|render)\b/.test(normalized)
-    ) ||
-    (
-      (labels.length > 0 || naturalPhotos) &&
-      /\b(video|timeline|edici[oó]n|montaje|foto|imagen|clip|transici[oó]n|efecto|movimiento|duraci[oó]n|segundos?|minuto)\b/.test(normalized)
-    );
-
-  if (!editingIntent) return null;
-
-  const byLabel = new Map(
-    mediaLibrary
-      .filter((item) => item.etiqueta && item.tipo !== 'modelo3d')
-      .map((item) => [item.etiqueta!.trim().toUpperCase(), item])
-  );
-
-  let resolved: Array<(typeof mediaLibrary)[number] | undefined> = [];
-
-  if (labels.length) {
-    resolved = labels.map((label) => byLabel.get(label));
-    if (resolved.some((item) => !item)) return null;
-  } else if (naturalPhotos) {
-    if (requestedVisualCount) {
-      const expectedLabels = Array.from(
-        { length: requestedVisualCount },
-        (_, index) => `F${index + 1}`
-      );
-      const labeledSequence = expectedLabels.map((label) => byLabel.get(label));
-
-      if (labeledSequence.every(Boolean)) {
-        resolved = labeledSequence;
-      } else {
-        const photos = mediaLibrary.filter((item) => item.tipo === 'foto');
-        if (photos.length < requestedVisualCount) return null;
-        resolved = photos.slice(-requestedVisualCount);
-      }
-    } else if (wantsAllProjectPhotos(message)) {
-      resolved = mediaLibrary.filter((item) => item.tipo === 'foto');
-    }
-  }
-
-  if (!resolved.length || resolved.some((item) => !item)) return null;
-
-  const perItemDurationMatch = message.match(
-    /\b(?:cada|por)\s+(?:foto|imagen|video|clip)[^.\n]{0,48}?(\d+(?:[.,]\d+)?)\s*(?:segundos?|s)\b/i
-  );
-  const durationMatch = message.match(/\b(?:aproximadamente\s+|aprox\.?\s+|unos?\s+|de\s+)?(\d+(?:[.,]\d+)?)\s*(?:segundos?|s)\b/i);
-  const requestedSeconds = getRequestedTimelineSeconds(message) ??
-    (durationMatch ? Number(durationMatch[1].replace(',', '.')) : null);
-  const perItemSeconds = perItemDurationMatch ? Number(perItemDurationMatch[1].replace(',', '.')) : null;
-  const visualCount = resolved.filter((item) => item?.tipo === 'foto' || item?.tipo === 'video').length;
-  const perVisualDuration =
-    perItemSeconds && Number.isFinite(perItemSeconds) && perItemSeconds > 0
-      ? perItemSeconds
-      : requestedSeconds && Number.isFinite(requestedSeconds) && requestedSeconds > 0 && visualCount > 0
-        ? requestedSeconds / visualCount
-        : undefined;
-
-  const wantsSoftMotion = /\b(ken[ -]?burns|movimiento\s+suave|zoom\s+suave|acercamiento\s+suave|desplazamiento\s+lento)\b/i.test(message);
-  const wantsCinematic = /\b(cinematogr[aá]fic[oa]s?|pel[ií]cula)\b/i.test(message);
-  const wantsFade = /\b(fade|fundido|transici[oó]n(?:es)?\s+suaves?|cinematogr[aá]fic[oa]s?)\b/i.test(message);
-  const wantsColorCorrection = /\b(correcci[oó]n\s+de\s+color|colores?\s+uniformes?|uniformar\s+(?:el\s+)?color)\b/i.test(message);
-  const wantsVignette = /\bvi(?:ñ|n)eta\b/i.test(message);
-  const wantsGlow = /\b(glow|brillo\s+(?:muy\s+)?discreto|brillo\s+leve)\b/i.test(message);
-
-  const assets = resolved.map((item) => {
-    const asset: Record<string, unknown> = {
-      type: item!.tipo,
-      source: 'url',
-      url: item!.url,
-    };
-    if (perVisualDuration && (item!.tipo === 'foto' || item!.tipo === 'video')) {
-      asset.durationInSeconds = perVisualDuration;
-    }
-    if (item!.tipo === 'foto') {
-      if (wantsSoftMotion) asset.efecto = 'ken-burns';
-      else if (wantsCinematic) asset.efecto = 'cinematic';
-      if (wantsFade) {
-        asset.transitionType = 'fade';
-        asset.transitionDuration = 0.5;
-      }
-      if (wantsVignette) {
-        asset.overlay = 'vignette';
-        asset.overlayIntensity = 0.18;
-      }
-      const professionalEffects: Array<Record<string, unknown>> = [];
-      if (wantsColorCorrection) {
-        professionalEffects.push({ type: 'color-correction', intensity: 0.35 });
-      }
-      if (wantsGlow) {
-        professionalEffects.push({ type: 'glow', intensity: 0.16 });
-      }
-      if (professionalEffects.length) {
-        asset.professionalEffects = professionalEffects;
-      }
-    }
-    return asset;
-  });
-
-  const parsed = {
-    action: 'BUILD_TIMELINE' as const,
-    assets,
-    render: timelinePlanRequestsRender(message),
-  };
-
-  const validated = parseNaylaAction(JSON.stringify(parsed));
-  return validated;
 };
 
 const describeActionPlan = (action: NaylaAction) => {
@@ -561,11 +439,13 @@ const executeDirectLlm = async ({
   prompt,
   images,
   systemPrompt,
+  signal,
 }: {
   provider: 'groq' | 'mistral';
   prompt: string;
   images?: string[];
   systemPrompt: string;
+  signal?: AbortSignal;
 }) => {
   const groqKey = process.env.GROQ_API_KEY?.trim();
   const mistralKey = process.env.MISTRAL_API_KEY?.trim();
@@ -573,22 +453,24 @@ const executeDirectLlm = async ({
   const groqImages = requestedImages.slice(0, 3);
 
   const groq = async (withImages = true) => {
+    signal?.throwIfAborted();
     if (!groqKey) throw new Error('GROQ_API_KEY no está configurada en Vercel.');
     return new GroqProvider(groqKey, 'dialog').generateText(
       prompt,
       withImages ? groqImages : [],
       systemPrompt,
-      withImages ? { maxCompletionTokens: 500 } : undefined
+      { maxCompletionTokens: 12000, signal }
     );
   };
 
   const mistral = async (withImages = true) => {
+    signal?.throwIfAborted();
     if (!mistralKey) throw new Error('MISTRAL_API_KEY no está configurada en Vercel.');
     return new MistralProvider(mistralKey, 'dialog').generateText(
       prompt,
       withImages ? requestedImages : [],
       systemPrompt,
-      withImages ? { maxCompletionTokens: 500 } : undefined
+      { maxCompletionTokens: 12000, signal }
     );
   };
 
@@ -624,8 +506,10 @@ const executeDirectLlm = async ({
 
 const analyzeVisionBatches = async ({
   items,
+  signal,
 }: {
   items: Array<{ etiqueta?: string; nombre?: string; url: string }>;
+  signal?: AbortSignal;
 }) => {
   const groqKey = process.env.GROQ_API_KEY?.trim();
   if (!groqKey || !items.length) return { notes: '', analyzed: 0, unavailable: false };
@@ -637,6 +521,7 @@ const analyzeVisionBatches = async ({
   let unavailable = false;
 
   for (let index = 0; index < candidates.length; index += 3) {
+    if (signal?.aborted) break;
     const batch = candidates.slice(index, index + 3);
     const labels = batch.map((item, offset) =>
       item.etiqueta?.trim().toUpperCase() || `IMAGEN_${index + offset + 1}`
@@ -652,7 +537,7 @@ const analyzeVisionBatches = async ({
         ].join('\n'),
         batch.map((item) => item.url),
         'Eres un analizador visual auxiliar de Nayla. Responde en español, de forma compacta y objetiva.',
-        { maxCompletionTokens: 160 }
+        { maxCompletionTokens: 160, signal }
       );
 
       if (result?.trim()) {
@@ -910,6 +795,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     // Vision is opt-in. Normal editing works from stable F/V/A/D/M labels and metadata.
     // A prior plan that mentioned vision must not make a later bare "Dale" re-analyze the same photos.
+    const llmSignal = AbortSignal.timeout(180_000);
     const visualIntent = hasExplicitVisionIntent(message);
     const requestedPhotoLabels = getRequestedPhotoLabels(message);
     const referencedVisionCandidates = requestedPhotoLabels.size
@@ -941,7 +827,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     const shouldBatchVision = visualIntent && uniqueReferencedVisionCandidates.length > 3;
     const batchedVision = shouldBatchVision
-      ? await analyzeVisionBatches({ items: uniqueReferencedVisionCandidates })
+      ? await analyzeVisionBatches({ items: uniqueReferencedVisionCandidates, signal: llmSignal })
       : { notes: '', analyzed: 0, unavailable: false };
 
     // Groq's current vision route accepts at most 3 images per request.
@@ -1025,6 +911,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     const fullPrompt = [
       executionContext,
+      executionConfirmed ? `Plan confirmado completo:\n${activePlanningContext}` : '',
       historyText ? `Historial:\n${historyText}` : '',
       `Usuario: ${message}`,
     ].filter(Boolean).join('\n\n');
@@ -1045,10 +932,13 @@ SEGURIDAD Y CONTEXTO:
 
 MODO CONSULTIVO:
 - EJECUCION_CONFIRMADA=${executionConfirmed ? 'SI' : 'NO'}.
-- Si es NO, conversa primero: explica un plan breve, concreto y natural. No emitas JSON ejecutable.
+- Si es NO y el usuario pide realizar una edición de medios existentes, responde con el JSON BUILD_TIMELINE y ejecútala directamente. No exijas frases especiales ni una confirmación redundante. Si pide el video terminado, usa render:true.
+- Si pregunta, compara opciones o pide ideas, conversa y propone un plan breve. Pregunta solo si falta información imprescindible. Las acciones de generación externa y Compute mantienen su confirmación.
 - Si es SI, el usuario está confirmando un plan previo. Responde únicamente con un JSON válido de una acción.
 - No digas que algo está procesando, renderizando o guardándose hasta que el servidor lo confirme.
-- Si la petición es vaga, tradúcela tú a controles apropiados y recomienda 1 a 4 recursos útiles.
+- Interpreta el objetivo y el contexto, no solo palabras clave. Resuelve los detalles creativos no especificados con criterio editorial usando las capacidades conectadas. No prometas capacidades inexistentes.
+- Para un montaje creativo, escribe tratamientos concretos por escena: movimiento, transición, duración y acabado. Varía con intención; no devuelvas solo fotos estáticas si se pidió una edición con efectos. Respeta también pedidos de imágenes fijas, cortes secos o ausencia de efectos.
+- Conserva en el JSON los tratamientos del plan acordado. Antes de responder comprueba que cada efecto prometido tenga su control correspondiente. Usa efecto para movimiento y professionalEffects para combinarlo con color o glow. No inventes música ni textos que no se pidieron.
 - Usa texto limpio: sin Markdown visible, sin asteriscos, backticks, tablas ni nombres técnicos internos innecesarios.
 
 MAPA DE MEDIOS:
@@ -1085,6 +975,7 @@ ACCIONES:
 Para medios guardados en el proyecto, prefiere etiquetas estables y deja que el servidor resuelva el archivo:
 {"action":"BUILD_TIMELINE","assets":[{"type":"foto","source":"label","label":"F1","durationInSeconds":3}],"render":true}
 Puedes mezclar F/V/A en el orden que pida el usuario o en el orden creativo que elijas cuando te dé libertad.
+Ejemplo de foto con movimiento y acabado simultáneos (adapta al pedido, no lo repitas mecánicamente): {"type":"foto","source":"label","label":"F1","durationInSeconds":5,"efecto":"push-in","transitionType":"dreamy-zoom","transitionDuration":0.6,"professionalEffects":[{"type":"color-correction","intensity":0.25}]}
 Cada asset puede usar durationInSeconds, volume, fadeIn, fadeOut, delay, startFrom, trimBefore, trimAfter, loop, playbackRate, efecto, transitionType, transitionDuration, overlay, overlayIntensity, professionalEffects, motionBlur, gsapMotion y proceduralMotion.
 Puedes combinar de forma moderada varias capacidades reales cuando mejoren el resultado. No estás limitada a ken-burns/fade.
 También puedes usar subtitles, titles, skiaGraphics, vectorAnimations y threeScenes cuando aporten al plan.
@@ -1115,9 +1006,6 @@ ${getNaylaExecutionPolicyPrompt(engineMode)}
 MODO_MOTOR=${engineMode}
 `;
 
-    const fallbackExecutionContext = executionConfirmed
-      ? [priorUserPlanInstruction, priorAssistantPlan, message].filter(Boolean).join('\n\n')
-      : message;
     const confirmedTimelineContext = executionConfirmed
       ? activePlanningContext
       : message;
@@ -1137,6 +1025,7 @@ MODO_MOTOR=${engineMode}
         prompt: fullPrompt,
         images: visionImages,
         systemPrompt: compactSystemPrompt,
+        signal: llmSignal,
       });
     } catch (error: any) {
       console.error('[chat.ts] Todos los motores IA de Nayla fallaron:', error);
@@ -1147,24 +1036,27 @@ MODO_MOTOR=${engineMode}
       }
     }
 
-    const confirmedAttachmentLabels = recentPlanAttachments
-      .filter((item: any) => ['foto', 'video', 'audio'].includes(item.tipo))
-      .map((item: any) => typeof item.etiqueta === 'string' ? item.etiqueta.trim().toUpperCase() : '')
-      .filter(Boolean);
-
-    const attachmentBackedFallbackContext =
-      executionConfirmed && confirmedAttachmentLabels.length
-        ? [
-            priorUserPlanInstruction || fallbackExecutionContext,
-            `Medios adjuntos exactos del plan: ${confirmedAttachmentLabels.join(', ')}.`,
-          ].filter(Boolean).join('\n\n')
-        : fallbackExecutionContext;
-
-    const parsedAction =
-      parseNaylaAction(responseText) ||
-      (executionConfirmed
-        ? buildLabelTimelineFallback(attachmentBackedFallbackContext, mergedLibrary)
-        : null);
+    // A malformed creative plan must never silently become a plain slideshow.
+    let parsedAction = parseNaylaAction(responseText);
+    const expectsAction = executionConfirmed || /["']action["']\s*:/.test(responseText);
+    if (!parsedAction && expectsAction && responseText.trim()) {
+      try {
+        responseText = await executeDirectLlm({
+          provider,
+          prompt: [fullPrompt, 'La respuesta anterior no es una acción válida. Reconstruye un único JSON completo con los controles documentados. Conserva todos los medios, efectos, movimientos, textos y restricciones del plan. No simplifiques a fotos estáticas.', responseText].join('\n\n'),
+          systemPrompt: compactSystemPrompt,
+          signal: llmSignal,
+        });
+        parsedAction = parseNaylaAction(responseText);
+      } catch (error) {
+        console.warn('[chat.ts] Action repair failed', error);
+      }
+    }
+    if (!parsedAction && expectsAction) {
+      return res.status(422).json({
+        error: 'No pude preparar las instrucciones completas del video. No inicié un montaje simplificado. Tu plan sigue en el chat; puedes volver a intentarlo.',
+      });
+    }
 
     const canonicalizeUrl = (value: string) => {
       const exact = mergedLibrary.find((item: any) => item.url === value);

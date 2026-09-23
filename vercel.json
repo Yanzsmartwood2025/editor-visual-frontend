@@ -10,6 +10,9 @@
   "functions": {
     "src/pages/api/render.ts": {
       "maxDuration": 300
+    },
+    "src/pages/api/chat.ts": {
+      "maxDuration": 240
     }
   }
 }

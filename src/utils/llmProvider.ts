@@ -3,6 +3,7 @@ import { Mistral } from '@mistralai/mistralai';
 
 export type LlmGenerateOptions = {
   maxCompletionTokens?: number;
+  signal?: AbortSignal;
 };
 
 export interface LLMProvider {
@@ -19,7 +20,7 @@ export class GroqProvider implements LLMProvider {
   private model: string;
 
   constructor(apiKey: string, role: 'dialog' | 'code' = 'dialog') {
-    this.client = new Groq({ apiKey });
+    this.client = new Groq({ apiKey, timeout: 25_000, maxRetries: 0 });
 
     if (role === 'dialog') {
       this.model = process.env.GROQ_DIALOG_MODEL || process.env.GROQ_MODEL || 'openai/gpt-oss-120b';
@@ -69,8 +70,11 @@ export class GroqProvider implements LLMProvider {
       ...(options?.maxCompletionTokens
         ? { max_completion_tokens: options.maxCompletionTokens }
         : {}),
-    });
+    }, { signal: options?.signal });
 
+    if (completion.choices[0]?.finish_reason === 'length') {
+      throw new Error('La respuesta del modelo superó el límite de salida.');
+    }
     return completion.choices[0]?.message?.content || '';
   }
 }
@@ -80,7 +84,7 @@ export class MistralProvider implements LLMProvider {
   private model: string;
 
   constructor(apiKey: string, role: 'dialog' | 'code' = 'dialog') {
-    this.client = new Mistral({ apiKey });
+    this.client = new Mistral({ apiKey, timeoutMs: 25_000, retryConfig: { strategy: 'none' } });
 
     if (role === 'dialog') {
       this.model = process.env.MISTRAL_DIALOG_MODEL || process.env.MISTRAL_MODEL || 'mistral-small-latest';
@@ -121,10 +125,13 @@ export class MistralProvider implements LLMProvider {
         ...(options?.maxCompletionTokens
           ? { maxTokens: options.maxCompletionTokens }
           : {}),
-      });
+      }, { fetchOptions: { signal: options?.signal ? AbortSignal.any([options.signal, AbortSignal.timeout(25_000)]) : AbortSignal.timeout(25_000) } });
 
     try {
       const chatResponse = await complete(this.model);
+      if (chatResponse.choices?.[0]?.finishReason === 'length') {
+        throw new Error('La respuesta del modelo superó el límite de salida.');
+      }
       return chatResponse.choices?.[0]?.message?.content as string || '';
     } catch (error: any) {
       const raw = [
@@ -139,6 +146,9 @@ export class MistralProvider implements LLMProvider {
 
       if (tierBlocked && this.model !== 'mistral-small-latest') {
         const fallback = await complete('mistral-small-latest');
+        if (fallback.choices?.[0]?.finishReason === 'length') {
+          throw new Error('La respuesta del modelo superó el límite de salida.');
+        }
         return fallback.choices?.[0]?.message?.content as string || '';
       }
 

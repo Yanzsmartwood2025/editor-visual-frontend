@@ -2700,6 +2700,7 @@ export default function NaylaCore() {
 
       const res = await fetch('/api/chat', {
         method: 'POST',
+        signal: AbortSignal.timeout(240_000),
         headers: firebaseHeaders(currentSession, { 'Content-Type': 'application/json' }),
         body: JSON.stringify({
            message,
@@ -2855,7 +2856,7 @@ export default function NaylaCore() {
     } catch (error: any) {
       console.error(error);
       if (!error?.naylaRenderHandled) {
-        setChatMessages(prev => [...prev, { role: 'ai', text: error.message || 'No se pudo completar la solicitud.' }]);
+        setChatMessages(prev => [...prev, { role: 'ai', text: error?.name === 'TimeoutError' ? 'Nayla tardó demasiado en responder. Revisa el chat antes de reintentar para evitar repetir una tarea.' : error.message || 'No se pudo completar la solicitud.' }]);
       }
     } finally {
       setChatProcessing(false);
