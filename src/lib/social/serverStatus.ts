@@ -7,6 +7,7 @@ export type SocialProviderStatus = {
   accountLimit: number | null;
   profileLimit?: number | null;
   perPlatformAccountLimit?: number | null;
+  tiktokPublishingEnabled?: boolean;
 };
 
 const positiveLimit = (raw: string | undefined, fallback: number): number | null => {
@@ -28,6 +29,9 @@ export const socialProviderStatuses = (): SocialProviderStatus[] => [
     accountLimit: null,
     profileLimit: positiveLimit(process.env.UPLOAD_POST_PROFILE_LIMIT, 2),
     perPlatformAccountLimit: 1,
+    // Upload-Post currently excludes TikTok publishing from Free. Flip this
+    // server-side flag after upgrading the provider plan.
+    tiktokPublishingEnabled: ['1', 'true', 'yes'].includes(String(process.env.UPLOAD_POST_TIKTOK_ENABLED || '').trim().toLowerCase()),
   },
   {
     id: 'zernio',
