@@ -1,6 +1,7 @@
 // @ts-nocheck
 /* eslint-disable */
 import React, { useState, useEffect, useRef } from 'react';
+import { flushSync } from 'react-dom';
 import { cleanNaylaChatText } from '../lib/naylaText';
 import Head from 'next/head';
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
@@ -389,6 +390,7 @@ export default function NaylaCore() {
   const [isAiModalOpen, setIsAiModalOpen] = useState(false);
   const [isCleanMode, setIsCleanMode] = useState(false);
   const [showPlaybackControls, setShowPlaybackControls] = useState(true);
+  const [playbackError, setPlaybackError] = useState<string | null>(null);
   const playbackControlsTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   const pistaVideo = lineaDeTiempo.filter(t => t.tipo === 'video' || t.tipo === 'foto');
@@ -3782,6 +3784,44 @@ export default function NaylaCore() {
   const [subiendoArchivo, setSubiendoArchivo] = useState(false);
   const [vaultUploadProgress, setVaultUploadProgress] = useState<UploadProgressSnapshot | null>(null);
 
+  const selectMediaForPreview = (item: MediaItem, options?: { autoplay?: boolean }) => {
+    const autoplay = Boolean(options?.autoplay);
+
+    if (item.tipo === 'audio') {
+      setClipSeleccionado(item.id);
+      return;
+    }
+
+    if (playerRef.current && !playerRef.current.paused) {
+      playerRef.current.pause();
+    }
+
+    pendingPlaybackSeekRef.current = 0;
+    resumePlaybackAfterSourceChangeRef.current = autoplay;
+    setPlaybackError(null);
+    setIsPlaying(false);
+    setPlaybackPositionSeconds(0);
+    setNativePlaybackDurationSeconds(
+      Number.isFinite(item.metadata?.durationInSeconds)
+        ? Number(item.metadata?.durationInSeconds)
+        : 0
+    );
+    setMediaActivaUrl(item.url);
+    setClipSeleccionado(item.id);
+
+    if (item.tipo === 'video' && isNaylaResultMedia(item)) {
+      setVideoResultadoUrl(item.url);
+      setVideoResultadoNombre(item.nombre);
+      setVideoResultadoEtiqueta(item.etiqueta || 'R');
+    } else {
+      setVideoResultadoUrl(null);
+      setVideoResultadoNombre(null);
+      setVideoResultadoEtiqueta(null);
+    }
+
+    adoptarFormatoVisual(item.metadata);
+  };
+
   const handleSubirMultimedia = async (e: React.ChangeEvent<HTMLInputElement>, tipo: 'foto' | 'video' | 'audio') => {
     if (!e.target.files || e.target.files.length === 0) return;
 
@@ -3822,11 +3862,11 @@ export default function NaylaCore() {
       const primerVisualIndex = nuevosItems.findIndex(item => item.tipo === 'video' || item.tipo === 'foto');
       const primerVisual = primerVisualIndex >= 0 ? nuevosItems[primerVisualIndex] : null;
 
-      if (primerVisual && pistaVideo.length === 0 && !mediaActivaUrl) {
-        setMediaActivaUrl(primerVisual.url);
-        setClipSeleccionado(primerVisual.id);
-        setVideoResultadoUrl(null);
-        adoptarFormatoVisual(primerVisual.metadata);
+      // El archivo recién subido debe quedar conectado inmediatamente al visor.
+      // Antes solo se activaba cuando no existía ningún clip/medio previo, dejando
+      // el reproductor negro aunque la subida a la Bóveda hubiera terminado bien.
+      if (primerVisual) {
+        selectMediaForPreview(primerVisual);
       }
 
       showAlert(
@@ -3965,12 +4005,21 @@ export default function NaylaCore() {
     setLineaDeTiempo(nuevaLinea);
 
     setClipSeleccionado(nuevo.id);
-    setMediaActivaUrl(nuevo.url);
-    setVideoResultadoUrl(null);
     setRects([]);
 
-    if ((nuevo.tipo === 'foto' || nuevo.tipo === 'video') && pistaVideo.length === 0) {
-      adoptarFormatoVisual(metadata);
+    // El audio pertenece a su pista y no debe sustituir el medio visual del
+    // reproductor. Solo fotos/videos pasan a ser la fuente del visor.
+    if (nuevo.tipo === 'foto' || nuevo.tipo === 'video') {
+      setMediaActivaUrl(nuevo.url);
+      setVideoResultadoUrl(null);
+      setVideoResultadoNombre(null);
+      setVideoResultadoEtiqueta(null);
+      setPlaybackError(null);
+      setPlaybackPositionSeconds(getVisualClipStartSeconds(nuevaLinea, nuevo.id));
+
+      if (pistaVideo.length === 0) {
+        adoptarFormatoVisual(metadata);
+      }
     }
 
     sincronizarLineaDeTiempo(nuevaLinea);
@@ -4011,16 +4060,55 @@ export default function NaylaCore() {
     else setToolMessage('PRÓXIMAMENTE');
   };
 
+  const startVideoPlayback = (video: HTMLVideoElement) => {
+    setPlaybackError(null);
+    const playPromise = video.play();
+    if (playPromise !== undefined) {
+      playPromise.catch((error) => {
+        console.warn('No se pudo iniciar la reproducción:', error);
+        setIsPlaying(false);
+        setPlaybackError('No se pudo reproducir este video. Prueba seleccionándolo de nuevo desde la Bóveda.');
+      });
+    }
+  };
+
   const togglePlay = () => {
-    if (!playerRef.current) return;
-    if (!playerRef.current.paused) {
-      playerRef.current.pause();
+    const currentPlayer = playerRef.current;
+
+    if (currentPlayer) {
+      if (!currentPlayer.paused) {
+        currentPlayer.pause();
+        return;
+      }
+      startVideoPlayback(currentPlayer);
       return;
     }
 
-    const playPromise = playerRef.current.play();
-    if (playPromise !== undefined) {
-      playPromise.catch(error => console.log('Autoplay prevented:', error));
+    // Recuperación: si el visor está vacío pero ya hay videos en la Bóveda o
+    // en la línea de tiempo, el primer toque de Play los conecta al visor.
+    const fallbackVideo =
+      (visualActivo?.tipo === 'video' ? visualActivo : null) ||
+      pistaVideo.find((clip) => clip.tipo === 'video') ||
+      galeriaMultimedia.find((item) => item.tipo === 'video') ||
+      null;
+
+    if (!fallbackVideo) {
+      setPlaybackError('No hay un video seleccionado. Súbelo o elígelo desde la Bóveda.');
+      return;
+    }
+
+    // flushSync monta el <video> dentro del mismo gesto del usuario. Esto evita
+    // que Android bloquee play() por considerar que ocurrió fuera del toque.
+    flushSync(() => {
+      selectMediaForPreview(fallbackVideo as MediaItem);
+    });
+
+    const mountedPlayer = playerRef.current;
+    if (mountedPlayer) {
+      startVideoPlayback(mountedPlayer);
+    } else {
+      // Respaldo para navegadores que monten el nodo un ciclo después.
+      resumePlaybackAfterSourceChangeRef.current = true;
     }
   };
 
@@ -5291,23 +5379,7 @@ if (!session) {
                             •••
                           </button>
                           <div
-                            onClick={() => {
-                              setMediaActivaUrl(item.url);
-                              setClipSeleccionado(item.id);
-                              if (item.tipo === 'video' && String(item.fuente || '').startsWith('render:')) {
-                                setVideoResultadoUrl(item.url);
-                                setVideoResultadoNombre(item.nombre);
-                                setVideoResultadoEtiqueta(item.etiqueta || 'R');
-                              } else {
-                                setVideoResultadoUrl(null);
-                                setVideoResultadoNombre(null);
-                              }
-                              if (item.tipo === 'video' && playerRef.current) {
-                                const playPromise = playerRef.current.play();
-                                if (playPromise !== undefined) playPromise.catch(() => {});
-                                setIsPlaying(true);
-                              }
-                            }}
+                            onClick={() => selectMediaForPreview(item)}
                             style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', width: '100%', cursor: 'pointer', margin: '8px 0' }}>
                             {item.tipo === 'video' && <svg width="20" height="20" viewBox="0 0 24 24" fill="white"><polygon points="5,3 19,12 5,21"/></svg>}
                             {item.tipo === 'audio' && <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>}
@@ -5451,6 +5523,7 @@ if (!session) {
                       style={{ width: '100%', height: '100%', objectFit: phoneVideoObjectFit, backgroundColor: '#000', maxWidth: '100%', maxHeight: '100%', touchAction: 'manipulation' }}
                       controls={false}
                       playsInline
+                      preload="metadata"
                       muted={false}
                       ref={playerRef as any}
                       onEnded={handleVideoEnded}
@@ -5465,6 +5538,7 @@ if (!session) {
                       }}
                       onLoadedMetadata={(e) => {
                         const video = e.currentTarget;
+                        setPlaybackError(null);
                         if (Number.isFinite(video.duration) && video.duration > 0) {
                           setNativePlaybackDurationSeconds(video.duration);
                         }
@@ -5490,11 +5564,12 @@ if (!session) {
 
                         if (resumePlaybackAfterSourceChangeRef.current) {
                           resumePlaybackAfterSourceChangeRef.current = false;
-                          const playPromise = video.play();
-                          if (playPromise !== undefined) {
-                            playPromise.catch(error => console.log('Autoplay prevented:', error));
-                          }
+                          startVideoPlayback(video);
                         }
+                      }}
+                      onError={() => {
+                        setIsPlaying(false);
+                        setPlaybackError('El navegador no pudo abrir este archivo de video. Vuelve a seleccionarlo desde la Bóveda.');
                       }}
                     />
                   )}
@@ -5516,6 +5591,31 @@ if (!session) {
                 </div>
               )}
             </div>
+
+            {playbackError && (
+              <div
+                role="status"
+                aria-live="polite"
+                style={{
+                  position: 'absolute',
+                  left: '50%',
+                  bottom: isCleanMode ? '72px' : '66px',
+                  transform: 'translateX(-50%)',
+                  zIndex: 31,
+                  width: 'min(520px, calc(100% - 28px))',
+                  padding: '8px 10px',
+                  borderRadius: 10,
+                  border: '1px solid rgba(255,255,255,.22)',
+                  background: 'rgba(8,8,8,.92)',
+                  color: '#ddd',
+                  fontSize: '0.68rem',
+                  textAlign: 'center',
+                  lineHeight: 1.35,
+                }}
+              >
+                {playbackError}
+              </div>
+            )}
 
             {/* REPRODUCTOR FLOTANTE. En pantalla completa queda solo el control básico abajo. */}
             <div
@@ -5605,7 +5705,14 @@ if (!session) {
           {!videoResultadoUrl && (
             <div
               className="neon-btn"
-              onClick={(e) => { e.stopPropagation(); setMainNav('boveda'); setIsSubPanelOpen(true); }}
+              onClick={(e) => {
+                e.stopPropagation();
+                setMainNav('boveda');
+                setSubTool(SUB_TOOLS.boveda?.[0]?.id || null);
+                setFiltroGaleria('todo');
+                setToolMessage(null);
+                setIsSubPanelOpen(true);
+              }}
               style={{ position: 'absolute', left: 8, top: 8, width: '36px', height: '44px', borderRadius: '8px', zIndex: 60, borderStyle: 'dashed', cursor: 'pointer', fontSize: '1.2rem' }}
             >
               +
