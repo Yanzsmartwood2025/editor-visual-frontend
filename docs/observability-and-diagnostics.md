@@ -2,58 +2,113 @@
 
 ## Objetivo
 
-Separar tres funciones diferentes para que una falla no derribe ni oculte las demás:
+El panel privado **DIAGNÓSTICO** combina cuatro señales sin acoplarlas al editor:
 
-- **Sentry**: captura errores reales del navegador.
-- **Playwright**: prueba automáticamente comportamientos críticos del editor.
-- **Checkly**: vigila desde fuera que producción siga respondiendo.
+- **Sentry** recibe los errores del navegador.
+- **Playwright** ejecuta el smoke test estructural de GENERAR.
+- **Checkly** vigila producción desde fuera.
+- **Supabase (naylacore)** guarda el estado actual y el historial corto del tablero.
 
-El panel **Diagnóstico** es solo la vista privada del administrador. No guarda ni muestra secretos.
+Una falla en observabilidad no debe bloquear Editor, Bóveda, GENERAR, GPU ni Redes.
 
 ## Acceso privado
 
-El icono **Diagnóstico** solo se renderiza para:
+El icono **DIAGNÓSTICO** solo se renderiza para:
 
 `jusntrader38@gmail.com`
 
-La API `/api/diagnostics/health` vuelve a validar el correo usando el token Firebase. Ocultar el icono no es la única barrera.
+La API vuelve a validar el token Firebase y el correo antes de entregar estado o abrir el stream. Las tablas de diagnóstico tienen RLS activado y deliberadamente no tienen políticas de navegador: solo el service role del backend puede leerlas o escribirlas.
+
+## Flujo en vivo
+
+```
+Errores navegador ──────────────┐
+Playwright / GitHub Actions ────┼──► API privada ─► Supabase ─► SSE privado ─► DIAGNÓSTICO
+Checkly failure/recovery ───────┘
+```
+
+Los proveedores empujan los cambios hacia el backend. El navegador no consulta directamente las tablas privadas. El endpoint `/api/diagnostics/stream` mantiene un stream SSE autenticado y publica un snapshot cuando detecta cambios, aproximadamente cada 2,5 segundos. La conexión se recicla de forma controlada y el cliente reconecta automáticamente.
+
+Se eligió SSE autenticado en lugar de exponer un canal Realtime público porque el editor usa sesión Firebase y las tablas de observabilidad contienen información operacional privada. Así mantenemos el service role y los secretos fuera del navegador.
+
+## Tablas
+
+### `diagnostic_events`
+
+Historial de eventos con fuente, servicio, severidad, estado, mensaje, enlace externo y fecha.
+
+### `diagnostic_status`
+
+Último estado conocido por servicio:
+
+- `editor`
+- `sentry`
+- `playwright`
+- `checkly`
+
+### `diagnostic_integrations`
+
+Solo guarda hashes de secretos de callback. Nunca guarda la API key de Checkly.
 
 ## Sentry
 
-La primera fase usa el Browser SDK Loader oficial de Sentry a partir de `NEXT_PUBLIC_SENTRY_DSN`.
+`NEXT_PUBLIC_SENTRY_DSN` carga el Browser SDK de Sentry.
 
-Cobertura de esta fase:
-- excepciones no controladas en el navegador;
-- errores globales capturados por el SDK;
-- prueba controlada desde Diagnóstico.
+Además, `DiagnosticsClientReporter` escucha:
 
-No se considera todavía instrumentación completa del servidor. La integración `@sentry/nextjs` y source maps se activarán en una fase separada para no mezclar observabilidad con cambios grandes del runtime.
+- `window.error`
+- `unhandledrejection`
+
+Cuando ocurre uno, el mismo error que Sentry puede capturar se refleja en `diagnostic_events` mediante una API autenticada con Firebase. Así el panel cambia en vivo sin necesitar un token administrativo de Sentry.
+
+El botón **Enviar prueba** manda una excepción controlada a Sentry y al espejo del tablero.
+
+> Pendiente opcional: conectar un Service Hook oficial de Sentry para reflejar también eventos procesados en backend/servidor. Crear ese hook requiere un token Sentry con `project:write`; el DSN por sí solo no concede ese permiso.
 
 ## Playwright
 
-El repositorio ya tenía `playwright`. Se añade `scripts/e2e-smoke.mjs` sin nuevas dependencias.
+El repositorio usa `playwright` para comprobar:
 
-El smoke test levanta el editor en modo desarrollo y verifica:
+`GENERAR -> API -> Imagen/Video/Audio/Música/3D -> GPU -> Imagen/Video/Audio/Música/3D -> cerrar`
 
-`GENERAR -> API -> Imagen/Video/Audio/Música/3D -> volver -> GPU -> Imagen/Video/Audio/Música/3D -> cerrar`
-
-También falla si el navegador genera una excepción no controlada.
+Después de cada push a `main`, el workflow publica el resultado del job en el tablero. El estado puede ser correcto o fallido; el job de sincronización usa `always()` para que también se registre un fallo.
 
 ## Checkly
 
-Los secretos se leen únicamente desde GitHub Actions:
+El workflow usa exclusivamente los GitHub Actions secrets:
 
 - `CHECKLY_API_KEY`
 - `CHECKLY_ACCOUNT_ID`
 
-Después de una actualización de `main`, el workflow crea una sola vez el monitor:
+En cada push a `main`:
 
-`Editor Nayla - Producción`
+1. crea o reutiliza `Editor Nayla - Producción`;
+2. registra de forma temporal un callback secreto nuevo en producción;
+3. crea o actualiza el canal webhook `Nayla Diagnostics Realtime`;
+4. suscribe el monitor a ese webhook;
+5. Checkly empuja `FAILURE`, `DEGRADED` y `RECOVERY` al tablero.
 
-Ese monitor comprueba cada 10 minutos la disponibilidad pública del dominio estable de producción. La sincronización es idempotente por nombre: si ya existe, no crea duplicados.
+La API key de Checkly se usa solamente durante el registro seguro y nunca se guarda en Supabase.
 
-La navegación autenticada completa en Checkly se añadirá cuando exista una credencial de prueba dedicada y segura. No se reutiliza la cuenta administrativa ni se incrustan contraseñas en scripts.
+## Seguridad
+
+- El panel solo aparece para el correo administrador.
+- El stream requiere un token Firebase válido del administrador.
+- Los errores de usuarios se aceptan solo con una sesión Firebase válida.
+- Checkly firma su canal con un bearer aleatorio rotado en cada sincronización.
+- En Supabase se almacena únicamente el SHA-256 del bearer.
+- Los secretos Checkly siguen en GitHub Actions.
+- `SUPABASE_SERVICE_ROLE_KEY` sigue únicamente en el servidor.
 
 ## Breakers
 
-Observabilidad no se mezcla con GENERAR, Editor, Bóveda ni GPU. Cada pieza vive en su propio archivo o workflow. Si Checkly falla, Playwright y el editor continúan. Si Sentry no carga, el editor continúa. Si el panel Diagnóstico falla, las herramientas de edición continúan.
+Cada pieza está separada:
+
+- `src/lib/diagnosticStore.ts`: persistencia privada.
+- `src/components/diagnostics/DiagnosticsClientReporter.tsx`: espejo de errores del navegador.
+- `src/components/diagnostics/DiagnosticsWorkspace.tsx`: interfaz.
+- `src/pages/api/diagnostics/*`: frontera autenticada.
+- `scripts/sync-checkly-monitor.mjs`: configuración externa.
+- `.github/workflows/monitoring-smoke.yml`: ejecución automática.
+
+Si Checkly no responde, el editor continúa. Si Sentry no carga, el editor continúa. Si el stream se corta, se reconecta sin recargar la aplicación.
