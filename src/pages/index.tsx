@@ -4892,8 +4892,8 @@ if (!session) {
                     return (
                       <label key={tool.id} className="sub-btn">
                         <div className="icon-container">{tool.icon}</div>
-                        <span>{tool.nombre}</span>
-                        <input type="file" multiple accept="video/*,image/*" onChange={(e) => handleSubirMultimedia(e, 'video')} style={{ display: 'none' }} />
+                        <span>{subiendoArchivo ? `Subiendo ${vaultUploadProgress?.percent ?? 0}%` : tool.nombre}</span>
+                        <input type="file" multiple accept="video/*,image/*" disabled={subiendoArchivo} onChange={(e) => handleSubirMultimedia(e, 'video')} style={{ display: 'none' }} />
                       </label>
                     );
                   }
@@ -4901,8 +4901,8 @@ if (!session) {
                     return (
                       <label key={tool.id} className="sub-btn">
                         <div className="icon-container">{tool.icon}</div>
-                        <span>{tool.nombre}</span>
-                        <input type="file" multiple accept="audio/*" onChange={(e) => handleSubirMultimedia(e, 'audio')} style={{ display: 'none' }} />
+                        <span>{subiendoArchivo ? `Subiendo ${vaultUploadProgress?.percent ?? 0}%` : tool.nombre}</span>
+                        <input type="file" multiple accept="audio/*" disabled={subiendoArchivo} onChange={(e) => handleSubirMultimedia(e, 'audio')} style={{ display: 'none' }} />
                       </label>
                     );
                   }
@@ -6331,7 +6331,9 @@ if (!session) {
               justifyContent: 'space-between',
               gap: 10,
             }}>
-              <span>Subiendo archivos…</span>
+              <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                Subiendo {chatUploadProgress.currentFile || 'archivos'}… {chatUploadProgress.percent}%
+              </span>
               <span>{chatUploadProgress.done}/{chatUploadProgress.total}{chatUploadProgress.failed ? ` · ${chatUploadProgress.failed} error${chatUploadProgress.failed === 1 ? '' : 'es'}` : ''}</span>
             </div>
           )}
@@ -6935,6 +6937,40 @@ if (!session) {
                     : 'ELIMINAR'}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {vaultUploadProgress && (
+        <div
+          role="status"
+          aria-live="polite"
+          style={{
+            position: 'fixed',
+            left: '50%',
+            bottom: '24px',
+            transform: 'translateX(-50%)',
+            width: 'min(420px, calc(100vw - 28px))',
+            zIndex: 99998,
+            background: 'rgba(8,8,8,.96)',
+            border: '1px solid rgba(255,255,255,.24)',
+            borderRadius: 14,
+            padding: '12px 14px',
+            boxShadow: '0 12px 40px rgba(0,0,0,.55)',
+            color: '#fff',
+          }}
+        >
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, fontSize: 11, marginBottom: 8 }}>
+            <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {vaultUploadProgress.phase === 'registering' ? 'Guardando en la Bóveda…' : `Subiendo ${vaultUploadProgress.fileName}`}
+            </span>
+            <strong>{vaultUploadProgress.percent}%</strong>
+          </div>
+          <div style={{ height: 5, borderRadius: 999, background: '#262626', overflow: 'hidden' }}>
+            <div style={{ height: '100%', width: `${vaultUploadProgress.percent}%`, background: '#eee', transition: 'width .15s linear' }} />
+          </div>
+          <div style={{ marginTop: 6, color: '#888', fontSize: 9.5 }}>
+            Archivo {vaultUploadProgress.fileIndex} de {vaultUploadProgress.fileCount}
           </div>
         </div>
       )}
