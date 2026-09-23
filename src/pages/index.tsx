@@ -2383,15 +2383,30 @@ export default function NaylaCore() {
     setChatAttachMenuOpen(false);
     setProjectMenuOpen(false);
     if (forcedKind) setChannelUploadingKind(forcedKind);
-    setChatUploadProgress({ total: selectedFiles.length, done: 0, failed: 0 });
+    setChatUploadProgress({ total: selectedFiles.length, done: 0, failed: 0, percent: 0 });
 
     let workingMedia = [...galeriaMultimedia];
     let workingDocuments = [...chatDocuments];
     let workingModels = [...modelos3d];
     let successCount = 0;
     let failedCount = 0;
+    const totalUploadBytes = selectedFiles.reduce((sum, file) => sum + file.size, 0);
+    let completedUploadBytes = 0;
 
     for (const file of selectedFiles) {
+      setChatUploadProgress((progress) => progress ? { ...progress, currentFile: file.name } : progress);
+
+      const updateCurrentFileProgress = (progress: UploadProgressSnapshot) => {
+        const loaded = completedUploadBytes + Math.min(file.size, progress.loadedBytes);
+        const percent = totalUploadBytes > 0
+          ? Math.min(99, Math.floor((loaded / totalUploadBytes) * 100))
+          : 0;
+        setChatUploadProgress((current) => current
+          ? { ...current, percent, currentFile: file.name }
+          : current
+        );
+      };
+
       try {
         let asset: NaylaChannelAsset | null = null;
         let kind = forcedKind;
@@ -2432,6 +2447,7 @@ export default function NaylaCore() {
             fuente: 'chat:documento',
             projectId: activeProjectId,
             threadId: activeThreadId,
+            onProgress: updateCurrentFileProgress,
           });
           const saved = savedItems[0];
           if (!saved) throw new Error(`No se pudo guardar ${file.name}.`);
@@ -2453,6 +2469,7 @@ export default function NaylaCore() {
             fuente: `chat:canal-${kind}`,
             projectId: activeProjectId,
             threadId: activeThreadId,
+            onProgress: updateCurrentFileProgress,
           });
           const saved = savedItems[0];
           if (!saved) throw new Error(`No se pudo guardar ${file.name}.`);
@@ -2481,11 +2498,17 @@ export default function NaylaCore() {
         failedCount += 1;
         console.error('Error subiendo archivo al chat:', file.name, error);
       } finally {
+        completedUploadBytes += file.size;
+        const overallPercent = totalUploadBytes > 0
+          ? Math.min(100, Math.floor((completedUploadBytes / totalUploadBytes) * 100))
+          : 100;
         setChatUploadProgress((progress) => progress
           ? {
               ...progress,
               done: Math.min(progress.total, progress.done + 1),
               failed: failedCount,
+              percent: overallPercent,
+              currentFile: file.name,
             }
           : progress
         );
@@ -2507,7 +2530,6 @@ export default function NaylaCore() {
       );
     }
   };
-
   const subirArchivosDesdeCanal = async (kind: NaylaChannelKind, files: FileList) => {
     await uploadFilesIntoChat(files, kind);
   };
