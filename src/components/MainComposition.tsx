@@ -1,3 +1,4 @@
+import { getAutomatedGain } from '../lib/audioAutomation';
 import React, { useMemo } from 'react';
 import { AbsoluteFill, Sequence, CanvasImage, useVideoConfig, useCurrentFrame, interpolate, Img, Loop } from 'remotion';
 import { Audio, Video } from '@remotion/media';
@@ -44,7 +45,7 @@ type ProfessionalEffect = {
 type GsapClipPreset = 'fade' | 'slide-left' | 'slide-right' | 'slide-up' | 'slide-down' | 'zoom-in' | 'zoom-out' | 'bounce' | 'elastic' | 'spin' | 'swing';
 type GsapClipMotion = { enter?: GsapClipPreset; exit?: GsapClipPreset; enterDuration?: number; exitDuration?: number; intensity?: number; };
 type ProceduralMotion = { preset: 'particles' | 'orbit' | 'pulse-grid' | 'starfield'; intensity?: number; speed?: number; seed?: number; color?: string; accentColor?: string; };
-type TimelineItem = { id: string; mediaId: string; tipo: 'foto' | 'video' | 'audio'; nombre: string; etiqueta: string; url: string; durationInSeconds?: number; originalDurationInSeconds?: number; volume?: number; fadeIn?: number; fadeOut?: number; scale?: number; delay?: number; startFrom?: number; trimBefore?: number; trimAfter?: number; loop?: boolean; playbackRate?: number; transitionDuration?: number; transitionType?: 'fade' | 'none' | 'wipe' | 'slide' | 'zoom' | 'film-burn' | 'blur-slide' | 'cross-zoom' | 'dreamy-zoom' | 'linear-blur' | 'push-cut'; efecto?: string; brightness?: number; contrast?: number; saturation?: number; overlay?: string; overlayIntensity?: number; professionalEffects?: ProfessionalEffect[]; motionBlur?: { shutterAngle?: number; samples?: number }; gsapMotion?: GsapClipMotion; proceduralMotion?: ProceduralMotion; };
+type TimelineItem = { id: string; mediaId: string; tipo: 'foto' | 'video' | 'audio'; nombre: string; etiqueta: string; url: string; durationInSeconds?: number; originalDurationInSeconds?: number; volume?: number; volumeKeyframes?: { time: number; gain: number }[]; fadeIn?: number; fadeOut?: number; scale?: number; delay?: number; startFrom?: number; trimBefore?: number; trimAfter?: number; loop?: boolean; playbackRate?: number; transitionDuration?: number; transitionType?: 'fade' | 'none' | 'wipe' | 'slide' | 'zoom' | 'film-burn' | 'blur-slide' | 'cross-zoom' | 'dreamy-zoom' | 'linear-blur' | 'push-cut'; efecto?: string; brightness?: number; contrast?: number; saturation?: number; overlay?: string; overlayIntensity?: number; professionalEffects?: ProfessionalEffect[]; motionBlur?: { shutterAngle?: number; samples?: number }; gsapMotion?: GsapClipMotion; proceduralMotion?: ProceduralMotion; };
 type SubtitleItem = { id: string; texto: string; inicioSec: number; finSec: number; style?: 'clean' | 'cinematic' | 'tiktok' | 'karaoke'; position?: 'top' | 'center' | 'bottom'; fontSize?: number; };
 type LogoItem = { id: string; url: string; x: number; y: number; scale: number; opacity: number; inicioSec?: number; finSec?: number; fadeIn?: number; fadeOut?: number; };
 
@@ -682,6 +683,7 @@ const AnimatedVolume: React.FC<{ clip: TimelineItem, durationInFrames: number, r
       }
   }
 
+  currentVolume *= getAutomatedGain(clip.volumeKeyframes, frame / fps);
   return <>{render(currentVolume)}</>;
 };
 

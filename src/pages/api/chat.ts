@@ -1,3 +1,4 @@
+import { NAYLA_EDITING_LIBRARY, NAYLA_EDITING_GUIDANCE } from '../../lib/naylaEditingLibrary';
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { z } from 'zod';
 import { GroqProvider, MistralProvider } from '../../utils/llmProvider';
@@ -82,7 +83,7 @@ const requestSchema = z.object({
     url: z.string().url(),
     nombre: z.string().max(500).optional(),
     etiqueta: z.string().max(100).optional(),
-  })).max(250).optional(),
+  }).passthrough()).max(250).optional(),
 });
 
 const generationActionNames = new Set([
@@ -875,7 +876,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           const preview = item.tipo === 'documento' && typeof item?.metadata?.textPreview === 'string'
             ? `; texto=${item.metadata.textPreview.slice(0, 6000)}`
             : '';
-          return `${label}: tipo=${item.tipo}; nombre=${item.nombre || ''}${preview}`;
+          return `${label}: tipo=${item.tipo}; nombre=${item.nombre || ''}; duración=${item.durationInSeconds ?? item.metadata?.durationInSeconds ?? 'desconocida'}${preview}`;
         }).join('\n')
       : 'ninguno';
 
@@ -887,9 +888,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         ? `Etiquetas solicitadas que no existen o no están disponibles: ${missingReferencedLabels.join(', ')}. No inventes sustitutos.`
         : 'No hay etiquetas solicitadas ausentes.',
       currentTimeline?.length
-        ? `Timeline actual: ${currentTimeline.slice(0, 20).map((item) =>
-            `${item.etiqueta || '?'}:${item.tipo}`
-          ).join(', ')}`
+        ? `Timeline actual (conserva sus controles al editar solo una parte): ${JSON.stringify(currentTimeline)}`
         : 'Timeline actual: vacío.',
       visualIntent
         ? (
@@ -929,6 +928,11 @@ SEGURIDAD Y CONTEXTO:
 - La cantidad de fotos/videos y la cantidad de subtítulos son pistas independientes. Nunca asumas que debe existir un subtítulo por cada foto.
 - Si hay 9 fotos y 8 bloques de subtítulos, distribuye las 9 fotos durante la duración visual y distribuye los 8 bloques por tiempo de forma independiente.
 - Si el usuario confirmó un plan cuyo objetivo es producir, renderizar, exportar o crear el video final, BUILD_TIMELINE debe llevar render:true.
+
+${NAYLA_EDITING_GUIDANCE}
+
+BIBLIOTECA DE RECETAS EJECUTABLES:
+${JSON.stringify(NAYLA_EDITING_LIBRARY)}
 
 MODO CONSULTIVO:
 - EJECUCION_CONFIRMADA=${executionConfirmed ? 'SI' : 'NO'}.
@@ -976,7 +980,7 @@ Para medios guardados en el proyecto, prefiere etiquetas estables y deja que el 
 {"action":"BUILD_TIMELINE","assets":[{"type":"foto","source":"label","label":"F1","durationInSeconds":3}],"render":true}
 Puedes mezclar F/V/A en el orden que pida el usuario o en el orden creativo que elijas cuando te dé libertad.
 Ejemplo de foto con movimiento y acabado simultáneos (adapta al pedido, no lo repitas mecánicamente): {"type":"foto","source":"label","label":"F1","durationInSeconds":5,"efecto":"push-in","transitionType":"dreamy-zoom","transitionDuration":0.6,"professionalEffects":[{"type":"color-correction","intensity":0.25}]}
-Cada asset puede usar durationInSeconds, volume, fadeIn, fadeOut, delay, startFrom, trimBefore, trimAfter, loop, playbackRate, efecto, transitionType, transitionDuration, overlay, overlayIntensity, professionalEffects, motionBlur, gsapMotion y proceduralMotion.
+Cada asset puede usar durationInSeconds, volume, volumeKeyframes, fadeIn, fadeOut, delay, startFrom, trimBefore, trimAfter, loop, playbackRate, efecto, transitionType, transitionDuration, overlay, overlayIntensity, professionalEffects, motionBlur, gsapMotion y proceduralMotion.
 Puedes combinar de forma moderada varias capacidades reales cuando mejoren el resultado. No estás limitada a ken-burns/fade.
 También puedes usar subtitles, titles, skiaGraphics, vectorAnimations y threeScenes cuando aporten al plan.
 Para M1/M2 usa threeScenes y la etiqueta exacta; para una foto que solo debe parecer 3D usa profundidad/parallax, no una escena GLB.

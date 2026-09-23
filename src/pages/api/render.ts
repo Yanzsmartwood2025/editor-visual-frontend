@@ -1,3 +1,4 @@
+import { volumeKeyframesSchema } from '../../lib/audioAutomation';
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { randomUUID } from 'node:crypto';
 import { requireFirebaseUser } from '../../lib/firebaseAdmin';
@@ -35,6 +36,11 @@ const validateInputProps = (inputProps: unknown): ValidatedRenderProps => {
 
   const props = inputProps as Record<string, unknown>;
   const timeline = Array.isArray(props.timeline) ? props.timeline : [];
+  for (const clip of timeline) {
+    if (clip.volumeKeyframes !== undefined && !volumeKeyframesSchema.safeParse(clip.volumeKeyframes).success) {
+      throw new RenderValidationError('La curva de volumen contiene tiempos o niveles inválidos.');
+    }
+  }
   const threeScenes = Array.isArray(props.threeScenes) ? props.threeScenes : [];
   const vectorAnimations = Array.isArray(props.vectorAnimations) ? props.vectorAnimations : [];
   const skiaGraphics = Array.isArray(props.skiaGraphics) ? props.skiaGraphics : [];
