@@ -1,5 +1,6 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { requireFirebaseUser } from '../../../lib/firebaseAdmin';
+import { getDiagnosticSnapshot } from '../../../lib/diagnosticStore';
 import { isDiagnosticsAdmin } from '../../../lib/diagnostics';
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
@@ -14,19 +15,17 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       return res.status(403).json({ error: 'Diagnóstico reservado para la cuenta administrativa.' });
     }
 
+    const snapshot = await getDiagnosticSnapshot(50);
+
     return res.status(200).json({
       ok: true,
-      checkedAt: new Date().toISOString(),
+      ...snapshot,
       deployment: {
         environment: process.env.VERCEL_ENV || process.env.NODE_ENV || null,
         commitSha: process.env.VERCEL_GIT_COMMIT_SHA || null,
       },
-      services: {
-        app: 'ok',
-        sentryBrowser: process.env.NEXT_PUBLIC_SENTRY_DSN ? 'configured' : 'missing',
-        playwright: 'configured',
-        checkly: 'github-actions',
-      },
+      sentryConfigured: Boolean(process.env.NEXT_PUBLIC_SENTRY_DSN),
+      streamIntervalMs: 2500,
     });
   } catch (error: any) {
     return res.status(401).json({ error: error?.message || 'Sesión no válida.' });

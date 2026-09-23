@@ -33,6 +33,7 @@ import { firebaseHeaders } from '../lib/apiClient';
 import { Model3DWorkspace } from '../components/Model3DWorkspace';
 import GenerarWorkspace from '../components/generar/GenerarWorkspace';
 import DiagnosticsWorkspace from '../components/diagnostics/DiagnosticsWorkspace';
+import DiagnosticsClientReporter from '../components/diagnostics/DiagnosticsClientReporter';
 import { isDiagnosticsAdmin } from '../lib/diagnostics';
 import { GpuQuoteModal, type GpuQuoteView } from '../components/GpuQuoteModal';
 import { NaylaEngineBar } from '../components/NaylaEngineBar';
@@ -5396,6 +5397,7 @@ if (!session) {
             {mainNav === 'generar' && (
               <GenerarWorkspace onClose={() => { setMainNav('boveda'); setIsSubPanelOpen(false); setSubTool(null); }} />
             )}
+            <DiagnosticsClientReporter session={session} />
             {mainNav === 'diagnostico' && diagnosticsAdmin && session && (
               <DiagnosticsWorkspace
                 session={session}
