@@ -8,7 +8,8 @@ export type SocialProviderStatus = {
 };
 
 const accountLimit = (raw: string | undefined, fallback = 2): number | null => {
-  const parsed = Number(raw ?? fallback);
+  const normalized = raw?.trim();
+  const parsed = Number(normalized ? normalized : fallback);
   if (!Number.isFinite(parsed)) return fallback;
   if (parsed <= 0) return null;
   return Math.max(1, Math.floor(parsed));
