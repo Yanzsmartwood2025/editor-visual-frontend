@@ -5555,10 +5555,7 @@ if (!session) {
 
                         if (resumePlaybackAfterSourceChangeRef.current) {
                           resumePlaybackAfterSourceChangeRef.current = false;
-                          const playPromise = video.play();
-                          if (playPromise !== undefined) {
-                            playPromise.catch(error => console.log('Autoplay prevented:', error));
-                          }
+                          startVideoPlayback(video);
                         }
                       }}
                       onError={() => {
