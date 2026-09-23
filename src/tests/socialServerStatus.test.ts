@@ -6,16 +6,18 @@ describe('social provider status routing', () => {
     vi.unstubAllEnvs();
   });
 
-  it('defaults both social routes to two local account slots', () => {
+  it('models the current free tiers without confusing profiles with accounts', () => {
     vi.stubEnv('UPLOAD_POST_API_KEY', 'route-a');
     vi.stubEnv('ZERNIO_API_KEY', 'route-b');
-    vi.stubEnv('UPLOAD_POST_ACCOUNT_LIMIT', '');
+    vi.stubEnv('UPLOAD_POST_PROFILE_LIMIT', '');
     vi.stubEnv('ZERNIO_ACCOUNT_LIMIT', '');
 
     const providers = socialProviderStatuses();
     expect(providers.find((provider) => provider.id === 'upload_post')).toMatchObject({
       configured: true,
-      accountLimit: 2,
+      accountLimit: null,
+      profileLimit: 2,
+      perPlatformAccountLimit: 1,
     });
     expect(providers.find((provider) => provider.id === 'zernio')).toMatchObject({
       configured: true,
@@ -23,14 +25,14 @@ describe('social provider status routing', () => {
     });
   });
 
-  it('allows an explicit capacity and treats zero as unlimited', () => {
+  it('allows explicit provider capacity overrides', () => {
     vi.stubEnv('UPLOAD_POST_API_KEY', 'route-a');
     vi.stubEnv('ZERNIO_API_KEY', 'route-b');
-    vi.stubEnv('UPLOAD_POST_ACCOUNT_LIMIT', '4');
+    vi.stubEnv('UPLOAD_POST_PROFILE_LIMIT', '4');
     vi.stubEnv('ZERNIO_ACCOUNT_LIMIT', '0');
 
     const providers = socialProviderStatuses();
-    expect(providers.find((provider) => provider.id === 'upload_post')?.accountLimit).toBe(4);
+    expect(providers.find((provider) => provider.id === 'upload_post')?.profileLimit).toBe(4);
     expect(providers.find((provider) => provider.id === 'zernio')?.accountLimit).toBeNull();
   });
 
