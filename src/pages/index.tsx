@@ -385,6 +385,22 @@ export default function NaylaCore() {
   const [clipSeleccionado, setClipSeleccionado] = useState<string | null>(null);
   const [canvasRatio, setCanvasRatio] = useState<string>('9/16');
   const [calidadExportacion, setCalidadExportacion] = useState('720p');
+  const [pendingRenderQualityChoice, setPendingRenderQualityChoice] = useState<{
+    timeline: TimelineItem[];
+    suggestedQuality?: string;
+    ratioOverride?: string;
+    scopeOverride?: { projectId?: string | null; threadId?: string | null };
+    subtitlesOverride?: SubtitleItem[];
+    titlesOverride?: MotionTitleItem[];
+    threeScenesOverride?: ThreeRenderScene[];
+    vectorAnimationsOverride?: VectorAnimationItem[];
+    skiaGraphicsOverride?: SkiaGraphicItem[];
+    renderContext?: { logos?: LogoItem[]; settings?: { fadeOutFinal?: number; decorations?: any[] } };
+  } | null>(null);
+  const pendingRenderQualityResolverRef = useRef<{
+    resolve: (value: any) => void;
+    reject: (reason?: any) => void;
+  } | null>(null);
   const canvasPreviewDimensions = getCanvasDimensionsFromRatio(canvasRatio, '1080p');
   const [isDownloadMenuOpen, setIsDownloadMenuOpen] = useState(false);
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
@@ -1567,7 +1583,7 @@ export default function NaylaCore() {
     return lineaValidada;
   };
 
-  const solicitarRenderTimeline = async (
+  const ejecutarRenderTimeline = async (
     timeline: TimelineItem[],
     qualityOverride?: string,
     ratioOverride?: string,
@@ -1722,6 +1738,70 @@ export default function NaylaCore() {
       throw error;
     } finally {
       // The render poll effect stops automatically once the task becomes terminal.
+    }
+  };
+
+  const solicitarRenderTimeline = (
+    timeline: TimelineItem[],
+    qualityOverride?: string,
+    ratioOverride?: string,
+    scopeOverride?: { projectId?: string | null; threadId?: string | null },
+    subtitlesOverride?: SubtitleItem[],
+    titlesOverride?: MotionTitleItem[],
+    threeScenesOverride?: ThreeRenderScene[],
+    vectorAnimationsOverride?: VectorAnimationItem[],
+    skiaGraphicsOverride?: SkiaGraphicItem[],
+    renderContext?: { logos?: LogoItem[]; settings?: { fadeOutFinal?: number; decorations?: any[] } }
+  ) => new Promise<any>((resolve, reject) => {
+    const suggestedQuality = qualityOverride || calidadExportacion || '720p';
+    setCalidadExportacion(suggestedQuality);
+    pendingRenderQualityResolverRef.current = { resolve, reject };
+    setPendingRenderQualityChoice({
+      timeline,
+      suggestedQuality,
+      ratioOverride,
+      scopeOverride,
+      subtitlesOverride,
+      titlesOverride,
+      threeScenesOverride,
+      vectorAnimationsOverride,
+      skiaGraphicsOverride,
+      renderContext,
+    });
+  });
+
+  const cancelarSeleccionCalidadRender = () => {
+    const waiter = pendingRenderQualityResolverRef.current;
+    pendingRenderQualityResolverRef.current = null;
+    setPendingRenderQualityChoice(null);
+    waiter?.resolve({ cancelled: true });
+  };
+
+  const confirmarCalidadRender = async (quality: string) => {
+    const pending = pendingRenderQualityChoice;
+    const waiter = pendingRenderQualityResolverRef.current;
+    if (!pending || !waiter) return;
+
+    setCalidadExportacion(quality);
+    setPendingRenderQualityChoice(null);
+    pendingRenderQualityResolverRef.current = null;
+
+    try {
+      const result = await ejecutarRenderTimeline(
+        pending.timeline,
+        quality,
+        pending.ratioOverride,
+        pending.scopeOverride,
+        pending.subtitlesOverride,
+        pending.titlesOverride,
+        pending.threeScenesOverride,
+        pending.vectorAnimationsOverride,
+        pending.skiaGraphicsOverride,
+        pending.renderContext
+      );
+      waiter.resolve(result);
+    } catch (error) {
+      waiter.reject(error);
     }
   };
 
@@ -5437,7 +5517,7 @@ if (!session) {
                           setIsProcessing(true);
                           try {
                             const lineaValidada = await validarTimelineParaRender(lineaDeTiempo);
-                            await solicitarRenderTimeline(lineaValidada, calidadExportacion);
+                            await solicitarRenderTimeline(lineaValidada);
                             setIsProcessing(false);
                           } catch (err: any) {
                             setIsProcessing(false);
@@ -6073,6 +6153,101 @@ if (!session) {
             setSubTool(null);
           }}
         />
+      )}
+
+      {pendingRenderQualityChoice && (
+        <div style={{
+          position: 'fixed',
+          inset: 0,
+          zIndex: 12000,
+          background: 'rgba(0,0,0,0.82)',
+          backdropFilter: 'blur(12px)',
+          WebkitBackdropFilter: 'blur(12px)',
+          display: 'grid',
+          placeItems: 'center',
+          padding: 16,
+        }}>
+          <div style={{
+            width: 'min(560px, 100%)',
+            maxHeight: 'calc(100dvh - 32px)',
+            overflowY: 'auto',
+            borderRadius: 18,
+            border: '1px solid #303030',
+            background: '#080808',
+            boxShadow: '0 24px 80px rgba(0,0,0,.72)',
+            padding: 16,
+            color: '#fff',
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'flex-start', marginBottom: 14 }}>
+              <div>
+                <div style={{ fontSize: '0.78rem', letterSpacing: '1px', fontWeight: 900 }}>CALIDAD DEL RENDER</div>
+                <div style={{ marginTop: 5, fontSize: '0.68rem', color: '#a3a3a3', lineHeight: 1.5 }}>
+                  Elige antes de iniciar. Más resolución significa más detalle, pero también más tiempo y cómputo.
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={cancelarSeleccionCalidadRender}
+                aria-label="Cancelar render"
+                style={{ border: '1px solid #333', background: '#111', color: '#fff', borderRadius: 10, width: 34, height: 34, cursor: 'pointer', flex: '0 0 auto' }}
+              >
+                ×
+              </button>
+            </div>
+
+            <div style={{ display: 'grid', gap: 8 }}>
+              {[
+                { value: '480p', title: 'Borrador · 480p', use: 'Revisar cortes, tiempos y subtítulos', compute: 'Consumo bajo', detail: 'Transiciones CPU ligeras · máxima velocidad', enabled: true },
+                { value: '720p', title: 'Rápido · 720p', use: 'Pruebas y publicación rápida en redes', compute: 'Consumo medio', detail: 'Transiciones optimizadas para CPU · recomendado', enabled: true },
+                { value: '1080p', title: 'Final · 1080p', use: 'Exportación final con mayor detalle', compute: 'Consumo alto', detail: 'Efectos completos · usa el Sandbox CPU actual y tarda más', enabled: true },
+                { value: '4k', title: 'Ultra · 4K', use: 'Máxima resolución', compute: 'Consumo muy alto', detail: 'Requiere cómputo superior/GPU y tarifa propia', enabled: false },
+              ].map((profile) => {
+                const ratio = pendingRenderQualityChoice.ratioOverride || canvasRatio;
+                const dims = getCanvasDimensionsFromRatio(ratio, profile.value);
+                const suggested = (pendingRenderQualityChoice.suggestedQuality || '720p').toLowerCase() === profile.value;
+                return (
+                  <button
+                    key={profile.value}
+                    type="button"
+                    disabled={!profile.enabled}
+                    onClick={() => profile.enabled && void confirmarCalidadRender(profile.value)}
+                    style={{
+                      width: '100%',
+                      padding: '12px 13px',
+                      borderRadius: 12,
+                      border: suggested ? '1px solid #fff' : '1px solid #2b2b2b',
+                      background: suggested ? '#151515' : '#0d0d0d',
+                      color: '#fff',
+                      textAlign: 'left',
+                      cursor: profile.enabled ? 'pointer' : 'not-allowed',
+                      opacity: profile.enabled ? 1 : 0.5,
+                    }}
+                  >
+                    <span style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'center' }}>
+                      <strong style={{ fontSize: '0.76rem' }}>{profile.title}</strong>
+                      <span style={{ fontSize: '0.58rem', border: '1px solid #333', borderRadius: 999, padding: '3px 7px', color: '#bdbdbd' }}>
+                        {profile.enabled ? profile.compute : 'PRÓXIMAMENTE'}
+                      </span>
+                    </span>
+                    <span style={{ display: 'block', marginTop: 5, fontSize: '0.64rem', color: '#c8c8c8' }}>
+                      {dims.width}×{dims.height} · {profile.use}
+                    </span>
+                    <span style={{ display: 'block', marginTop: 3, fontSize: '0.6rem', color: '#777' }}>{profile.detail}</span>
+                    {suggested && profile.enabled && (
+                      <span style={{ display: 'inline-block', marginTop: 7, fontSize: '0.56rem', fontWeight: 850, letterSpacing: '0.6px' }}>
+                        RECOMENDADA AHORA
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+
+            <div style={{ marginTop: 12, padding: '10px 11px', borderRadius: 10, background: '#0d0d0d', border: '1px solid #252525', color: '#8d8d8d', fontSize: '0.6rem', lineHeight: 1.5 }}>
+              1080p todavía no alquila una máquina mayor: usa el motor CPU actual y consume más tiempo. 4K se habilitará cuando el editor tenga conectado un perfil de cómputo superior con su coste real.
+            </div>
+          </div>
+        </div>
       )}
 
       {/* 4. MODAL / OVERLAY PANTALLA COMPLETA DE NAYLA IA */}
