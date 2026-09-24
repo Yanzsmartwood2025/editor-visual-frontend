@@ -437,6 +437,27 @@ const executeValidatedAction = async (
   return describeActionPlan(action);
 };
 
+const isAbortLikeError = (error: unknown) => {
+  if (!error || typeof error !== 'object') return false;
+  const name = String((error as any).name || '');
+  return name === 'AbortError' || name === 'TimeoutError';
+};
+
+const isLlmCapacityError = (error: unknown) => {
+  if (!error) return false;
+  const raw = [
+    (error as any)?.message,
+    (error as any)?.body,
+    (error as any)?.status,
+    (error as any)?.statusCode,
+  ].filter(Boolean).join(' ');
+  return (
+    Number((error as any)?.status) === 429 ||
+    Number((error as any)?.statusCode) === 429 ||
+    /rate[_ -]?limit|too many requests|quota|insufficient.{0,24}(credit|balance)|credits? exhausted|limit-req-minute['": ]+0/i.test(raw)
+  );
+};
+
 const executeDirectLlm = async ({
   provider,
   prompt,
@@ -453,59 +474,99 @@ const executeDirectLlm = async ({
   maxCompletionTokens?: number;
 }) => {
   const groqKey = process.env.GROQ_API_KEY?.trim();
-  const mistralKey = process.env.MISTRAL_API_KEY?.trim();
+  const mistralKeys = Array.from(new Set([
+    process.env.MISTRAL_API_KEY?.trim(),
+    process.env.MISTRAL_API_KEY_2?.trim(),
+    process.env.MISTRAL_API_KEY_SECONDARY?.trim(),
+    process.env.MISTRAL_API_KEY_BACKUP?.trim(),
+  ].filter((value): value is string => Boolean(value))));
+
   const requestedImages = Array.isArray(images) ? images.filter(Boolean) : [];
   const groqImages = requestedImages.slice(0, 3);
 
-  const groq = async (withImages = true) => {
-    signal?.throwIfAborted();
-    if (!groqKey) throw new Error('GROQ_API_KEY no está configurada en Vercel.');
-    return new GroqProvider(groqKey, 'dialog').generateText(
-      prompt,
-      withImages ? groqImages : [],
-      systemPrompt,
-      { maxCompletionTokens, maxContinuations: 2, maxTransientRetries: 2, signal }
-    );
+  type Candidate = {
+    id: string;
+    provider: 'groq' | 'mistral';
+    run: (withImages: boolean) => Promise<string>;
   };
 
-  const mistral = async (withImages = true) => {
-    signal?.throwIfAborted();
-    if (!mistralKey) throw new Error('MISTRAL_API_KEY no está configurada en Vercel.');
-    return new MistralProvider(mistralKey, 'dialog').generateText(
-      prompt,
-      withImages ? requestedImages : [],
-      systemPrompt,
-      { maxCompletionTokens, maxContinuations: 2, maxTransientRetries: 2, signal }
-    );
-  };
+  const candidates: Candidate[] = [];
 
-  if (!groqKey && !mistralKey) {
+  if (groqKey) {
+    candidates.push({
+      id: 'groq',
+      provider: 'groq',
+      run: async (withImages) => {
+        signal?.throwIfAborted();
+        return new GroqProvider(groqKey, 'dialog').generateText(
+          prompt,
+          withImages ? groqImages : [],
+          systemPrompt,
+          { maxCompletionTokens, maxContinuations: 2, maxTransientRetries: 2, signal }
+        );
+      },
+    });
+  }
+
+  mistralKeys.forEach((key, index) => {
+    candidates.push({
+      id: `mistral-${index + 1}`,
+      provider: 'mistral',
+      run: async (withImages) => {
+        signal?.throwIfAborted();
+        return new MistralProvider(key, 'dialog').generateText(
+          prompt,
+          withImages ? requestedImages : [],
+          systemPrompt,
+          { maxCompletionTokens, maxContinuations: 2, maxTransientRetries: 2, signal }
+        );
+      },
+    });
+  });
+
+  if (!candidates.length) {
     throw new Error('No hay ninguna clave LLM de servidor configurada en Vercel.');
   }
 
-  const primary = provider === 'mistral' ? mistral : groq;
-  const secondary = provider === 'mistral' ? groq : mistral;
+  const ordered = [
+    ...candidates.filter((candidate) => candidate.provider === provider),
+    ...candidates.filter((candidate) => candidate.provider !== provider),
+  ];
+
+  const attempts = async (withImages: boolean) => {
+    let lastError: unknown = null;
+    let allCapacityLimited = true;
+
+    for (const candidate of ordered) {
+      try {
+        return await candidate.run(withImages);
+      } catch (error) {
+        if (signal?.aborted || isAbortLikeError(error)) throw error;
+        lastError = error;
+        allCapacityLimited = allCapacityLimited && isLlmCapacityError(error);
+        console.warn('[chat.ts] Ruta LLM no disponible; probando respaldo:', candidate.id);
+      }
+    }
+
+    if (allCapacityLimited && lastError) {
+      const capacityError = new Error('Todas las rutas de IA configuradas están temporalmente limitadas por cuota o velocidad.');
+      (capacityError as any).code = 'NAYLA_LLM_CAPACITY';
+      (capacityError as any).cause = lastError;
+      throw capacityError;
+    }
+
+    throw lastError || new Error('Ninguna ruta LLM pudo responder.');
+  };
 
   try {
-    return await primary(true);
-  } catch (primaryError) {
-    try {
-      return await secondary(true);
-    } catch (secondaryError) {
-      if (requestedImages.length) {
-        // A vision/model-tier problem must not discard an otherwise valid media plan.
-        try {
-          return await groq(false);
-        } catch {
-          try {
-            return await mistral(false);
-          } catch {
-            throw secondaryError || primaryError;
-          }
-        }
-      }
-      throw secondaryError || primaryError;
-    }
+    return await attempts(true);
+  } catch (error) {
+    if (signal?.aborted || isAbortLikeError(error)) throw error;
+    if (!requestedImages.length) throw error;
+
+    // Si el problema es el nivel de visión/modelo, intenta de nuevo sin imágenes.
+    // Esto conserva la conversación y las etiquetas en vez de perder toda la solicitud.
+    return attempts(false);
   }
 };
 
@@ -1066,8 +1127,16 @@ MODO_MOTOR=${engineMode}
     } catch (error: any) {
       console.error('[chat.ts] Todos los motores IA de Nayla fallaron:', error);
       if (!executionConfirmed) {
-        return res.status(500).json({
-          error: 'Nayla no pudo procesar esta solicitud en este momento. Inténtalo nuevamente.',
+        const capacityLimited =
+          error?.code === 'NAYLA_LLM_CAPACITY' ||
+          isLlmCapacityError(error) ||
+          isLlmCapacityError(error?.cause);
+
+        return res.status(capacityLimited ? 503 : 500).json({
+          error: capacityLimited
+            ? 'Nayla está temporalmente sin capacidad en sus rutas de IA. No se perdió tu tarea; inténtalo nuevamente en un momento.'
+            : 'Nayla no pudo procesar esta solicitud en este momento. Inténtalo nuevamente.',
+          code: capacityLimited ? 'NAYLA_LLM_CAPACITY' : 'NAYLA_LLM_ERROR',
         });
       }
     }
