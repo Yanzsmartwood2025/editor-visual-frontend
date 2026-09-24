@@ -1276,6 +1276,7 @@ export default function ApiAudioModule({ context }: GenerarModuleProps) {
                 <button
                   type="button"
                   className={`generar-audio-account-button ${accountMenuOpen ? 'active' : ''}`}
+                  aria-label="Cuenta Nayla"
                   aria-expanded={accountMenuOpen}
                   aria-controls="nayla-audio-account-menu"
                   onClick={() => setAccountMenuOpen((value) => !value)}
