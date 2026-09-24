@@ -46,3 +46,5 @@ out/
 
 # generated Remotion production bundle
 /.remotion/
+
+/public/canvaskit.wasm

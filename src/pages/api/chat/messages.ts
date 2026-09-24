@@ -179,6 +179,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       });
     }
 
+    const editorPlanIds = result.messages.map((message: any) => message.metadata?.editorReview?.id).filter(Boolean);
+    const editorStatuses = new Map<string, string>();
+    if (editorPlanIds.length) {
+      const { data: plans, error } = await getWorkspaceSupabaseAdmin().from('nayla_action_plans')
+        .select('id,status,expires_at').eq('user_id', user.uid).eq('module', 'editor').eq('thread_key', parsed.data.threadId).in('id', editorPlanIds);
+      if (error) throw error;
+      for (const plan of plans || []) editorStatuses.set(plan.id, plan.status === 'pending' && Date.parse(plan.expires_at) > Date.now() ? 'pending' : ['completed', 'executing'].includes(plan.status) ? 'accepted' : 'cancelled');
+    }
+
     const messages = result.messages.map((message: Record<string, any>) => {
       const rawAction = message.action && typeof message.action === 'object'
         ? message.action as Record<string, any>
@@ -211,6 +220,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
       return {
         ...message,
+        metadata: message.metadata?.editorReview ? { ...message.metadata, editorReview: { ...message.metadata.editorReview, status: editorStatuses.get(message.metadata.editorReview.id) || 'cancelled' } } : message.metadata,
         content: sanitizeNaylaPublicText(String(message.content || '')),
         action: publicAction,
         attachments: attachmentsByMessage.get(message.id) || [],

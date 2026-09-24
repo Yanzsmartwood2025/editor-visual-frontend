@@ -1,4 +1,6 @@
+import { decorationsSchema, fontFields, fontSelectionSchema } from './naylaDecorations';
 import { z } from 'zod';
+import { volumeKeyframesSchema } from './audioAutomation';
 import { getProviderCandidates } from './mediaProviders/registry';
 import type { MediaCapability, MediaProviderId } from './mediaProviders/types';
 
@@ -15,7 +17,9 @@ const buildTimelineAssetSchema = z.object({
   url: urlSchema.optional(),
   label: z.string().trim().regex(/^[FVA]\d+$/i).optional(),
   durationInSeconds: z.number().min(0.1).max(3600).optional(),
+  originalDurationInSeconds: z.number().min(0.1).max(7200).optional(),
   volume: z.number().min(0).max(2).optional(),
+  volumeKeyframes: volumeKeyframesSchema.optional(),
   fadeIn: z.number().min(0).max(30).optional(),
   fadeOut: z.number().min(0).max(30).optional(),
   scale: z.number().min(0.25).max(4).optional(),
@@ -144,8 +148,10 @@ const buildTimelineAssetSchema = z.object({
 export const naylaActionSchema = z.discriminatedUnion('action', [
   z.object({
     action: z.literal('BUILD_TIMELINE'),
+    decorations: decorationsSchema.optional(),
     assets: z.array(buildTimelineAssetSchema).max(250).optional().default([]),
     subtitles: z.array(z.object({
+      ...fontFields,
       text: z.string().trim().min(1).max(1200),
       start: z.number().min(0).max(7200),
       end: z.number().min(0).max(7200),
@@ -156,6 +162,7 @@ export const naylaActionSchema = z.discriminatedUnion('action', [
       message: 'El final del subtítulo debe ser posterior al inicio.',
     })).max(300).optional(),
     titles: z.array(z.object({
+      ...fontFields,
       text: z.string().trim().min(1).max(500),
       start: z.number().min(0).max(7200),
       end: z.number().min(0).max(7200),
@@ -245,7 +252,7 @@ export const naylaActionSchema = z.discriminatedUnion('action', [
     }).refine((item) => item.end > item.start, {
       message: 'El final de la escena 3D debe ser posterior al inicio.',
     })).max(24).optional(),
-    render: z.boolean().optional().default(false),
+    render: z.boolean().optional().default(true),
   }),
   z.object({
     action: z.literal('REMOVE_VIDEO_BACKGROUND'),
@@ -375,10 +382,12 @@ export const parseNaylaAction = (raw: string): NaylaAction | null => {
     const json = normalizeNaylaActionShape(JSON.parse(cleaned));
     const parsed = naylaActionSchema.safeParse(json);
     if (!parsed.success) return null;
+    if (parsed.data.action === 'BUILD_TIMELINE' && [...(parsed.data.subtitles || []), ...(parsed.data.titles || [])].some(item => !fontSelectionSchema.safeParse(item).success)) return null;
 
     if (
       parsed.data.action === 'BUILD_TIMELINE' &&
       parsed.data.assets.length === 0 &&
+      (!parsed.data.decorations || parsed.data.decorations.length === 0) &&
       (!parsed.data.threeScenes || parsed.data.threeScenes.length === 0) &&
       (!parsed.data.vectorAnimations || parsed.data.vectorAnimations.length === 0) &&
       (!parsed.data.skiaGraphics || parsed.data.skiaGraphics.length === 0)

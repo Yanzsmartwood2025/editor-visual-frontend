@@ -1,4 +1,4 @@
-import {rm} from 'node:fs/promises';
+import {rm, copyFile} from 'node:fs/promises';
 import path from 'node:path';
 import {bundle} from '@remotion/bundler';
 import {enableSkia} from '@remotion/skia/enable';
@@ -14,3 +14,5 @@ await bundle({
   webpackOverride: (config, context) => enableSkia(config, context),
 });
 console.log('[remotion] Bundle ready at .remotion');
+
+await copyFile(new URL('../node_modules/canvaskit-wasm/bin/full/canvaskit.wasm', import.meta.url), path.resolve('public/canvaskit.wasm'));

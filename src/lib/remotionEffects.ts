@@ -144,6 +144,7 @@ export const REMOTION_CPU_PUBLIC_CATALOG = {
   controls: [
     'duración por clip',
     'volumen',
+    'curvas volumeKeyframes: time en segundos locales y gain de 0 a 1; bajadas y recuperaciones de música bajo otra pista',
     'fade de audio/video',
     'velocidad',
     'recorte',

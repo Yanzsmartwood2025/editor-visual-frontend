@@ -38,8 +38,8 @@ export const NAYLA_CAPABILITY_BIBLE: NaylaCapability[] = [
   {
     id: 'audio-mix',
     category: 'Audio',
-    label: 'Mezcla y fades de audio',
-    description: 'Ajusta volumen, entrada, salida, mezcla y sincronía de pistas existentes.',
+    label: 'Mezcla, curvas de volumen y fades de audio',
+    description: 'Ajusta volumen, entrada, salida, mezcla y sincronía de pistas existentes. volumeKeyframes permite bajar música bajo otra pista y recuperarla con puntos de tiempo y ganancia; no detecta voz automáticamente.',
     status: 'ready',
     engine: 'render',
     aliases: ['audio', 'musica', 'volumen', 'fade audio', 'entrada de audio', 'salida de audio', 'mezclar sonido'],

@@ -101,7 +101,8 @@ export const RemotionRoot: React.FC = () => {
               titles as any[],
               threeScenes as any[],
               vectorAnimations as any[],
-              skiaGraphics as any[]
+              skiaGraphics as any[],
+              (typedProps.settings as any)?.decorations || []
             ),
             width,
             height,

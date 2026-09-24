@@ -1,0 +1,349 @@
+{
+  "note": "Import references prove usage, not support for every API in a package. The model contract is derived from naylaActionSchema. No claim of full Remotion API coverage.",
+  "packages": [
+    {
+      "name": "@remotion/animated-emoji",
+      "declared": "4.0.526",
+      "installed": "4.0.526",
+      "status": "referenced_in_code",
+      "referencedBy": [
+        "src/components/NaylaDecorations.tsx",
+        "src/lib/naylaDecorations.ts"
+      ]
+    },
+    {
+      "name": "@remotion/animation-utils",
+      "declared": "4.0.526",
+      "installed": "4.0.526",
+      "status": "referenced_in_code",
+      "referencedBy": [
+        "src/components/NaylaDecorations.tsx"
+      ]
+    },
+    {
+      "name": "@remotion/bundler",
+      "declared": "4.0.526",
+      "installed": "4.0.526",
+      "status": "referenced_in_code",
+      "referencedBy": [
+        "scripts/build-remotion.mjs"
+      ]
+    },
+    {
+      "name": "@remotion/captions",
+      "declared": "4.0.526",
+      "installed": "4.0.526",
+      "status": "referenced_in_code",
+      "referencedBy": [
+        "src/components/MainComposition.tsx"
+      ]
+    },
+    {
+      "name": "@remotion/effects",
+      "declared": "4.0.526",
+      "installed": "4.0.526",
+      "status": "referenced_in_code",
+      "referencedBy": [
+        "src/components/MainComposition.tsx",
+        "src/components/NaylaDecorations.tsx"
+      ]
+    },
+    {
+      "name": "@remotion/fonts",
+      "declared": "4.0.526",
+      "installed": "4.0.526",
+      "status": "referenced_in_code",
+      "referencedBy": [
+        "src/components/NaylaFont.ts"
+      ]
+    },
+    {
+      "name": "@remotion/gif",
+      "declared": "4.0.526",
+      "installed": "4.0.526",
+      "status": "referenced_in_code",
+      "referencedBy": [
+        "src/components/NaylaDecorations.tsx"
+      ]
+    },
+    {
+      "name": "@remotion/google-fonts",
+      "declared": "4.0.526",
+      "installed": "4.0.526",
+      "status": "referenced_in_code",
+      "referencedBy": [
+        "src/components/NaylaFont.ts"
+      ]
+    },
+    {
+      "name": "@remotion/gsap",
+      "declared": "4.0.526",
+      "installed": "4.0.526",
+      "status": "referenced_in_code",
+      "referencedBy": [
+        "src/components/MainComposition.tsx",
+        "src/components/NaylaGsapTitle.tsx"
+      ]
+    },
+    {
+      "name": "@remotion/layout-utils",
+      "declared": "4.0.526",
+      "installed": "4.0.526",
+      "status": "referenced_in_code",
+      "referencedBy": [
+        "src/components/NaylaDecorations.tsx"
+      ]
+    },
+    {
+      "name": "@remotion/light-leaks",
+      "declared": "4.0.526",
+      "installed": "4.0.526",
+      "status": "installed_not_referenced",
+      "referencedBy": []
+    },
+    {
+      "name": "@remotion/lottie",
+      "declared": "4.0.526",
+      "installed": "4.0.526",
+      "status": "referenced_in_code",
+      "referencedBy": [
+        "src/components/NaylaVectorAnimation.tsx"
+      ]
+    },
+    {
+      "name": "@remotion/media",
+      "declared": "4.0.526",
+      "installed": "4.0.526",
+      "status": "referenced_in_code",
+      "referencedBy": [
+        "src/components/MainComposition.tsx",
+        "src/components/NaylaDecorations.tsx"
+      ]
+    },
+    {
+      "name": "@remotion/media-parser",
+      "declared": "4.0.526",
+      "installed": "4.0.526",
+      "status": "installed_not_referenced",
+      "referencedBy": []
+    },
+    {
+      "name": "@remotion/media-utils",
+      "declared": "4.0.526",
+      "installed": "4.0.526",
+      "status": "referenced_in_code",
+      "referencedBy": [
+        "src/pages/index.tsx"
+      ]
+    },
+    {
+      "name": "@remotion/motion-blur",
+      "declared": "4.0.526",
+      "installed": "4.0.526",
+      "status": "referenced_in_code",
+      "referencedBy": [
+        "src/components/MainComposition.tsx"
+      ]
+    },
+    {
+      "name": "@remotion/noise",
+      "declared": "4.0.526",
+      "installed": "4.0.526",
+      "status": "referenced_in_code",
+      "referencedBy": [
+        "src/components/MainComposition.tsx"
+      ]
+    },
+    {
+      "name": "@remotion/paths",
+      "declared": "4.0.526",
+      "installed": "4.0.526",
+      "status": "referenced_in_code",
+      "referencedBy": [
+        "src/components/NaylaDecorations.tsx",
+        "src/lib/naylaDecorations.ts"
+      ]
+    },
+    {
+      "name": "@remotion/player",
+      "declared": "4.0.526",
+      "installed": "4.0.526",
+      "status": "referenced_in_code",
+      "referencedBy": [
+        "src/components/NaylaCompositionPreview.tsx"
+      ]
+    },
+    {
+      "name": "@remotion/preload",
+      "declared": "4.0.526",
+      "installed": "4.0.526",
+      "status": "referenced_in_code",
+      "referencedBy": [
+        "src/components/NaylaCompositionPreview.tsx"
+      ]
+    },
+    {
+      "name": "@remotion/renderer",
+      "declared": "4.0.526",
+      "installed": "4.0.526",
+      "status": "referenced_in_code",
+      "referencedBy": [
+        "scripts/check-remotion-layers.mjs"
+      ]
+    },
+    {
+      "name": "@remotion/rive",
+      "declared": "4.0.526",
+      "installed": "4.0.526",
+      "status": "referenced_in_code",
+      "referencedBy": [
+        "src/components/NaylaVectorAnimation.tsx"
+      ]
+    },
+    {
+      "name": "@remotion/rough-notation",
+      "declared": "4.0.526",
+      "installed": "4.0.526",
+      "status": "referenced_in_code",
+      "referencedBy": [
+        "src/components/NaylaDecorations.tsx"
+      ]
+    },
+    {
+      "name": "@remotion/rounded-text-box",
+      "declared": "4.0.526",
+      "installed": "4.0.526",
+      "status": "referenced_in_code",
+      "referencedBy": [
+        "src/components/NaylaDecorations.tsx"
+      ]
+    },
+    {
+      "name": "@remotion/sfx",
+      "declared": "4.0.526",
+      "installed": "4.0.526",
+      "status": "referenced_in_code",
+      "referencedBy": [
+        "src/components/NaylaDecorations.tsx",
+        "src/lib/naylaDecorations.ts"
+      ]
+    },
+    {
+      "name": "@remotion/shapes",
+      "declared": "4.0.526",
+      "installed": "4.0.526",
+      "status": "referenced_in_code",
+      "referencedBy": [
+        "src/components/MainComposition.tsx"
+      ]
+    },
+    {
+      "name": "@remotion/skia",
+      "declared": "4.0.526",
+      "installed": "4.0.526",
+      "status": "referenced_in_code",
+      "referencedBy": [
+        "scripts/build-remotion.mjs"
+      ]
+    },
+    {
+      "name": "@remotion/starburst",
+      "declared": "4.0.526",
+      "installed": "4.0.526",
+      "status": "installed_not_referenced",
+      "referencedBy": []
+    },
+    {
+      "name": "@remotion/svg-3d-engine",
+      "declared": "4.0.526",
+      "installed": "4.0.526",
+      "status": "referenced_in_code",
+      "referencedBy": [
+        "src/components/NaylaDecorations.tsx"
+      ]
+    },
+    {
+      "name": "@remotion/three",
+      "declared": "4.0.526",
+      "installed": "4.0.526",
+      "status": "referenced_in_code",
+      "referencedBy": [
+        "src/components/NaylaThreeScene.tsx"
+      ]
+    },
+    {
+      "name": "@remotion/transitions",
+      "declared": "4.0.526",
+      "installed": "4.0.526",
+      "status": "referenced_in_code",
+      "referencedBy": [
+        "src/components/MainComposition.tsx"
+      ]
+    },
+    {
+      "name": "@remotion/vercel",
+      "declared": "4.0.526",
+      "installed": "4.0.526",
+      "status": "referenced_in_code",
+      "referencedBy": [
+        "src/lib/vercelSandboxRender.ts"
+      ]
+    },
+    {
+      "name": "@remotion/video-matting",
+      "declared": "4.0.526",
+      "installed": "4.0.526",
+      "status": "referenced_in_code",
+      "referencedBy": [
+        "src/pages/index.tsx"
+      ]
+    },
+    {
+      "name": "@remotion/web-renderer",
+      "declared": "4.0.526",
+      "installed": "4.0.526",
+      "status": "installed_not_referenced",
+      "referencedBy": []
+    },
+    {
+      "name": "@remotion/webcodecs",
+      "declared": "4.0.526",
+      "installed": "4.0.526",
+      "status": "installed_not_referenced",
+      "referencedBy": []
+    },
+    {
+      "name": "@remotion/whisper-web",
+      "declared": "4.0.526",
+      "installed": "4.0.526",
+      "status": "installed_not_referenced",
+      "referencedBy": []
+    },
+    {
+      "name": "@remotion/whisper-webgpu",
+      "declared": "4.0.526",
+      "installed": "4.0.526",
+      "status": "referenced_in_code",
+      "referencedBy": [
+        "src/pages/index.tsx"
+      ]
+    },
+    {
+      "name": "remotion",
+      "declared": "4.0.526",
+      "installed": "4.0.526",
+      "status": "referenced_in_code",
+      "referencedBy": [
+        "src/components/MainComposition.tsx",
+        "src/components/NaylaDecorations.tsx",
+        "src/components/NaylaFont.ts",
+        "src/components/NaylaGsapTitle.tsx",
+        "src/components/NaylaSkiaGraphic.tsx",
+        "src/components/NaylaThreeScene.tsx",
+        "src/components/NaylaVectorAnimation.tsx",
+        "src/remotion/Root.tsx",
+        "src/remotion/index.ts"
+      ]
+    }
+  ]
+}
