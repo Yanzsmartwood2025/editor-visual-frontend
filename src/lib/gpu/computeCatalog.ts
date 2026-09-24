@@ -140,15 +140,15 @@ export const getComputeCatalog = async ({
   const loaders: Array<Promise<ComputeCandidate[]>> = [];
   const labels: string[] = [];
 
-  if (isVastConfigured()) {
+  if (isVastConfigured() && (!profile.backends || profile.backends.includes('vast'))) {
     loaders.push(loadVastCandidates(profile, minReliability));
     labels.push('network-a');
   }
-  if (isRunpodConfigured()) {
+  if (isRunpodConfigured() && (!profile.backends || profile.backends.includes('runpod'))) {
     loaders.push(loadRunpodCandidates(profile));
     labels.push('network-b');
   }
-  if (isVultrConfigured()) {
+  if (isVultrConfigured() && (!profile.backends || profile.backends.includes('vultr'))) {
     loaders.push(loadVultrCandidates(profile));
     labels.push('network-c');
   }

@@ -1,3 +1,5 @@
+import { GPU_VIDEO_RECIPE } from './videoContract';
+import { newVideoSession, getVideoSession, updateVideoSession, VIDEO_IDLE_MS, canContinueVideo } from './videoSession';
 
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import { createR2PresignedGetUrl, createR2PresignedPutUrl, createR2StorageUrl, headR2Object } from '../r2';
@@ -181,6 +183,7 @@ const publicJob = async (job: GpuJobRow) => {
     outputContentType: job.output_content_type,
     error: job.error_message ? sanitizeNaylaPublicText(job.error_message) : null,
     galleryItem,
+    videoSession: getVideoSession(job) ? { phase: getVideoSession(job)!.phase, idleUntil: getVideoSession(job)!.idleUntil, hardDeadline: getVideoSession(job)!.hardDeadline, clips: getVideoSession(job)!.clips, clipStartedAt: getVideoSession(job)!.clipStartedAt, canContinue: canContinueVideo(job) } : null,
     createdAt: job.created_at,
     startedAt: job.started_at,
     completedAt: job.completed_at,
@@ -249,14 +252,21 @@ export const cleanupExpiredComputeJobs = async () => {
   let destroyed = 0;
   let failed = 0;
 
-  for (const job of expired) {
+  for (let job of expired) {
     if (!hasComputeInstance(job)) continue;
+    const session = getVideoSession(job);
+    if (session) {
+      const terminalStatus = session.phase === 'idle' ? 'completed' : job.metadata?.terminalStatus === 'failed' ? 'failed' : job.status === 'cleanup_pending' ? job.metadata?.terminalStatus : 'expired';
+      const claimed = await updateVideoSession(job, { status: 'cleanup_pending', metadata: { ...job.metadata, terminalStatus, videoSession: { ...session, phase: 'closing' } } });
+      if (!claimed) continue;
+      job = claimed;
+    }
 
     try {
       await destroyComputeInstance(job);
       const now = new Date();
       const terminalStatus =
-        job.status === 'cleanup_pending' &&
+        (job.status === 'cleanup_pending' || getVideoSession(job)?.phase === 'idle') &&
         (job.metadata?.terminalStatus === 'completed' || job.metadata?.terminalStatus === 'failed')
           ? job.metadata.terminalStatus
           : 'expired';
@@ -390,6 +400,7 @@ export const startVastGpuJob = async ({
     lease_expires_at: leaseExpiresAt.toISOString(),
     callback_token_hash: tokenHash(callbackToken),
     metadata: {
+      ...(input.recipe === GPU_VIDEO_RECIPE ? { videoSession: newVideoSession(leaseExpiresAt.toISOString()) } : {}),
       request: {
         recipe: input.recipe || 'default',
         prompt: input.prompt || null,
@@ -1008,7 +1019,7 @@ export const getGpuManifest = async ({
   jobId: string;
   token: string;
 }) => {
-  const job = await getGpuJob(jobId);
+  let job = await getGpuJob(jobId);
   if (!job || !job.callback_token_hash) {
     throw new Error('Trabajo GPU no encontrado.');
   }
@@ -1017,6 +1028,18 @@ export const getGpuManifest = async ({
   const expected = Buffer.from(job.callback_token_hash, 'hex');
   if (actual.length !== expected.length || !timingSafeEqual(actual, expected)) {
     throw new Error('Token GPU inválido.');
+  }
+
+  const session = getVideoSession(job);
+  if (session) {
+    if (!job.destroyed_at && Date.parse(job.lease_expires_at || '') <= Date.now()) { await cleanupExpiredComputeJobs(); return { action: 'stop' }; }
+    if (job.destroyed_at || job.metadata.cancelRequested || ['completed', 'failed', 'expired', 'cleanup_pending'].includes(job.status)) return { action: 'stop' };
+    if (session.phase === 'idle' || session.phase === 'finalizing') return { action: 'wait', deadline: session.hardDeadline };
+    if (session.phase === 'queued') {
+      const claimed = await updateVideoSession(job, { status: 'processing', metadata: { ...job.metadata, videoSession: { ...session, phase: 'generating' } } });
+      if (!claimed) return { action: 'wait', deadline: session.hardDeadline };
+      job = claimed;
+    }
   }
 
   if (
@@ -1037,9 +1060,11 @@ export const getGpuManifest = async ({
         })
       : null;
 
-  await updateGpuJob(job.id, { status: 'processing' }).catch(() => undefined);
+  if (!session) await updateGpuJob(job.id, { status: 'processing' }).catch(() => undefined);
 
   return {
+    action: 'generate',
+    generationId: session?.generationId,
     jobId: job.id,
     workload: job.workload,
     recipe: job.metadata?.request?.recipe || 'default',
@@ -1085,8 +1110,17 @@ export const finishGpuJob = async ({
     throw new Error('Token GPU inválido.');
   }
 
-  if (['completed', 'failed', 'expired'].includes(job.status)) {
+  if (job.metadata?.cancelRequested || ['completed', 'failed', 'expired'].includes(job.status)) {
     return publicJob(job);
+  }
+
+  const videoSession = getVideoSession(job);
+  if (videoSession) {
+    if ((status === 'completed' || metadata?.generationId) && metadata?.generationId !== videoSession.generationId) return publicJob(job);
+    if (!['generating', 'queued'].includes(videoSession.phase)) return publicJob(job);
+    const claimed = await updateVideoSession(job, { metadata: { ...job.metadata, videoSession: { ...videoSession, phase: 'finalizing' } } });
+    if (!claimed) return publicJob((await getGpuJob(job.id)) || job);
+    job = claimed;
   }
 
   const now = new Date();
@@ -1163,6 +1197,22 @@ export const finishGpuJob = async ({
 
   const runtimeCost = computeRuntimeCost(job, now);
 
+  if (videoSession) {
+    const idleUntil = new Date(Math.min(Date.now() + VIDEO_IDLE_MS, Date.parse(videoSession.hardDeadline))).toISOString();
+    const keepWarm = finalStatus === 'completed' && Date.parse(idleUntil) > Date.now();
+    const saved = await updateVideoSession(job, {
+      status: keepWarm ? 'processing' : 'cleanup_pending',
+      error_message: finalStatus === 'failed' ? finalError || 'El worker GPU falló.' : null,
+      gallery_item_id: galleryItemId, runtime_cost_estimate: runtimeCost, completed_at: now.toISOString(),
+      lease_expires_at: keepWarm ? idleUntil : new Date(Date.now() - 1000).toISOString(),
+      metadata: { ...job.metadata, callbackMetadata: metadata || {}, terminalStatus: finalStatus,
+        videoSession: { ...videoSession, phase: keepWarm ? 'idle' : 'closing', idleUntil, clips: videoSession.clips + (finalStatus === 'completed' ? 1 : 0) } },
+    });
+    if (!saved) return publicJob((await getGpuJob(job.id)) || job);
+    if (!keepWarm) { await cleanupExpiredComputeJobs(); return publicJob((await getGpuJob(job.id)) || saved); }
+    return publicJob(saved);
+  }
+
   job = await updateGpuJob(job.id, {
     status: finalStatus,
     error_message:
@@ -1225,6 +1275,11 @@ export const getGpuJobStatusForUser = async ({
 }) => {
   let job = await getGpuJobForUser(jobId, userId);
   if (!job) return null;
+
+  if (getVideoSession(job)) {
+    if (!job.destroyed_at && Date.parse(job.lease_expires_at || '') <= Date.now()) { await cleanupExpiredComputeJobs(); job = (await getGpuJobForUser(jobId, userId)) || job; }
+    return publicJob(job);
+  }
 
   const terminal = ['completed', 'failed', 'expired'];
   if (terminal.includes(job.status) || !hasComputeInstance(job)) {
