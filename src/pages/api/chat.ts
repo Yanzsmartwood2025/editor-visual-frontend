@@ -477,6 +477,7 @@ const executeDirectLlm = async ({
   const mistralKeys = Array.from(new Set([
     process.env.MISTRAL_API_KEY?.trim(),
     process.env.MISTRAL_API_KEY_2?.trim(),
+    process.env.MISTRAL_API_KEY_3?.trim(),
     process.env.MISTRAL_API_KEY_SECONDARY?.trim(),
     process.env.MISTRAL_API_KEY_BACKUP?.trim(),
   ].filter((value): value is string => Boolean(value))));
