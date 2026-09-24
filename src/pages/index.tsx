@@ -250,7 +250,6 @@ const createRenderRequestId = () => {
   });
 };
 
-const NaylaCompositionPreview = dynamic(() => import('../components/NaylaCompositionPreview'), { ssr: false });
 export default function NaylaCore() {
 
   const [darkMode, setDarkMode] = useState(true);
@@ -5658,7 +5657,6 @@ if (!session) {
                   : ((showPlaybackControls || !isPlaying) ? 'auto' : 'none')
               }}
             >
-              {!isCleanMode && <NaylaCompositionPreview onOpen={() => playerRef.current?.pause()} inputProps={{ timeline: lineaDeTiempo, subtitles: subtitulos, titles: motionTitles, threeScenes: threeRenderScenes, vectorAnimations, skiaGraphics, logos, canvasRatio, settings: globalSettings }} />}
               <span style={{ color: '#c4c4c4', fontSize: '0.68rem', fontFamily: 'monospace', minWidth: '54px', textAlign: 'right' }}>
                 {formatPlaybackClock(playbackPositionSeconds)}
               </span>
