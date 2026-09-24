@@ -511,6 +511,25 @@ export default function GenerarStyles() {
         height: 48px;
       }
 
+      .generar-music-orb span:nth-child(1),
+      .generar-music-orb span:nth-child(7) {
+        height: 14px;
+      }
+
+      .generar-music-orb span:nth-child(2),
+      .generar-music-orb span:nth-child(6) {
+        height: 28px;
+      }
+
+      .generar-music-orb span:nth-child(3),
+      .generar-music-orb span:nth-child(5) {
+        height: 42px;
+      }
+
+      .generar-music-orb span:nth-child(4) {
+        height: 54px;
+      }
+
       .generar-result-meta {
         display: flex;
         justify-content: space-between;
