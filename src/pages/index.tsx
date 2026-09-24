@@ -5403,7 +5403,25 @@ if (!session) {
               </div>
             )}
             {mainNav === 'generar' && (
-              <GenerarWorkspace onClose={() => { setMainNav('boveda'); setIsSubPanelOpen(false); setSubTool(null); }} />
+              <GenerarWorkspace
+                session={session}
+                projectId={activeProjectId}
+                threadId={activeThreadId}
+                onUseMedia={async (item) => {
+                  const media = item as MediaItem;
+                  setGaleriaMultimedia((prev) =>
+                    prev.some((existing) => existing.id === media.id)
+                      ? prev
+                      : [...prev, media]
+                  );
+                  await agregarAlTimeline(media, { preventDuplicate: true });
+                  showAlert('Resultado añadido a la Bóveda y a la línea de tiempo.');
+                  setMainNav('boveda');
+                  setIsSubPanelOpen(false);
+                  setSubTool(null);
+                }}
+                onClose={() => { setMainNav('boveda'); setIsSubPanelOpen(false); setSubTool(null); }}
+              />
             )}
             <DiagnosticsClientReporter session={session} />
             {mainNav === 'diagnostico' && diagnosticsAdmin && session && (
