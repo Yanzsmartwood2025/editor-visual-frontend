@@ -53,3 +53,29 @@ Primera activación funcional:
 - Las demás ramas continúan aisladas y se activarán una por una.
 
 La siguiente activación funcional debe hacerse en un PR separado, sin convertir GenerarWorkspace en un componente monolítico.
+
+
+## Fase 2 — API Video
+
+Segunda activación funcional:
+
+- API -> Video usa el mismo shell de cristal y los mismos breakers que Imagen.
+- Flujo: prompt -> preparar -> confirmación -> generación -> Bóveda -> USAR EN EDITOR -> timeline.
+- El seguimiento se cancela al desmontar el módulo.
+- El selector de proveedor permanece en el backend de Nayla Cloud.
+- Los botones principales y tarjetas respetan las variables globales de cristal, blur y glow del editor.
+
+## Fase 3 — API Audio
+
+Tercera activación funcional:
+
+- API -> Audio activa primero **Texto -> voz**, separado de Música.
+- Idiomas iniciales: español e inglés.
+- Nayla Cloud elige entre las rutas TTS realmente configuradas (Deepgram, Cartesia o ElevenLabs) sin exponer claves ni marcas al usuario final.
+- Flujo: texto -> idioma -> preparar -> confirmación -> generar -> Bóveda -> USAR EN EDITOR -> pista de audio.
+- El audio generado se puede escuchar dentro del módulo antes de enviarlo al editor.
+- El resultado se guarda como audio privado en la Bóveda y utiliza la misma ruta unificada de inserción al timeline.
+- Al salir, el polling/solicitud del módulo se cancela y el resto de GENERAR permanece desmontado.
+- Transcripción, cambio de voz y otras operaciones de audio se mantienen como capacidades futuras dentro de este mismo breaker, sin mezclarlas con Música.
+
+La siguiente activación funcional será API -> Música en un PR separado.
