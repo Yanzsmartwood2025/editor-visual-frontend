@@ -22,12 +22,19 @@ const testEngine = async (dialog, engine) => {
   const moduleGrid = dialog.locator('.generar-module-grid');
   await moduleGrid.waitFor({ state: 'visible', timeout: 30_000 });
 
+  const moduleIds = {
+    IMAGEN: 'imagen',
+    VIDEO: 'video',
+    AUDIO: 'audio',
+    MUSICA: 'musica',
+    '3D': '3d',
+  };
+
   for (const moduleName of ['IMAGEN', 'VIDEO', 'AUDIO', 'MUSICA', '3D']) {
     await clickTextButton(moduleGrid, moduleName);
-    const heading = dialog.locator('.generar-module-placeholder h2');
-    await heading.waitFor({ state: 'visible', timeout: 30_000 });
-    assert((await heading.textContent())?.trim() === moduleName, `${engine}/${moduleName} no abrió el módulo esperado.`);
-    await clickTextButton(dialog.locator('.generar-module-shell'), `← ${engine}`);
+    const moduleRoot = dialog.locator(`[data-generar-module="${moduleIds[moduleName]}"]`);
+    await moduleRoot.waitFor({ state: 'visible', timeout: 30_000 });
+    await dialog.getByRole('button', { name: `Volver a ${engine}` }).click();
     await moduleGrid.waitFor({ state: 'visible', timeout: 30_000 });
   }
 };
