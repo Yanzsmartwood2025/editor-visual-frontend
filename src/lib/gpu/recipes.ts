@@ -1,3 +1,4 @@
+import { GPU_VIDEO_RECIPE } from './videoContract';
 import type { GpuProfile, GpuWorkload } from './profiles';
 
 export type GpuRecipePlan = {
@@ -53,6 +54,25 @@ export const getGpuRecipePlan = (
   workload: GpuWorkload,
   recipe?: string
 ): GpuRecipePlan | null => {
+  if (workload === 'video' && recipe === GPU_VIDEO_RECIPE) {
+    const workerImage = 'pytorch/pytorch:2.4.0-cuda12.4-cudnn9-runtime';
+    return {
+      id: GPU_VIDEO_RECIPE, workload, label: 'Nayla Video · Imagen en movimiento', workerImage,
+      profile: { workload, minGpuRamGb: 24, minCpuRamGb: 64, diskGb: 80, maxHourlyUsd: 0.60, maxRuntimeMinutes: 30,
+        outputExtension: 'mp4', outputContentType: 'video/mp4', workerImage, backends: ['vast'] },
+      minInputs: 1, maxInputs: 1,
+      bootstrapScript: [
+        'set -eu', 'mkdir -p /opt/nayla',
+        "python - <<'PY'",
+        'import urllib.request',
+        'url = "https://raw.githubusercontent.com/Yanzsmartwood2025/editor-visual-frontend/main/gpu-workers/wan22/run-job.py"',
+        'with urllib.request.urlopen(url, timeout=30) as response: data = response.read()',
+        'with open("/opt/nayla/run-job", "wb") as handle: handle.write(data)',
+        'PY', 'chmod +x /opt/nayla/run-job',
+      ].join('\n'),
+    };
+  }
+
   if (workload === '3d' && recipe === 'triposr-image-to-3d') {
     return {
       id: 'triposr-image-to-3d',

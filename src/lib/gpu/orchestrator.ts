@@ -1085,7 +1085,7 @@ export const finishGpuJob = async ({
     throw new Error('Token GPU inválido.');
   }
 
-  if (['completed', 'failed', 'expired'].includes(job.status)) {
+  if (job.metadata?.cancelRequested || ['completed', 'failed', 'expired'].includes(job.status)) {
     return publicJob(job);
   }
 

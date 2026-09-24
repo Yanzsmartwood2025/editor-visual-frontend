@@ -3,6 +3,8 @@ export type GpuWorkload = 'probe' | 'image' | 'video' | 'audio' | '3d';
 export type GpuProfile = {
   workload: GpuWorkload;
   minGpuRamGb: number;
+  minCpuRamGb?: number;
+  backends?: Array<'vast' | 'runpod' | 'vultr'>;
   diskGb: number;
   maxHourlyUsd: number;
   maxRuntimeMinutes: number;

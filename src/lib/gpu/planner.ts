@@ -1,3 +1,4 @@
+import { GPU_VIDEO_RECIPE, validateGpuVideoInput } from './videoContract';
 import { getGpuProfile, type GpuWorkload } from './profiles';
 import {
   getGpuRecipePlan,
@@ -22,6 +23,10 @@ export type ResolvedGpuExecutionPlan = {
 export const resolveGpuExecutionPlan = (
   input: GpuExecutionInput
 ): ResolvedGpuExecutionPlan => {
+  if (input.recipe === GPU_VIDEO_RECIPE) {
+    if (input.workload !== 'video') throw new Error('La receta requiere video.');
+    validateGpuVideoInput(input);
+  }
   const genericProfile = getGpuProfile(input.workload);
   const recipePlan = getGpuRecipePlan(input.workload, input.recipe);
 

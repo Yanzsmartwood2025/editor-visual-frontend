@@ -17,7 +17,7 @@ const moduleMeta: Array<{
   ready: boolean;
 }> = [
   { id: 'imagen', label: 'IMAGEN', description: 'Modelos de imagen dedicados', ready: false },
-  { id: 'video', label: 'VIDEO', description: 'Procesamiento de video', ready: false },
+  { id: 'video', label: 'VIDEO', description: 'Imagen en movimiento · GPU', ready: true },
   { id: 'audio', label: 'AUDIO', description: 'Voz y procesamiento', ready: false },
   { id: 'musica', label: 'MÚSICA', description: 'ACE-Step dedicado', ready: true },
   { id: '3d', label: '3D', description: 'Imagen → 3D · TripoSR', ready: true },
@@ -69,7 +69,7 @@ export default function GpuWorkspace({
         </button>
       </div>
       <Suspense fallback={<div className="generar-loading">Cargando…</div>}>
-        <Active context={context} />
+        <Active key={`${activeModule}:${context.projectId}:${context.threadId}`} context={context} />
       </Suspense>
     </div>
   );
