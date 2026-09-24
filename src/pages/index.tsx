@@ -5420,6 +5420,8 @@ if (!session) {
                   setIsSubPanelOpen(false);
                   setSubTool(null);
                 }}
+                mediaLibrary={galeriaMultimedia}
+                selectedMediaIds={selectedMediaIds}
                 threeDStudio={{
                   assets: modelos3d,
                   activeAssetId: modelo3dActivoId,

@@ -130,3 +130,26 @@ Primera activación funcional de la rama GPU:
 - GPU Video: infraestructura genérica existe, pero todavía no hay receta/worker concreto aprobado.
 - GPU Audio/Voz: infraestructura genérica existe, pero todavía no hay receta/worker concreto aprobado.
 - GPU 3D: sí existe la receta concreta `triposr-image-to-3d`; es la siguiente activación.
+
+
+## Fase 7 — GPU 3D
+
+Segunda activación funcional de la rama GPU:
+
+- GPU -> 3D usa la receta concreta `triposr-image-to-3d`.
+- La imagen de entrada se elige directamente desde las fotos privadas de la Bóveda; si el usuario ya tenía una foto seleccionada, Nayla la prioriza.
+- Flujo: elegir foto -> cotizar -> elegir GPU -> confirmar -> TripoSR -> GLB en R2/Bóveda -> cierre automático -> abrir en Estudio 3D.
+- La cotización reutiliza `GpuQuotePanel`; no se duplica la UI de selección de GPU.
+- El resultado se incorpora al mismo `Model3DWorkspace` compartido por API 3D y el editor.
+- El Estudio conserva subida GLB, selección, borrado, cámara, rotación, animaciones y acciones avanzadas.
+- Salir del módulo cancela el polling del navegador sin dejar otros módulos pesados activos.
+
+### Estado de la rama GPU tras esta fase
+
+- Música: ACTIVO — ACE-Step.
+- 3D: ACTIVO — TripoSR Imagen -> 3D.
+- Imagen: PENDIENTE — falta receta/worker concreto aprobado.
+- Video: PENDIENTE — falta receta/worker concreto aprobado.
+- Audio/Voz: PENDIENTE — falta receta/worker concreto aprobado.
+
+Los tres módulos pendientes no se marcan como activos solo porque exista infraestructura genérica; se activarán cuando tengan worker y flujo completo verificado.

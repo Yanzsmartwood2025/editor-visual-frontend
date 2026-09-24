@@ -20,7 +20,7 @@ const moduleMeta: Array<{
   { id: 'video', label: 'VIDEO', description: 'Procesamiento de video', ready: false },
   { id: 'audio', label: 'AUDIO', description: 'Voz y procesamiento', ready: false },
   { id: 'musica', label: 'MÚSICA', description: 'ACE-Step dedicado', ready: true },
-  { id: '3d', label: '3D', description: 'Reconstrucción y malla', ready: false },
+  { id: '3d', label: '3D', description: 'Imagen → 3D · TripoSR', ready: true },
 ];
 
 export default function GpuWorkspace({
