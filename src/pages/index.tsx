@@ -549,6 +549,7 @@ export default function NaylaCore() {
     failed: number;
     percent: number;
     currentFile?: string;
+    phase?: 'uploading' | 'registering' | 'finalizing';
   } | null>(null);
   const [channelUploadingKind, setChannelUploadingKind] = useState<NaylaChannelKind | null>(null);
 
@@ -2404,7 +2405,13 @@ export default function NaylaCore() {
     setChatAttachMenuOpen(false);
     setProjectMenuOpen(false);
     if (forcedKind) setChannelUploadingKind(forcedKind);
-    setChatUploadProgress({ total: selectedFiles.length, done: 0, failed: 0, percent: 0 });
+    setChatUploadProgress({
+      total: selectedFiles.length,
+      done: 0,
+      failed: 0,
+      percent: 0,
+      phase: 'uploading',
+    });
 
     let workingMedia = [...galeriaMultimedia];
     let workingDocuments = [...chatDocuments];
@@ -2424,7 +2431,12 @@ export default function NaylaCore() {
           ? Math.min(99, Math.floor((loaded / totalUploadBytes) * 100))
           : 0;
         setChatUploadProgress((current) => current
-          ? { ...current, percent, currentFile: file.name }
+          ? {
+              ...current,
+              percent,
+              currentFile: file.name,
+              phase: progress.phase === 'registering' ? 'registering' : 'uploading',
+            }
           : current
         );
       };
@@ -2544,6 +2556,10 @@ export default function NaylaCore() {
     }
 
     if (timelineChanged) {
+      setChatUploadProgress((current) => current
+        ? { ...current, phase: 'finalizing', percent: Math.max(99, current.percent) }
+        : current
+      );
       await sincronizarLineaDeTiempo(lineaDeTiempoRef.current);
     }
 
@@ -6593,7 +6609,11 @@ if (!session) {
               gap: 10,
             }}>
               <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                Subiendo {chatUploadProgress.currentFile || 'archivos'}… {chatUploadProgress.percent}%
+                {chatUploadProgress.phase === 'registering'
+                  ? 'Guardando en Bóveda'
+                  : chatUploadProgress.phase === 'finalizing'
+                    ? 'Preparando timeline'
+                    : 'Subiendo'} {chatUploadProgress.currentFile || 'archivos'}… {chatUploadProgress.percent}%
               </span>
               <span>{chatUploadProgress.done}/{chatUploadProgress.total}{chatUploadProgress.failed ? ` · ${chatUploadProgress.failed} error${chatUploadProgress.failed === 1 ? '' : 'es'}` : ''}</span>
             </div>
