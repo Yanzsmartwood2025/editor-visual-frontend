@@ -33,6 +33,13 @@ export const REMOTION_CPU_EFFECTS = {
     'tilt-3d',
     'parallax-3d',
   ] as const,
+  visualTemplates: [
+    'fragment-reveal',
+    'carousel-card',
+    'depth-stack',
+    'split-panels',
+    'poster-pop',
+  ] as const,
   overlays: [
     'none',
     'vignette',
@@ -131,6 +138,7 @@ export const REMOTION_CPU_PUBLIC_CATALOG = {
   transitions: REMOTION_CPU_EFFECTS.transitions,
   looks: REMOTION_CPU_EFFECTS.looks,
   motion: REMOTION_CPU_EFFECTS.motion,
+  visualTemplates: REMOTION_CPU_EFFECTS.visualTemplates,
   overlays: REMOTION_CPU_EFFECTS.overlays,
   professionalEffects: REMOTION_CPU_EFFECTS.professionalEffects,
   motionBlur: REMOTION_CPU_EFFECTS.motionBlur,
