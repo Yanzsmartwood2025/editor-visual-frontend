@@ -522,14 +522,12 @@ export const uploadMediaFilesToBodega = async ({
       const id = createMediaId();
       const extension = getExtension(file, tipo);
 
-      let metadata: MediaMetadata = {};
-      try {
-        metadata = await probeMediaFile(file, tipo);
-      } catch (error) {
+      const metadataPromise = probeMediaFile(file, tipo).catch((error) => {
         console.warn(`No se pudo detectar metadata local de ${file.name}; la subida continuará.`, error);
-      }
+        return {} as MediaMetadata;
+      });
 
-      const uploaded = await uploadFileToR2(file, session, id, extension, {
+      const uploadPromise = uploadFileToR2(file, session, id, extension, {
         kind: tipo,
         projectId: resolvedProjectId,
         threadId: resolvedThreadId,
@@ -547,6 +545,8 @@ export const uploadMediaFilesToBodega = async ({
           });
         },
       });
+
+      const [metadata, uploaded] = await Promise.all([metadataPromise, uploadPromise]);
       completedBytes += file.size;
       uploadedKeys.push(uploaded.key);
       resolvedProjectId = uploaded.projectId || resolvedProjectId;
