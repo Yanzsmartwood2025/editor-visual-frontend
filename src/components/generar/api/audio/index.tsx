@@ -43,6 +43,7 @@ type VoiceItem = {
 };
 
 type Phase = 'idle' | 'planning' | 'awaiting' | 'running' | 'completed' | 'failed';
+type AudioToolAvailability = Partial<Record<AudioTool, boolean>>;
 
 const terminal = new Set(['completed', 'failed', 'cancelled']);
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -104,6 +105,7 @@ export default function ApiAudioModule({ context }: GenerarModuleProps) {
   const [voices, setVoices] = useState<VoiceItem[]>([]);
   const [voicesConfigured, setVoicesConfigured] = useState<boolean | null>(null);
   const [voicesLoading, setVoicesLoading] = useState(false);
+  const [toolAvailability, setToolAvailability] = useState<AudioToolAvailability>({});
   const [selectedVoiceId, setSelectedVoiceId] = useState('');
   const [localAudioItems, setLocalAudioItems] = useState<GenerarMediaItem[]>([]);
   const [selectedInputId, setSelectedInputId] = useState('');
@@ -158,6 +160,21 @@ export default function ApiAudioModule({ context }: GenerarModuleProps) {
 
       const nextVoices = Array.isArray(payload?.voices) ? payload.voices : [];
       setVoicesConfigured(Boolean(payload?.configured));
+      setToolAvailability(
+        payload?.tools && typeof payload.tools === 'object'
+          ? {
+              tts: Boolean(payload.tools.tts),
+              clone: Boolean(payload.tools.clone),
+              voice_change: Boolean(payload.tools.voice_change),
+              voice_isolation: Boolean(payload.tools.voice_isolation),
+              speech_to_text: Boolean(payload.tools.speech_to_text),
+              sound_effects: Boolean(payload.tools.sound_effects),
+              dialogue: Boolean(payload.tools.dialogue),
+              voice_design: false,
+              dubbing: false,
+            }
+          : {}
+      );
       setVoices(nextVoices);
       setSelectedVoiceId((current) => {
         if (preferredVoiceId && nextVoices.some((voice: VoiceItem) => voice.id === preferredVoiceId)) {
@@ -169,6 +186,7 @@ export default function ApiAudioModule({ context }: GenerarModuleProps) {
     } catch (error) {
       if (!mountedRef.current) return;
       setVoicesConfigured(false);
+      setToolAvailability({});
       setMessage(error instanceof Error ? error.message : 'No se pudo leer la biblioteca de voces.');
     } finally {
       if (mountedRef.current) setVoicesLoading(false);
@@ -438,8 +456,9 @@ export default function ApiAudioModule({ context }: GenerarModuleProps) {
   const result = job?.galleryItem || null;
   const busy = phase === 'planning' || phase === 'running';
   const currentMeta = tools.find((item) => item.id === activeTool)!;
-  const showVoiceLibrary = toolNeedsVoice(activeTool) || activeTool === 'clone';
-  const showAudioTray = toolNeedsInput(activeTool) || activeTool === 'clone';
+  const currentReady = currentMeta.ready && toolAvailability[activeTool] === true;
+  const showVoiceLibrary = (toolNeedsVoice(activeTool) || activeTool === 'clone') && currentReady;
+  const showAudioTray = (toolNeedsInput(activeTool) || activeTool === 'clone') && currentReady;
 
   return (
     <section data-generar-module="audio" className="generar-module-stage generar-audio-studio">
@@ -451,22 +470,28 @@ export default function ApiAudioModule({ context }: GenerarModuleProps) {
         </div>
 
         <div className="generar-audio-tool-grid" role="tablist" aria-label="Herramientas de audio">
-          {tools.map((tool) => (
-            <button
-              key={tool.id}
-              type="button"
-              className={`generar-audio-tool glass-glow-button ${activeTool === tool.id ? 'active' : ''}`}
-              onClick={() => chooseTool(tool.id)}
-              aria-selected={activeTool === tool.id}
-            >
-              <span className="generar-audio-tool-icon">{tool.glyph}</span>
-              <span className="generar-audio-tool-copy">
-                <strong>{tool.label}</strong>
-                <small>{tool.description}</small>
-                <em className={tool.ready ? 'ready' : ''}>{tool.ready ? 'ACTIVO' : 'SIGUIENTE'}</em>
-              </span>
-            </button>
-          ))}
+          {tools.map((tool) => {
+            const ready = tool.ready && toolAvailability[tool.id] === true;
+            const checking = tool.ready && voicesLoading && toolAvailability[tool.id] === undefined;
+            return (
+              <button
+                key={tool.id}
+                type="button"
+                className={`generar-audio-tool glass-glow-button ${activeTool === tool.id ? 'active' : ''}`}
+                onClick={() => chooseTool(tool.id)}
+                aria-selected={activeTool === tool.id}
+              >
+                <span className="generar-audio-tool-icon">{tool.glyph}</span>
+                <span className="generar-audio-tool-copy">
+                  <strong>{tool.label}</strong>
+                  <small>{tool.description}</small>
+                  <em className={ready ? 'ready' : ''}>
+                    {checking ? 'COMPROBANDO' : ready ? 'ACTIVO' : tool.ready ? 'PENDIENTE' : 'SIGUIENTE'}
+                  </em>
+                </span>
+              </button>
+            );
+          })}
         </div>
 
         <div className="generar-glass-panel generar-audio-workbench">
@@ -475,19 +500,19 @@ export default function ApiAudioModule({ context }: GenerarModuleProps) {
               <span className="generar-eyebrow">HERRAMIENTA</span>
               <h3>{currentMeta.label}</h3>
             </div>
-            <span className={currentMeta.ready ? 'generar-audio-live' : 'generar-audio-pending'}>
-              {currentMeta.ready ? 'RUTA DISPONIBLE' : 'EN PREPARACIÓN'}
+            <span className={currentReady ? 'generar-audio-live' : 'generar-audio-pending'}>
+              {currentReady ? 'RUTA DISPONIBLE' : currentMeta.ready ? 'RUTA PENDIENTE' : 'EN PREPARACIÓN'}
             </span>
           </div>
 
-          {!currentMeta.ready ? (
+          {!currentReady ? (
             <div className="generar-status-card">
               <strong>PRÓXIMA ACTIVACIÓN</strong>
               <p>La bandeja ya está reservada dentro del Estudio de audio. Se activará cuando el adaptador completo esté conectado y probado.</p>
             </div>
           ) : null}
 
-          {activeTool === 'clone' && currentMeta.ready ? (
+          {activeTool === 'clone' && currentReady ? (
             <>
               <div className="generar-audio-section-title">
                 <strong>1 · IDENTIDAD DE LA VOZ</strong>
@@ -521,7 +546,7 @@ export default function ApiAudioModule({ context }: GenerarModuleProps) {
             </>
           ) : null}
 
-          {showAudioTray && currentMeta.ready ? (
+          {showAudioTray && currentReady ? (
             <>
               <div className="generar-audio-section-title">
                 <strong>{activeTool === 'clone' ? '2 · MUESTRAS DE AUDIO' : 'AUDIO DE ENTRADA'}</strong>
@@ -592,7 +617,7 @@ export default function ApiAudioModule({ context }: GenerarModuleProps) {
             </>
           ) : null}
 
-          {showVoiceLibrary && currentMeta.ready ? (
+          {showVoiceLibrary && currentReady ? (
             <>
               <div className="generar-audio-section-title">
                 <strong>{activeTool === 'clone' ? 'VOCES DE TU BIBLIOTECA' : 'VOZ DE SALIDA'}</strong>
@@ -643,7 +668,7 @@ export default function ApiAudioModule({ context }: GenerarModuleProps) {
             </>
           ) : null}
 
-          {activeTool === 'clone' && currentMeta.ready ? (
+          {activeTool === 'clone' && currentReady ? (
             <>
               <div className="generar-audio-clone-options">
                 <label>
