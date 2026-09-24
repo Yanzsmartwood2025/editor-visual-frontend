@@ -26,11 +26,11 @@ const testEngine = async (dialog, engine) => {
     IMAGEN: 'imagen',
     VIDEO: 'video',
     AUDIO: 'audio',
-    MUSICA: 'musica',
+    'MÚSICA': 'musica',
     '3D': '3d',
   };
 
-  for (const moduleName of ['IMAGEN', 'VIDEO', 'AUDIO', 'MUSICA', '3D']) {
+  for (const moduleName of ['IMAGEN', 'VIDEO', 'AUDIO', 'MÚSICA', '3D']) {
     await clickTextButton(moduleGrid, moduleName);
     const moduleRoot = dialog.locator(`[data-generar-module="${moduleIds[moduleName]}"]`);
     await moduleRoot.waitFor({ state: 'visible', timeout: 30_000 });
