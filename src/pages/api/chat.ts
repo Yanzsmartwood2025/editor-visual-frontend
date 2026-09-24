@@ -4,6 +4,7 @@ import { createNaylaActionPlan, getPendingNaylaActionPlan } from '../../lib/nayl
 import { buildEditorReview } from '../../lib/naylaEditorReview';
 import { NAYLA_EDITOR_CONTRACT, EDITOR_PLANNING_RULES } from '../../lib/naylaEditorContract';
 import { NAYLA_EDITING_GUIDANCE } from '../../lib/naylaEditingLibrary';
+import { parseNaylaDirectInstruction } from '../../lib/naylaDirectInstructions';
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { z } from 'zod';
 import { GroqProvider, MistralProvider } from '../../utils/llmProvider';
@@ -81,6 +82,7 @@ const requestSchema = z.object({
   mediaLibrary: z.array(mediaLibraryItemSchema).max(500).optional(),
   currentEditorState: z.record(z.string(), z.unknown()).optional(),
   streamProgress: z.boolean().optional().default(false),
+  directMode: z.boolean().optional().default(false),
   currentTimeline: z.array(z.object({
     id: z.string().optional(),
     tipo: z.enum(['foto', 'video', 'audio']),
@@ -722,6 +724,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       currentTimeline,
       currentEditorState,
       streamProgress,
+      directMode,
     } = parsedBody.data;
     progressStreamRequested = Boolean(streamProgress);
 
@@ -929,6 +932,197 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       mergedLibraryMap.set(item.id ? `id:${item.id}` : `url:${item.url}`, item);
     });
     const mergedLibrary = Array.from(mergedLibraryMap.values());
+
+    if (directMode) {
+      beginProgressStream();
+      emitProgress('direct', 'Validando indicaciones directas…', { request: message });
+
+      const parsedDirect = parseNaylaDirectInstruction(message);
+      if (!parsedDirect.ok) {
+        emitProgress('failed', 'Las indicaciones directas necesitan una corrección.', {
+          validationIssues: parsedDirect.errors,
+        });
+        return sendResult(422, {
+          error: 'Las indicaciones directas no pasaron la validación.',
+          directMode: true,
+          debug: {
+            stage: 'failed',
+            request: message,
+            validationIssues: parsedDirect.errors,
+          },
+        });
+      }
+
+      const attachedByLabel = new Map(
+        attachments
+          .filter((item) => typeof item.etiqueta === 'string' && item.etiqueta.trim())
+          .map((item) => [item.etiqueta!.trim().toUpperCase(), item])
+      );
+
+      const directAction = parsedDirect.plan.action;
+      const referencedDirectLabels = Array.from(new Set([
+        ...(directAction.assets || [])
+          .filter((asset: any) => asset?.source === 'label' && typeof asset?.label === 'string')
+          .map((asset: any) => asset.label.trim().toUpperCase()),
+        ...(directAction.threeScenes || [])
+          .filter((scene: any) => typeof scene?.label === 'string')
+          .map((scene: any) => scene.label.trim().toUpperCase()),
+        ...(directAction.decorations || [])
+          .filter((item: any) => item?.kind === 'gif' && typeof item?.label === 'string')
+          .map((item: any) => item.label.trim().toUpperCase()),
+      ]));
+
+      const missingDirectLabels = referencedDirectLabels.filter((label) => !attachedByLabel.has(label));
+      if (missingDirectLabels.length) {
+        const issues = missingDirectLabels.map((label) => `${label}: no está anclado en este envío.`);
+        emitProgress('failed', 'Faltan medios anclados para el modo directo.', {
+          validationIssues: issues,
+        });
+        return sendResult(422, {
+          error: 'Faltan archivos anclados para estas indicaciones directas.',
+          directMode: true,
+          debug: {
+            stage: 'failed',
+            request: message,
+            validationIssues: issues,
+          },
+        });
+      }
+
+      emitProgress('direct-resolve', 'Comprobando los archivos anclados…', {
+        labels: referencedDirectLabels,
+      });
+
+      let resolutionFailed = false;
+      const resolvedAssets = (directAction.assets || []).map((asset: any) => {
+        if (asset?.source !== 'label' || typeof asset?.label !== 'string') return asset;
+        const label = asset.label.trim().toUpperCase();
+        const media = attachedByLabel.get(label);
+        if (!media?.url) {
+          resolutionFailed = true;
+          return asset;
+        }
+        return {
+          ...asset,
+          ...(Number(media.metadata?.durationInSeconds) > 0
+            ? { originalDurationInSeconds: Number(media.metadata.durationInSeconds) }
+            : {}),
+          source: 'url' as const,
+          url: media.url,
+        };
+      });
+
+      if (resolutionFailed) {
+        emitProgress('failed', 'No se pudieron resolver todos los medios anclados.');
+        return sendResult(422, {
+          error: 'Uno o más archivos anclados no pudieron resolverse.',
+          directMode: true,
+        });
+      }
+
+      const resolvedDecorations = (directAction.decorations || []).map((item: any) => {
+        if (item?.kind !== 'gif' || !item?.label) return item;
+        const media = attachedByLabel.get(String(item.label).trim().toUpperCase());
+        return media ? { ...item, url: media.url, mediaId: media.id } : item;
+      });
+
+      const resolvedThreeScenes = (directAction.threeScenes || []).map((scene: any) => {
+        if (!scene?.label) return scene;
+        const media = attachedByLabel.get(String(scene.label).trim().toUpperCase());
+        return media ? { ...scene, url: media.url, mediaId: media.id } : scene;
+      });
+
+      const proposed = {
+        ...directAction,
+        assets: resolvedAssets,
+        decorations: resolvedDecorations,
+        subtitles: directAction.subtitles || [],
+        titles: directAction.titles || [],
+        threeScenes: resolvedThreeScenes,
+        vectorAnimations: directAction.vectorAnimations || [],
+        skiaGraphics: directAction.skiaGraphics || [],
+      };
+
+      const renderContext = {
+        logos: currentEditorState?.logos || [],
+        settings: {
+          ...(currentEditorState?.settings || {}),
+          decorations: resolvedDecorations,
+        },
+        canvasRatio: parsedDirect.plan.canvasRatio || currentEditorState?.canvasRatio || '9/16',
+        exportQuality: parsedDirect.plan.exportQuality || currentEditorState?.exportQuality || '1080p',
+      };
+
+      const review = buildEditorReview(proposed);
+      review.execution = { ...proposed, renderContext };
+      review.format = `${renderContext.canvasRatio} · ${renderContext.exportQuality}`;
+
+      if (Array.isArray(renderContext.logos)) {
+        for (const [index, logo] of renderContext.logos.entries()) {
+          const end = Number((logo as any).finSec) || review.duration;
+          review.rows.push({
+            section: 'Logos conservados',
+            resource: `Logo ${index + 1}`,
+            start: Number((logo as any).inicioSec) || 0,
+            end,
+            details: 'Se conserva el logo actual con su posición, escala y opacidad.',
+          });
+          review.duration = Math.max(review.duration, end);
+        }
+      }
+
+      if (!scope.threadId) {
+        return sendResult(400, { error: 'Abre un chat para revisar y aceptar el plan directo.' });
+      }
+
+      const saved = await createNaylaActionPlan({
+        userId: firebaseUser.uid,
+        projectId: scope.projectId,
+        module: 'editor',
+        threadKey: scope.threadId,
+        summary: 'Plan directo para revisar',
+        sourceMessage: message,
+        items: [{ actionType: 'BUILD_TIMELINE', payload: proposed }],
+        metadata: {
+          renderContext,
+          directMode: true,
+          directSource: parsedDirect.plan.source,
+        },
+      });
+      review.id = saved.plan.id;
+
+      const text = 'Indicaciones directas validadas. Revisa el timeline y pulsa Aceptar para enviarlo al render.';
+      await insertChatMessageForUser({
+        userId: firebaseUser.uid,
+        projectId: scope.projectId,
+        threadId: scope.threadId,
+        role: 'assistant',
+        content: text,
+        metadata: {
+          responseType: 'editor-plan',
+          directMode: true,
+          editorReview: review,
+        },
+      });
+
+      emitProgress('ready', 'Indicaciones directas listas para revisión.', {
+        payload: proposed,
+      });
+
+      return sendResult(200, {
+        text,
+        editorReview: review,
+        directMode: true,
+        projectId: scope.projectId,
+        threadId: scope.threadId,
+        debug: {
+          stage: 'ready',
+          request: message,
+          payload: proposed,
+          directMode: true,
+        },
+      });
+    }
 
     // Vision is opt-in. Normal editing works from stable F/V/A/D/M labels and metadata.
     // A prior plan that mentioned vision must not make a later bare "Dale" re-analyze the same photos.
