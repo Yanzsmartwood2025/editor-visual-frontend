@@ -25,6 +25,9 @@ const schema = z.object({
   inputMediaId: z.string().uuid().nullable().optional(),
   voiceId: z.string().max(200).nullable().optional(),
   language: z.enum(['es', 'en']).optional().default('es'),
+  durationSeconds: z.number().min(0.5).max(30).nullable().optional(),
+  loop: z.boolean().optional().default(false),
+  promptInfluence: z.number().min(0).max(1).optional().default(0.3),
   projectId: z.string().uuid().nullable().optional(),
   threadId: z.string().uuid().nullable().optional(),
 });
@@ -113,6 +116,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       ...(cleanPrompt ? { prompt: cleanPrompt } : {}),
       ...(inputUrl ? { inputUrl } : {}),
       targetLanguage: data.language,
+      ...(data.mode === 'sound_effects'
+        ? {
+            soundDurationSeconds: data.durationSeconds ?? null,
+            soundLoop: data.loop,
+            soundPromptInfluence: data.promptInfluence,
+          }
+        : {}),
     };
 
     const providerActionOverrides: Partial<Record<MediaProviderId, NaylaAction>> = {};
@@ -157,6 +167,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       action,
       attachmentIds: data.inputMediaId ? [data.inputMediaId] : [],
       providerActionOverrides,
+      preferredProviders:
+        data.mode === 'sound_effects'
+          ? ['elevenlabs', 'fal']
+          : [],
     });
 
     if (!plan || plan.status === 'unconfigured' || !plan.id) {
