@@ -182,7 +182,7 @@ export default function ApiAudioModule({ context }: GenerarModuleProps) {
               onClick={() => {
                 if (busy) return;
                 setLanguage('es');
-                if (phase !== 'completed') resetPlan();
+                resetPlan();
               }}
               disabled={busy}
             >
@@ -194,7 +194,7 @@ export default function ApiAudioModule({ context }: GenerarModuleProps) {
               onClick={() => {
                 if (busy) return;
                 setLanguage('en');
-                if (phase !== 'completed') resetPlan();
+                resetPlan();
               }}
               disabled={busy}
             >
