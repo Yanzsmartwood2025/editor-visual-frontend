@@ -38,3 +38,18 @@ Esta fase crea únicamente la estructura, navegación, aislamiento y placeholder
 
 ## Siguiente fase
 Activar módulos individualmente, empezando por uno solo, con flujo completo entrada -> proceso -> resultado -> Bóveda, antes de continuar con el siguiente.
+
+
+## Fase 2 — API Imagen
+
+Primera activación funcional:
+
+- Toda la navegación de GENERAR adopta el mismo lenguaje visual de cristal y glow del editor.
+- API -> Imagen deja de ser placeholder.
+- Flujo: prompt -> preparar trabajo -> confirmación explícita -> ejecutar Nayla Cloud -> polling aislado -> resultado en Bóveda -> USAR EN EDITOR -> timeline.
+- El proveedor real permanece oculto detrás de Nayla Cloud.
+- Si el módulo se desmonta, se aborta el seguimiento en el navegador.
+- La generación no arranca hasta que el usuario pulsa CONFIRMAR Y GENERAR.
+- Las demás ramas continúan aisladas y se activarán una por una.
+
+La siguiente activación funcional debe hacerse en un PR separado, sin convertir GenerarWorkspace en un componente monolítico.
