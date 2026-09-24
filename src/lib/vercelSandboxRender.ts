@@ -406,7 +406,11 @@ exit 0
       exitFile: DETACHED_EXIT_FILE,
     };
   } catch (error) {
-    await sandbox[Symbol.asyncDispose]().catch(() => undefined);
+    try {
+      await sandbox[Symbol.asyncDispose]();
+    } catch {
+      // Ignore cleanup failures while preserving the original render error.
+    }
     throw error;
   }
 }
