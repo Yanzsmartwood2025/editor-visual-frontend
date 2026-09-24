@@ -124,18 +124,22 @@ export default function ApiWorkspace({
 
   const Active = modules[activeModule] as React.LazyExoticComponent<React.ComponentType<GenerarModuleProps>>;
 
+  const immersive = activeModule === 'audio';
+
   return (
-    <div className="generar-module-shell">
-      <div className="generar-module-toolbar">
-        <button
-          type="button"
-          className="generar-back-button glass-glow-button"
-          aria-label="Volver a API"
-          onClick={() => onModule(null)}
-        >
-          ← API
-        </button>
-      </div>
+    <div className={`generar-module-shell ${immersive ? 'generar-module-shell-immersive' : ''}`}>
+      {!immersive ? (
+        <div className="generar-module-toolbar">
+          <button
+            type="button"
+            className="generar-back-button glass-glow-button"
+            aria-label="Volver a API"
+            onClick={() => onModule(null)}
+          >
+            ← API
+          </button>
+        </div>
+      ) : null}
       <Suspense fallback={<div className="generar-loading">Cargando…</div>}>
         <Active context={context} />
       </Suspense>

@@ -47,6 +47,7 @@ export type GenerarModuleContext = {
   mediaLibrary?: GenerarMediaItem[];
   selectedMediaIds?: string[];
   threeDStudio?: Generar3DStudioContext;
+  onReturnToNayla?: () => void;
 };
 
 export type GenerarModuleProps = {

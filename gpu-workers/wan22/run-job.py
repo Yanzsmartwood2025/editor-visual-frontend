@@ -60,24 +60,29 @@ class PublicRedirects(urllib.request.HTTPRedirectHandler):
 def alarm_handler(*_):
     raise TimeoutError('GPU deadline reached')
 
-def main(manifest_url):
+def fetch_manifest(manifest_url):
     request = urllib.request.Request(manifest_url, headers={
         'Authorization': 'Bearer ' + os.environ['NAYLA_GPU_CALLBACK_TOKEN']})
     with urllib.request.urlopen(request, timeout=30) as response:
-        manifest = json.loads(response.read(1024 * 1024))
-    if manifest.get('recipe') != 'wan22-image-to-video' or manifest.get('workload') != 'video':
-        raise ValueError('Unsupported recipe')
-    options = validate_options(manifest.get('options', {}))
-    urls = manifest.get('inputUrls', [])
-    prompt = manifest.get('prompt', '')
-    if len(urls) != 1 or not isinstance(prompt, str) or not 3 <= len(prompt.strip()) <= 1500:
-        raise ValueError('One image and a prompt are required')
-    deadline = datetime.datetime.fromisoformat(manifest['deadline'].replace('Z', '+00:00')).timestamp() - 30
-    signal.signal(signal.SIGALRM, alarm_handler)
-    signal.alarm(remaining(deadline))
-    output = manifest['output']
-    if output['contentType'] != 'video/mp4':
-        raise ValueError('MP4 output required')
+        return json.loads(response.read(1024 * 1024))
+
+def send_result(manifest, status, error=None):
+    payload = json.dumps({'jobId': manifest['jobId'], 'status': status, 'error': error,
+                          'metadata': {'generationId': manifest['generationId']}}).encode()
+    for attempt in range(3):
+        try:
+            request = urllib.request.Request(os.environ['NAYLA_GPU_CALLBACK_URL'], data=payload,
+                headers={'Authorization': 'Bearer ' + os.environ['NAYLA_GPU_CALLBACK_TOKEN'],
+                         'Content-Type': 'application/json'}, method='POST')
+            with urllib.request.urlopen(request, timeout=30) as response:
+                response.read()
+            return
+        except Exception:
+            if attempt == 2:
+                raise
+            time.sleep(2)
+
+def load_pipeline(deadline):
     # Pinned runtime libraries. The base image supplies CUDA and PyTorch 2.4.
     subprocess.run([sys.executable, '-m', 'pip', 'install', '--disable-pip-version-check',
                     'diffusers==0.35.2', 'transformers==4.51.3', 'accelerate==1.10.1',
@@ -85,9 +90,30 @@ def main(manifest_url):
                     'imageio==2.37.0', 'imageio-ffmpeg==0.6.0', 'Pillow==11.3.0', 'numpy==1.26.4'],
                    check=True, timeout=remaining(deadline))
     import torch
-    from PIL import Image, ImageOps
     from diffusers import AutoencoderKLWan, WanImageToVideoPipeline
+    if not torch.cuda.is_available():
+        raise RuntimeError('CUDA unavailable')
+    vae = AutoencoderKLWan.from_pretrained(MODEL, revision=REVISION, subfolder='vae', torch_dtype=torch.float32)
+    pipeline = WanImageToVideoPipeline.from_pretrained(MODEL, revision=REVISION, vae=vae,
+                 torch_dtype=torch.bfloat16, image_encoder=None, image_processor=None, expand_timesteps=True)
+    pipeline.enable_model_cpu_offload()
+    pipeline.vae.enable_tiling()
+    return pipeline
+
+def generate_clip(manifest, pipeline, deadline):
+    import torch
+    from PIL import Image, ImageOps
     from diffusers.utils import export_to_video
+    if manifest.get('recipe') != 'wan22-image-to-video' or manifest.get('workload') != 'video':
+        raise ValueError('Unsupported recipe')
+    options = validate_options(manifest.get('options', {}))
+    urls = manifest.get('inputUrls', [])
+    prompt = manifest.get('prompt', '')
+    if len(urls) != 1 or not isinstance(prompt, str) or not 3 <= len(prompt.strip()) <= 1500:
+        raise ValueError('One image and a prompt are required')
+    output = manifest['output']
+    if output['contentType'] != 'video/mp4':
+        raise ValueError('MP4 output required')
     Image.MAX_IMAGE_PIXELS = 30_000_000
     validate_public_url(urls[0])
     with urllib.request.build_opener(PublicRedirects).open(urls[0], timeout=min(60, remaining(deadline))) as response:
@@ -101,13 +127,6 @@ def main(manifest_url):
     width, height = (704, 1280) if options['orientation'] == 'portrait' else (1280, 704)
     image = (ImageOps.fit(image, (width, height)) if options['fit'] == 'cover'
              else ImageOps.pad(image, (width, height), color='black'))
-    if not torch.cuda.is_available():
-        raise RuntimeError('CUDA unavailable')
-    vae = AutoencoderKLWan.from_pretrained(MODEL, revision=REVISION, subfolder='vae', torch_dtype=torch.float32)
-    pipeline = WanImageToVideoPipeline.from_pretrained(MODEL, revision=REVISION, vae=vae,
-                 torch_dtype=torch.bfloat16, image_encoder=None, image_processor=None, expand_timesteps=True)
-    pipeline.enable_model_cpu_offload()
-    pipeline.vae.enable_tiling()
     # Report real generation activity to worker logs without URLs, tokens or user text.
     def step_end(_pipe, step, _timestep, callback_kwargs):
         remaining(deadline)
@@ -136,11 +155,35 @@ def main(manifest_url):
                 raise
             time.sleep(2)
     print('Video uploaded', flush=True)
+    path.unlink(missing_ok=True)
+
+def main(manifest_url):
+    pipeline = None
+    last_generation = None
+    while True:
+        manifest = fetch_manifest(manifest_url)
+        action = manifest.get('action', 'generate')
+        if action == 'stop':
+            return
+        if action == 'wait' or manifest.get('generationId') == last_generation:
+            time.sleep(3)
+            continue
+        deadline = datetime.datetime.fromisoformat(manifest['deadline'].replace('Z', '+00:00')).timestamp() - 30
+        signal.signal(signal.SIGALRM, alarm_handler)
+        signal.alarm(remaining(deadline))
+        try:
+            if pipeline is None:
+                pipeline = load_pipeline(deadline)
+            generate_clip(manifest, pipeline, deadline)
+            send_result(manifest, 'completed')
+            last_generation = manifest['generationId']
+        except Exception as exc:
+            send_result(manifest, 'failed', 'El motor de video no pudo completar el clip: ' + type(exc).__name__)
+            raise
 
 if __name__ == '__main__':
     try:
         main(sys.argv[1])
     except Exception as exc:
-        # Signed URLs and callback credentials must never appear in errors.
         print('Video worker failed: ' + type(exc).__name__, file=sys.stderr)
         sys.exit(1)

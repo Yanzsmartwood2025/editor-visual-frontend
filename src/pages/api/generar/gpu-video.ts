@@ -1,3 +1,8 @@
+import {
+  continueVideoSession,
+  getVideoSession,
+  requestVideoSessionClose,
+} from "../../../lib/gpu/videoSession";
 import type { NextApiRequest, NextApiResponse } from "next";
 import { z } from "zod";
 import { requireFirebaseUser } from "../../../lib/firebaseAdmin";
@@ -62,18 +67,32 @@ export default async function handler(
       const saved = await getGpuJobForUser(id, user.uid);
       if (!saved || saved.metadata?.request?.recipe !== GPU_VIDEO_RECIPE)
         return res.status(404).json({ error: "Video no encontrado." });
-      if (
-        req.method === "DELETE" &&
-        !saved.gallery_item_id &&
-        !["completed", "failed", "expired"].includes(saved.status)
-      ) {
-        if (!saved.instance_id)
+      if (req.method === "DELETE" && getVideoSession(saved)) {
+        if (!saved.instance_id && !saved.destroyed_at)
           return res
             .status(409)
             .json({
               error:
                 "La reserva sigue arrancando. Consulta el estado antes de cancelar.",
             });
+        await requestVideoSessionClose(saved);
+        await cleanupExpiredComputeJobs();
+        return res
+          .status(200)
+          .json({
+            job: await getGpuJobStatusForUser({ jobId: id, userId: user.uid }),
+          });
+      }
+      if (
+        req.method === "DELETE" &&
+        !saved.gallery_item_id &&
+        !["completed", "failed", "expired"].includes(saved.status)
+      ) {
+        if (!saved.instance_id)
+          return res.status(409).json({
+            error:
+              "La reserva sigue arrancando. Consulta el estado antes de cancelar.",
+          });
         await updateGpuJobIfStatus(saved.id, saved.status, {
           lease_expires_at: new Date(Date.now() - 1000).toISOString(),
           status: "cleanup_pending",
@@ -86,11 +105,9 @@ export default async function handler(
         });
         await cleanupExpiredComputeJobs();
       }
-      return res
-        .status(200)
-        .json({
-          job: await getGpuJobStatusForUser({ jobId: id, userId: user.uid }),
-        });
+      return res.status(200).json({
+        job: await getGpuJobStatusForUser({ jobId: id, userId: user.uid }),
+      });
     }
     if (req.method !== "POST")
       return res.status(405).json({ error: "Método no permitido." });
@@ -121,12 +138,35 @@ export default async function handler(
       options: input.options,
       computeSelectionId: input.computeSelectionId,
     };
-    if (input.operation === "quote") {
+    if (input.operation === "continue") {
+      const saved = await getGpuJobForUser(input.jobId!, user.uid);
+      if (
+        !saved ||
+        saved.project_id !== scope.projectId ||
+        saved.thread_id !== scope.threadId ||
+        !getVideoSession(saved)
+      )
+        return res
+          .status(404)
+          .json({ error: "Sesión de video no encontrada." });
+      await continueVideoSession(saved, {
+        prompt: input.prompt,
+        inputUrls: [url],
+        options: input.options,
+      });
       return res
-        .status(200)
+        .status(202)
         .json({
-          quote: await quoteComputeGpuJob(request, input.computeSelectionId),
+          job: await getGpuJobStatusForUser({
+            jobId: saved.id,
+            userId: user.uid,
+          }),
         });
+    }
+    if (input.operation === "quote") {
+      return res.status(200).json({
+        quote: await quoteComputeGpuJob(request, input.computeSelectionId),
+      });
     }
     const job = await startComputeGpuJob({
       userId: user.uid,

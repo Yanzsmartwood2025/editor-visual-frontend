@@ -238,12 +238,18 @@ const falModelAndInput = (action: NaylaAction) => {
 
   if (action.action === 'GENERATE_AUDIO' && (action.mode === 'music' || action.mode === 'sound_effects')) {
     const model = process.env.FAL_AUDIO_MODEL?.trim() || 'fal-ai/stable-audio-25/text-to-audio';
-    return {
-      model,
-      input: {
-        prompt: action.prompt || action.text || 'cinematic instrumental audio',
-      },
+    const input: Record<string, unknown> = {
+      prompt: action.prompt || action.text || 'cinematic instrumental audio',
     };
+    if (action.mode === 'sound_effects') {
+      // Stable Audio 2.5 defaults to 190 seconds when seconds_total is omitted.
+      // Keep sound effects bounded even when this is only the fallback route.
+      input.seconds_total = Math.max(
+        1,
+        Math.min(30, Math.round(action.soundDurationSeconds ?? 8))
+      );
+    }
+    return { model, input };
   }
 
   if (action.action === 'GENERATE_3D') {
@@ -633,6 +639,16 @@ const startElevenLabs = async (action: NaylaAction): Promise<CloudProviderStart>
   }
 
   if (action.mode === 'sound_effects') {
+    const body: Record<string, unknown> = {
+      text: action.prompt || action.text || 'cinematic sound effect',
+      model_id: 'eleven_text_to_sound_v2',
+      loop: Boolean(action.soundLoop),
+      prompt_influence: action.soundPromptInfluence ?? 0.3,
+    };
+    if (typeof action.soundDurationSeconds === 'number') {
+      body.duration_seconds = action.soundDurationSeconds;
+    }
+
     const output = await binaryRequest(
       'https://api.elevenlabs.io/v1/sound-generation?output_format=mp3_44100_128',
       {
@@ -641,9 +657,7 @@ const startElevenLabs = async (action: NaylaAction): Promise<CloudProviderStart>
           ...elevenHeaders(key),
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          text: action.prompt || action.text || 'cinematic sound effect',
-        }),
+        body: JSON.stringify(body),
       },
       'audio/mpeg',
       'mp3'
@@ -1000,7 +1014,11 @@ export const providerCanExecuteAction = (
     return (
       action.action === 'GENERATE_IMAGE' ||
       action.action === 'GENERATE_VIDEO' ||
-      (action.action === 'GENERATE_AUDIO' && ['music', 'sound_effects'].includes(action.mode)) ||
+      (action.action === 'GENERATE_AUDIO' &&
+        (
+          action.mode === 'music' ||
+          (action.mode === 'sound_effects' && !action.soundLoop)
+        )) ||
       (action.action === 'GENERATE_3D' && Boolean(process.env.FAL_3D_MODEL?.trim()))
     );
   }

@@ -39,7 +39,7 @@ import DiagnosticsWorkspace from '../components/diagnostics/DiagnosticsWorkspace
 import DiagnosticsClientReporter from '../components/diagnostics/DiagnosticsClientReporter';
 import { isDiagnosticsAdmin } from '../lib/diagnostics';
 import { GpuQuoteModal, type GpuQuoteView } from '../components/GpuQuoteModal';
-import { NaylaEngineBar } from '../components/NaylaEngineBar';
+import { NaylaEngineBar, type NaylaCodeTrace } from '../components/NaylaEngineBar';
 import SocialHub from '../components/SocialHub';
 import NaylaPlay from '../components/NaylaPlay';
 import NaylaPc from '../components/NaylaPc';
@@ -250,7 +250,6 @@ const createRenderRequestId = () => {
   });
 };
 
-const NaylaCompositionPreview = dynamic(() => import('../components/NaylaCompositionPreview'), { ssr: false });
 export default function NaylaCore() {
 
   const [darkMode, setDarkMode] = useState(true);
@@ -262,6 +261,7 @@ export default function NaylaCore() {
   const [iaLoading, setIaLoading] = useState(false);
   const [selectedAiProvider, setSelectedAiProvider] = useState<'groq' | 'mistral'>('groq');
   const [naylaEngineMode, setNaylaEngineMode] = useState<NaylaEngineMode>('cloud');
+  const [naylaCodeTrace, setNaylaCodeTrace] = useState<NaylaCodeTrace | null>(null);
   // Configuración de Cristal y Luz (Glassmorphism & Border Glow)
   const [glowColor, setGlowColor] = useState('#ffffff');
   const [glowSpread, setGlowSpread] = useState(12);
@@ -293,6 +293,7 @@ export default function NaylaCore() {
   const [iaFotosPrompt, setIaFotosPrompt] = useState('');
 
   const [customAlertMsg, setCustomAlertMsg] = useState<string | null>(null);
+  const [directConfirm, setDirectConfirm] = useState<{ message: string } | null>(null);
   const [projectDialog, setProjectDialog] = useState<NaylaProjectDialog>(null);
   const [projectDialogBusy, setProjectDialogBusy] = useState(false);
   const [newProjectName, setNewProjectName] = useState('Nuevo proyecto');
@@ -2824,9 +2825,19 @@ export default function NaylaCore() {
     }
   };
 
-  const sendNaylaMessage = async (messageOverride?: string) => {
+  const sendNaylaMessage = async (
+    messageOverride?: string,
+    options?: { directMode?: boolean; bypassDirectConfirm?: boolean }
+  ) => {
     const message = (messageOverride ?? chatInput).trim();
     if (!message || chatUploadProgress) return;
+
+    const looksDirect = /^\s*@direct\b/i.test(message);
+    if (looksDirect && !options?.bypassDirectConfirm) {
+      setDirectConfirm({ message });
+      return;
+    }
+
     const outgoingAttachments = [...chatAttachedAssets];
     const newMessages: NaylaChatMessage[] = [
       ...chatMessages,
@@ -2843,6 +2854,16 @@ export default function NaylaCore() {
       resetChatComposerHeight();
     }
     setChatProcessing(true);
+    setNaylaCodeTrace({
+      active: true,
+      stage: options?.directMode ? 'direct' : 'sending',
+      label: options?.directMode ? 'Validando indicaciones directas…' : 'Enviando el pedido…',
+      request: message,
+      history: [{
+        stage: options?.directMode ? 'direct' : 'sending',
+        label: options?.directMode ? 'Directo' : 'Enviando',
+      }],
+    });
     window.requestAnimationFrame(() => scrollChatToBottom('smooth'));
 
     try {
@@ -2866,6 +2887,8 @@ export default function NaylaCore() {
            history: chatMessages.map(m => ({ role: m.role === 'user' ? 'user' : 'assistant', content: m.text })),
            provider: selectedAiProvider,
            engineMode: naylaEngineMode,
+           streamProgress: true,
+           directMode: Boolean(options?.directMode),
            mediaLibrary: [
              ...galeriaMultimedia.map(item => ({
                id: item.id,
@@ -2907,15 +2930,95 @@ export default function NaylaCore() {
         })
       });
 
-      const raw = await res.text();
       let data: any = {};
-      try {
-        data = raw ? JSON.parse(raw) : {};
-      } catch {
-        throw new Error(`El servidor devolvió una respuesta inválida (HTTP ${res.status}).`);
+      let finalStatus = res.status;
+      const contentType = res.headers.get('content-type') || '';
+
+      if (contentType.includes('application/x-ndjson') && res.body) {
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+
+        const applyProgress = (event: any) => {
+          if (event?.type !== 'progress') return;
+          setNaylaCodeTrace((current) => {
+            const nextHistory = [...(current?.history || [])];
+            const stage = String(event.stage || 'working');
+            const label = String(event.label || 'Nayla está trabajando…');
+            if (!nextHistory.length || nextHistory[nextHistory.length - 1]?.stage !== stage) {
+              nextHistory.push({ stage, label });
+            }
+            return {
+              ...(current || {}),
+              active: stage !== 'ready' && stage !== 'failed',
+              stage,
+              label,
+              request: String(event.request || current?.request || message),
+              blueprint: typeof event.blueprint === 'string' ? event.blueprint : current?.blueprint,
+              payload: event.payload ?? current?.payload,
+              failedPayload: typeof event.failedPayload === 'string' ? event.failedPayload : current?.failedPayload,
+              validationIssues: Array.isArray(event.validationIssues) ? event.validationIssues.map(String) : current?.validationIssues,
+              chapters: Array.isArray(event.chapters) ? event.chapters.map(String) : current?.chapters,
+              history: nextHistory,
+            };
+          });
+        };
+
+        while (true) {
+          const { value, done } = await reader.read();
+          buffer += decoder.decode(value || new Uint8Array(), { stream: !done });
+          const lines = buffer.split('\n');
+          buffer = lines.pop() || '';
+
+          for (const line of lines) {
+            if (!line.trim()) continue;
+            const event = JSON.parse(line);
+            if (event?.type === 'progress') {
+              applyProgress(event);
+            } else if (event?.type === 'result') {
+              finalStatus = Number(event.status || 200);
+              data = event.data || {};
+            }
+          }
+
+          if (done) break;
+        }
+
+        if (buffer.trim()) {
+          const event = JSON.parse(buffer);
+          if (event?.type === 'progress') {
+            applyProgress(event);
+          } else if (event?.type === 'result') {
+            finalStatus = Number(event.status || 200);
+            data = event.data || {};
+          }
+        }
+      } else {
+        const raw = await res.text();
+        try {
+          data = raw ? JSON.parse(raw) : {};
+        } catch {
+          throw new Error(`El servidor devolvió una respuesta inválida (HTTP ${res.status}).`);
+        }
       }
 
-      if (!res.ok || data.error) {
+      if (data?.debug) {
+        setNaylaCodeTrace((current) => ({
+          ...(current || {}),
+          active: false,
+          stage: data.debug.stage || current?.stage || (data.error ? 'failed' : 'ready'),
+          label: data.error ? 'La tarea se detuvo.' : (current?.label || 'Código listo.'),
+          request: data.debug.request || current?.request || message,
+          blueprint: data.debug.blueprint || current?.blueprint,
+          payload: data.debug.payload ?? current?.payload,
+          failedPayload: data.debug.failedPayload || current?.failedPayload,
+          validationIssues: Array.isArray(data.debug.validationIssues)
+            ? data.debug.validationIssues.map(String)
+            : current?.validationIssues,
+        }));
+      }
+
+      if (finalStatus >= 400 || data.error) {
         throw new Error(data.error || 'Error en la respuesta del servidor');
       }
 
@@ -3014,6 +3117,14 @@ export default function NaylaCore() {
       }
     } catch (error: any) {
       console.error(error);
+      setNaylaCodeTrace((current) => ({
+        ...(current || {}),
+        active: false,
+        stage: current?.stage === 'ready' ? 'ready' : (current?.stage || 'failed'),
+        label: current?.stage && current.stage !== 'sending'
+          ? (current.label || 'La tarea se detuvo.')
+          : 'La tarea se detuvo.',
+      }));
       if (!error?.naylaRenderHandled) {
         setChatMessages(prev => [...prev, { role: 'ai', text: error?.name === 'TimeoutError' ? 'Nayla tardó demasiado en responder. Revisa el chat antes de reintentar para evitar repetir una tarea.' : error.message || 'No se pudo completar la solicitud.' }]);
       }
@@ -5658,7 +5769,6 @@ if (!session) {
                   : ((showPlaybackControls || !isPlaying) ? 'auto' : 'none')
               }}
             >
-              {!isCleanMode && <NaylaCompositionPreview onOpen={() => playerRef.current?.pause()} inputProps={{ timeline: lineaDeTiempo, subtitles: subtitulos, titles: motionTitles, threeScenes: threeRenderScenes, vectorAnimations, skiaGraphics, logos, canvasRatio, settings: globalSettings }} />}
               <span style={{ color: '#c4c4c4', fontSize: '0.68rem', fontFamily: 'monospace', minWidth: '54px', textAlign: 'right' }}>
                 {formatPlaybackClock(playbackPositionSeconds)}
               </span>
@@ -5960,6 +6070,7 @@ if (!session) {
                 session={session}
                 mode={naylaEngineMode}
                 onModeChange={setNaylaEngineMode}
+                codeTrace={naylaCodeTrace}
                 compact
               />
             </div>
@@ -6425,7 +6536,7 @@ if (!session) {
                 fontSize: '0.82rem',
                 fontStyle: 'italic',
               }}>
-                <div>{toolMessage || 'Nayla está pensando…'}</div>
+                <div>{toolMessage || naylaCodeTrace?.label || 'Nayla está pensando…'}</div>
                 <div style={{
                   height: 5,
                   borderRadius: 999,
@@ -6926,6 +7037,126 @@ if (!session) {
                 </div>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+{directConfirm && (
+        <div
+          data-no-edge-swipe
+          style={{
+            position: 'fixed',
+            inset: 0,
+            backgroundColor: 'rgba(0,0,0,0.84)',
+            zIndex: 100200,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: 18,
+            boxSizing: 'border-box',
+          }}
+          onPointerDown={(event) => {
+            if (event.target === event.currentTarget) setDirectConfirm(null);
+          }}
+        >
+          <div style={{
+            width: 'min(430px, 100%)',
+            background: '#090909',
+            border: '1px solid #3a3a3a',
+            borderRadius: 18,
+            padding: '20px 18px 18px',
+            color: '#fff',
+            boxShadow: '0 24px 70px rgba(0,0,0,0.76)',
+          }}>
+            <div style={{ fontSize: '0.98rem', fontWeight: 850, letterSpacing: '0.03em' }}>
+              INDICACIONES DIRECTAS DETECTADAS
+            </div>
+            <div style={{ color: '#9a9a9a', fontSize: '0.78rem', lineHeight: 1.5, marginTop: 9 }}>
+              Este bloque puede saltarse la planificación por IA y pasar directamente a validación del timeline.
+            </div>
+
+            <div style={{
+              marginTop: 13,
+              padding: '10px 11px',
+              border: '1px solid #262626',
+              borderRadius: 12,
+              background: '#050505',
+              color: '#d8d8d8',
+              fontSize: '0.72rem',
+              lineHeight: 1.45,
+            }}>
+              <div style={{ color: '#777', fontSize: '0.62rem', marginBottom: 5, textTransform: 'uppercase', letterSpacing: '0.07em' }}>
+                Archivos anclados
+              </div>
+              {chatAttachedAssets.length
+                ? chatAttachedAssets.map((asset) => asset.etiqueta || asset.nombre).join(' · ')
+                : 'Ninguno'}
+            </div>
+
+            <div style={{ color: '#bdbdbd', fontSize: '0.82rem', marginTop: 14, lineHeight: 1.5 }}>
+              ¿Quieres utilizar estas indicaciones directamente?
+            </div>
+
+            <div style={{ display: 'grid', gap: 8, marginTop: 16 }}>
+              <button
+                type="button"
+                onClick={() => {
+                  const pending = directConfirm.message;
+                  setDirectConfirm(null);
+                  setChatInput('');
+                  resetChatComposerHeight();
+                  void sendNaylaMessage(pending, { directMode: true, bypassDirectConfirm: true });
+                }}
+                style={{
+                  border: '1px solid #f0f0f0',
+                  borderRadius: 11,
+                  background: '#f1f1f1',
+                  color: '#050505',
+                  padding: '10px 12px',
+                  fontSize: '0.78rem',
+                  fontWeight: 850,
+                  cursor: 'pointer',
+                }}
+              >
+                SÍ · USAR DIRECTO
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const normalMessage = directConfirm.message.replace(/^\s*@direct\b\s*/i, '').trim();
+                  setDirectConfirm(null);
+                  setChatInput('');
+                  resetChatComposerHeight();
+                  if (normalMessage) void sendNaylaMessage(normalMessage, { directMode: false, bypassDirectConfirm: true });
+                }}
+                style={{
+                  border: '1px solid #333',
+                  borderRadius: 11,
+                  background: '#111',
+                  color: '#ddd',
+                  padding: '10px 12px',
+                  fontSize: '0.76rem',
+                  fontWeight: 750,
+                  cursor: 'pointer',
+                }}
+              >
+                NO · ENVIAR COMO CHAT NORMAL
+              </button>
+              <button
+                type="button"
+                onClick={() => setDirectConfirm(null)}
+                style={{
+                  border: 'none',
+                  background: 'transparent',
+                  color: '#777',
+                  padding: '7px 10px',
+                  fontSize: '0.7rem',
+                  cursor: 'pointer',
+                }}
+              >
+                Cancelar
+              </button>
+            </div>
           </div>
         </div>
       )}

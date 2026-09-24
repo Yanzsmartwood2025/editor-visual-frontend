@@ -12,6 +12,16 @@ export type VideoJob = {
   gpuName?: string;
   runtimeCostEstimate?: number;
   destroyedAt?: string;
+  createdAt?: string;
+  startedAt?: string;
+  videoSession?: {
+    phase: string;
+    idleUntil?: string;
+    hardDeadline: string;
+    clips: number;
+    clipStartedAt: string;
+    canContinue: boolean;
+  } | null;
 };
 export type VideoDraft = {
   mediaId: string;
@@ -30,6 +40,7 @@ export default function useGpuVideo(context: GenerarModuleContext) {
   const [error, setError] = useState("");
   const [selectedId, setSelectedId] = useState("");
   const lock = useRef(false);
+  const mutationEpoch = useRef(0);
   const controller = useRef<AbortController | null>(null);
   const request = useCallback(
     async (
@@ -98,6 +109,7 @@ export default function useGpuVideo(context: GenerarModuleContext) {
     const active = new AbortController();
     let timer: ReturnType<typeof setTimeout>;
     const poll = async () => {
+      const epoch = mutationEpoch.current;
       try {
         const result = await request(
           "?id=" + job.id,
@@ -105,7 +117,11 @@ export default function useGpuVideo(context: GenerarModuleContext) {
           undefined,
           active.signal,
         );
-        if (!active.signal.aborted) {
+        if (
+          !active.signal.aborted &&
+          epoch === mutationEpoch.current &&
+          !lock.current
+        ) {
           setJob(result.job);
           setError("");
         }
@@ -126,6 +142,7 @@ export default function useGpuVideo(context: GenerarModuleContext) {
   const run = async (operation: () => Promise<void>) => {
     if (lock.current) return;
     lock.current = true;
+    mutationEpoch.current++;
     setBusy(true);
     setError("");
     try {
@@ -133,6 +150,7 @@ export default function useGpuVideo(context: GenerarModuleContext) {
     } catch (e: any) {
       if (!controller.current?.signal.aborted) setError(e.message);
     } finally {
+      mutationEpoch.current++;
       lock.current = false;
       if (!controller.current?.signal.aborted) setBusy(false);
     }
@@ -188,6 +206,18 @@ export default function useGpuVideo(context: GenerarModuleContext) {
       setQuote(null);
       setDraft(null);
     });
+  const continueWork = (input: VideoDraft) =>
+    run(async () => {
+      if (!job?.videoSession?.canContinue || job.destroyedAt)
+        throw new Error("La sesión ya no está disponible.");
+      const result = await request(
+        "",
+        "POST",
+        { ...input, projectId, threadId, operation: "continue", jobId: job.id },
+        controller.current?.signal,
+      );
+      setJob(result.job);
+    });
   const cancel = () =>
     run(async () => {
       if (!job) return;
@@ -209,13 +239,19 @@ export default function useGpuVideo(context: GenerarModuleContext) {
     setSelectedId,
     prepare,
     confirm,
+    continueWork,
+    idle:
+      job?.videoSession?.phase === "idle" &&
+      !job.destroyedAt &&
+      !terminal.has(job.status),
     cancel,
     refresh: () => run(refresh),
     clearQuote: () => {
       setQuote(null);
       setDraft(null);
     },
-    running: !!job && !terminal.has(job.status),
+    running:
+      !!job && !terminal.has(job.status) && job.videoSession?.phase !== "idle",
     draft,
   };
 }

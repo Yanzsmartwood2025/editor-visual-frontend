@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { firebaseHeaders } from '../../../../lib/apiClient';
+import { signOutFirebase } from '../../../../lib/firebaseClient';
 import { uploadMediaFilesToBodega } from '../../../../lib/mediaUpload';
 import type { GenerarMediaItem, GenerarModuleProps } from '../../types';
 
@@ -46,6 +47,8 @@ type VoiceItem = {
 
 type Phase = 'idle' | 'planning' | 'awaiting' | 'running' | 'completed' | 'failed';
 type AudioToolAvailability = Partial<Record<AudioTool, boolean>>;
+type AudioPage = 'home' | 'voices' | AudioTool;
+type VoiceFilter = 'all' | 'automatic' | 'mine' | 'es' | 'en';
 
 const terminal = new Set(['completed', 'failed', 'cancelled']);
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -95,9 +98,187 @@ const uniqueMedia = (items: GenerarMediaItem[]) => {
   });
 };
 
+const formatAudioClock = (seconds: number) => {
+  if (!Number.isFinite(seconds) || seconds < 0) return '0:00';
+  const whole = Math.floor(seconds);
+  const minutes = Math.floor(whole / 60);
+  const rest = whole % 60;
+  return `${minutes}:${String(rest).padStart(2, '0')}`;
+};
+
+const mediaFormatLabel = (item: GenerarMediaItem | null) => {
+  const fileName = String(item?.nombre || '').toLowerCase();
+  if (fileName.endsWith('.wav')) return 'WAV';
+  if (fileName.endsWith('.ogg')) return 'OGG';
+  if (fileName.endsWith('.flac')) return 'FLAC';
+  if (fileName.endsWith('.m4a')) return 'M4A';
+  const contentType = String(item?.metadata?.contentType || '').toLowerCase();
+  if (contentType.includes('wav')) return 'WAV';
+  if (contentType.includes('ogg')) return 'OGG';
+  if (contentType.includes('flac')) return 'FLAC';
+  if (contentType.includes('mp4')) return 'M4A';
+  return 'MP3';
+};
+
+function NaylaAudioResultPlayer({
+  src,
+}: {
+  src: string;
+}) {
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const [playing, setPlaying] = useState(false);
+  const [current, setCurrent] = useState(0);
+  const [duration, setDuration] = useState(0);
+  const [volume, setVolume] = useState(0.9);
+  const [muted, setMuted] = useState(false);
+
+  const bars = useMemo(
+    () =>
+      Array.from({ length: 54 }, (_, index) => {
+        const wave = Math.abs(
+          Math.sin(index * 0.73) * 0.52 +
+          Math.cos(index * 0.31) * 0.28 +
+          Math.sin(index * 1.17) * 0.2
+        );
+        return 24 + Math.round(wave * 70);
+      }),
+    []
+  );
+
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio) return;
+    audio.volume = volume;
+    audio.muted = muted;
+  }, [volume, muted]);
+
+  const togglePlayback = async () => {
+    const audio = audioRef.current;
+    if (!audio) return;
+    if (audio.paused) {
+      await audio.play();
+    } else {
+      audio.pause();
+    }
+  };
+
+  const seekToRatio = (ratio: number) => {
+    const audio = audioRef.current;
+    if (!audio || !Number.isFinite(audio.duration) || audio.duration <= 0) return;
+    const next = Math.max(0, Math.min(1, ratio)) * audio.duration;
+    audio.currentTime = next;
+    setCurrent(next);
+  };
+
+  const progress = duration > 0 ? Math.max(0, Math.min(1, current / duration)) : 0;
+
+  return (
+    <div className="generar-nayla-player">
+      <audio
+        ref={audioRef}
+        src={src}
+        preload="metadata"
+        onLoadedMetadata={(event) => {
+          const value = event.currentTarget.duration;
+          setDuration(Number.isFinite(value) ? value : 0);
+        }}
+        onDurationChange={(event) => {
+          const value = event.currentTarget.duration;
+          if (Number.isFinite(value)) setDuration(value);
+        }}
+        onTimeUpdate={(event) => setCurrent(event.currentTarget.currentTime || 0)}
+        onPlay={() => setPlaying(true)}
+        onPause={() => setPlaying(false)}
+        onEnded={() => setPlaying(false)}
+      />
+
+      <button
+        type="button"
+        className="generar-nayla-wave"
+        aria-label="Mover posición del audio"
+        onClick={(event) => {
+          const rect = event.currentTarget.getBoundingClientRect();
+          seekToRatio((event.clientX - rect.left) / Math.max(1, rect.width));
+        }}
+      >
+        {bars.map((height, index) => (
+          <i
+            key={index}
+            className={index / bars.length <= progress ? 'played' : ''}
+            style={{ height: `${height}%` }}
+          />
+        ))}
+        <span className="generar-nayla-wave-cursor" style={{ left: `${progress * 100}%` }} />
+      </button>
+
+      <div className="generar-nayla-player-controls">
+        <button
+          type="button"
+          className="generar-nayla-play"
+          aria-label={playing ? 'Pausar audio' : 'Reproducir audio'}
+          onClick={() => void togglePlayback()}
+        >
+          {playing ? 'Ⅱ' : '▶'}
+        </button>
+
+        <span className="generar-nayla-time">
+          {formatAudioClock(current)} <em>/</em> {formatAudioClock(duration)}
+        </span>
+
+        <input
+          className="generar-nayla-seek"
+          type="range"
+          min={0}
+          max={duration || 1}
+          step={0.01}
+          value={Math.min(current, duration || 1)}
+          onChange={(event) => {
+            const audio = audioRef.current;
+            if (!audio) return;
+            const value = Number(event.target.value);
+            audio.currentTime = value;
+            setCurrent(value);
+          }}
+          aria-label="Posición del audio"
+        />
+
+        <button
+          type="button"
+          className="generar-nayla-volume-button"
+          aria-label={muted ? 'Activar sonido' : 'Silenciar'}
+          onClick={() => setMuted((value) => !value)}
+        >
+          {muted || volume === 0 ? '×)' : '◖))'}
+        </button>
+
+        <input
+          className="generar-nayla-volume"
+          type="range"
+          min={0}
+          max={1}
+          step={0.05}
+          value={volume}
+          onChange={(event) => {
+            const next = Number(event.target.value);
+            setVolume(next);
+            if (next > 0) setMuted(false);
+          }}
+          aria-label="Volumen"
+        />
+      </div>
+    </div>
+  );
+}
+
 export default function ApiAudioModule({ context }: GenerarModuleProps) {
   const { session, projectId, threadId, onUseMedia, mediaLibrary = [] } = context;
   const [activeTool, setActiveTool] = useState<AudioTool>('tts');
+  const [page, setPage] = useState<AudioPage>('home');
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [accountMenuOpen, setAccountMenuOpen] = useState(false);
+  const [signingOut, setSigningOut] = useState(false);
+  const [voiceSearch, setVoiceSearch] = useState('');
+  const [voiceFilter, setVoiceFilter] = useState<VoiceFilter>('all');
   const [text, setText] = useState('');
   const [language, setLanguage] = useState<'es' | 'en'>('es');
   const [phase, setPhase] = useState<Phase>('idle');
@@ -105,7 +286,6 @@ export default function ApiAudioModule({ context }: GenerarModuleProps) {
   const [job, setJob] = useState<JobState | null>(null);
   const [message, setMessage] = useState('');
   const [voices, setVoices] = useState<VoiceItem[]>([]);
-  const [voicesConfigured, setVoicesConfigured] = useState<boolean | null>(null);
   const [voicesLoading, setVoicesLoading] = useState(false);
   const [toolAvailability, setToolAvailability] = useState<AudioToolAvailability>({});
   const [selectedVoiceId, setSelectedVoiceId] = useState('');
@@ -118,6 +298,11 @@ export default function ApiAudioModule({ context }: GenerarModuleProps) {
   const [removeNoise, setRemoveNoise] = useState(false);
   const [rightsConfirmed, setRightsConfirmed] = useState(false);
   const [cloneReady, setCloneReady] = useState(false);
+  const [effectDurationSeconds, setEffectDurationSeconds] = useState<number | null>(null);
+  const [effectLoop, setEffectLoop] = useState(false);
+  const [effectPromptInfluence, setEffectPromptInfluence] = useState(0.3);
+  const [processProgress, setProcessProgress] = useState(0);
+  const [downloadingResult, setDownloadingResult] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
   const mountedRef = useRef(true);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -144,12 +329,57 @@ export default function ApiAudioModule({ context }: GenerarModuleProps) {
     ].filter((group) => group.voices.length > 0);
   }, [voices]);
 
+  const filteredVoiceGroups = useMemo(() => {
+    const query = voiceSearch.trim().toLowerCase();
+    return voiceGroups
+      .map((group) => ({
+        ...group,
+        voices: group.voices.filter((voice) => {
+          if (voiceFilter === 'automatic' && voice.category !== 'system') return false;
+          if (voiceFilter === 'mine' && voice.category !== 'cloned' && !voice.isOwner) return false;
+          if (voiceFilter === 'es' && !String(voice.language || '').toLowerCase().startsWith('es')) return false;
+          if (voiceFilter === 'en' && !String(voice.language || '').toLowerCase().startsWith('en')) return false;
+          if (!query) return true;
+          const haystack = [
+            voice.name,
+            voice.description || '',
+            voice.language || '',
+            ...Object.values(voice.labels || {}),
+          ].join(' ').toLowerCase();
+          return haystack.includes(query);
+        }),
+      }))
+      .filter((group) => group.voices.length > 0);
+  }, [voiceGroups, voiceSearch, voiceFilter]);
+
   useEffect(() => {
     return () => {
       mountedRef.current = false;
       abortRef.current?.abort();
     };
   }, []);
+
+  useEffect(() => {
+    if (phase === 'completed') {
+      setProcessProgress(100);
+      return;
+    }
+    if (phase !== 'running' && phase !== 'planning') {
+      if (phase === 'idle' || phase === 'failed') setProcessProgress(0);
+      return;
+    }
+
+    setProcessProgress((current) => Math.max(current, phase === 'planning' ? 6 : 18));
+    const timer = window.setInterval(() => {
+      setProcessProgress((current) => {
+        const ceiling = phase === 'planning' ? 24 : 92;
+        if (current >= ceiling) return current;
+        const step = Math.max(1, Math.ceil((ceiling - current) * 0.08));
+        return Math.min(ceiling, current + step);
+      });
+    }, 700);
+    return () => window.clearInterval(timer);
+  }, [phase]);
 
   const resetExecution = () => {
     abortRef.current?.abort();
@@ -158,6 +388,7 @@ export default function ApiAudioModule({ context }: GenerarModuleProps) {
     setJob(null);
     setMessage('');
     setCloneReady(false);
+    setProcessProgress(0);
     setPhase('idle');
   };
 
@@ -174,7 +405,6 @@ export default function ApiAudioModule({ context }: GenerarModuleProps) {
       if (!response.ok) throw new Error(payload?.error || 'No se pudo leer la biblioteca de voces.');
 
       const nextVoices = Array.isArray(payload?.voices) ? payload.voices : [];
-      setVoicesConfigured(Boolean(payload?.configured));
       setToolAvailability(
         payload?.tools && typeof payload.tools === 'object'
           ? {
@@ -200,7 +430,6 @@ export default function ApiAudioModule({ context }: GenerarModuleProps) {
       });
     } catch (error) {
       if (!mountedRef.current) return;
-      setVoicesConfigured(false);
       setToolAvailability({});
       setMessage(error instanceof Error ? error.message : 'No se pudo leer la biblioteca de voces.');
     } finally {
@@ -215,6 +444,8 @@ export default function ApiAudioModule({ context }: GenerarModuleProps) {
   const chooseTool = (tool: AudioTool) => {
     if (phase === 'running' || phase === 'planning') return;
     setActiveTool(tool);
+    setPage(tool);
+    setMenuOpen(false);
     setText('');
     setSelectedInputId('');
     setCloneReady(false);
@@ -222,6 +453,43 @@ export default function ApiAudioModule({ context }: GenerarModuleProps) {
     setJobId(null);
     setJob(null);
     setPhase('idle');
+  };
+
+  const choosePage = (next: AudioPage) => {
+    if (phase === 'running' || phase === 'planning') return;
+    if (next === 'voices') {
+      setPage('voices');
+      setMenuOpen(false);
+      return;
+    }
+    if (next === 'home') {
+      setPage('home');
+      setMenuOpen(false);
+      return;
+    }
+    chooseTool(next);
+  };
+
+  const handleReturnToNayla = () => {
+    setAccountMenuOpen(false);
+    setMenuOpen(false);
+    context.onReturnToNayla?.();
+  };
+
+  const handleAudioSignOut = async () => {
+    if (signingOut) return;
+    setSigningOut(true);
+    try {
+      await signOutFirebase();
+      setAccountMenuOpen(false);
+      setMenuOpen(false);
+      context.onReturnToNayla?.();
+    } catch (error) {
+      console.error('No se pudo cerrar la sesión de Nayla Audio.', error);
+      setMessage('No se pudo cerrar la sesión. Intenta nuevamente.');
+    } finally {
+      setSigningOut(false);
+    }
   };
 
   const handleUpload = async (files: FileList | null) => {
@@ -265,6 +533,7 @@ export default function ApiAudioModule({ context }: GenerarModuleProps) {
     if (!mountedRef.current) return;
     setJob(next);
     if (next.status === 'completed') {
+      setProcessProgress(100);
       setPhase('completed');
       setMessage(
         next.textOutput
@@ -272,9 +541,11 @@ export default function ApiAudioModule({ context }: GenerarModuleProps) {
           : 'Resultado listo y guardado en la Bóveda.'
       );
     } else if (next.status === 'failed' || next.status === 'cancelled') {
+      setProcessProgress(0);
       setPhase('failed');
       setMessage(next.error || 'La herramienta de audio no pudo completarse.');
     } else {
+      setProcessProgress((current) => Math.max(current, next.status === 'queued' ? 38 : 62));
       setPhase('running');
       setMessage(next.status === 'queued' ? 'Trabajo en cola…' : 'Nayla Cloud está procesando el audio…');
     }
@@ -333,6 +604,7 @@ export default function ApiAudioModule({ context }: GenerarModuleProps) {
       return;
     }
 
+    setProcessProgress(6);
     setPhase('planning');
     setJob(null);
     setMessage('Preparando herramienta…');
@@ -344,7 +616,14 @@ export default function ApiAudioModule({ context }: GenerarModuleProps) {
         body: JSON.stringify({
           mode,
           ...(toolUsesText(activeTool) ? { text: text.trim() } : {}),
-          ...(activeTool === 'sound_effects' ? { prompt: text.trim() } : {}),
+          ...(activeTool === 'sound_effects'
+            ? {
+                prompt: text.trim(),
+                durationSeconds: effectDurationSeconds,
+                loop: effectLoop,
+                promptInfluence: effectPromptInfluence,
+              }
+            : {}),
           inputMediaId: toolNeedsInput(activeTool) ? selectedInputId : null,
           voiceId: toolNeedsVoice(activeTool) ? selectedVoiceId || null : null,
           language,
@@ -376,6 +655,7 @@ export default function ApiAudioModule({ context }: GenerarModuleProps) {
     abortRef.current?.abort();
     const controller = new AbortController();
     abortRef.current = controller;
+    setProcessProgress(18);
     setPhase('running');
     setMessage('Iniciando Nayla Cloud…');
 
@@ -470,73 +750,258 @@ export default function ApiAudioModule({ context }: GenerarModuleProps) {
   };
 
   const result = job?.galleryItem || null;
+
+  const downloadResult = async () => {
+    if (!session || !result?.id || downloadingResult) return;
+    setDownloadingResult(true);
+    try {
+      const response = await fetch('/api/media/download?id=' + encodeURIComponent(result.id), {
+        method: 'GET',
+        headers: firebaseHeaders(session),
+        cache: 'no-store',
+      });
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({}));
+        throw new Error(payload?.error || 'No se pudo descargar el audio.');
+      }
+      const blob = await response.blob();
+      const objectUrl = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = objectUrl;
+      link.download = result.nombre || `nayla-audio.${mediaFormatLabel(result).toLowerCase()}`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1500);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'No se pudo descargar el audio.');
+    } finally {
+      setDownloadingResult(false);
+    }
+  };
+
   const busy = phase === 'planning' || phase === 'running';
   const currentMeta = tools.find((item) => item.id === activeTool)!;
-  const currentReady = currentMeta.ready && toolAvailability[activeTool] === true;
-  const showVoiceLibrary = (toolNeedsVoice(activeTool) || activeTool === 'clone') && currentReady;
-  const showAudioTray = (toolNeedsInput(activeTool) || activeTool === 'clone') && currentReady;
+  const showAudioTray =
+    (toolNeedsInput(activeTool) || activeTool === 'clone') &&
+    toolAvailability[activeTool] === true;
 
-  return (
-    <section data-generar-module="audio" className="generar-module-stage generar-audio-studio">
-      <div className="generar-stage-inner generar-audio-wide">
-        <div className="generar-stage-heading">
-          <span className="generar-eyebrow">API · AUDIO</span>
-          <h2>Estudio de audio</h2>
-          <p>Voz, clonación, transformación, limpieza, transcripción y efectos en bandejas independientes.</p>
-        </div>
+  const pageTitle =
+    page === 'home'
+      ? 'Estudio'
+      : page === 'voices'
+        ? 'Voces'
+        : tools.find((item) => item.id === page)?.label || 'Audio';
 
-        <div className="generar-audio-tool-grid" role="tablist" aria-label="Herramientas de audio">
-          {tools.map((tool) => {
-            const ready = tool.ready && toolAvailability[tool.id] === true;
-            const checking = tool.ready && voicesLoading && toolAvailability[tool.id] === undefined;
-            return (
-              <button
-                key={tool.id}
-                type="button"
-                className={`generar-audio-tool glass-glow-button ${activeTool === tool.id ? 'active' : ''}`}
-                onClick={() => chooseTool(tool.id)}
-                aria-selected={activeTool === tool.id}
-              >
-                <span className="generar-audio-tool-icon">{tool.glyph}</span>
-                <span className="generar-audio-tool-copy">
-                  <strong>{tool.label}</strong>
-                  <small>{tool.description}</small>
-                  <em className={ready ? 'ready' : ''}>
-                    {checking ? 'COMPROBANDO' : ready ? 'ACTIVO' : tool.ready ? 'PENDIENTE' : 'SIGUIENTE'}
-                  </em>
-                </span>
-              </button>
-            );
-          })}
-        </div>
+  const currentToolMeta = page !== 'home' && page !== 'voices'
+    ? tools.find((item) => item.id === page) || currentMeta
+    : currentMeta;
 
-        <div className="generar-glass-panel generar-audio-workbench">
-          <div className="generar-audio-workbench-head">
-            <div>
-              <span className="generar-eyebrow">HERRAMIENTA</span>
-              <h3>{currentMeta.label}</h3>
+  const selectedVoice = voices.find((voice) => voice.id === selectedVoiceId) || null;
+  const currentToolReady =
+    page !== 'home' &&
+    page !== 'voices' &&
+    currentToolMeta.ready &&
+    toolAvailability[currentToolMeta.id] === true;
+
+  const menuSections = [
+    {
+      title: 'BIBLIOTECA',
+      items: [
+        { page: 'voices' as AudioPage, label: 'Voces', hint: 'Explorar y elegir', glyph: 'VC' },
+      ],
+    },
+    {
+      title: 'CREAR',
+      items: [
+        { page: 'tts' as AudioPage, label: 'Texto a voz', hint: 'Escribir y generar', glyph: 'VO' },
+        { page: 'clone' as AudioPage, label: 'Clonar voz', hint: 'Crear voz propia', glyph: 'CL' },
+        { page: 'sound_effects' as AudioPage, label: 'Sonidos', hint: 'Texto a efecto', glyph: 'FX' },
+        { page: 'dialogue' as AudioPage, label: 'Diálogo', hint: 'Voces y conversación', glyph: 'DG' },
+      ],
+    },
+    {
+      title: 'TRANSFORMAR',
+      items: [
+        { page: 'voice_change' as AudioPage, label: 'Cambiar voz', hint: 'Audio a otra voz', glyph: 'CV' },
+        { page: 'voice_isolation' as AudioPage, label: 'Aislar voz', hint: 'Limpiar audio', glyph: 'AI' },
+        { page: 'speech_to_text' as AudioPage, label: 'Transcribir', hint: 'Audio a texto', glyph: 'TX' },
+        { page: 'voice_design' as AudioPage, label: 'Diseñar voz', hint: 'Próximamente', glyph: 'DV' },
+        { page: 'dubbing' as AudioPage, label: 'Doblaje', hint: 'Próximamente', glyph: 'DB' },
+      ],
+    },
+  ];
+
+  const renderVoiceLibrary = () => (
+    <div className="generar-audio-voices-page">
+      <div className="generar-audio-page-intro">
+        <span className="generar-eyebrow">BIBLIOTECA</span>
+        <h2>Voces</h2>
+        <p>Explora todas las voces de Nayla en una sola biblioteca. Las rutas internas se gestionan automáticamente.</p>
+      </div>
+
+      <div className="generar-voice-search-row">
+        <label className="generar-voice-search">
+          <span aria-hidden="true">⌕</span>
+          <input
+            value={voiceSearch}
+            onChange={(event) => setVoiceSearch(event.target.value)}
+            placeholder="Buscar voz, idioma o estilo…"
+          />
+        </label>
+      </div>
+
+      <div className="generar-voice-filters" aria-label="Filtros de voces">
+        {([
+          ['all', 'TODAS'],
+          ['automatic', 'AUTOMÁTICAS'],
+          ['mine', 'MIS VOCES'],
+          ['es', 'ESPAÑOL'],
+          ['en', 'INGLÉS'],
+        ] as Array<[VoiceFilter, string]>).map(([id, label]) => (
+          <button
+            type="button"
+            key={id}
+            className={`generar-voice-filter ${voiceFilter === id ? 'active' : ''}`}
+            onClick={() => setVoiceFilter(id)}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      <div className="generar-voice-groups generar-voice-groups-page">
+        {filteredVoiceGroups.map((group) => (
+          <section key={group.id} className="generar-voice-group">
+            <div className="generar-voice-group-heading">
+              <div>
+                <span>{group.label}</span>
+                <small>{group.voices.length} voz{group.voices.length === 1 ? '' : 'es'}</small>
+              </div>
             </div>
-            <span className={currentReady ? 'generar-audio-live' : 'generar-audio-pending'}>
-              {currentReady ? 'RUTA DISPONIBLE' : currentMeta.ready ? 'RUTA PENDIENTE' : 'EN PREPARACIÓN'}
+            <div className="generar-voice-library generar-voice-library-page">
+              {group.voices.map((voice) => (
+                <article
+                  key={voice.id}
+                  className={`generar-voice-card generar-voice-card-page ${selectedVoiceId === voice.id ? 'active' : ''}`}
+                >
+                  <button
+                    type="button"
+                    className="generar-voice-select-area"
+                    onClick={() => setSelectedVoiceId(voice.id)}
+                  >
+                    <span className="generar-voice-avatar">{voice.name.slice(0, 2).toUpperCase()}</span>
+                    <span className="generar-voice-copy">
+                      <strong>{voice.name}</strong>
+                      <small>
+                        {voice.language ? voice.language.toUpperCase() : 'VOZ NAYLA'}
+                        {voice.redundancy && voice.redundancy > 1 ? ' · RESPALDO AUTO' : ''}
+                      </small>
+                      {voice.description ? <em>{voice.description}</em> : null}
+                    </span>
+                    <span className="generar-audio-check">{selectedVoiceId === voice.id ? '✓' : '○'}</span>
+                  </button>
+                  {voice.previewUrl ? (
+                    <audio src={voice.previewUrl} controls preload="none" />
+                  ) : null}
+                </article>
+              ))}
+            </div>
+          </section>
+        ))}
+
+        {!voicesLoading && !filteredVoiceGroups.length ? (
+          <div className="generar-audio-empty generar-audio-empty-large">
+            <strong>No encontramos voces con ese filtro</strong>
+            <span>Prueba otro idioma, categoría o término de búsqueda.</span>
+          </div>
+        ) : null}
+      </div>
+
+      {selectedVoice ? (
+        <div className="generar-selected-voice-bar">
+          <div>
+            <span>VOZ SELECCIONADA</span>
+            <strong>{selectedVoice.name}</strong>
+          </div>
+          <button
+            type="button"
+            className="generar-primary-action glass-glow-button"
+            onClick={() => chooseTool('tts')}
+          >
+            USAR EN TEXTO A VOZ
+          </button>
+        </div>
+      ) : null}
+    </div>
+  );
+
+  const renderCompactVoicePicker = () => {
+    if (!toolNeedsVoice(activeTool)) return null;
+
+    return (
+      <div className="generar-compact-voice">
+        <div className="generar-compact-voice-main">
+          <span className="generar-voice-avatar">
+            {selectedVoice ? selectedVoice.name.slice(0, 2).toUpperCase() : 'VO'}
+          </span>
+          <div>
+            <small>VOZ</small>
+            <strong>{selectedVoice?.name || 'Selecciona una voz'}</strong>
+            <span>
+              {selectedVoice?.language
+                ? selectedVoice.language.toUpperCase()
+                : 'Biblioteca Nayla'}
             </span>
           </div>
+        </div>
+        <button
+          type="button"
+          className="generar-secondary-action glass-glow-button"
+          onClick={() => choosePage('voices')}
+          disabled={busy}
+        >
+          CAMBIAR VOZ
+        </button>
+      </div>
+    );
+  };
 
-          {!currentReady ? (
-            <div className="generar-status-card">
-              <strong>{currentMeta.ready ? 'RUTA NO DISPONIBLE' : 'PRÓXIMA ACTIVACIÓN'}</strong>
-              <p>
-                {currentMeta.ready
-                  ? 'La herramienta está implementada, pero ahora mismo no hay una API compatible configurada para ejecutarla.'
-                  : 'La bandeja ya está reservada dentro del Estudio de audio. Se activará cuando el adaptador completo esté conectado y probado.'}
-              </p>
-            </div>
-          ) : null}
+  const renderToolPage = () => (
+    <div className="generar-audio-tool-page">
+      <div className="generar-audio-page-intro generar-audio-tool-intro">
+        <span className="generar-eyebrow">HERRAMIENTA</span>
+        <h2>{currentToolMeta.label}</h2>
+        <p>{currentToolMeta.description}</p>
+        <span className={currentToolReady ? 'generar-audio-live' : 'generar-audio-pending'}>
+          {currentToolReady
+            ? 'DISPONIBLE'
+            : currentToolMeta.ready
+              ? 'RUTA PENDIENTE'
+              : 'PRÓXIMAMENTE'}
+        </span>
+      </div>
 
-          {activeTool === 'clone' && currentReady ? (
+      {!currentToolReady ? (
+        <div className="generar-status-card generar-audio-centered-state">
+          <strong>{currentToolMeta.ready ? 'RUTA NO DISPONIBLE' : 'PRÓXIMA ACTIVACIÓN'}</strong>
+          <p>
+            {currentToolMeta.ready
+              ? 'La herramienta está implementada, pero ahora mismo no hay una ruta compatible configurada.'
+              : 'Esta herramienta ya tiene su espacio reservado dentro de Nayla Audio.'}
+          </p>
+        </div>
+      ) : null}
+
+      {currentToolReady ? (
+        <div className="generar-glass-panel generar-audio-workbench generar-audio-single-workbench">
+          {renderCompactVoicePicker()}
+
+          {activeTool === 'clone' ? (
             <>
               <div className="generar-audio-section-title">
                 <strong>1 · IDENTIDAD DE LA VOZ</strong>
-                <span>La voz creada quedará disponible en tu biblioteca.</span>
+                <span>La voz creada quedará disponible en Mis voces.</span>
               </div>
               <div className="generar-audio-two-col">
                 <label className="generar-field">
@@ -563,7 +1028,7 @@ export default function ApiAudioModule({ context }: GenerarModuleProps) {
                   />
                 </label>
               </div>
-              <div className="generar-input-meta">
+              <div className="generar-input-meta generar-clone-language">
                 <span>IDIOMA DE LA VOZ</span>
                 <div className="generar-segmented">
                   <button
@@ -593,26 +1058,19 @@ export default function ApiAudioModule({ context }: GenerarModuleProps) {
             </>
           ) : null}
 
-          {showAudioTray && currentReady ? (
+          {showAudioTray && activeTool !== 'clone' ? (
             <>
               <div className="generar-audio-section-title">
-                <strong>{activeTool === 'clone' ? '2 · MUESTRAS DE AUDIO' : 'AUDIO DE ENTRADA'}</strong>
-                <span>
-                  {activeTool === 'clone'
-                    ? 'Puedes elegir varias muestras limpias y variadas.'
-                    : 'Selecciona un audio existente o sube uno nuevo.'}
-                </span>
+                <strong>AUDIO DE ENTRADA</strong>
+                <span>Selecciona un audio existente o sube uno nuevo.</span>
               </div>
-
               <input
                 ref={fileInputRef}
                 type="file"
                 accept="audio/*,.mp3,.wav,.m4a,.aac,.ogg,.opus,.flac"
-                multiple={activeTool === 'clone'}
                 hidden
                 onChange={(event) => void handleUpload(event.target.files)}
               />
-
               <div className="generar-audio-tray-actions">
                 <button
                   type="button"
@@ -624,23 +1082,74 @@ export default function ApiAudioModule({ context }: GenerarModuleProps) {
                 </button>
                 <span>{audioItems.length} en Bóveda</span>
               </div>
-
               <div className="generar-audio-source-list">
                 {audioItems.length ? (
                   audioItems.map((item) => {
-                    const selected =
-                      activeTool === 'clone'
-                        ? cloneSampleIds.includes(item.id)
-                        : selectedInputId === item.id;
+                    const selected = selectedInputId === item.id;
                     return (
                       <button
                         type="button"
                         key={item.id}
                         className={`generar-audio-source-card ${selected ? 'active' : ''}`}
-                        onClick={() => {
-                          if (activeTool === 'clone') toggleCloneSample(item.id);
-                          else setSelectedInputId(item.id);
-                        }}
+                        onClick={() => setSelectedInputId(item.id)}
+                        disabled={busy}
+                      >
+                        <span className="generar-audio-source-wave" aria-hidden="true">
+                          <i /><i /><i /><i />
+                        </span>
+                        <span className="generar-audio-source-copy">
+                          <strong>{item.nombre || item.etiqueta || 'Audio'}</strong>
+                          <small>{item.etiqueta || 'AUDIO PRIVADO'}</small>
+                        </span>
+                        <span className="generar-audio-check">{selected ? '✓' : '+'}</span>
+                      </button>
+                    );
+                  })
+                ) : (
+                  <div className="generar-audio-empty">
+                    <strong>Sin audio todavía</strong>
+                    <span>Sube un archivo para comenzar.</span>
+                  </div>
+                )}
+              </div>
+            </>
+          ) : null}
+
+          {activeTool === 'clone' ? (
+            <>
+              <div className="generar-audio-section-title">
+                <strong>2 · MUESTRAS</strong>
+                <span>Selecciona varias muestras limpias para mejorar el clon.</span>
+              </div>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="audio/*,.mp3,.wav,.m4a,.aac,.ogg,.opus,.flac"
+                multiple
+                hidden
+                onChange={(event) => void handleUpload(event.target.files)}
+              />
+              <div className="generar-audio-tray-actions">
+                <button
+                  type="button"
+                  className="generar-secondary-action glass-glow-button"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={!session || uploading || busy}
+                >
+                  {uploading ? 'SUBIENDO…' : '+ SUBIR MUESTRAS'}
+                </button>
+                <span>{cloneSampleIds.length} seleccionada{cloneSampleIds.length === 1 ? '' : 's'}</span>
+              </div>
+              <div className="generar-audio-source-list">
+                {audioItems.length ? (
+                  audioItems.map((item) => {
+                    const selected = cloneSampleIds.includes(item.id);
+                    return (
+                      <button
+                        type="button"
+                        key={item.id}
+                        className={`generar-audio-source-card ${selected ? 'active' : ''}`}
+                        onClick={() => toggleCloneSample(item.id)}
                         disabled={busy}
                       >
                         <span className="generar-audio-source-wave" aria-hidden="true">
@@ -657,74 +1166,11 @@ export default function ApiAudioModule({ context }: GenerarModuleProps) {
                 ) : (
                   <div className="generar-audio-empty">
                     <strong>Sin muestras todavía</strong>
-                    <span>Sube un MP3, WAV, M4A, AAC, OGG, OPUS o FLAC.</span>
+                    <span>Sube MP3, WAV, M4A, AAC, OGG, OPUS o FLAC.</span>
                   </div>
                 )}
               </div>
-            </>
-          ) : null}
 
-          {showVoiceLibrary && currentReady ? (
-            <>
-              <div className="generar-audio-section-title">
-                <strong>{activeTool === 'clone' ? 'VOCES DE TU BIBLIOTECA' : 'VOZ DE SALIDA'}</strong>
-                <span>
-                  {voicesLoading
-                    ? 'Actualizando biblioteca…'
-                    : voicesConfigured === false
-                      ? 'Biblioteca avanzada no configurada.'
-                      : `${voices.length} voz${voices.length === 1 ? '' : 'es'} disponible${voices.length === 1 ? '' : 's'}`}
-                </span>
-              </div>
-
-              <div className="generar-voice-groups">
-                {voiceGroups.map((group) => (
-                  <section key={group.id} className="generar-voice-group">
-                    <div className="generar-voice-group-title">{group.label}</div>
-                    <div className="generar-voice-library">
-                      {group.voices.map((voice) => (
-                        <button
-                          type="button"
-                          key={voice.id}
-                          className={`generar-voice-card ${selectedVoiceId === voice.id ? 'active' : ''}`}
-                          onClick={() => setSelectedVoiceId(voice.id)}
-                          disabled={busy}
-                        >
-                          <span className="generar-voice-avatar">{voice.name.slice(0, 2).toUpperCase()}</span>
-                          <span className="generar-voice-copy">
-                            <strong>{voice.name}</strong>
-                            <small>
-                              {voice.language ? voice.language.toUpperCase() : 'VOZ NAYLA'}
-                              {voice.redundancy && voice.redundancy > 1 ? ' · RESPALDO AUTO' : ''}
-                            </small>
-                          </span>
-                          {voice.previewUrl ? (
-                            <audio
-                              src={voice.previewUrl}
-                              controls
-                              preload="none"
-                              onClick={(event) => event.stopPropagation()}
-                            />
-                          ) : (
-                            <span className="generar-audio-check">{selectedVoiceId === voice.id ? '✓' : '○'}</span>
-                          )}
-                        </button>
-                      ))}
-                    </div>
-                  </section>
-                ))}
-                {!voicesLoading && !voices.length ? (
-                  <div className="generar-audio-empty">
-                    <strong>Sin voces cargadas</strong>
-                    <span>Puedes crear una desde CLONAR cuando haya una ruta activa.</span>
-                  </div>
-                ) : null}
-              </div>
-            </>
-          ) : null}
-
-          {activeTool === 'clone' && currentReady ? (
-            <>
               <div className="generar-audio-clone-options">
                 <label>
                   <input
@@ -748,96 +1194,183 @@ export default function ApiAudioModule({ context }: GenerarModuleProps) {
                   <span>Confirmo que tengo permiso para usar estas grabaciones y crear esta voz.</span>
                 </label>
               </div>
+            </>
+          ) : null}
 
-              <div className="generar-action-row">
-                {phase !== 'awaiting' ? (
-                  <button
-                    type="button"
-                    className="generar-primary-action glass-glow-button"
-                    onClick={prepareClone}
-                    disabled={busy || !session}
-                  >
-                    PREPARAR CLON
-                  </button>
-                ) : null}
-                {phase === 'awaiting' && cloneReady ? (
-                  <>
+          {activeTool === 'sound_effects' ? (
+            <div className="generar-sfx-settings">
+              <div className="generar-audio-section-title">
+                <strong>AJUSTES DEL EFECTO</strong>
+                <span>Controla duración, bucle e intensidad de la descripción.</span>
+              </div>
+
+              <div className="generar-sfx-duration-row">
+                <div className="generar-sfx-setting-copy">
+                  <strong>DURACIÓN</strong>
+                  <small>
+                    {effectDurationSeconds === null
+                      ? 'Automática · Nayla limita la ruta de respaldo'
+                      : `${effectDurationSeconds.toFixed(effectDurationSeconds % 1 ? 1 : 0)} segundos`}
+                  </small>
+                </div>
+                <div className="generar-sfx-presets">
+                  {([
+                    [null, 'AUTO'],
+                    [2, '2 s'],
+                    [5, '5 s'],
+                    [10, '10 s'],
+                    [15, '15 s'],
+                    [30, '30 s'],
+                  ] as Array<[number | null, string]>).map(([value, label]) => (
                     <button
                       type="button"
-                      className="generar-primary-action glass-glow-button"
-                      onClick={() => void executeClone()}
+                      key={label}
+                      className={`generar-sfx-preset ${effectDurationSeconds === value ? 'active' : ''}`}
+                      onClick={() => setEffectDurationSeconds(value)}
+                      disabled={busy}
                     >
-                      CONFIRMAR Y CLONAR
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {effectDurationSeconds !== null ? (
+                <label className="generar-sfx-slider">
+                  <span>
+                    <strong>TIEMPO EXACTO</strong>
+                    <em>{effectDurationSeconds.toFixed(1)} s</em>
+                  </span>
+                  <input
+                    type="range"
+                    min={0.5}
+                    max={30}
+                    step={0.5}
+                    value={effectDurationSeconds}
+                    onChange={(event) => setEffectDurationSeconds(Number(event.target.value))}
+                    disabled={busy}
+                  />
+                </label>
+              ) : null}
+
+              <div className="generar-sfx-options">
+                <button
+                  type="button"
+                  className={`generar-sfx-toggle ${effectLoop ? 'active' : ''}`}
+                  onClick={() => setEffectLoop((value) => !value)}
+                  disabled={busy}
+                  aria-pressed={effectLoop}
+                >
+                  <span className="generar-sfx-switch"><i /></span>
+                  <span>
+                    <strong>LOOP CONTINUO</strong>
+                    <small>Unir final e inicio sin corte perceptible</small>
+                  </span>
+                </button>
+
+                <label className="generar-sfx-slider generar-sfx-influence">
+                  <span>
+                    <strong>FIDELIDAD AL PROMPT</strong>
+                    <em>{Math.round(effectPromptInfluence * 100)}%</em>
+                  </span>
+                  <input
+                    type="range"
+                    min={0}
+                    max={1}
+                    step={0.05}
+                    value={effectPromptInfluence}
+                    onChange={(event) => setEffectPromptInfluence(Number(event.target.value))}
+                    disabled={busy}
+                  />
+                </label>
+              </div>
+            </div>
+          ) : null}
+
+          {(toolUsesText(activeTool) || activeTool === 'sound_effects') ? (
+            <>
+              <div className="generar-audio-section-title">
+                <strong>{activeTool === 'sound_effects' ? 'DESCRIPCIÓN DEL SONIDO' : 'TEXTO'}</strong>
+                <span>
+                  {activeTool === 'sound_effects'
+                    ? 'Describe ambiente, intensidad, material y acción.'
+                    : 'Escribe el contenido que debe interpretar la voz.'}
+                </span>
+              </div>
+              <textarea
+                className="generar-textarea generar-audio-main-textarea"
+                value={text}
+                onChange={(event) => {
+                  setText(event.target.value);
+                  if (phase !== 'running' && phase !== 'planning') resetExecution();
+                }}
+                disabled={busy}
+                maxLength={activeTool === 'sound_effects' ? 450 : 10000}
+                placeholder={
+                  activeTool === 'sound_effects'
+                    ? 'Ejemplo: puerta metálica pesada cerrándose en un hangar, golpe seco y reverberación corta…'
+                    : activeTool === 'dialogue'
+                      ? 'Escribe el diálogo que quieres convertir en voz…'
+                      : 'Escribe lo que debe decir la voz…'
+                }
+              />
+              <div className="generar-input-meta">
+                <span>{text.length.toLocaleString('es-EC')} caracteres</span>
+                {activeTool !== 'sound_effects' ? (
+                  <div className="generar-segmented">
+                    <button
+                      type="button"
+                      className={`generar-segment-button glass-glow-button ${language === 'es' ? 'active' : ''}`}
+                      onClick={() => setLanguage('es')}
+                      disabled={busy}
+                    >
+                      ES
                     </button>
                     <button
                       type="button"
-                      className="generar-secondary-action glass-glow-button"
-                      onClick={resetExecution}
+                      className={`generar-segment-button glass-glow-button ${language === 'en' ? 'active' : ''}`}
+                      onClick={() => setLanguage('en')}
+                      disabled={busy}
                     >
-                      CAMBIAR
+                      EN
                     </button>
-                  </>
+                  </div>
                 ) : null}
               </div>
             </>
           ) : null}
 
-          {currentReady && activeTool !== 'clone' ? (
-            <>
-              {toolUsesText(activeTool) || activeTool === 'sound_effects' ? (
+          <div className="generar-action-row generar-audio-primary-actions">
+            {activeTool === 'clone' ? (
+              phase === 'awaiting' && cloneReady ? (
                 <>
-                  <div className="generar-audio-section-title">
-                    <strong>{activeTool === 'sound_effects' ? 'DESCRIPCIÓN DEL SONIDO' : 'TEXTO'}</strong>
-                    <span>
-                      {activeTool === 'sound_effects'
-                        ? 'Describe ambiente, intensidad, material, duración o acción.'
-                        : 'Escribe el contenido que debe interpretar la voz.'}
-                    </span>
-                  </div>
-                  <textarea
-                    className="generar-textarea"
-                    value={text}
-                    onChange={(event) => {
-                      setText(event.target.value);
-                      if (phase !== 'running' && phase !== 'planning') resetExecution();
-                    }}
-                    disabled={busy}
-                    maxLength={activeTool === 'sound_effects' ? 3000 : 10000}
-                    placeholder={
-                      activeTool === 'sound_effects'
-                        ? 'Ejemplo: puerta metálica pesada cerrándose en un hangar amplio, golpe seco y reverberación corta…'
-                        : activeTool === 'dialogue'
-                          ? 'Escribe la línea o diálogo que quieres convertir en voz…'
-                          : 'Escribe lo que debe decir la voz…'
-                    }
-                  />
-                  <div className="generar-input-meta">
-                    <span>{text.length.toLocaleString('es-EC')} caracteres</span>
-                    {activeTool !== 'sound_effects' ? (
-                      <div className="generar-segmented">
-                        <button
-                          type="button"
-                          className={`generar-segment-button glass-glow-button ${language === 'es' ? 'active' : ''}`}
-                          onClick={() => setLanguage('es')}
-                          disabled={busy}
-                        >
-                          ES
-                        </button>
-                        <button
-                          type="button"
-                          className={`generar-segment-button glass-glow-button ${language === 'en' ? 'active' : ''}`}
-                          onClick={() => setLanguage('en')}
-                          disabled={busy}
-                        >
-                          EN
-                        </button>
-                      </div>
-                    ) : null}
-                  </div>
+                  <button
+                    type="button"
+                    className="generar-primary-action glass-glow-button"
+                    onClick={() => void executeClone()}
+                  >
+                    CONFIRMAR Y CLONAR
+                  </button>
+                  <button
+                    type="button"
+                    className="generar-secondary-action glass-glow-button"
+                    onClick={resetExecution}
+                  >
+                    CAMBIAR
+                  </button>
                 </>
-              ) : null}
-
-              <div className="generar-action-row">
+              ) : (
+                <button
+                  type="button"
+                  className="generar-primary-action glass-glow-button"
+                  onClick={prepareClone}
+                  disabled={busy || !session}
+                >
+                  {busy ? 'PREPARANDO…' : 'PREPARAR CLON'}
+                </button>
+              )
+            ) : (
+              <>
                 {phase !== 'awaiting' && phase !== 'completed' ? (
                   <button
                     type="button"
@@ -866,17 +1399,33 @@ export default function ApiAudioModule({ context }: GenerarModuleProps) {
                     </button>
                   </>
                 ) : null}
-                {(phase === 'completed' || phase === 'failed') ? (
-                  <button
-                    type="button"
-                    className="generar-secondary-action glass-glow-button"
-                    onClick={resetExecution}
-                  >
-                    NUEVO PROCESO
-                  </button>
-                ) : null}
+              </>
+            )}
+
+            {(phase === 'completed' || phase === 'failed') ? (
+              <button
+                type="button"
+                className="generar-secondary-action glass-glow-button"
+                onClick={resetExecution}
+              >
+                NUEVO PROCESO
+              </button>
+            ) : null}
+          </div>
+
+          {(phase === 'planning' || phase === 'running') ? (
+            <div className="generar-audio-progress-card">
+              <div className="generar-audio-progress-head">
+                <span>
+                  <strong>{phase === 'planning' ? 'PREPARANDO' : activeTool === 'sound_effects' ? 'GENERANDO SONIDO' : 'PROCESANDO AUDIO'}</strong>
+                  <small>{phase === 'planning' ? 'Organizando la solicitud…' : 'Nayla está trabajando en tu resultado…'}</small>
+                </span>
+                <em>~{Math.round(processProgress)}%</em>
               </div>
-            </>
+              <div className="generar-audio-progress-track" aria-label="Progreso estimado">
+                <i style={{ width: `${processProgress}%` }} />
+              </div>
+            </div>
           ) : null}
 
           {message ? (
@@ -913,13 +1462,27 @@ export default function ApiAudioModule({ context }: GenerarModuleProps) {
 
           {result?.url ? (
             <div className="generar-result generar-audio-result">
-              <div className="generar-audio-orb" aria-hidden="true">
-                <span /><span /><span /><span /><span />
+              <div className="generar-audio-result-head">
+                <div>
+                  <span>RESULTADO</span>
+                  <strong>{activeTool === 'sound_effects' ? 'EFECTO GENERADO' : 'AUDIO GENERADO'}</strong>
+                </div>
+                <button
+                  type="button"
+                  className="generar-audio-download glass-glow-button"
+                  onClick={() => void downloadResult()}
+                  disabled={downloadingResult}
+                >
+                  <span aria-hidden="true">↓</span>
+                  {downloadingResult ? 'DESCARGANDO…' : `DESCARGAR ${mediaFormatLabel(result)}`}
+                </button>
               </div>
-              <audio src={result.url} controls preload="metadata" />
+
+              <NaylaAudioResultPlayer src={result.url} />
+
               <div className="generar-result-meta">
                 <span>{result.etiqueta || 'AUDIO'}</span>
-                <span>BÓVEDA PRIVADA</span>
+                <span>{mediaFormatLabel(result)} · BÓVEDA PRIVADA</span>
               </div>
               <div className="generar-action-row">
                 <button
@@ -933,6 +1496,217 @@ export default function ApiAudioModule({ context }: GenerarModuleProps) {
             </div>
           ) : null}
         </div>
+      ) : null}
+    </div>
+  );
+
+  return (
+    <section
+      data-generar-module="audio"
+      className="generar-module-stage generar-audio-studio generar-audio-immersive"
+    >
+      <div className="generar-audio-app">
+        <header className="generar-audio-app-header">
+          <button
+            type="button"
+            className="generar-audio-menu-button glass-glow-button"
+            aria-label="Abrir menú de audio"
+            onClick={() => setMenuOpen(true)}
+          >
+            <span />
+            <span />
+            <span />
+          </button>
+
+          <div className="generar-audio-app-title">
+            <small>NAYLA AUDIO</small>
+            <strong>{pageTitle}</strong>
+          </div>
+
+          <div className="generar-audio-app-status">
+            <span className="dot" />
+            <span>Cloud</span>
+          </div>
+        </header>
+
+        {menuOpen ? (
+          <div
+            className="generar-audio-drawer-layer"
+            role="presentation"
+            onClick={() => {
+              setAccountMenuOpen(false);
+              setMenuOpen(false);
+            }}
+          >
+            <aside
+              className="generar-audio-drawer"
+              role="dialog"
+              aria-modal="true"
+              aria-label="Menú de Nayla Audio"
+              onClick={(event) => event.stopPropagation()}
+            >
+              <div className="generar-audio-drawer-head">
+                <div>
+                  <small>NAYLA</small>
+                  <strong>AUDIO</strong>
+                </div>
+                <button
+                  type="button"
+                  className="generar-audio-drawer-close"
+                  aria-label="Cerrar menú"
+                  onClick={() => {
+                    setAccountMenuOpen(false);
+                    setMenuOpen(false);
+                  }}
+                >
+                  ‹
+                </button>
+              </div>
+
+              <nav className="generar-audio-nav">
+                <button
+                  type="button"
+                  className={`generar-audio-nav-item ${page === 'home' ? 'active' : ''}`}
+                  onClick={() => choosePage('home')}
+                >
+                  <span className="generar-audio-nav-glyph">⌂</span>
+                  <span><strong>Inicio</strong><small>Estudio de audio</small></span>
+                </button>
+
+                {menuSections.map((section) => (
+                  <div key={section.title} className="generar-audio-nav-section">
+                    <div className="generar-audio-nav-section-title">{section.title}</div>
+                    {section.items.map((item) => {
+                      const toolMeta = item.page !== 'voices'
+                        ? tools.find((tool) => tool.id === item.page)
+                        : null;
+                      const ready = item.page === 'voices'
+                        ? voices.length > 0 || voicesLoading
+                        : toolMeta?.ready && toolAvailability[toolMeta.id] === true;
+                      return (
+                        <button
+                          type="button"
+                          key={item.page}
+                          className={`generar-audio-nav-item ${page === item.page ? 'active' : ''}`}
+                          onClick={() => choosePage(item.page)}
+                        >
+                          <span className="generar-audio-nav-glyph">{item.glyph}</span>
+                          <span>
+                            <strong>{item.label}</strong>
+                            <small>{item.hint}</small>
+                          </span>
+                          <em className={ready ? 'ready' : ''}>
+                            {ready ? '•' : toolMeta?.ready === false ? 'PRÓX.' : ''}
+                          </em>
+                        </button>
+                      );
+                    })}
+                  </div>
+                ))}
+              </nav>
+
+              <div className="generar-audio-account">
+                {accountMenuOpen ? (
+                  <div className="generar-audio-account-menu" id="nayla-audio-account-menu">
+                    <button
+                      type="button"
+                      className="generar-audio-account-action"
+                      onClick={handleReturnToNayla}
+                    >
+                      <span aria-hidden="true">←</span>
+                      <span>
+                        <strong>REGRESAR A NAYLA</strong>
+                        <small>Volver al editor principal</small>
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      className="generar-audio-account-action danger"
+                      onClick={() => void handleAudioSignOut()}
+                      disabled={signingOut}
+                    >
+                      <span aria-hidden="true">↪</span>
+                      <span>
+                        <strong>{signingOut ? 'CERRANDO SESIÓN…' : 'CERRAR SESIÓN'}</strong>
+                        <small>Salir de esta cuenta</small>
+                      </span>
+                    </button>
+                  </div>
+                ) : null}
+
+                <button
+                  type="button"
+                  className={`generar-audio-account-button ${accountMenuOpen ? 'active' : ''}`}
+                  aria-label="Cuenta Nayla"
+                  aria-expanded={accountMenuOpen}
+                  aria-controls="nayla-audio-account-menu"
+                  onClick={() => setAccountMenuOpen((value) => !value)}
+                >
+                  {session?.user?.photoURL ? (
+                    <img
+                      src={session.user.photoURL}
+                      alt=""
+                      className="generar-audio-account-avatar"
+                    />
+                  ) : (
+                    <span className="generar-audio-account-avatar generar-audio-account-initial">
+                      {(session?.user?.email || 'N').slice(0, 1).toUpperCase()}
+                    </span>
+                  )}
+                  <span className="generar-audio-account-copy">
+                    <strong>{session?.user?.email || 'Cuenta Nayla'}</strong>
+                    <small>CUENTA CONECTADA</small>
+                  </span>
+                  <span className="generar-audio-account-chevron" aria-hidden="true">
+                    {accountMenuOpen ? '⌃' : '⌄'}
+                  </span>
+                </button>
+              </div>
+            </aside>
+          </div>
+        ) : null}
+
+        <main className="generar-audio-app-content">
+          {page === 'home' ? (
+            <div className="generar-audio-home">
+              <div className="generar-audio-home-hero">
+                <span className="generar-eyebrow">ESTUDIO</span>
+                <h1>Nayla Audio</h1>
+                <p>Crea, transforma y organiza voz, sonido y transcripción desde un solo módulo.</p>
+              </div>
+
+              <div className="generar-audio-home-grid">
+                <button type="button" className="generar-audio-home-card featured" onClick={() => choosePage('voices')}>
+                  <span className="generar-audio-home-glyph">VC</span>
+                  <strong>VOCES</strong>
+                  <small>Biblioteca completa · automáticas · clonadas · catálogo</small>
+                </button>
+                {tools.map((tool) => {
+                  const ready = tool.ready && toolAvailability[tool.id] === true;
+                  return (
+                    <button
+                      type="button"
+                      key={tool.id}
+                      className="generar-audio-home-card"
+                      onClick={() => chooseTool(tool.id)}
+                    >
+                      <span className="generar-audio-home-glyph">{tool.glyph}</span>
+                      <strong>{tool.label}</strong>
+                      <small>{tool.description}</small>
+                      <em className={ready ? 'ready' : ''}>
+                        {ready ? 'DISPONIBLE' : tool.ready ? 'PENDIENTE' : 'PRÓXIMAMENTE'}
+                      </em>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          ) : null}
+
+          {page === 'voices' ? renderVoiceLibrary() : null}
+          {page !== 'home' && page !== 'voices' ? renderToolPage() : null}
+        </main>
+
       </div>
     </section>
   );

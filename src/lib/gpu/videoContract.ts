@@ -22,9 +22,14 @@ export const gpuVideoRequestSchema = z
     mediaId: z.string().uuid(),
     prompt: z.string().trim().min(3).max(1500),
     options: gpuVideoOptionsSchema,
-    operation: z.enum(["quote", "start"]),
+    operation: z.enum(["quote", "start", "continue"]),
+    jobId: z.string().uuid().optional(),
     computeSelectionId: z.string().min(20).max(128).optional(),
   })
+  .refine(
+    (value) => value.operation !== "continue" || !!value.jobId,
+    "Falta la sesión GPU.",
+  )
   .refine(
     (value) => value.operation !== "start" || !!value.computeSelectionId,
     "Primero elige una cotización GPU.",

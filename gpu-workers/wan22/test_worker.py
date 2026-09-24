@@ -40,5 +40,24 @@ class WorkerContractTests(unittest.TestCase):
         with patch.object(socket, 'getaddrinfo', return_value=[(0, 0, 0, '', ('1.1.1.1', 443))]):
             worker.validate_public_url('https://image.example/x')
 
+class SessionTests(unittest.TestCase):
+    def test_two_clips_reuse_one_pipeline(self):
+        deadline = '2099-01-01T00:00:00Z'
+        first = {'action': 'generate', 'generationId': 'a', 'jobId': 'job', 'deadline': deadline}
+        second = {**first, 'generationId': 'b'}
+        pipeline = object()
+        with patch.object(worker, 'fetch_manifest', side_effect=[first, {'action': 'wait'}, second, {'action': 'stop'}]), patch.object(worker, 'load_pipeline', return_value=pipeline) as load, patch.object(worker, 'generate_clip') as clip, patch.object(worker, 'send_result') as result, patch.object(worker.signal, 'alarm'), patch.object(worker.signal, 'signal'), patch.object(worker.time, 'sleep'):
+            worker.main('https://editor.example/manifest')
+            load.assert_called_once()
+            self.assertEqual(clip.call_count, 2)
+            self.assertTrue(all(call.args[1] is pipeline for call in clip.call_args_list))
+            self.assertEqual([call.args[0]['generationId'] for call in result.call_args_list], ['a', 'b'])
+
+    def test_duplicate_generation_is_not_rendered_twice(self):
+        first = {'action': 'generate', 'generationId': 'a', 'jobId': 'job', 'deadline': '2099-01-01T00:00:00Z'}
+        with patch.object(worker, 'fetch_manifest', side_effect=[first, first, {'action': 'stop'}]), patch.object(worker, 'load_pipeline'), patch.object(worker, 'generate_clip') as clip, patch.object(worker, 'send_result'), patch.object(worker.signal, 'alarm'), patch.object(worker.signal, 'signal'), patch.object(worker.time, 'sleep'):
+            worker.main('https://editor.example/manifest')
+            clip.assert_called_once()
+
 if __name__ == '__main__':
     unittest.main()

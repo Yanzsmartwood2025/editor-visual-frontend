@@ -1,3 +1,4 @@
+import GpuSessionClock from "./GpuSessionClock";
 import { useMemo, useRef, useState } from "react";
 import type { GenerarMediaItem, GenerarModuleProps } from "../../types";
 import { uploadMediaFilesToBodega } from "../../../../lib/mediaUpload";
@@ -310,7 +311,9 @@ export default function GpuVideoModule({ context }: GenerarModuleProps) {
             <p className="gpu-video-note">
               24 fotogramas por segundo · sin audio generado. La primera
               preparación descarga el modelo y puede tardar varios minutos. El
-              tiempo de preparación también consume alquiler.
+              tiempo de preparación también consume alquiler. Al terminar
+              tendrás hasta dos minutos para enviar otro video o cerrar la GPU;
+              la espera también consume alquiler.
             </p>
             {!work.quote && (
               <button
@@ -319,6 +322,7 @@ export default function GpuVideoModule({ context }: GenerarModuleProps) {
                 disabled={
                   frozen ||
                   work.recoveryFailed ||
+                  (!!work.idle && !work.job?.videoSession?.canContinue) ||
                   !session ||
                   !projectId ||
                   !threadId ||
@@ -327,14 +331,18 @@ export default function GpuVideoModule({ context }: GenerarModuleProps) {
                   !gpuVideoOptionsSchema.safeParse(options).success
                 }
                 onClick={() =>
-                  void work.prepare({
+                  void (work.idle ? work.continueWork : work.prepare)({
                     mediaId: source!.id,
                     prompt: prompt.trim(),
                     options,
                   })
                 }
               >
-                {work.busy ? "CONSULTANDO…" : "COTIZAR GPU"}
+                {work.busy
+                  ? "ENVIANDO…"
+                  : work.idle
+                    ? "GENERAR EN GPU ACTIVA"
+                    : "COTIZAR GPU"}
               </button>
             )}
             {work.quote && (
@@ -370,7 +378,39 @@ export default function GpuVideoModule({ context }: GenerarModuleProps) {
             className="generar-glass-panel gpu-video-result"
             aria-live="polite"
           >
-            <strong>{stages[work.job.status] || work.job.status}</strong>
+            <strong>
+              {work.idle
+                ? "Video terminado · ¿necesitas otro trabajo?"
+                : stages[work.job.status] || work.job.status}
+            </strong>
+            <GpuSessionClock job={work.job} />
+            {work.idle && (
+              <div className="generar-action-row">
+                <button
+                  type="button"
+                  className="generar-primary-action glass-glow-button"
+                  disabled={work.busy || !work.job.videoSession?.canContinue}
+                  onClick={() =>
+                    document.getElementById("gpu-video-prompt")?.focus()
+                  }
+                >
+                  SÍ, PREPARAR OTRO VIDEO
+                </button>
+                <p>
+                  {work.job.videoSession?.canContinue
+                    ? "El modelo sigue cargado. Ajusta la foto y el prompt y pulsa GENERAR EN GPU ACTIVA."
+                    : "Queda poco tiempo en esta sesión. Cierra la GPU y cotiza otra para continuar."}
+                </p>
+                <button
+                  type="button"
+                  className="generar-secondary-action glass-glow-button"
+                  disabled={work.busy}
+                  onClick={() => void work.cancel()}
+                >
+                  NO, CERRAR Y ELIMINAR GPU
+                </button>
+              </div>
+            )}
             {work.running && !result && (
               <>
                 <p>
@@ -424,7 +464,9 @@ export default function GpuVideoModule({ context }: GenerarModuleProps) {
                   Guardado en tu Bóveda
                   {work.job.destroyedAt
                     ? " · GPU cerrada"
-                    : " · comprobando cierre de GPU"}
+                    : work.idle
+                      ? " · GPU disponible para otro video"
+                      : " · comprobando cierre de GPU"}
                 </small>
               </>
             )}

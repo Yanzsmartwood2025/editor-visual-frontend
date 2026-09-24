@@ -34,6 +34,35 @@ const testEngine = async (dialog, engine) => {
     await clickTextButton(moduleGrid, moduleName);
     const moduleRoot = dialog.locator(`[data-generar-module="${moduleIds[moduleName]}"]`);
     await moduleRoot.waitFor({ state: 'visible', timeout: 30_000 });
+
+    if (engine === 'API' && moduleName === 'AUDIO') {
+      await moduleRoot.getByText('NAYLA AUDIO', { exact: true }).waitFor({ state: 'visible', timeout: 30_000 });
+      await moduleRoot.getByRole('button', { name: 'Abrir menú de audio' }).click();
+
+      const drawer = moduleRoot.getByRole('dialog', { name: 'Menú de Nayla Audio' });
+      await drawer.waitFor({ state: 'visible', timeout: 30_000 });
+      await drawer.getByRole('button', { name: /Voces/ }).first().waitFor({ state: 'visible' });
+      await drawer.getByRole('button', { name: /Clonar voz/ }).waitFor({ state: 'visible' });
+      await drawer.getByRole('button', { name: /Sonidos/ }).waitFor({ state: 'visible' });
+
+      const accountButton = drawer.getByRole('button', { name: 'Cuenta Nayla' });
+      await accountButton.waitFor({ state: 'visible', timeout: 30_000 });
+      await accountButton.click();
+
+      const returnButton = drawer.getByRole('button', { name: /REGRESAR A NAYLA/ });
+      await returnButton.waitFor({ state: 'visible', timeout: 30_000 });
+      await returnButton.click();
+      await dialog.waitFor({ state: 'hidden', timeout: 30_000 });
+
+      const generateButton = page.locator('button[title="GENERAR"]');
+      await generateButton.waitFor({ state: 'visible', timeout: 30_000 });
+      await generateButton.click();
+      await dialog.waitFor({ state: 'visible', timeout: 30_000 });
+      await clickTextButton(dialog.locator('.generar-engine-grid'), 'API');
+      await moduleGrid.waitFor({ state: 'visible', timeout: 30_000 });
+      continue;
+    }
+
     await dialog.getByRole('button', { name: `Volver a ${engine}` }).click();
     await moduleGrid.waitFor({ state: 'visible', timeout: 30_000 });
   }
@@ -58,7 +87,7 @@ try {
   await dialog.waitFor({ state: 'hidden', timeout: 30_000 });
 
   assert(pageErrors.length === 0, `Errores no controlados del navegador: ${pageErrors.join(' | ')}`);
-  console.log('Playwright smoke OK: GENERAR → API/GPU → 5 módulos → volver/cerrar.');
+  console.log('Playwright smoke OK: GENERAR → API/GPU → 5 módulos + AUDIO inmersivo → volver/cerrar.');
 } finally {
   await browser.close();
 }
