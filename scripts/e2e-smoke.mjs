@@ -44,9 +44,12 @@ const testEngine = async (dialog, engine) => {
       await drawer.getByRole('button', { name: /Voces/ }).first().waitFor({ state: 'visible' });
       await drawer.getByRole('button', { name: /Clonar voz/ }).waitFor({ state: 'visible' });
       await drawer.getByRole('button', { name: /Sonidos/ }).waitFor({ state: 'visible' });
-      await drawer.getByRole('button', { name: 'Cerrar menú' }).click();
 
-      const returnButton = moduleRoot.getByRole('button', { name: /REGRESAR A NAYLA/ });
+      const accountButton = drawer.getByRole('button', { name: 'Cuenta Nayla' });
+      await accountButton.waitFor({ state: 'visible', timeout: 30_000 });
+      await accountButton.click();
+
+      const returnButton = drawer.getByRole('button', { name: /REGRESAR A NAYLA/ });
       await returnButton.waitFor({ state: 'visible', timeout: 30_000 });
       await returnButton.click();
       await dialog.waitFor({ state: 'hidden', timeout: 30_000 });
