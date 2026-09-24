@@ -38,6 +38,60 @@ type ValidatedRenderProps = Record<string, unknown> & {
   canvasHeight: number;
 };
 
+const FAST_RENDER_QUALITIES = new Set(['480p', '720p']);
+const FAST_TRANSITION_FALLBACKS: Record<string, string> = {
+  zoom: 'fade',
+  'film-burn': 'push-cut',
+  'blur-slide': 'slide',
+  'cross-zoom': 'fade',
+  'dreamy-zoom': 'fade',
+  'linear-blur': 'slide',
+};
+
+const optimizeInputPropsForFastRender = (
+  inputProps: ValidatedRenderProps
+): { inputProps: ValidatedRenderProps; optimizedTransitions: number; motionBlurCaps: number } => {
+  const quality = String(inputProps.exportQuality || '').toLowerCase();
+  if (!FAST_RENDER_QUALITIES.has(quality)) {
+    return { inputProps, optimizedTransitions: 0, motionBlurCaps: 0 };
+  }
+
+  let optimizedTransitions = 0;
+  let motionBlurCaps = 0;
+  const timeline = (inputProps.timeline || []).map((clip: any) => {
+    const transitionType = String(clip?.transitionType || '');
+    const fallback = FAST_TRANSITION_FALLBACKS[transitionType];
+    const nextMotionBlur = clip?.motionBlur && typeof clip.motionBlur === 'object'
+      ? {
+          ...clip.motionBlur,
+          samples: Math.min(2, Math.max(1, Number(clip.motionBlur.samples) || 2)),
+        }
+      : clip?.motionBlur;
+
+    if (fallback) optimizedTransitions += 1;
+    if (
+      clip?.motionBlur &&
+      Number.isFinite(Number(clip.motionBlur.samples)) &&
+      Number(clip.motionBlur.samples) > 2
+    ) {
+      motionBlurCaps += 1;
+    }
+
+    if (!fallback && nextMotionBlur === clip?.motionBlur) return clip;
+    return {
+      ...clip,
+      ...(fallback ? { transitionType: fallback } : {}),
+      ...(nextMotionBlur !== undefined ? { motionBlur: nextMotionBlur } : {}),
+    };
+  });
+
+  return {
+    inputProps: { ...inputProps, timeline },
+    optimizedTransitions,
+    motionBlurCaps,
+  };
+};
+
 const validateInputProps = (inputProps: unknown): ValidatedRenderProps => {
   if (!inputProps || typeof inputProps !== 'object' || Array.isArray(inputProps)) {
     throw new RenderValidationError('inputProps debe ser un objeto.');
@@ -806,6 +860,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       inputProps,
     });
 
+    const fastOptimization = optimizeInputPropsForFastRender(inputProps);
+    inputProps = fastOptimization.inputProps;
+
     const durationInFrames = getCompositionDurationInFrames(
       inputProps.timeline as any[],
       30,
@@ -870,6 +927,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       canvasWidth: inputProps.canvasWidth,
       canvasHeight: inputProps.canvasHeight,
       mediaDurationSeconds: durationInSeconds,
+      renderQuality: String(inputProps.exportQuality || ''),
+      fastRenderOptimizations: {
+        optimizedTransitions: fastOptimization.optimizedTransitions,
+        motionBlurCaps: fastOptimization.motionBlurCaps,
+      },
       detached: {
         sandboxId: detached.sandboxId,
         cmdId: detached.cmdId,
