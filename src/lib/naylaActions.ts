@@ -350,10 +350,31 @@ export const naylaActionSchema = z.discriminatedUnion('action', [
 
 export type NaylaAction = z.infer<typeof naylaActionSchema>;
 
+const NAYLA_ACTION_NAMES = [
+  'BUILD_TIMELINE',
+  'REMOVE_VIDEO_BACKGROUND',
+  'CREATE_AUTO_CAPTIONS',
+  'SEARCH_MEDIA',
+  'GENERATE_IMAGE',
+  'GENERATE_VIDEO',
+  'GENERATE_AUDIO',
+  'GENERATE_3D',
+  'RUN_GPU_JOB',
+] as const;
+
+const normalizeActionName = (value: unknown) => {
+  if (typeof value !== 'string') return value;
+  const normalized = value.trim().toUpperCase().replace(/[\s-]+/g, '_');
+  return (NAYLA_ACTION_NAMES as readonly string[]).includes(normalized)
+    ? normalized
+    : value.trim();
+};
+
 const normalizeNaylaActionShape = (value: unknown): unknown => {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return value;
 
   const action = { ...(value as Record<string, unknown>) };
+  action.action = normalizeActionName(action.action);
   if (action.action !== 'BUILD_TIMELINE' || !Array.isArray(action.assets)) return action;
 
   action.assets = action.assets.map((item) => {
@@ -434,9 +455,14 @@ export const getNaylaActionValidationIssues = (raw: string): string[] => {
     const json = normalizeNaylaActionShape(JSON.parse(candidate));
     const parsed = naylaActionSchema.safeParse(json);
     if (!parsed.success) {
-      return parsed.error.issues.slice(0, 12).map((issue) =>
-        `${issue.path.join('.') || 'root'}: ${issue.message}`
-      );
+      return parsed.error.issues.slice(0, 12).map((issue) => {
+        const path = issue.path.join('.') || 'root';
+        if (path === 'action') {
+          const received = (json as Record<string, unknown>)?.action;
+          return `action: valor recibido ${JSON.stringify(received)} no coincide con una acción admitida`;
+        }
+        return `${path}: ${issue.message}`;
+      });
     }
 
     if (
