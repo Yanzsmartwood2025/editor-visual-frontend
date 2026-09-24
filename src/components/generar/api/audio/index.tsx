@@ -518,9 +518,9 @@ export default function ApiAudioModule({ context }: GenerarModuleProps) {
   const result = job?.galleryItem || null;
   const busy = phase === 'planning' || phase === 'running';
   const currentMeta = tools.find((item) => item.id === activeTool)!;
-  const currentReady = currentMeta.ready && toolAvailability[activeTool] === true;
-  const showVoiceLibrary = (toolNeedsVoice(activeTool) || activeTool === 'clone') && currentReady;
-  const showAudioTray = (toolNeedsInput(activeTool) || activeTool === 'clone') && currentReady;
+  const showAudioTray =
+    (toolNeedsInput(activeTool) || activeTool === 'clone') &&
+    toolAvailability[activeTool] === true;
 
   const pageTitle =
     page === 'home'
