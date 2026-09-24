@@ -436,7 +436,10 @@ const startDeepgram = async (action: NaylaAction): Promise<CloudProviderStart> =
     const defaultModel = requestedLanguage.startsWith('en')
       ? 'aura-2-thalia-en'
       : 'aura-2-celeste-es';
-    const model = process.env.DEEPGRAM_TTS_MODEL?.trim() || defaultModel;
+    const model =
+      action.voiceId ||
+      process.env.DEEPGRAM_TTS_MODEL?.trim() ||
+      defaultModel;
     const output = await binaryRequest(
       `https://api.deepgram.com/v1/speak?model=${encodeURIComponent(model)}`,
       {
