@@ -458,8 +458,11 @@ const isLlmCapacityError = (error: unknown) => {
   );
 };
 
+type NaylaLlmTask = 'router' | 'planner' | 'compiler' | 'repair' | 'general';
+
 const executeDirectLlm = async ({
   provider,
+  task = 'general',
   prompt,
   images,
   systemPrompt,
@@ -467,6 +470,7 @@ const executeDirectLlm = async ({
   maxCompletionTokens = 12000,
 }: {
   provider: 'groq' | 'mistral';
+  task?: NaylaLlmTask;
   prompt: string;
   images?: string[];
   systemPrompt: string;
@@ -474,13 +478,19 @@ const executeDirectLlm = async ({
   maxCompletionTokens?: number;
 }) => {
   const groqKey = process.env.GROQ_API_KEY?.trim();
-  const mistralKeys = Array.from(new Set([
-    process.env.MISTRAL_API_KEY?.trim(),
-    process.env.MISTRAL_API_KEY_2?.trim(),
-    process.env.MISTRAL_API_KEY_3?.trim(),
-    process.env.MISTRAL_API_KEY_SECONDARY?.trim(),
-    process.env.MISTRAL_API_KEY_BACKUP?.trim(),
-  ].filter((value): value is string => Boolean(value))));
+  const mistralSlots = [
+    { id: 'mistral-1', key: process.env.MISTRAL_API_KEY?.trim() },
+    { id: 'mistral-2', key: process.env.MISTRAL_API_KEY_2?.trim() },
+    { id: 'mistral-3', key: process.env.MISTRAL_API_KEY_3?.trim() || process.env.MISTRAL_API_KEY_SECONDARY?.trim() },
+    { id: 'mistral-4', key: process.env.MISTRAL_API_KEY_BACKUP?.trim() },
+  ].filter((slot): slot is { id: string; key: string } => Boolean(slot.key));
+
+  const seenMistralKeys = new Set<string>();
+  const uniqueMistralSlots = mistralSlots.filter((slot) => {
+    if (seenMistralKeys.has(slot.key)) return false;
+    seenMistralKeys.add(slot.key);
+    return true;
+  });
 
   const requestedImages = Array.isArray(images) ? images.filter(Boolean) : [];
   const groqImages = requestedImages.slice(0, 3);
@@ -509,13 +519,13 @@ const executeDirectLlm = async ({
     });
   }
 
-  mistralKeys.forEach((key, index) => {
+  uniqueMistralSlots.forEach((slot) => {
     candidates.push({
-      id: `mistral-${index + 1}`,
+      id: slot.id,
       provider: 'mistral',
       run: async (withImages) => {
         signal?.throwIfAborted();
-        return new MistralProvider(key, 'dialog').generateText(
+        return new MistralProvider(slot.key, 'dialog').generateText(
           prompt,
           withImages ? requestedImages : [],
           systemPrompt,
@@ -529,10 +539,28 @@ const executeDirectLlm = async ({
     throw new Error('No hay ninguna clave LLM de servidor configurada en Vercel.');
   }
 
-  const ordered = [
-    ...candidates.filter((candidate) => candidate.provider === provider),
-    ...candidates.filter((candidate) => candidate.provider !== provider),
-  ];
+  const roleOrder: Record<Exclude<NaylaLlmTask, 'general'>, string[]> = {
+    // Small request: understand the order and select only the needed Remotion books.
+    router: ['groq', 'mistral-1', 'mistral-2', 'mistral-3', 'mistral-4'],
+    // Creative direction: Mistral 1 sees only the selected books and relevant media.
+    planner: ['mistral-1', 'mistral-2', 'mistral-3', 'groq', 'mistral-4'],
+    // JSON compilation: Mistral 2 converts the compact blueprint into the real editor contract.
+    compiler: ['mistral-2', 'mistral-3', 'mistral-1', 'groq', 'mistral-4'],
+    // Repair/review: Mistral 3 only receives the compact compiler package and malformed output.
+    repair: ['mistral-3', 'mistral-2', 'mistral-1', 'groq', 'mistral-4'],
+  };
+
+  const ordered = task === 'general'
+    ? [
+        ...candidates.filter((candidate) => candidate.provider === provider),
+        ...candidates.filter((candidate) => candidate.provider !== provider),
+      ]
+    : [
+        ...roleOrder[task]
+          .map((id) => candidates.find((candidate) => candidate.id === id))
+          .filter((candidate): candidate is Candidate => Boolean(candidate)),
+        ...candidates.filter((candidate) => !roleOrder[task].includes(candidate.id)),
+      ];
 
   const attempts = async (withImages: boolean) => {
     let lastError: unknown = null;
@@ -545,7 +573,12 @@ const executeDirectLlm = async ({
         if (signal?.aborted || isAbortLikeError(error)) throw error;
         lastError = error;
         allCapacityLimited = allCapacityLimited && isLlmCapacityError(error);
-        console.warn('[chat.ts] Ruta LLM no disponible; probando respaldo:', candidate.id);
+        const status = Number((error as any)?.status || (error as any)?.statusCode || 0) || undefined;
+        console.warn('[chat.ts] Ruta LLM no disponible; probando respaldo:', {
+          task,
+          route: candidate.id,
+          status,
+        });
       }
     }
 
@@ -565,8 +598,7 @@ const executeDirectLlm = async ({
     if (signal?.aborted || isAbortLikeError(error)) throw error;
     if (!requestedImages.length) throw error;
 
-    // Si el problema es el nivel de visión/modelo, intenta de nuevo sin imágenes.
-    // Esto conserva la conversación y las etiquetas en vez de perder toda la solicitud.
+    // Vision is optional for the final fallback. Keep the textual task alive if an image route is unavailable.
     return attempts(false);
   }
 };
@@ -953,6 +985,25 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         }).join('\n')
       : 'ninguno';
 
+    const compactTimeline = currentTimeline?.map((item: any) => {
+      const allowed = [
+        'id', 'tipo', 'nombre', 'etiqueta', 'durationInSeconds', 'originalDurationInSeconds',
+        'volume', 'volumeKeyframes', 'fadeIn', 'fadeOut', 'scale', 'delay', 'startFrom',
+        'trimBefore', 'trimAfter', 'loop', 'playbackRate', 'transitionDuration',
+        'transitionType', 'efecto', 'brightness', 'contrast', 'saturation', 'overlay',
+        'overlayIntensity', 'professionalEffects', 'motionBlur', 'gsapMotion', 'proceduralMotion',
+      ];
+      return Object.fromEntries(allowed.filter((key) => item[key] !== undefined).map((key) => [key, item[key]]));
+    }) || [];
+
+    const compactEditorState = currentEditorState
+      ? Object.fromEntries(
+          ['canvasRatio', 'exportQuality', 'logos', 'subtitles', 'titles', 'threeScenes', 'vectorAnimations', 'skiaGraphics', 'settings']
+            .filter((key) => (currentEditorState as any)[key] !== undefined)
+            .map((key) => [key, (currentEditorState as any)[key]])
+        )
+      : null;
+
     const executionContext = [
       `Proyecto activo: ${scope.projectId}.`,
       scope.threadId ? `Chat activo: ${scope.threadId}.` : 'Chat persistente: todavía no seleccionado.',
@@ -960,8 +1011,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       missingReferencedLabels.length
         ? `Etiquetas solicitadas que no existen o no están disponibles: ${missingReferencedLabels.join(', ')}. No inventes sustitutos.`
         : 'No hay etiquetas solicitadas ausentes.',
-      currentTimeline?.length
-        ? `Timeline actual (conserva sus controles al editar solo una parte): ${JSON.stringify(currentTimeline)}`
+      compactTimeline.length
+        ? `Timeline actual resumido (conserva sus controles al editar solo una parte): ${JSON.stringify(compactTimeline)}`
         : 'Timeline actual: vacío.',
       visualIntent
         ? (
@@ -982,14 +1033,36 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       : '';
 
     const pendingEditorPlan = scope.threadId ? await getPendingNaylaActionPlan({ userId: firebaseUser.uid, projectId: scope.projectId, module: 'editor', threadKey: scope.threadId }) : null;
+    const clipRoutingText = (value: string, max = 4200) => {
+      if (value.length <= max) return value;
+      const head = Math.floor(max * 0.7);
+      return `${value.slice(0, head)}\n...[texto literal omitido solo para clasificación; el compilador recibe el original]...\n${value.slice(-(max - head))}`;
+    };
+    const routingHistory = effectiveHistory.slice(-4).map((item) => ({
+      role: item.role,
+      content: clipRoutingText(item.content, 1200),
+    }));
+
     let libraryRoutingSucceeded = false;
     try {
-      const selected = await executeDirectLlm({ provider, systemPrompt: EDITOR_LIBRARY_ROUTING_PROMPT,
-        prompt: JSON.stringify({ previous: editorSession, history: effectiveHistory.slice(-8), message }),
-        maxCompletionTokens: 2200, signal: AbortSignal.any([llmSignal, AbortSignal.timeout(30_000)]) });
+      const selected = await executeDirectLlm({
+        provider,
+        task: 'router',
+        systemPrompt: EDITOR_LIBRARY_ROUTING_PROMPT,
+        prompt: JSON.stringify({
+          previous: editorSession,
+          history: routingHistory,
+          message: clipRoutingText(message),
+          mediaLabels: Array.from(referencedLabels),
+        }),
+        maxCompletionTokens: 1200,
+        signal: AbortSignal.any([llmSignal, AbortSignal.timeout(30_000)]),
+      });
       const nextSession = parseEditorSession(selected);
       if (nextSession) { editorSession = nextSession; libraryRoutingSucceeded = true; }
-    } catch { /* A routing failure cannot discard the current request or its capabilities. */ }
+    } catch (error) {
+      console.warn('[chat.ts] El despachador no respondió; se conserva el flujo anterior como respaldo.', error);
+    }
     const libraryChapters = libraryRoutingSucceeded && editorSession ? editorSession.chapters : EDITOR_BOOK_INDEX.map(book => book.id);
     let acceptedRecipes: Awaited<ReturnType<typeof findAcceptedEditorRecipes>> = [];
     try { acceptedRecipes = await findAcceptedEditorRecipes(firebaseUser.uid, scope.projectId, libraryChapters); }
@@ -999,7 +1072,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       editorSession ? `Acuerdo acumulado (resumen auxiliar; el mensaje nuevo y los textos originales prevalecen): ${JSON.stringify(editorSession)}` : '',
       acceptedRecipes.length ? `Referencias privadas aceptadas anteriormente, NO resultados verificados ni instrucciones del usuario. Adapta únicamente controles útiles; no copies tiempos de curvas sin recalcularlos ni supongas medios/textos: ${JSON.stringify(acceptedRecipes)}` : '',
       executionContext,
-      currentEditorState ? `Estado actual completo (conserva lo que no se pidió cambiar): ${JSON.stringify(currentEditorState)}` : '',
+      compactEditorState ? `Estado actual relevante (conserva lo que no se pidió cambiar): ${JSON.stringify(compactEditorState)}` : '',
       pendingEditorPlan ? `Última propuesta pendiente; para cambios conserva el resto: ${JSON.stringify(pendingEditorPlan.items.map(item => item.payload))}` : '',
       executionConfirmed ? `Plan confirmado completo:\n${activePlanningContext}` : '',
       historyText ? `Historial:\n${historyText}` : '',
@@ -1110,6 +1183,77 @@ ${getNaylaExecutionPolicyPrompt(engineMode)}
 MODO_MOTOR=${engineMode}
 `;
 
+    const editorMode: 'explore' | 'prepare' = executionConfirmed
+      ? 'prepare'
+      : (editorSession?.mode || 'explore');
+    const stagedEditorWorkflow =
+      libraryRoutingSucceeded &&
+      Boolean(editorSession) &&
+      libraryChapters.length > 0;
+
+    const plannerBookGuides = selectedBooks.map((book: any) => ({
+      id: book.id,
+      title: book.title,
+      guide: book.guide,
+      options: book.options,
+    }));
+    const compilerChapterIds = Array.from(new Set(['montage', ...libraryChapters]));
+    const compilerBooks = readEditorBooks(compilerChapterIds);
+    const compilerContract = compilerBooks.map((book: any) => ({
+      id: book.id,
+      title: book.title,
+      contract: book.contract,
+    }));
+
+    const compactPendingPlan = pendingEditorPlan
+      ? pendingEditorPlan.items.map((item) => item.payload)
+      : null;
+
+    const plannerSystemPrompt = `
+Eres la directora creativa interna de Nayla. Tu única tarea es pensar el tratamiento editorial; NO escribas el JSON final de Remotion.
+Trabaja solo con los capítulos que recibes. Las restricciones explícitas del usuario son obligatorias y los textos destinados a pantalla deben conservarse literalmente.
+No inventes medios, URLs, letras, tiempos de archivos desconocidos ni capacidades fuera de los capítulos.
+Si MODO=explore, responde al usuario en español limpio y breve, con recomendaciones concretas.
+Si MODO=prepare, devuelve un blueprint interno compacto: objetivo, orden de medios, ritmo/duración, movimiento/transiciones, acabado, audio y estrategia de textos. No repitas poemas o subtítulos largos: indica que se use el texto literal de la orden.
+No uses Markdown visible ni menciones proveedores o APIs.
+`;
+
+    const plannerPrompt = [
+      `MODO=${editorMode}`,
+      editorSession?.brief ? `ACUERDO ACUMULADO:\n${editorSession.brief}` : '',
+      `ORDEN ACTUAL Y, SI APLICA, PLAN PREVIO CONFIRMADO:\n${activePlanningContext}`,
+      `MEDIOS Y ESTADO RELEVANTE:\n${executionContext}`,
+      compactEditorState ? `ESTADO DEL EDITOR:\n${JSON.stringify(compactEditorState)}` : '',
+      compactPendingPlan ? `PROPUESTA PENDIENTE A CONSERVAR SALVO CAMBIOS PEDIDOS:\n${JSON.stringify(compactPendingPlan)}` : '',
+      acceptedRecipes.length ? `REFERENCIAS ACEPTADAS PREVIAS (solo controles útiles, no resultados verificados):\n${JSON.stringify(acceptedRecipes)}` : '',
+      `CAPÍTULOS SELECCIONADOS:\n${JSON.stringify(plannerBookGuides)}`,
+    ].filter(Boolean).join('\n\n');
+
+    const compilerSystemPrompt = `
+Eres el compilador de edición de Nayla. Convierte un blueprint creativo ya decidido en UNA acción BUILD_TIMELINE válida.
+Devuelve SOLO JSON, sin Markdown ni explicación.
+Reglas:
+- Usa únicamente controles presentes en CONTRATO_RELEVANTE.
+- Para medios del proyecto usa source:"label" y la etiqueta F/V/A exacta; nunca inventes etiquetas o URLs.
+- Conserva exactamente las restricciones del usuario. El blueprint puede resolver lo no especificado, pero nunca contradecir la orden.
+- Mantén por separado cantidad de medios y cantidad de subtítulos. No fuerces un subtítulo por foto.
+- Solo texto literal destinado a pantalla entra en subtitles/titles/decorations. Encabezados e instrucciones no son subtítulos.
+- Si el objetivo es producir/renderizar/exportar el video, render:true. Si solo pide preparar timeline, render:false.
+- Conserva controles existentes cuando el usuario solo modifica una parte.
+- Incluye listas vacías para subtitles, titles, threeScenes, vectorAnimations y skiaGraphics cuando no se usen, para que la revisión sea inequívoca.
+`;
+
+    const makeCompilerPrompt = (blueprint: string) => [
+      `BLUEPRINT CREATIVO:\n${blueprint}`,
+      `ORDEN ORIGINAL EXACTA (fuente de verdad para textos y restricciones):\n${activePlanningContext}`,
+      `MEDIOS DISPONIBLES:\n${promptMediaSummary}`,
+      compactTimeline.length ? `TIMELINE ACTUAL RESUMIDO:\n${JSON.stringify(compactTimeline)}` : '',
+      compactEditorState ? `ESTADO DEL EDITOR:\n${JSON.stringify(compactEditorState)}` : '',
+      compactPendingPlan ? `PLAN PENDIENTE A CONSERVAR SALVO CAMBIOS:\n${JSON.stringify(compactPendingPlan)}` : '',
+      `CONTRATO_RELEVANTE:\n${JSON.stringify(compilerContract)}`,
+      `RENDER_CONFIRMADO_POR_CONTEXTO=${timelinePlanRequestsRender(activePlanningContext) ? 'SI' : 'NO'}`,
+    ].filter(Boolean).join('\n\n');
+
     const confirmedTimelineContext = executionConfirmed
       ? activePlanningContext
       : message;
@@ -1117,14 +1261,44 @@ MODO_MOTOR=${engineMode}
       executionConfirmed && timelinePlanRequestsRender(confirmedTimelineContext);
 
     let responseText = '';
+    let stagedBlueprint = '';
+    let stagedCompilerPrompt = '';
     try {
-      responseText = await executeDirectLlm({
-        provider,
-        prompt: fullPrompt,
-        images: visionImages,
-        systemPrompt: compactSystemPrompt,
-        signal: llmSignal,
-      });
+      if (stagedEditorWorkflow) {
+        stagedBlueprint = await executeDirectLlm({
+          provider,
+          task: 'planner',
+          prompt: plannerPrompt,
+          images: visionImages,
+          systemPrompt: plannerSystemPrompt,
+          maxCompletionTokens: editorMode === 'prepare' ? 1800 : 2600,
+          signal: llmSignal,
+        });
+
+        if (editorMode === 'prepare') {
+          stagedCompilerPrompt = makeCompilerPrompt(stagedBlueprint);
+          responseText = await executeDirectLlm({
+            provider,
+            task: 'compiler',
+            prompt: stagedCompilerPrompt,
+            systemPrompt: compilerSystemPrompt,
+            maxCompletionTokens: 9000,
+            signal: llmSignal,
+          });
+        } else {
+          responseText = stagedBlueprint;
+        }
+      } else {
+        // Safe compatibility path if the small dispatcher cannot classify the turn.
+        responseText = await executeDirectLlm({
+          provider,
+          task: 'general',
+          prompt: fullPrompt,
+          images: visionImages,
+          systemPrompt: compactSystemPrompt,
+          signal: llmSignal,
+        });
+      }
     } catch (error: any) {
       console.error('[chat.ts] Todos los motores IA de Nayla fallaron:', error);
       if (!executionConfirmed) {
@@ -1147,10 +1321,18 @@ MODO_MOTOR=${engineMode}
     const expectsAction = executionConfirmed || /["']action["']\s*:/.test(responseText);
     if (!parsedAction && expectsAction && responseText.trim()) {
       try {
+        const repairBasePrompt = stagedCompilerPrompt || fullPrompt;
+        const repairSystemPrompt = stagedCompilerPrompt ? compilerSystemPrompt : compactSystemPrompt;
         responseText = await executeDirectLlm({
           provider,
-          prompt: [fullPrompt, 'La respuesta anterior no es una acción válida. Reconstruye un único JSON completo con los controles documentados. Conserva todos los medios, efectos, movimientos, textos y restricciones del plan. No simplifiques a fotos estáticas.', responseText].join('\n\n'),
-          systemPrompt: compactSystemPrompt,
+          task: 'repair',
+          prompt: [
+            repairBasePrompt,
+            'REPARACIÓN: la respuesta anterior no pasó el validador. Devuelve un único JSON completo y válido. Conserva todos los medios, efectos, movimientos, textos y restricciones; no simplifiques a fotos estáticas.',
+            responseText,
+          ].join('\n\n'),
+          systemPrompt: repairSystemPrompt,
+          maxCompletionTokens: 9000,
           signal: llmSignal,
         });
         parsedAction = parseNaylaAction(responseText);
