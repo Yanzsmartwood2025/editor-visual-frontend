@@ -79,3 +79,18 @@ Tercera activación funcional:
 - Transcripción, cambio de voz y otras operaciones de audio se mantienen como capacidades futuras dentro de este mismo breaker, sin mezclarlas con Música.
 
 La siguiente activación funcional será API -> Música en un PR separado.
+
+
+## Fase 4 — API Música
+
+Cuarta activación funcional:
+
+- API -> Música deja de ser placeholder y permanece separada de Audio/voz.
+- Flujo: descripción musical -> preparar -> confirmación -> generar -> Bóveda -> escuchar -> USAR EN EDITOR -> pista de audio.
+- Nayla Cloud selecciona una ruta de música configurada (fal.ai o ElevenLabs) sin exponer credenciales.
+- El módulo reutiliza el mismo lenguaje de cristal, blur y glow del editor.
+- El resultado se guarda como audio privado y entra al timeline por la ruta unificada.
+- El trabajo y su polling se cancelan al desmontar el módulo.
+- La generación no empieza hasta la confirmación explícita del usuario.
+
+La siguiente activación funcional de la rama API será 3D, reutilizando las capacidades 3D existentes sin duplicar el workspace.
