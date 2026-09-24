@@ -2,6 +2,8 @@ import type { NextApiRequest, NextApiResponse } from 'next';
 import { z } from 'zod';
 import { requireFirebaseUser } from '../../../lib/firebaseAdmin';
 import { createR2PresignedGetUrl } from '../../../lib/r2';
+import { providerCanExecuteAction } from '../../../lib/mediaProviders/execution';
+import { getAvailableProvidersForAction, type NaylaAction } from '../../../lib/naylaActions';
 import {
   getWorkspaceSupabaseAdmin,
   resolveOwnedWorkspaceScope,
@@ -38,6 +40,49 @@ const readJson = async (response: Response) => {
   return payload;
 };
 
+const routeReady = (action: NaylaAction) =>
+  getAvailableProvidersForAction(action).some((provider) =>
+    providerCanExecuteAction(provider.id, action)
+  );
+
+const getToolAvailability = (hasAdvancedVoice: boolean) => ({
+  tts: routeReady({
+    action: 'GENERATE_AUDIO',
+    mode: 'tts',
+    text: 'availability-check',
+    targetLanguage: 'es',
+  }),
+  clone: hasAdvancedVoice,
+  voice_change: routeReady({
+    action: 'GENERATE_AUDIO',
+    mode: 'voice_change',
+    provider: 'elevenlabs',
+    inputUrl: 'https://example.com/audio.mp3',
+  }),
+  voice_isolation: routeReady({
+    action: 'GENERATE_AUDIO',
+    mode: 'voice_isolation',
+    provider: 'elevenlabs',
+    inputUrl: 'https://example.com/audio.mp3',
+  }),
+  speech_to_text: routeReady({
+    action: 'GENERATE_AUDIO',
+    mode: 'speech_to_text',
+    inputUrl: 'https://example.com/audio.mp3',
+  }),
+  sound_effects: routeReady({
+    action: 'GENERATE_AUDIO',
+    mode: 'sound_effects',
+    prompt: 'availability-check',
+  }),
+  dialogue: routeReady({
+    action: 'GENERATE_AUDIO',
+    mode: 'text_to_dialogue',
+    provider: 'elevenlabs',
+    text: 'availability-check',
+  }),
+});
+
 const publicVoice = (voice: any) => ({
   id: String(voice?.voice_id || ''),
   name: String(voice?.name || 'Voz'),
@@ -57,15 +102,18 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
 
   const apiKey = process.env.ELEVENLABS_API_KEY?.trim();
-  if (!apiKey) {
-    return res.status(200).json({
-      configured: false,
-      voices: [],
-      message: 'La biblioteca avanzada de voces todavía no está conectada en este entorno.',
-    });
-  }
+  const tools = getToolAvailability(Boolean(apiKey));
 
   if (req.method === 'GET') {
+    if (!apiKey) {
+      return res.status(200).json({
+        configured: false,
+        voices: [],
+        tools,
+        message: 'La biblioteca avanzada de voces todavía no está conectada en este entorno.',
+      });
+    }
+
     try {
       const params = new URLSearchParams({
         page_size: '100',
@@ -85,6 +133,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       return res.status(200).json({
         configured: true,
         voices,
+        tools,
         hasMore: Boolean(payload?.has_more),
         totalCount: Number(payload?.total_count) || voices.length,
       });
@@ -97,6 +146,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
 
   if (req.method === 'POST') {
+    if (!apiKey) {
+      return res.status(503).json({
+        error: 'La clonación de voz todavía no está conectada en este entorno.',
+      });
+    }
+
     const parsed = cloneSchema.safeParse(req.body);
     if (!parsed.success) {
       return res.status(400).json({
