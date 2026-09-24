@@ -1,4 +1,5 @@
 import { getNaylaActionValidationIssues, parseNaylaAction, type NaylaAction } from './naylaActions';
+import { isNaylaVisualTemplateName } from './naylaVisualTemplates';
 
 export type NaylaDirectPlan = {
   action: Extract<NaylaAction, { action: 'BUILD_TIMELINE' }>;
@@ -26,6 +27,9 @@ const SUBTITLE_STYLES = new Set(['clean', 'cinematic', 'tiktok', 'karaoke']);
 const TITLE_STYLES = new Set(['clean', 'cinematic', 'neon', 'minimal']);
 const POSITIONS = new Set(['top', 'center', 'bottom']);
 const TITLE_ANIMATIONS = new Set(['fade-up', 'slide-left', 'slide-right', 'pop', 'zoom-in', 'word-rise', 'lower-third']);
+const PROFESSIONAL_EFFECTS = new Set(['chromatic-aberration', 'color-correction', 'glow', 'pixelate', 'zoom-blur', 'vignette', 'light-leak']);
+const GSAP_MOTIONS = new Set(['fade', 'slide-left', 'slide-right', 'slide-up', 'slide-down', 'zoom-in', 'zoom-out', 'bounce', 'elastic', 'spin', 'swing']);
+const PROCEDURAL_PRESETS = new Set(['particles', 'orbit', 'pulse-grid', 'starfield']);
 
 const normalize = (value: string) => value.trim().toLowerCase();
 
@@ -63,6 +67,25 @@ const parseKeyValue = (token: string) => {
     key: normalize(token.slice(0, index)).replace(/[\s_-]+/g, ''),
     value: token.slice(index + 1).trim(),
   };
+};
+
+const parseProfessionalEffects = (value: string, label: string, errors: string[]) => {
+  const effects: Array<Record<string, unknown>> = [];
+  for (const rawEffect of value.split(',').map((item) => item.trim()).filter(Boolean)) {
+    const [rawType, rawIntensity] = rawEffect.split(':').map((item) => item.trim());
+    const type = normalize(rawType);
+    if (!PROFESSIONAL_EFFECTS.has(type)) {
+      errors.push(`${label}: efecto profesional no reconocido "${rawType}".`);
+      continue;
+    }
+    const intensity = rawIntensity ? parseNumber(rawIntensity) : null;
+    if (rawIntensity && (intensity === null || intensity < 0 || intensity > 1)) {
+      errors.push(`${label}: intensidad inválida para "${rawType}". Usa 0 a 1.`);
+      continue;
+    }
+    effects.push({ type, ...(intensity !== null ? { intensity } : {}) });
+  }
+  return effects;
 };
 
 const mediaTypeFromLabel = (label: string) => {
@@ -172,6 +195,94 @@ const parseAssetLine = (line: string, errors: string[]) => {
         case 'overlay':
         case 'capa':
           asset.overlay = normalize(pair.value);
+          break;
+        case 'overlayintensity':
+        case 'intensidadcapa':
+          if (numeric === null || numeric < 0 || numeric > 1) errors.push(`${label}: intensidad de capa inválida.`);
+          else asset.overlayIntensity = numeric;
+          break;
+        case 'template':
+        case 'preset':
+        case 'visualtemplate': {
+          const template = normalize(pair.value);
+          if (!isNaylaVisualTemplateName(template)) errors.push(`${label}: plantilla visual no reconocida "${pair.value}".`);
+          else asset.visualTemplate = template;
+          break;
+        }
+        case 'professional':
+        case 'professionaleffects':
+        case 'efectosprofesionales': {
+          const professionalEffects = parseProfessionalEffects(pair.value, label, errors);
+          if (professionalEffects.length) asset.professionalEffects = professionalEffects;
+          break;
+        }
+        case 'motionblur':
+        case 'desenfoquemovimiento': {
+          const parts = pair.value.split(/[/:,]/).map((item) => item.trim()).filter(Boolean);
+          const shutterAngle = parseNumber(parts[0] || '');
+          const samples = parseNumber(parts[1] || '');
+          if (shutterAngle === null || shutterAngle < 0 || shutterAngle > 360 || samples === null || samples < 2 || samples > 8 || !Number.isInteger(samples)) {
+            errors.push(`${label}: motionBlur inválido. Usa shutter/samples, por ejemplo 180/4.`);
+          } else {
+            asset.motionBlur = { shutterAngle, samples };
+          }
+          break;
+        }
+        case 'gsapenter':
+        case 'entrada': {
+          const motion = normalize(pair.value);
+          if (!GSAP_MOTIONS.has(motion)) errors.push(`${label}: entrada GSAP no reconocida "${pair.value}".`);
+          else asset.gsapMotion = { ...(asset.gsapMotion as object || {}), enter: motion };
+          break;
+        }
+        case 'gsapexit':
+        case 'salida': {
+          const motion = normalize(pair.value);
+          if (!GSAP_MOTIONS.has(motion)) errors.push(`${label}: salida GSAP no reconocida "${pair.value}".`);
+          else asset.gsapMotion = { ...(asset.gsapMotion as object || {}), exit: motion };
+          break;
+        }
+        case 'gsapenterduration':
+        case 'duracionentrada':
+          if (seconds === null || seconds < 0.1 || seconds > 10) errors.push(`${label}: duración de entrada GSAP inválida.`);
+          else asset.gsapMotion = { ...(asset.gsapMotion as object || {}), enterDuration: seconds };
+          break;
+        case 'gsapexitduration':
+        case 'duracionsalida':
+          if (seconds === null || seconds < 0.1 || seconds > 10) errors.push(`${label}: duración de salida GSAP inválida.`);
+          else asset.gsapMotion = { ...(asset.gsapMotion as object || {}), exitDuration: seconds };
+          break;
+        case 'gsapintensity':
+        case 'intensidadgsap':
+          if (numeric === null || numeric < 0.25 || numeric > 2) errors.push(`${label}: intensidad GSAP inválida.`);
+          else asset.gsapMotion = { ...(asset.gsapMotion as object || {}), intensity: numeric };
+          break;
+        case 'procedural': {
+          const preset = normalize(pair.value);
+          if (!PROCEDURAL_PRESETS.has(preset)) errors.push(`${label}: movimiento procedural no reconocido "${pair.value}".`);
+          else asset.proceduralMotion = { ...(asset.proceduralMotion as object || {}), preset };
+          break;
+        }
+        case 'proceduralintensity':
+        case 'intensidadprocedural':
+          if (numeric === null || numeric < 0 || numeric > 1) errors.push(`${label}: intensidad procedural inválida.`);
+          else asset.proceduralMotion = { ...(asset.proceduralMotion as object || {}), intensity: numeric };
+          break;
+        case 'proceduralspeed':
+        case 'velocidadprocedural':
+          if (numeric === null || numeric < 0.1 || numeric > 4) errors.push(`${label}: velocidad procedural inválida.`);
+          else asset.proceduralMotion = { ...(asset.proceduralMotion as object || {}), speed: numeric };
+          break;
+        case 'proceduralseed':
+        case 'semilla':
+          if (numeric === null || !Number.isInteger(numeric)) errors.push(`${label}: semilla procedural inválida.`);
+          else asset.proceduralMotion = { ...(asset.proceduralMotion as object || {}), seed: numeric };
+          break;
+        case 'proceduralcolor':
+          asset.proceduralMotion = { ...(asset.proceduralMotion as object || {}), color: pair.value.trim() };
+          break;
+        case 'proceduralaccentcolor':
+          asset.proceduralMotion = { ...(asset.proceduralMotion as object || {}), accentColor: pair.value.trim() };
           break;
         default:
           errors.push(`${label}: control directo no reconocido "${pair.key}".`);
