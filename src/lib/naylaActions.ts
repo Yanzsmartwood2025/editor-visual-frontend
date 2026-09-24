@@ -312,6 +312,9 @@ export const naylaActionSchema = z.discriminatedUnion('action', [
     inputUrl: urlSchema.optional(),
     voiceId: z.string().max(200).optional(),
     targetLanguage: z.string().max(30).optional(),
+    soundDurationSeconds: z.number().min(0.5).max(30).nullable().optional(),
+    soundLoop: z.boolean().optional(),
+    soundPromptInfluence: z.number().min(0).max(1).optional(),
   }),
   z.object({
     action: z.literal('GENERATE_3D'),
