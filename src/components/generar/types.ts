@@ -44,6 +44,8 @@ export type GenerarModuleContext = {
   projectId: string | null;
   threadId: string | null;
   onUseMedia?: (item: GenerarMediaItem) => void | Promise<void>;
+  mediaLibrary?: GenerarMediaItem[];
+  selectedMediaIds?: string[];
   threeDStudio?: Generar3DStudioContext;
 };
 
