@@ -384,7 +384,6 @@ exit 0
       {
         path: DETACHED_RUNNER_FILE,
         content: Buffer.from(runner),
-        mode: 0o755,
       },
     ]);
 
