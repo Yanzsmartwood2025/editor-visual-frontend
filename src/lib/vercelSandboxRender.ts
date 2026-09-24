@@ -443,8 +443,18 @@ export async function pollVercelSandboxRenderDetached({
     readSandboxTextIfExists(sandbox, exitFile),
   ]);
 
-  const progress = rawProgress.trim()
-    ? parseDetachedProgress(rawProgress)
+  let legacyRawLog = '';
+  let progressSource = rawProgress;
+  if (!progressSource.trim()) {
+    // Sandboxes started before the lightweight progress file existed still
+    // expose progress only through the render log. New renders never take
+    // this path, so normal polling stays cheap.
+    legacyRawLog = await readSandboxTextIfExists(sandbox, logFile);
+    progressSource = legacyRawLog;
+  }
+
+  const progress = progressSource.trim()
+    ? parseDetachedProgress(progressSource)
     : {
         state: 'running' as const,
         stage: 'preparing' as const,
@@ -466,7 +476,7 @@ export async function pollVercelSandboxRenderDetached({
       };
     }
 
-    const rawLog = await readSandboxTextIfExists(sandbox, logFile);
+    const rawLog = legacyRawLog || await readSandboxTextIfExists(sandbox, logFile);
     const tail = rawLog.slice(-4000).replace(/\s+/g, ' ').trim();
     return {
       state: 'failed',
