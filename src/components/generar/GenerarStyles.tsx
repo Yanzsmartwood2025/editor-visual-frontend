@@ -334,6 +334,55 @@ export default function GenerarStyles() {
         box-shadow: 0 0 calc(var(--glow-spread) * .65) rgba(var(--glow-color-rgb), calc(var(--glow-intensity) * .22));
       }
 
+      .generar-segmented {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+
+      .generar-segment-button {
+        min-height: 38px;
+        border-radius: 12px;
+        padding: 0 14px;
+        color: #a8a8ad;
+        background: rgba(255,255,255,.025);
+        border: 1px solid rgba(var(--glow-color-rgb), .14);
+        cursor: pointer;
+        font-size: 10px;
+        font-weight: 850;
+        letter-spacing: .07em;
+        box-shadow: inset 0 1px 0 rgba(255,255,255,.05);
+      }
+
+      .generar-segment-button.active {
+        color: #fff;
+        background: linear-gradient(180deg, rgba(255,255,255,.13), rgba(255,255,255,.055));
+        border-color: rgba(var(--glow-color-rgb), calc(var(--glow-intensity) * .68));
+        box-shadow:
+          inset 0 1px 0 rgba(255,255,255,.16),
+          0 0 calc(var(--glow-spread) * .48) rgba(var(--glow-color-rgb), calc(var(--glow-intensity) * .18));
+      }
+
+      .generar-segment-button:disabled {
+        opacity: .44;
+        cursor: wait;
+      }
+
+      .generar-spaced-label {
+        margin-top: 16px;
+      }
+
+      .generar-input-meta {
+        display: flex;
+        justify-content: space-between;
+        gap: 10px;
+        margin-top: 7px;
+        color: #707078;
+        font-size: 9px;
+        font-weight: 750;
+        letter-spacing: .06em;
+      }
+
       .generar-action-row {
         display: flex;
         flex-wrap: wrap;
@@ -415,6 +464,51 @@ export default function GenerarStyles() {
         background: #030303;
         border: 1px solid rgba(255,255,255,.08);
         box-shadow: inset 0 1px 0 rgba(255,255,255,.04);
+      }
+
+      .generar-audio-result {
+        padding: 14px;
+        border-radius: 17px;
+        border: 1px solid rgba(var(--glow-color-rgb), .16);
+        background: linear-gradient(145deg, rgba(255,255,255,.045), rgba(255,255,255,.018));
+        box-shadow: inset 0 1px 0 rgba(255,255,255,.07);
+      }
+
+      .generar-audio-result audio {
+        width: 100%;
+        margin-top: 12px;
+        accent-color: rgb(var(--glow-color-rgb));
+      }
+
+      .generar-audio-orb {
+        height: 74px;
+        border-radius: 14px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+        overflow: hidden;
+        background:
+          radial-gradient(circle at 50% 50%, rgba(var(--glow-color-rgb), .10), transparent 58%),
+          rgba(0,0,0,.22);
+        border: 1px solid rgba(var(--glow-color-rgb), .10);
+      }
+
+      .generar-audio-orb span {
+        width: 4px;
+        height: 20px;
+        border-radius: 999px;
+        background: rgba(255,255,255,.72);
+        box-shadow: 0 0 12px rgba(var(--glow-color-rgb), .24);
+      }
+
+      .generar-audio-orb span:nth-child(2),
+      .generar-audio-orb span:nth-child(4) {
+        height: 34px;
+      }
+
+      .generar-audio-orb span:nth-child(3) {
+        height: 48px;
       }
 
       .generar-result-meta {

@@ -18,7 +18,7 @@ const moduleMeta: Array<{
 }> = [
   { id: 'imagen', label: 'IMAGEN', description: 'Texto → imagen', ready: true },
   { id: 'video', label: 'VIDEO', description: 'Texto → video · 5 s', ready: true },
-  { id: 'audio', label: 'AUDIO', description: 'Voz, transcripción y audio', ready: false },
+  { id: 'audio', label: 'AUDIO', description: 'Texto → voz', ready: true },
   { id: 'musica', label: 'MUSICA', description: 'Música y sonido', ready: false },
   { id: '3d', label: '3D', description: 'Modelos y procesos 3D', ready: false },
 ];
