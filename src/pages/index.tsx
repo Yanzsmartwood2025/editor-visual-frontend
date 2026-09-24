@@ -401,6 +401,7 @@ export default function NaylaCore() {
     resolve: (value: any) => void;
     reject: (reason?: any) => void;
   } | null>(null);
+  const [renderQualitySelection, setRenderQualitySelection] = useState<string | null>(null);
   const canvasPreviewDimensions = getCanvasDimensionsFromRatio(canvasRatio, '1080p');
   const [isDownloadMenuOpen, setIsDownloadMenuOpen] = useState(false);
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
@@ -1755,6 +1756,8 @@ export default function NaylaCore() {
   ) => new Promise<any>((resolve, reject) => {
     const suggestedQuality = qualityOverride || calidadExportacion || '720p';
     setCalidadExportacion(suggestedQuality);
+    setRenderQualitySelection(null);
+    setCustomAlertMsg(null);
     pendingRenderQualityResolverRef.current = { resolve, reject };
     setPendingRenderQualityChoice({
       timeline,
@@ -1774,6 +1777,7 @@ export default function NaylaCore() {
     const waiter = pendingRenderQualityResolverRef.current;
     pendingRenderQualityResolverRef.current = null;
     setPendingRenderQualityChoice(null);
+    setRenderQualitySelection(null);
     waiter?.resolve({ cancelled: true });
   };
 
@@ -1784,6 +1788,7 @@ export default function NaylaCore() {
 
     setCalidadExportacion(quality);
     setPendingRenderQualityChoice(null);
+    setRenderQualitySelection(null);
     pendingRenderQualityResolverRef.current = null;
 
     try {
@@ -4102,56 +4107,51 @@ export default function NaylaCore() {
   const eliminarItemsGaleria = async (ids: string[]) => {
     if (!session || ids.length === 0) return;
 
-    // Identificar los items a borrar para extraer las URLs antes de quitarlos del estado
     const itemsToDelete = galeriaMultimedia.filter(item => ids.includes(item.id));
+    const timelineItemsToDelete = lineaDeTiempo.filter(item => ids.includes(item.mediaId));
 
-    // 1. Borrar de la UI
-    const nuevaGaleria = galeriaMultimedia.filter(item => !ids.includes(item.id));
-    const nuevaLinea = lineaDeTiempo.filter(item => !ids.includes(item.mediaId));
-
-    setGaleriaMultimedia(nuevaGaleria);
-    setLineaDeTiempo(nuevaLinea);
-    sincronizarLineaDeTiempo(nuevaLinea);
-
-    // Si el clip seleccionado está entre los borrados, limpiarlo
-    if (clipSeleccionado && ids.includes(clipSeleccionado)) {
-      setClipSeleccionado(null);
-      setMediaActivaUrl(null);
-    }
-
-    // 2. Borrar archivos físicos en Cloudflare R2 usando la clave canónica,
-    // nunca reconstruyéndola desde una URL firmada temporal.
-    for (const item of itemsToDelete) {
-      const key = item.r2_key;
-      if (!key) continue;
-      try {
-        if (!key.startsWith(`${session.user.id}/`)) {
-          console.warn('Clave R2 fuera del espacio del usuario; se eliminará solo el registro:', key);
-          continue;
-        }
-        const response = await fetch('/api/r2/delete', {
-          method: 'DELETE',
-          headers: firebaseHeaders(session, { 'Content-Type': 'application/json' }),
-          body: JSON.stringify({ key })
-        });
-        if (!response.ok) throw new Error((await response.json()).error || 'No se pudo borrar el objeto de R2.');
-      } catch (e) {
-        console.error('Error borrando archivo de R2', e);
-      }
-    }
-
-    // 3. Borrar registros de la base de datos
+    // /api/galeria is authoritative: it first deletes the physical R2 objects
+    // using their canonical r2_key and only then removes the database rows.
+    // Keep the UI untouched until that operation succeeds.
     const response = await fetch('/api/galeria', {
       method: 'DELETE',
       headers: firebaseHeaders(session, { 'Content-Type': 'application/json' }),
       body: JSON.stringify({ ids }),
     });
-    const payload = await response.json() as { error?: string };
+    const payload = await response.json().catch(() => ({})) as { error?: string; deletedIds?: string[] };
 
     if (!response.ok) {
-      console.error('Error eliminando de Supabase BD:', payload.error);
-      showAlert('Error al eliminar de la base de datos: ' + (payload.error || 'Error desconocido.'));
+      console.error('Error eliminando de Bóveda/R2:', payload.error);
+      showAlert('No se pudo eliminar completamente el archivo: ' + (payload.error || 'Error desconocido.'));
+      return;
     }
+
+    const deletedIds = new Set(payload.deletedIds?.length ? payload.deletedIds : ids);
+    const nuevaGaleria = galeriaMultimedia.filter(item => !deletedIds.has(item.id));
+    const nuevaLinea = lineaDeTiempo.filter(item => !deletedIds.has(item.mediaId));
+
+    setGaleriaMultimedia(nuevaGaleria);
+    setLineaDeTiempo(nuevaLinea);
+    await sincronizarLineaDeTiempo(nuevaLinea);
+
+    const deletedTimelineIds = new Set(timelineItemsToDelete.map(item => item.id));
+    if (clipSeleccionado && deletedTimelineIds.has(clipSeleccionado)) {
+      setClipSeleccionado(null);
+    }
+
+    if (itemsToDelete.some(item => item.url === mediaActivaUrl)) {
+      setMediaActivaUrl(null);
+    }
+
+    if (itemsToDelete.some(item => item.url === videoResultadoUrl)) {
+      setVideoResultadoUrl(null);
+      setVideoResultadoNombre(null);
+      setVideoResultadoEtiqueta(null);
+    }
+
+    showAlert(itemsToDelete.length === 1
+      ? 'Archivo eliminado completamente de la Bóveda y de R2.'
+      : `${itemsToDelete.length} archivos eliminados completamente de la Bóveda y de R2.`);
   };
 
   const eliminarDeGaleria = async (id: string) => {
@@ -5586,7 +5586,6 @@ if (!session) {
                     {galeriaMultimedia
                       .filter(item => {
                         const isResult = isNaylaResultMedia(item);
-                        if (mainNav === 'boveda' && isResult) return false;
                         if (mainNav === 'resultados' && !isResult) return false;
                         if (filtroGaleria === 'videos') return item.tipo === 'video';
                         if (filtroGaleria === 'fotos') return item.tipo === 'foto';
@@ -6159,7 +6158,7 @@ if (!session) {
         <div style={{
           position: 'fixed',
           inset: 0,
-          zIndex: 12000,
+          zIndex: 300000,
           background: 'rgba(0,0,0,0.82)',
           backdropFilter: 'blur(12px)',
           WebkitBackdropFilter: 'blur(12px)',
@@ -6205,19 +6204,20 @@ if (!session) {
                 const ratio = pendingRenderQualityChoice.ratioOverride || canvasRatio;
                 const dims = getCanvasDimensionsFromRatio(ratio, profile.value);
                 const suggested = (pendingRenderQualityChoice.suggestedQuality || '720p').toLowerCase() === profile.value;
+                const selected = renderQualitySelection === profile.value;
                 return (
                   <button
                     key={profile.value}
                     type="button"
                     disabled={!profile.enabled}
-                    onClick={() => profile.enabled && void confirmarCalidadRender(profile.value)}
+                    onClick={() => profile.enabled && setRenderQualitySelection(profile.value)}
                     style={{
                       width: '100%',
                       padding: '12px 13px',
                       borderRadius: 12,
-                      border: suggested ? '1px solid #fff' : '1px solid #2b2b2b',
-                      background: suggested ? '#151515' : '#0d0d0d',
-                      color: '#fff',
+                      border: selected ? '2px solid #fff' : suggested ? '1px solid #666' : '1px solid #2b2b2b',
+                      background: selected ? '#f2f2f2' : suggested ? '#151515' : '#0d0d0d',
+                      color: selected ? '#050505' : '#fff',
                       textAlign: 'left',
                       cursor: profile.enabled ? 'pointer' : 'not-allowed',
                       opacity: profile.enabled ? 1 : 0.5,
@@ -6233,15 +6233,41 @@ if (!session) {
                       {dims.width}×{dims.height} · {profile.use}
                     </span>
                     <span style={{ display: 'block', marginTop: 3, fontSize: '0.6rem', color: '#777' }}>{profile.detail}</span>
-                    {suggested && profile.enabled && (
-                      <span style={{ display: 'inline-block', marginTop: 7, fontSize: '0.56rem', fontWeight: 850, letterSpacing: '0.6px' }}>
-                        RECOMENDADA AHORA
+                    {selected && profile.enabled ? (
+                      <span style={{ display: 'inline-block', marginTop: 7, fontSize: '0.56rem', fontWeight: 900, letterSpacing: '0.6px' }}>
+                        SELECCIONADA
                       </span>
-                    )}
+                    ) : suggested && profile.enabled ? (
+                      <span style={{ display: 'inline-block', marginTop: 7, fontSize: '0.56rem', fontWeight: 850, letterSpacing: '0.6px' }}>
+                        RECOMENDADA · TOCA PARA ELEGIR
+                      </span>
+                    ) : null}
                   </button>
                 );
               })}
             </div>
+
+            <button
+              type="button"
+              disabled={!renderQualitySelection}
+              onClick={() => renderQualitySelection && void confirmarCalidadRender(renderQualitySelection)}
+              style={{
+                width: '100%',
+                minHeight: 48,
+                marginTop: 12,
+                borderRadius: 12,
+                border: renderQualitySelection ? '1px solid #fff' : '1px solid #292929',
+                background: renderQualitySelection ? '#fff' : '#141414',
+                color: renderQualitySelection ? '#050505' : '#666',
+                fontWeight: 900,
+                letterSpacing: '0.5px',
+                cursor: renderQualitySelection ? 'pointer' : 'not-allowed',
+              }}
+            >
+              {renderQualitySelection
+                ? `INICIAR RENDER · ${renderQualitySelection.toUpperCase()}`
+                : 'ELIGE UNA CALIDAD PARA CONTINUAR'}
+            </button>
 
             <div style={{ marginTop: 12, padding: '10px 11px', borderRadius: 10, background: '#0d0d0d', border: '1px solid #252525', color: '#8d8d8d', fontSize: '0.6rem', lineHeight: 1.5 }}>
               1080p todavía no alquila una máquina mayor: usa el motor CPU actual y consume más tiempo. 4K se habilitará cuando el editor tenga conectado un perfil de cómputo superior con su coste real.
