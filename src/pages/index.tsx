@@ -293,6 +293,7 @@ export default function NaylaCore() {
   const [iaFotosPrompt, setIaFotosPrompt] = useState('');
 
   const [customAlertMsg, setCustomAlertMsg] = useState<string | null>(null);
+  const [directConfirm, setDirectConfirm] = useState<{ message: string } | null>(null);
   const [projectDialog, setProjectDialog] = useState<NaylaProjectDialog>(null);
   const [projectDialogBusy, setProjectDialogBusy] = useState(false);
   const [newProjectName, setNewProjectName] = useState('Nuevo proyecto');
@@ -2824,9 +2825,19 @@ export default function NaylaCore() {
     }
   };
 
-  const sendNaylaMessage = async (messageOverride?: string) => {
+  const sendNaylaMessage = async (
+    messageOverride?: string,
+    options?: { directMode?: boolean; bypassDirectConfirm?: boolean }
+  ) => {
     const message = (messageOverride ?? chatInput).trim();
     if (!message || chatUploadProgress) return;
+
+    const looksDirect = /^\s*@direct\b/i.test(message);
+    if (looksDirect && !options?.bypassDirectConfirm) {
+      setDirectConfirm({ message });
+      return;
+    }
+
     const outgoingAttachments = [...chatAttachedAssets];
     const newMessages: NaylaChatMessage[] = [
       ...chatMessages,
@@ -2845,10 +2856,13 @@ export default function NaylaCore() {
     setChatProcessing(true);
     setNaylaCodeTrace({
       active: true,
-      stage: 'sending',
-      label: 'Enviando el pedido…',
+      stage: options?.directMode ? 'direct' : 'sending',
+      label: options?.directMode ? 'Validando indicaciones directas…' : 'Enviando el pedido…',
       request: message,
-      history: [{ stage: 'sending', label: 'Enviando' }],
+      history: [{
+        stage: options?.directMode ? 'direct' : 'sending',
+        label: options?.directMode ? 'Directo' : 'Enviando',
+      }],
     });
     window.requestAnimationFrame(() => scrollChatToBottom('smooth'));
 
@@ -2874,6 +2888,7 @@ export default function NaylaCore() {
            provider: selectedAiProvider,
            engineMode: naylaEngineMode,
            streamProgress: true,
+           directMode: Boolean(options?.directMode),
            mediaLibrary: [
              ...galeriaMultimedia.map(item => ({
                id: item.id,
@@ -7022,6 +7037,126 @@ if (!session) {
                 </div>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+{directConfirm && (
+        <div
+          data-no-edge-swipe
+          style={{
+            position: 'fixed',
+            inset: 0,
+            backgroundColor: 'rgba(0,0,0,0.84)',
+            zIndex: 100200,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: 18,
+            boxSizing: 'border-box',
+          }}
+          onPointerDown={(event) => {
+            if (event.target === event.currentTarget) setDirectConfirm(null);
+          }}
+        >
+          <div style={{
+            width: 'min(430px, 100%)',
+            background: '#090909',
+            border: '1px solid #3a3a3a',
+            borderRadius: 18,
+            padding: '20px 18px 18px',
+            color: '#fff',
+            boxShadow: '0 24px 70px rgba(0,0,0,0.76)',
+          }}>
+            <div style={{ fontSize: '0.98rem', fontWeight: 850, letterSpacing: '0.03em' }}>
+              INDICACIONES DIRECTAS DETECTADAS
+            </div>
+            <div style={{ color: '#9a9a9a', fontSize: '0.78rem', lineHeight: 1.5, marginTop: 9 }}>
+              Este bloque puede saltarse la planificación por IA y pasar directamente a validación del timeline.
+            </div>
+
+            <div style={{
+              marginTop: 13,
+              padding: '10px 11px',
+              border: '1px solid #262626',
+              borderRadius: 12,
+              background: '#050505',
+              color: '#d8d8d8',
+              fontSize: '0.72rem',
+              lineHeight: 1.45,
+            }}>
+              <div style={{ color: '#777', fontSize: '0.62rem', marginBottom: 5, textTransform: 'uppercase', letterSpacing: '0.07em' }}>
+                Archivos anclados
+              </div>
+              {chatAttachedAssets.length
+                ? chatAttachedAssets.map((asset) => asset.etiqueta || asset.nombre).join(' · ')
+                : 'Ninguno'}
+            </div>
+
+            <div style={{ color: '#bdbdbd', fontSize: '0.82rem', marginTop: 14, lineHeight: 1.5 }}>
+              ¿Quieres utilizar estas indicaciones directamente?
+            </div>
+
+            <div style={{ display: 'grid', gap: 8, marginTop: 16 }}>
+              <button
+                type="button"
+                onClick={() => {
+                  const pending = directConfirm.message;
+                  setDirectConfirm(null);
+                  setChatInput('');
+                  resetChatComposerHeight();
+                  void sendNaylaMessage(pending, { directMode: true, bypassDirectConfirm: true });
+                }}
+                style={{
+                  border: '1px solid #f0f0f0',
+                  borderRadius: 11,
+                  background: '#f1f1f1',
+                  color: '#050505',
+                  padding: '10px 12px',
+                  fontSize: '0.78rem',
+                  fontWeight: 850,
+                  cursor: 'pointer',
+                }}
+              >
+                SÍ · USAR DIRECTO
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const normalMessage = directConfirm.message.replace(/^\s*@direct\b\s*/i, '').trim();
+                  setDirectConfirm(null);
+                  setChatInput('');
+                  resetChatComposerHeight();
+                  if (normalMessage) void sendNaylaMessage(normalMessage, { directMode: false, bypassDirectConfirm: true });
+                }}
+                style={{
+                  border: '1px solid #333',
+                  borderRadius: 11,
+                  background: '#111',
+                  color: '#ddd',
+                  padding: '10px 12px',
+                  fontSize: '0.76rem',
+                  fontWeight: 750,
+                  cursor: 'pointer',
+                }}
+              >
+                NO · ENVIAR COMO CHAT NORMAL
+              </button>
+              <button
+                type="button"
+                onClick={() => setDirectConfirm(null)}
+                style={{
+                  border: 'none',
+                  background: 'transparent',
+                  color: '#777',
+                  padding: '7px 10px',
+                  fontSize: '0.7rem',
+                  cursor: 'pointer',
+                }}
+              >
+                Cancelar
+              </button>
+            </div>
           </div>
         </div>
       )}
