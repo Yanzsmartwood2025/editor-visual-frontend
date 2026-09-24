@@ -5,15 +5,20 @@
       "name": "@remotion/animated-emoji",
       "declared": "4.0.526",
       "installed": "4.0.526",
-      "status": "installed_not_referenced",
-      "referencedBy": []
+      "status": "referenced_in_code",
+      "referencedBy": [
+        "src/components/NaylaDecorations.tsx",
+        "src/lib/naylaDecorations.ts"
+      ]
     },
     {
       "name": "@remotion/animation-utils",
       "declared": "4.0.526",
       "installed": "4.0.526",
-      "status": "installed_not_referenced",
-      "referencedBy": []
+      "status": "referenced_in_code",
+      "referencedBy": [
+        "src/components/NaylaDecorations.tsx"
+      ]
     },
     {
       "name": "@remotion/bundler",
@@ -39,29 +44,36 @@
       "installed": "4.0.526",
       "status": "referenced_in_code",
       "referencedBy": [
-        "src/components/MainComposition.tsx"
+        "src/components/MainComposition.tsx",
+        "src/components/NaylaDecorations.tsx"
       ]
     },
     {
       "name": "@remotion/fonts",
       "declared": "4.0.526",
       "installed": "4.0.526",
-      "status": "installed_not_referenced",
-      "referencedBy": []
+      "status": "referenced_in_code",
+      "referencedBy": [
+        "src/components/NaylaFont.ts"
+      ]
     },
     {
       "name": "@remotion/gif",
       "declared": "4.0.526",
       "installed": "4.0.526",
-      "status": "installed_not_referenced",
-      "referencedBy": []
+      "status": "referenced_in_code",
+      "referencedBy": [
+        "src/components/NaylaDecorations.tsx"
+      ]
     },
     {
       "name": "@remotion/google-fonts",
       "declared": "4.0.526",
       "installed": "4.0.526",
-      "status": "installed_not_referenced",
-      "referencedBy": []
+      "status": "referenced_in_code",
+      "referencedBy": [
+        "src/components/NaylaFont.ts"
+      ]
     },
     {
       "name": "@remotion/gsap",
@@ -77,8 +89,10 @@
       "name": "@remotion/layout-utils",
       "declared": "4.0.526",
       "installed": "4.0.526",
-      "status": "installed_not_referenced",
-      "referencedBy": []
+      "status": "referenced_in_code",
+      "referencedBy": [
+        "src/components/NaylaDecorations.tsx"
+      ]
     },
     {
       "name": "@remotion/light-leaks",
@@ -102,7 +116,8 @@
       "installed": "4.0.526",
       "status": "referenced_in_code",
       "referencedBy": [
-        "src/components/MainComposition.tsx"
+        "src/components/MainComposition.tsx",
+        "src/components/NaylaDecorations.tsx"
       ]
     },
     {
@@ -143,29 +158,38 @@
       "name": "@remotion/paths",
       "declared": "4.0.526",
       "installed": "4.0.526",
-      "status": "installed_not_referenced",
-      "referencedBy": []
+      "status": "referenced_in_code",
+      "referencedBy": [
+        "src/components/NaylaDecorations.tsx",
+        "src/lib/naylaDecorations.ts"
+      ]
     },
     {
       "name": "@remotion/player",
       "declared": "4.0.526",
       "installed": "4.0.526",
-      "status": "installed_not_referenced",
-      "referencedBy": []
+      "status": "referenced_in_code",
+      "referencedBy": [
+        "src/components/NaylaCompositionPreview.tsx"
+      ]
     },
     {
       "name": "@remotion/preload",
       "declared": "4.0.526",
       "installed": "4.0.526",
-      "status": "installed_not_referenced",
-      "referencedBy": []
+      "status": "referenced_in_code",
+      "referencedBy": [
+        "src/components/NaylaCompositionPreview.tsx"
+      ]
     },
     {
       "name": "@remotion/renderer",
       "declared": "4.0.526",
       "installed": "4.0.526",
-      "status": "installed_not_referenced",
-      "referencedBy": []
+      "status": "referenced_in_code",
+      "referencedBy": [
+        "scripts/check-remotion-layers.mjs"
+      ]
     },
     {
       "name": "@remotion/rive",
@@ -180,22 +204,29 @@
       "name": "@remotion/rough-notation",
       "declared": "4.0.526",
       "installed": "4.0.526",
-      "status": "installed_not_referenced",
-      "referencedBy": []
+      "status": "referenced_in_code",
+      "referencedBy": [
+        "src/components/NaylaDecorations.tsx"
+      ]
     },
     {
       "name": "@remotion/rounded-text-box",
       "declared": "4.0.526",
       "installed": "4.0.526",
-      "status": "installed_not_referenced",
-      "referencedBy": []
+      "status": "referenced_in_code",
+      "referencedBy": [
+        "src/components/NaylaDecorations.tsx"
+      ]
     },
     {
       "name": "@remotion/sfx",
       "declared": "4.0.526",
       "installed": "4.0.526",
-      "status": "installed_not_referenced",
-      "referencedBy": []
+      "status": "referenced_in_code",
+      "referencedBy": [
+        "src/components/NaylaDecorations.tsx",
+        "src/lib/naylaDecorations.ts"
+      ]
     },
     {
       "name": "@remotion/shapes",
@@ -226,8 +257,10 @@
       "name": "@remotion/svg-3d-engine",
       "declared": "4.0.526",
       "installed": "4.0.526",
-      "status": "installed_not_referenced",
-      "referencedBy": []
+      "status": "referenced_in_code",
+      "referencedBy": [
+        "src/components/NaylaDecorations.tsx"
+      ]
     },
     {
       "name": "@remotion/three",
@@ -302,6 +335,8 @@
       "status": "referenced_in_code",
       "referencedBy": [
         "src/components/MainComposition.tsx",
+        "src/components/NaylaDecorations.tsx",
+        "src/components/NaylaFont.ts",
         "src/components/NaylaGsapTitle.tsx",
         "src/components/NaylaSkiaGraphic.tsx",
         "src/components/NaylaThreeScene.tsx",

@@ -1,10 +1,11 @@
+import { EMOJI_NAMES, SOUND_NAMES } from './naylaDecorations';
 import { z } from 'zod';
 import { NAYLA_EDITOR_CONTRACT } from './naylaEditorContract';
 import { NAYLA_EDITING_LIBRARY } from './naylaEditingLibrary';
 import { REMOTION_CPU_EFFECTS as effects } from './remotionEffects';
 
 // Versioned alongside the real controls. Installation alone never enables a chapter.
-export const EDITOR_LIBRARY_VERSION = '2026-09-23.1';
+export const EDITOR_LIBRARY_VERSION = '2026-09-23.2';
 const clip = (controls: Record<string, unknown>) => ({ action: 'BUILD_TIMELINE', assets: [{ type: 'foto', source: 'label', label: 'F1', durationInSeconds: 5, ...controls }], render: true });
 const layer = (key: string, value: Record<string, unknown>) => ({ action: 'BUILD_TIMELINE', assets: [], [key]: [value], render: true });
 export const EDITOR_BOOKS = [
@@ -19,7 +20,7 @@ export const EDITOR_BOOKS = [
   { id: 'audio', title: 'Sonido, música, volumen y mezclas', fields: ['assets'], assetFields: ['volume', 'volumeKeyframes', 'fadeIn', 'fadeOut', 'delay', 'durationInSeconds', 'loop', 'startFrom', 'trimBefore', 'trimAfter', 'playbackRate'],
     guide: 'volume es nivel base. volumeKeyframes usa segundos locales desde la entrada y gain multiplicativo entre 0 y 1, interpolado. Permite bajada bajo voz, recuperación y cruces. También controla sonido de videos. Necesita tiempos de entrada/salida conocidos; no detecta automáticamente voz ni ritmo.', options: ['volumen base', 'curvas de volumen', 'fundidos', 'cruce de pistas', 'sonido del video', 'recorte y repetición'], example: NAYLA_EDITING_LIBRARY[3].example },
   { id: 'captions', title: 'Subtítulos con estilo', fields: ['subtitles'], assetFields: [],
-    guide: 'Texto literal en text, tiempos globales start/end en segundos. clean es sencillo, cinematic es tratamiento cinematográfico, tiktok resalta por palabras, karaoke sigue palabras. La temporización interna de palabras es aproximada cuando solo se proporciona un bloque. Posición arriba/centro/abajo y tamaño 20–120. Fuente actual fija Arial/Helvetica; no prometas tipografías arbitrarias ni colores individuales en subtitles.', options: effects.captions, example: { ...clip({}), subtitles: [{ text: 'Texto que aparecerá en pantalla.', start: 0, end: 5, style: 'cinematic', position: 'center', fontSize: 64 }] } },
+    guide: 'Texto literal en text, tiempos globales start/end en segundos. clean es sencillo, cinematic es tratamiento cinematográfico, tiktok resalta por palabras, karaoke sigue palabras. La temporización interna de palabras es aproximada cuando solo se proporciona un bloque. Posición arriba/centro/abajo y tamaño 20–120. Arial y otras tipografías en el capítulo fonts; no prometas colores individuales en subtitles.', options: effects.captions, example: { ...clip({}), subtitles: [{ text: 'Texto que aparecerá en pantalla.', start: 0, end: 5, style: 'cinematic', position: 'center', fontSize: 64 }] } },
   { id: 'titles', title: 'Títulos y rótulos animados', fields: ['titles'], assetFields: [],
     guide: 'Añade un medio visual de fondo para un montaje de títulos. Son independientes de subtítulos, con color y color de acento. fade-up sube desvaneciendo; slide-left/right desliza; pop aparece con impulso; zoom-in acerca; word-rise eleva palabras; lower-third crea un rótulo. Usa texto literal y tiempos globales.', options: effects.motionTitles, example: { ...clip({}), titles: [{ text: 'Título de ejemplo', start: 0, end: 5, style: 'neon', animation: 'word-rise', position: 'center', color: '#ffffff', accentColor: '#7dd3fc' }] } },
   { id: 'animation', title: 'Entradas, salidas y desenfoque de movimiento', fields: ['assets'], assetFields: ['gsapMotion', 'motionBlur'],
@@ -32,12 +33,22 @@ export const EDITOR_BOOKS = [
     guide: 'Requiere archivo Lottie JSON o Rive .riv accesible. No inventes URLs. Lottie permite repetición, velocidad y dirección. Rive permite artboard y animation existentes en el archivo. Coloca por tiempos, x/y, escala y opacidad.', options: effects.vectorAnimations, example: layer('vectorAnimations', { kind: 'lottie', url: 'https://example.com/animation.json', start: 0, end: 5, loop: true }) },
   { id: 'three', title: 'Escenas de modelos 3D reales', fields: ['threeScenes'], assetFields: [],
     guide: 'Requiere GLB registrado M1/M2. Escala, posición y rotación del modelo, rotación automática, velocidad, distancia y campo de visión de cámara, iluminación studio/soft/dramatic, fondo y animación interna existente. No genera ni reconstruye el modelo. Para foto con profundidad consulta motion; para generar un modelo consulta acciones de generación.', options: effects.three, example: NAYLA_EDITING_LIBRARY[5].example },
+  { id: 'fonts', title: 'Tipografías para subtítulos, títulos y textos', fields: ['subtitles', 'titles'], assetFields: [],
+    guide: 'fontFamily: Arial, Roboto (limpia), Montserrat (geométrica), Playfair Display (editorial) o custom. Para custom exige fontUrl de una fuente real suministrada; nunca inventes el enlace. Google Fonts se carga antes de renderizar. Las fuentes personalizadas requieren acceso desde el navegador/render. No promete todas las familias de Google: estas tres están conectadas.', options: ['Arial', 'Roboto', 'Montserrat', 'Playfair Display', 'custom + fontUrl'], example: { ...clip({}), subtitles: [{ text: 'Ejemplo de tipografía', start: 0, end: 5, fontFamily: 'Montserrat', style: 'cinematic' }] } },
+  { id: 'stickers', title: 'Emojis animados y GIF', fields: ['decorations'], assetFields: [],
+    guide: 'Capas decorations con kind emoji o gif. start/end son segundos globales; x/y porcentajes del lienzo, width/height píxeles, opacity 0–1. Emoji: usa un nombre del catálogo, explica su significado en español. GIF: usa label F1 del proyecto o una URL real aportada; playbackRate controla velocidad. El GIF se repite dentro de su intervalo; un emoji puede terminar antes del final de la capa. Los emojis proceden de Google Noto (CC BY 4.0); conserva la atribución al distribuir.', options: { emojis: EMOJI_NAMES, gif: ['label o url', 'playbackRate'] }, example: { action: 'BUILD_TIMELINE', decorations: [{ kind: 'emoji', emoji: 'sparkles', start: 0, end: 3 }], render: true } },
+  { id: 'annotations', title: 'Subrayados, marcadores y cajas de texto', fields: ['decorations'], assetFields: [],
+    guide: 'kind annotation: mark underline subraya, highlight resalta, circle rodea, box encuadra, strike-through tacha, crossed-off cruza. kind text-box coloca texto sobre un fondo redondeado adaptado a líneas. Usa text literal, color, accentColor o backgroundColor, fontFamily y fontSize. El texto se ajusta al ancho. start/end globales, x/y porcentajes, width/height píxeles.', options: ['underline', 'highlight', 'circle', 'box', 'strike-through', 'crossed-off', 'text-box'], example: { action: 'BUILD_TIMELINE', decorations: [{ kind: 'annotation', mark: 'underline', text: 'Una idea importante', start: 0, end: 5, width: 700 }], render: true } },
+  { id: 'svg', title: 'Trazados, gráficos SVG con volumen y rayos', fields: ['decorations'], assetFields: [],
+    guide: 'kind svg-path dibuja progresivamente un path SVG (coordenadas 0–300) con color y strokeWidth. kind svg-3d extruye un path con depth y rotationSpeed: es geometría vectorial, no modelo GLB. kind starburst crea rayos con rays y colors. Tiempos globales start/end, posición x/y porcentual y dimensiones width/height en píxeles. No escribas JSX ni JavaScript; solo path y controles.', options: ['svg-path', 'svg-3d', 'starburst'], example: { action: 'BUILD_TIMELINE', decorations: [{ kind: 'svg-3d', path: 'M 50 50 L 200 50 L 200 200 L 50 200 Z', start: 0, end: 5 }], render: true } },
+  { id: 'sfx', title: 'Efectos sonoros de biblioteca', fields: ['decorations'], assetFields: [],
+    guide: 'kind sfx con sound del catálogo, start/end y volume. whoosh es barrido, pageTurn pasa página, mouseClick clic, shutterModern/Old cámara, ding campanilla, recordScratch frenado de disco; los demás son sonidos descriptivos o memes: explica el estilo antes de proponerlos. La capa corta el sonido al final y no lo repite. No agregues un meme a un video solemne sin elección explícita. No es música ni síntesis de voz.', options: SOUND_NAMES, example: { action: 'BUILD_TIMELINE', decorations: [{ kind: 'sfx', sound: 'whoosh', start: 1, end: 2, volume: 0.5 }], render: true } },
 ] as const;
 export const EDITOR_BOOK_INDEX = EDITOR_BOOKS.map(({ id, title }) => ({ id, title }));
 const bookIds = EDITOR_BOOKS.map(book => book.id);
 export const editorSessionSchema = z.object({
   version: z.literal(EDITOR_LIBRARY_VERSION),
-  chapters: z.array(z.string().refine(id => bookIds.includes(id as typeof bookIds[number]))).max(12),
+  chapters: z.array(z.string().refine(id => bookIds.includes(id as typeof bookIds[number]))).max(EDITOR_BOOKS.length),
   brief: z.string().max(6000),
   mode: z.enum(['explore', 'prepare']),
 });

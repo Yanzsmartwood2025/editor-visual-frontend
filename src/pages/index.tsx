@@ -1,4 +1,5 @@
 // @ts-nocheck
+import dynamic from 'next/dynamic';
 import { formatPlaybackTime } from '../lib/playbackTime';
 import { NaylaEditorReview } from '../components/NaylaEditorReview';
 import type { EditorReview } from '../lib/naylaEditorReview';
@@ -239,6 +240,7 @@ const createRenderRequestId = () => {
   });
 };
 
+const NaylaCompositionPreview = dynamic(async () => { const { LoadSkia } = await import('@shopify/react-native-skia/lib/module/web'); await LoadSkia({ locateFile: () => '/canvaskit.wasm' }); return import('../components/NaylaCompositionPreview'); }, { ssr: false });
 export default function NaylaCore() {
 
   const [darkMode, setDarkMode] = useState(true);
@@ -362,7 +364,7 @@ export default function NaylaCore() {
   const [vectorAnimations, setVectorAnimations] = useState<VectorAnimationItem[]>([]);
   const [skiaGraphics, setSkiaGraphics] = useState<SkiaGraphicItem[]>([]);
   const [logos, setLogos] = useState<LogoItem[]>([]);
-  const [globalSettings, setGlobalSettings] = useState<{ fadeOutFinal?: number }>({});
+  const [globalSettings, setGlobalSettings] = useState<{ fadeOutFinal?: number; decorations?: any[] }>({});
   const [clipSeleccionado, setClipSeleccionado] = useState<string | null>(null);
   const [canvasRatio, setCanvasRatio] = useState<string>('9/16');
   const [calidadExportacion, setCalidadExportacion] = useState('1080p');
@@ -1474,7 +1476,7 @@ export default function NaylaCore() {
     threeScenesOverride?: ThreeRenderScene[],
     vectorAnimationsOverride?: VectorAnimationItem[],
     skiaGraphicsOverride?: SkiaGraphicItem[],
-    renderContext?: { logos?: LogoItem[]; settings?: { fadeOutFinal?: number } }
+    renderContext?: { logos?: LogoItem[]; settings?: { fadeOutFinal?: number; decorations?: any[] } }
   ) => {
     const renderProjectId = scopeOverride?.projectId ?? activeProjectId;
     const renderThreadId = scopeOverride?.threadId ?? activeThreadId;
@@ -1500,7 +1502,8 @@ export default function NaylaCore() {
       renderTitles,
       renderThreeScenes,
       renderVectorAnimations,
-      renderSkiaGraphics
+      renderSkiaGraphics,
+      renderSettings.decorations || []
     );
     const requestId = createRenderRequestId();
 
@@ -1629,7 +1632,7 @@ export default function NaylaCore() {
     const requestedThreeScenes = Array.isArray(actionData.threeScenes) ? actionData.threeScenes : [];
     const requestedVectorAnimations = Array.isArray(actionData.vectorAnimations) ? actionData.vectorAnimations : [];
     const requestedSkiaGraphics = Array.isArray(actionData.skiaGraphics) ? actionData.skiaGraphics : [];
-    if (assets.length === 0 && requestedThreeScenes.length === 0 && requestedVectorAnimations.length === 0 && requestedSkiaGraphics.length === 0) {
+    if (assets.length === 0 && requestedThreeScenes.length === 0 && requestedVectorAnimations.length === 0 && requestedSkiaGraphics.length === 0 && !(actionData.decorations?.length || actionData.renderContext?.settings?.decorations?.length)) {
       throw new Error('Nayla no devolvió clips, escenas 3D, animaciones vectoriales ni gráficos Skia para armar el render.');
     }
 
@@ -1711,7 +1714,7 @@ export default function NaylaCore() {
       });
     });
 
-    if (nextTimeline.length === 0 && requestedThreeScenes.length === 0 && requestedVectorAnimations.length === 0 && requestedSkiaGraphics.length === 0) {
+    if (nextTimeline.length === 0 && requestedThreeScenes.length === 0 && requestedVectorAnimations.length === 0 && requestedSkiaGraphics.length === 0 && !(actionData.decorations?.length || actionData.renderContext?.settings?.decorations?.length)) {
       throw new Error('Nayla no devolvió medios válidos para armar el render.');
     }
 
@@ -1730,6 +1733,7 @@ export default function NaylaCore() {
           .map((sub: any, index: number) => ({
             id: `nayla-sub-${Date.now()}-${index}`,
             texto: sub.text.trim(),
+            fontFamily: sub.fontFamily, fontUrl: sub.fontUrl,
             inicioSec: Math.max(0, Number(sub.start)),
             finSec: Math.max(0, Number(sub.end)),
             style: ['clean', 'cinematic', 'tiktok', 'karaoke'].includes(sub.style)
@@ -1758,6 +1762,7 @@ export default function NaylaCore() {
           .map((title: any, index: number) => ({
             id: `nayla-title-${Date.now()}-${index}`,
             text: title.text.trim(),
+            fontFamily: title.fontFamily, fontUrl: title.fontUrl,
             start: Math.max(0, Number(title.start)),
             end: Math.max(0, Number(title.end)),
             style: ['clean', 'cinematic', 'neon', 'minimal'].includes(title.style)
@@ -1917,6 +1922,7 @@ export default function NaylaCore() {
     const stillInOriginChat = !targetThreadId || activeThreadIdRef.current === targetThreadId;
 
     if (stillInOriginChat) {
+      if (actionData.renderContext?.settings) setGlobalSettings(actionData.renderContext.settings);
       setLineaDeTiempo(timelineValidado);
       sincronizarLineaDeTiempo(timelineValidado);
       const firstTimelineItem = timelineValidado[0];
@@ -5439,6 +5445,7 @@ if (!session) {
                   : ((showPlaybackControls || !isPlaying) ? 'auto' : 'none')
               }}
             >
+              {!isCleanMode && <NaylaCompositionPreview inputProps={{ timeline: lineaDeTiempo, subtitles: subtitulos, titles: motionTitles, threeScenes: threeRenderScenes, vectorAnimations, skiaGraphics, logos, canvasRatio, settings: globalSettings }} />}
               {!isCleanMode && <span aria-label="Tiempo de reproducción" style={{ color: '#ddd', fontSize: '0.7rem', fontFamily: 'monospace', fontVariantNumeric: 'tabular-nums' }}>{formatPlaybackTime(playbackSeconds)} / {formatPlaybackTime(playbackDuration)}</span>}
               <div style={{ display: 'flex', alignItems: 'center', gap: isCleanMode ? '18px' : '12px' }}>
                 <button onClick={(e) => { e.stopPropagation(); seekBy(-10); }} style={{ background: 'none', border: 'none', color: '#ffffff', fontSize: '0.9rem', cursor: 'pointer', outline: 'none' }}>↺10</button>

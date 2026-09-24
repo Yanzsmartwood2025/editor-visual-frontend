@@ -163,7 +163,8 @@ export const getCompositionDurationInFrames = (
   titles: TitleMetricItem[] = [],
   threeScenes: ThreeSceneMetricItem[] = [],
   vectorAnimations: VectorAnimationMetricItem[] = [],
-  skiaGraphics: SkiaGraphicMetricItem[] = []
+  skiaGraphics: SkiaGraphicMetricItem[] = [],
+  decorations: Array<{ start?: number; end?: number }> = []
 ): number => {
   const visualMetrics = buildVisualTimelineMetrics(timeline, fps);
   const visualEnd = visualMetrics.reduce(
@@ -208,5 +209,5 @@ export const getCompositionDurationInFrames = (
     return Math.max(max, Math.round(end * fps));
   }, 0);
 
-  return Math.max(1, visualEnd, audioEnd, subtitleEnd, logoEnd, titleEnd, threeSceneEnd, vectorAnimationEnd, skiaGraphicEnd);
+  return Math.max(1, visualEnd, audioEnd, subtitleEnd, logoEnd, titleEnd, threeSceneEnd, vectorAnimationEnd, skiaGraphicEnd, ...decorations.map(item => Math.round(safeNumber(item.end, 0) * fps)));
 };

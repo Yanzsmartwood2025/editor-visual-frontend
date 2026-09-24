@@ -1,3 +1,4 @@
+import { useNaylaFont } from './NaylaFont';
 import React from 'react';
 import { AbsoluteFill, useVideoConfig } from 'remotion';
 import { useGsapTimeline } from '@remotion/gsap';
@@ -11,6 +12,8 @@ export type NaylaMotionTitle = {
   animation?: 'fade-up' | 'slide-left' | 'slide-right' | 'pop' | 'zoom-in' | 'word-rise' | 'lower-third';
   position?: 'top' | 'center' | 'bottom';
   fontSize?: number;
+  fontFamily?: string;
+  fontUrl?: string;
   color?: string;
   accentColor?: string;
 };
@@ -23,6 +26,7 @@ export const NaylaGsapTitle: React.FC<{
   durationInFrames: number;
 }> = ({ title, durationInFrames }) => {
   const { fps } = useVideoConfig();
+  const fontFamily = useNaylaFont(title.fontFamily, title.fontUrl);
   const animation = title.animation || 'fade-up';
   const durationSeconds = Math.max(0.1, durationInFrames / fps);
   const intro = Math.min(0.65, Math.max(0.22, durationSeconds * 0.22));
@@ -169,7 +173,7 @@ export const NaylaGsapTitle: React.FC<{
             gap: '0 0.24em',
             color,
             fontSize,
-            fontFamily: 'Arial, Helvetica, sans-serif',
+            fontFamily,
             fontWeight: style === 'minimal' ? 650 : 850,
             lineHeight: 1.05,
             textAlign: isLowerThird ? 'left' : 'center',

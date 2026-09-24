@@ -996,7 +996,7 @@ MAPA DE MEDIOS:
 - Si el usuario dice "estas fotos", "los archivos que subí" o algo equivalente, usa primero los adjuntos del plan activo. No sustituyas esos archivos por otros de la Bóveda.
 - Las restricciones explícitas del usuario son obligatorias (orden, duración, recorte, medio concreto). Todo lo no especificado es terreno creativo: elige efectos, transiciones, movimiento, ritmo y acabado usando las capacidades reales disponibles.
 - Si recibiste contexto visual, úsalo para decidir qué foto funciona mejor en cada momento y qué tratamiento le conviene. No apliques el mismo efecto mecánicamente a todas las escenas si no aporta.
-- Texto de instrucciones, encabezados como BLOQUE 1/2 y notas técnicas nunca son subtítulos. Solo el contenido literal destinado a pantalla entra en subtitles/titles.
+- Texto de instrucciones, encabezados como BLOQUE 1/2 y notas técnicas nunca son subtítulos. Solo el contenido literal destinado a pantalla entra en subtitles/titles o en las capas annotation/text-box.
 
 ÍNDICE DE OTRAS CAPACIDADES:
 ${JSON.stringify(getNaylaCapabilityBibleForPrompt().map((item: any) => ({ id: item.id, label: item.label, status: item.status })))}
@@ -1020,7 +1020,7 @@ Puedes mezclar F/V/A en el orden que pida el usuario o en el orden creativo que 
 Ejemplo de foto con movimiento y acabado simultáneos (adapta al pedido, no lo repitas mecánicamente): {"type":"foto","source":"label","label":"F1","durationInSeconds":5,"efecto":"push-in","transitionType":"dreamy-zoom","transitionDuration":0.6,"professionalEffects":[{"type":"color-correction","intensity":0.25}]}
 Cada asset puede usar durationInSeconds, volume, volumeKeyframes, fadeIn, fadeOut, delay, startFrom, trimBefore, trimAfter, loop, playbackRate, efecto, transitionType, transitionDuration, overlay, overlayIntensity, professionalEffects, motionBlur, gsapMotion y proceduralMotion.
 Puedes combinar de forma moderada varias capacidades reales cuando mejoren el resultado. No estás limitada a ken-burns/fade.
-También puedes usar subtitles, titles, skiaGraphics, vectorAnimations y threeScenes cuando aporten al plan.
+También puedes usar subtitles, titles, decorations, skiaGraphics, vectorAnimations y threeScenes cuando aporten al plan.
 Para M1/M2 usa threeScenes y la etiqueta exacta; para una foto que solo debe parecer 3D usa profundidad/parallax, no una escena GLB.
 
 2. REMOVE_VIDEO_BACKGROUND:
@@ -1191,13 +1191,19 @@ MODO_MOTOR=${engineMode}
 
     if (action?.action === 'BUILD_TIMELINE') {
       if (!scope.threadId) return res.status(400).json({ error: 'Abre un chat para revisar y aceptar el plan.' });
+      const decorations = (action.decorations ?? (currentEditorState?.settings as any)?.decorations ?? []).map((item: any) => {
+        if (item.kind !== 'gif' || !item.label) return item;
+        const media = mergedLibrary.find((entry: any) => entry.tipo === 'foto' && entry.etiqueta?.toUpperCase() === item.label.toUpperCase());
+        if (!media) throw new Error(`No está disponible el GIF ${item.label}.`);
+        return { ...item, url: media.url, mediaId: media.id };
+      });
       const proposed = {
-        ...action,
+        ...action, decorations,
         subtitles: action.subtitles || [], titles: action.titles || [],
         threeScenes: action.threeScenes || [], vectorAnimations: action.vectorAnimations || [], skiaGraphics: action.skiaGraphics || [],
       };
       const review = buildEditorReview(proposed);
-      const renderContext = { logos: currentEditorState?.logos || [], settings: currentEditorState?.settings || {}, canvasRatio: currentEditorState?.canvasRatio || '9/16', exportQuality: currentEditorState?.exportQuality || '1080p' };
+      const renderContext = { logos: currentEditorState?.logos || [], settings: { ...(currentEditorState?.settings || {}), decorations }, canvasRatio: currentEditorState?.canvasRatio || '9/16', exportQuality: currentEditorState?.exportQuality || '1080p' };
       review.execution = { ...proposed, renderContext };
       review.format = `${renderContext.canvasRatio} · ${renderContext.exportQuality}`;
       if (Array.isArray(renderContext.logos)) for (const [index, logo] of renderContext.logos.entries()) {

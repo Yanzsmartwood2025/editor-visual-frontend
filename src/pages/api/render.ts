@@ -1,3 +1,4 @@
+import { decorationsSchema, fontSelectionSchema } from '../../lib/naylaDecorations';
 import { volumeKeyframesSchema } from '../../lib/audioAutomation';
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { randomUUID } from 'node:crypto';
@@ -35,6 +36,11 @@ const validateInputProps = (inputProps: unknown): ValidatedRenderProps => {
   }
 
   const props = inputProps as Record<string, unknown>;
+  const settings = props.settings && typeof props.settings === 'object' ? props.settings as Record<string, unknown> : {};
+  const decorationResult = decorationsSchema.safeParse(settings.decorations ?? []);
+  if (!decorationResult.success) throw new RenderValidationError('Las capas de biblioteca contienen datos inválidos.');
+  props.settings = { ...settings, decorations: decorationResult.data };
+  const decorations = decorationResult.data;
   const timeline = Array.isArray(props.timeline) ? props.timeline : [];
   for (const clip of timeline) {
     if (clip.volumeKeyframes !== undefined && !volumeKeyframesSchema.safeParse(clip.volumeKeyframes).success) {
@@ -45,7 +51,7 @@ const validateInputProps = (inputProps: unknown): ValidatedRenderProps => {
   const vectorAnimations = Array.isArray(props.vectorAnimations) ? props.vectorAnimations : [];
   const skiaGraphics = Array.isArray(props.skiaGraphics) ? props.skiaGraphics : [];
 
-  if (timeline.length === 0 && threeScenes.length === 0 && vectorAnimations.length === 0 && skiaGraphics.length === 0) {
+  if (timeline.length === 0 && threeScenes.length === 0 && vectorAnimations.length === 0 && skiaGraphics.length === 0 && decorations.length === 0) {
     throw new RenderValidationError('El render debe contener al menos un clip, una escena 3D, una animación vectorial o un gráfico Skia.');
   }
   if (timeline.length > MAX_TIMELINE_ITEMS) {
@@ -90,6 +96,7 @@ const validateInputProps = (inputProps: unknown): ValidatedRenderProps => {
   const subtitles = Array.isArray(props.subtitles) ? props.subtitles : [];
   const logos = Array.isArray(props.logos) ? props.logos : [];
   const titles = Array.isArray(props.titles) ? props.titles : [];
+  if ([...subtitles, ...titles].some(item => !fontSelectionSchema.safeParse(item).success)) throw new RenderValidationError('La selección de fuente no es válida.');
   const durationInFrames = getCompositionDurationInFrames(
     timeline as any[],
     fps,
@@ -98,7 +105,8 @@ const validateInputProps = (inputProps: unknown): ValidatedRenderProps => {
     titles as any[],
     threeScenes as any[],
     vectorAnimations as any[],
-    skiaGraphics as any[]
+    skiaGraphics as any[],
+    decorations
   );
   const durationInSeconds = durationInFrames / fps;
 
@@ -152,8 +160,9 @@ const hydrateOwnedRenderMedia = async ({
 }): Promise<ValidatedRenderProps> => {
   const timeline = Array.isArray(inputProps.timeline) ? inputProps.timeline : [];
   const threeScenes = Array.isArray(inputProps.threeScenes) ? inputProps.threeScenes : [];
+  const decorations = (inputProps.settings as any)?.decorations || [];
   const mediaIds = Array.from(new Set(
-    [...timeline, ...threeScenes]
+    [...timeline, ...threeScenes, ...decorations]
       .map((item: any) => typeof item?.mediaId === 'string' ? item.mediaId : '')
       .filter((id): id is string => UUID_RE.test(id))
   ));
@@ -171,6 +180,14 @@ const hydrateOwnedRenderMedia = async ({
     for (const item of ownedMedia || []) byId.set(String(item.id), item);
   }
 
+  const hydratedDecorations = decorations.map((item: any) => {
+    if (item.kind !== 'gif') return item;
+    const owned = item.mediaId ? byId.get(item.mediaId) : null;
+    if (item.mediaId && (!owned || owned.tipo !== 'foto')) throw new RenderValidationError('El GIF no pertenece al proyecto activo.');
+    if (owned) return { ...item, url: owned.r2_key ? createR2PresignedGetUrl({ key: owned.r2_key, expiresIn: 3600 }).url : owned.url };
+    if (!/^https?:\/\//i.test(item.url || '')) throw new RenderValidationError('El GIF necesita una dirección resuelta.');
+    return item;
+  });
   const hydratedTimeline = timeline.map((item: any) => {
     const mediaId = typeof item?.mediaId === 'string' ? item.mediaId : '';
     const owned = mediaId ? byId.get(mediaId) : null;
@@ -215,6 +232,7 @@ const hydrateOwnedRenderMedia = async ({
 
   return {
     ...inputProps,
+    settings: { ...(inputProps.settings as any), decorations: hydratedDecorations },
     timeline: hydratedTimeline,
     threeScenes: hydratedThreeScenes,
   };
@@ -549,7 +567,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       Array.isArray(inputProps.titles) ? inputProps.titles as any[] : [],
       Array.isArray(inputProps.threeScenes) ? inputProps.threeScenes as any[] : [],
       Array.isArray(inputProps.vectorAnimations) ? inputProps.vectorAnimations as any[] : [],
-      Array.isArray(inputProps.skiaGraphics) ? inputProps.skiaGraphics as any[] : []
+      Array.isArray(inputProps.skiaGraphics) ? inputProps.skiaGraphics as any[] : [],
+      (inputProps.settings as any)?.decorations || []
     );
     const durationInSeconds = durationInFrames / 30;
 

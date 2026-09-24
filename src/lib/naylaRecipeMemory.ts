@@ -4,13 +4,14 @@ import { EDITOR_LIBRARY_VERSION } from './naylaCapabilityLibrary';
 
 // Read only style controls from accepted plans; never replay URLs, labels or written content.
 const assetKeys = ['type', 'efecto', 'transitionType', 'transitionDuration', 'professionalEffects', 'overlay', 'overlayIntensity', 'motionBlur', 'gsapMotion', 'proceduralMotion', 'volume', 'volumeKeyframes', 'fadeIn', 'fadeOut'];
-const layerKeys = ['style', 'position', 'fontSize', 'animation', 'color', 'accentColor', 'preset', 'intensity', 'speed', 'scale', 'opacity', 'kind', 'fit', 'alignment', 'loop', 'playbackRate', 'direction', 'lighting', 'autoRotate', 'rotationSpeed', 'cameraDistance', 'cameraFov', 'modelScale'];
+const layerKeys = ['style', 'position', 'fontSize', 'animation', 'color', 'accentColor', 'preset', 'intensity', 'speed', 'scale', 'opacity', 'kind', 'fit', 'alignment', 'loop', 'playbackRate', 'direction', 'lighting', 'autoRotate', 'rotationSpeed', 'cameraDistance', 'cameraFov', 'modelScale', 'fontFamily', 'kind', 'mark', 'emoji', 'sound'];
 const pick = (value: Record<string, unknown>, keys: string[]) => Object.fromEntries(keys.filter(key => value[key] !== undefined).map(key => [key, value[key]]));
 export function recipeFromAction(payload: unknown) {
   if (!payload || typeof payload !== 'object') return null;
   const action = parseNaylaAction(JSON.stringify(payload));
   if (action?.action !== 'BUILD_TIMELINE') return null;
   return {
+    decorations: action.decorations?.slice(0, 6).map(item => pick(item, layerKeys)),
     assets: action.assets.slice(0, 12).map(asset => pick(asset, assetKeys)),
     subtitles: action.subtitles?.slice(0, 3).map(item => pick(item, layerKeys)),
     titles: action.titles?.slice(0, 3).map(item => pick(item, layerKeys)),

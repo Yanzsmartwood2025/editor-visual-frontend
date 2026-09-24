@@ -36,7 +36,7 @@ export const buildEditorReview = (action: Extract<NaylaAction, { action: 'BUILD_
     return { section: item.tipo === 'audio' ? 'Sonidos' : item.tipo === 'foto' ? 'Fotos' : 'Videos', resource: item.label || `${item.tipo} ${index + 1}`, start: start / fps, end: (start + duration) / fps, details: describeEditorControls(action.assets[index]) };
   });
   for (const [section, collection] of [
-    ['Subtítulos', action.subtitles], ['Títulos', action.titles], ['3D', action.threeScenes],
+    ['Capas y sonidos de biblioteca', action.decorations], ['Subtítulos', action.subtitles], ['Títulos', action.titles], ['3D', action.threeScenes],
     ['Animaciones vectoriales', action.vectorAnimations], ['Gráficos', action.skiaGraphics],
   ] as const) {
     collection?.forEach((entry, index) => rows.push({ section, resource: 'label' in entry ? String(entry.label) : `${index + 1}`, start: entry.start, end: entry.end, text: 'text' in entry ? String(entry.text) : undefined, details: describeEditorControls(entry) }));
