@@ -52,6 +52,8 @@ export default function GenerarWorkspace({
     onClose();
   };
 
+  const immersiveAudio = engine === 'api' && module === 'audio';
+
   const context: GenerarModuleContext = {
     session,
     projectId,
@@ -60,13 +62,14 @@ export default function GenerarWorkspace({
     mediaLibrary,
     selectedMediaIds,
     threeDStudio,
+    onReturnToNayla: onClose,
   };
 
   return (
     <div className="generar-workspace" role="dialog" aria-modal="true" aria-label="Generar">
       <GenerarStyles />
 
-      <header className="generar-header">
+      {!immersiveAudio ? <header className="generar-header">
         <button
           type="button"
           className="generar-icon-button glass-glow-button"
@@ -93,7 +96,7 @@ export default function GenerarWorkspace({
             <path d="M6 6l12 12M18 6 6 18" />
           </svg>
         </button>
-      </header>
+      </header> : null}
 
       {!engine ? (
         <main className="generar-engine-grid generar-choice-grid">
