@@ -298,7 +298,6 @@ export async function startVercelSandboxRenderDetached(
   });
 
   try {
-    await sandbox.extendTimeout(DETACHED_SANDBOX_TIMEOUT_MS);
     await sandbox.mkDir('remotion-bundle');
     await addBundleToSandbox({ sandbox, bundleDir: BUNDLE_DIR });
 
