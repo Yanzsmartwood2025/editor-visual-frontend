@@ -39,7 +39,7 @@ import DiagnosticsWorkspace from '../components/diagnostics/DiagnosticsWorkspace
 import DiagnosticsClientReporter from '../components/diagnostics/DiagnosticsClientReporter';
 import { isDiagnosticsAdmin } from '../lib/diagnostics';
 import { GpuQuoteModal, type GpuQuoteView } from '../components/GpuQuoteModal';
-import { NaylaEngineBar } from '../components/NaylaEngineBar';
+import { NaylaEngineBar, type NaylaCodeTrace } from '../components/NaylaEngineBar';
 import SocialHub from '../components/SocialHub';
 import NaylaPlay from '../components/NaylaPlay';
 import NaylaPc from '../components/NaylaPc';
@@ -261,6 +261,7 @@ export default function NaylaCore() {
   const [iaLoading, setIaLoading] = useState(false);
   const [selectedAiProvider, setSelectedAiProvider] = useState<'groq' | 'mistral'>('groq');
   const [naylaEngineMode, setNaylaEngineMode] = useState<NaylaEngineMode>('cloud');
+  const [naylaCodeTrace, setNaylaCodeTrace] = useState<NaylaCodeTrace | null>(null);
   // Configuración de Cristal y Luz (Glassmorphism & Border Glow)
   const [glowColor, setGlowColor] = useState('#ffffff');
   const [glowSpread, setGlowSpread] = useState(12);
@@ -2842,6 +2843,13 @@ export default function NaylaCore() {
       resetChatComposerHeight();
     }
     setChatProcessing(true);
+    setNaylaCodeTrace({
+      active: true,
+      stage: 'sending',
+      label: 'Enviando el pedido…',
+      request: message,
+      history: [{ stage: 'sending', label: 'Enviando' }],
+    });
     window.requestAnimationFrame(() => scrollChatToBottom('smooth'));
 
     try {
@@ -2865,6 +2873,7 @@ export default function NaylaCore() {
            history: chatMessages.map(m => ({ role: m.role === 'user' ? 'user' : 'assistant', content: m.text })),
            provider: selectedAiProvider,
            engineMode: naylaEngineMode,
+           streamProgress: true,
            mediaLibrary: [
              ...galeriaMultimedia.map(item => ({
                id: item.id,
@@ -2906,15 +2915,95 @@ export default function NaylaCore() {
         })
       });
 
-      const raw = await res.text();
       let data: any = {};
-      try {
-        data = raw ? JSON.parse(raw) : {};
-      } catch {
-        throw new Error(`El servidor devolvió una respuesta inválida (HTTP ${res.status}).`);
+      let finalStatus = res.status;
+      const contentType = res.headers.get('content-type') || '';
+
+      if (contentType.includes('application/x-ndjson') && res.body) {
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+
+        const applyProgress = (event: any) => {
+          if (event?.type !== 'progress') return;
+          setNaylaCodeTrace((current) => {
+            const nextHistory = [...(current?.history || [])];
+            const stage = String(event.stage || 'working');
+            const label = String(event.label || 'Nayla está trabajando…');
+            if (!nextHistory.length || nextHistory[nextHistory.length - 1]?.stage !== stage) {
+              nextHistory.push({ stage, label });
+            }
+            return {
+              ...(current || {}),
+              active: stage !== 'ready' && stage !== 'failed',
+              stage,
+              label,
+              request: String(event.request || current?.request || message),
+              blueprint: typeof event.blueprint === 'string' ? event.blueprint : current?.blueprint,
+              payload: event.payload ?? current?.payload,
+              failedPayload: typeof event.failedPayload === 'string' ? event.failedPayload : current?.failedPayload,
+              validationIssues: Array.isArray(event.validationIssues) ? event.validationIssues.map(String) : current?.validationIssues,
+              chapters: Array.isArray(event.chapters) ? event.chapters.map(String) : current?.chapters,
+              history: nextHistory,
+            };
+          });
+        };
+
+        while (true) {
+          const { value, done } = await reader.read();
+          buffer += decoder.decode(value || new Uint8Array(), { stream: !done });
+          const lines = buffer.split('\n');
+          buffer = lines.pop() || '';
+
+          for (const line of lines) {
+            if (!line.trim()) continue;
+            const event = JSON.parse(line);
+            if (event?.type === 'progress') {
+              applyProgress(event);
+            } else if (event?.type === 'result') {
+              finalStatus = Number(event.status || 200);
+              data = event.data || {};
+            }
+          }
+
+          if (done) break;
+        }
+
+        if (buffer.trim()) {
+          const event = JSON.parse(buffer);
+          if (event?.type === 'progress') {
+            applyProgress(event);
+          } else if (event?.type === 'result') {
+            finalStatus = Number(event.status || 200);
+            data = event.data || {};
+          }
+        }
+      } else {
+        const raw = await res.text();
+        try {
+          data = raw ? JSON.parse(raw) : {};
+        } catch {
+          throw new Error(`El servidor devolvió una respuesta inválida (HTTP ${res.status}).`);
+        }
       }
 
-      if (!res.ok || data.error) {
+      if (data?.debug) {
+        setNaylaCodeTrace((current) => ({
+          ...(current || {}),
+          active: false,
+          stage: data.debug.stage || current?.stage || (data.error ? 'failed' : 'ready'),
+          label: data.error ? 'La tarea se detuvo.' : (current?.label || 'Código listo.'),
+          request: data.debug.request || current?.request || message,
+          blueprint: data.debug.blueprint || current?.blueprint,
+          payload: data.debug.payload ?? current?.payload,
+          failedPayload: data.debug.failedPayload || current?.failedPayload,
+          validationIssues: Array.isArray(data.debug.validationIssues)
+            ? data.debug.validationIssues.map(String)
+            : current?.validationIssues,
+        }));
+      }
+
+      if (finalStatus >= 400 || data.error) {
         throw new Error(data.error || 'Error en la respuesta del servidor');
       }
 
@@ -3013,6 +3102,14 @@ export default function NaylaCore() {
       }
     } catch (error: any) {
       console.error(error);
+      setNaylaCodeTrace((current) => ({
+        ...(current || {}),
+        active: false,
+        stage: current?.stage === 'ready' ? 'ready' : (current?.stage || 'failed'),
+        label: current?.stage && current.stage !== 'sending'
+          ? (current.label || 'La tarea se detuvo.')
+          : 'La tarea se detuvo.',
+      }));
       if (!error?.naylaRenderHandled) {
         setChatMessages(prev => [...prev, { role: 'ai', text: error?.name === 'TimeoutError' ? 'Nayla tardó demasiado en responder. Revisa el chat antes de reintentar para evitar repetir una tarea.' : error.message || 'No se pudo completar la solicitud.' }]);
       }
@@ -5958,6 +6055,7 @@ if (!session) {
                 session={session}
                 mode={naylaEngineMode}
                 onModeChange={setNaylaEngineMode}
+                codeTrace={naylaCodeTrace}
                 compact
               />
             </div>
@@ -6423,7 +6521,7 @@ if (!session) {
                 fontSize: '0.82rem',
                 fontStyle: 'italic',
               }}>
-                <div>{toolMessage || 'Nayla está pensando…'}</div>
+                <div>{toolMessage || naylaCodeTrace?.label || 'Nayla está pensando…'}</div>
                 <div style={{
                   height: 5,
                   borderRadius: 999,
