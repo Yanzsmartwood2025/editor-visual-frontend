@@ -84,17 +84,28 @@ export default function GenerarStyles() {
       }
 
       .generar-choice-card {
-        min-height: 124px;
-        border-radius: 20px;
-        padding: 18px;
+        min-height: 116px;
+        border-radius: 18px;
+        padding: 16px;
         color: #f7f7f8;
         cursor: pointer;
         display: grid;
-        grid-template-columns: 48px 1fr;
+        grid-template-columns: 46px 1fr;
         grid-template-rows: auto auto;
-        column-gap: 14px;
+        column-gap: 13px;
         align-items: center;
         text-align: left;
+        background: linear-gradient(145deg, rgba(255,255,255,.075), rgba(255,255,255,.025));
+        border: 1px solid rgba(var(--glow-color-rgb), calc(var(--glow-intensity) * .42));
+        box-shadow:
+          inset 0 1px 0 rgba(255,255,255,.13),
+          inset 0 -1px 0 rgba(255,255,255,.025),
+          0 14px 36px rgba(0,0,0,.34),
+          0 0 calc(var(--glow-spread) * .5) rgba(var(--glow-color-rgb), calc(var(--glow-intensity) * .14));
+      }
+
+      .generar-choice-card:hover {
+        background: linear-gradient(145deg, rgba(255,255,255,.115), rgba(255,255,255,.04));
       }
 
       .generar-choice-icon {
@@ -141,15 +152,24 @@ export default function GenerarStyles() {
       }
 
       .generar-module-button {
-        min-height: 104px;
-        border-radius: 18px;
-        padding: 14px;
+        min-height: 96px;
+        border-radius: 17px;
+        padding: 13px;
         color: #f5f5f5;
         cursor: pointer;
         display: flex;
         align-items: center;
         gap: 12px;
         text-align: left;
+        background: linear-gradient(145deg, rgba(255,255,255,.065), rgba(255,255,255,.022));
+        border: 1px solid rgba(var(--glow-color-rgb), calc(var(--glow-intensity) * .38));
+        box-shadow:
+          inset 0 1px 0 rgba(255,255,255,.11),
+          0 10px 30px rgba(0,0,0,.30);
+      }
+
+      .generar-module-button:hover {
+        background: linear-gradient(145deg, rgba(255,255,255,.105), rgba(255,255,255,.035));
       }
 
       .generar-module-button .generar-choice-icon {
@@ -333,14 +353,21 @@ export default function GenerarStyles() {
       }
 
       .generar-primary-action {
-        background: rgba(255,255,255,.94);
-        color: #050505;
-        border: 1px solid #fff;
-        box-shadow: 0 0 calc(var(--glow-spread) * .7) rgba(var(--glow-color-rgb), calc(var(--glow-intensity) * .25));
+        color: #fff;
+        background: linear-gradient(180deg, rgba(255,255,255,.12), rgba(255,255,255,.055));
+        border: 1px solid rgba(var(--glow-color-rgb), calc(var(--glow-intensity) * .72));
+        box-shadow:
+          inset 0 1px 0 rgba(255,255,255,.20),
+          0 0 calc(var(--glow-spread) * .75) rgba(var(--glow-color-rgb), calc(var(--glow-intensity) * .24));
+      }
+
+      .generar-primary-action:hover {
+        background: linear-gradient(180deg, rgba(255,255,255,.17), rgba(255,255,255,.075));
       }
 
       .generar-secondary-action {
-        color: #f4f4f5;
+        color: #e8e8eb;
+        background: rgba(255,255,255,.035);
       }
 
       .generar-primary-action:disabled,
@@ -378,7 +405,8 @@ export default function GenerarStyles() {
         overflow: hidden;
       }
 
-      .generar-result img {
+      .generar-result img,
+      .generar-result video {
         width: 100%;
         max-height: 470px;
         display: block;
@@ -386,6 +414,7 @@ export default function GenerarStyles() {
         border-radius: 16px;
         background: #030303;
         border: 1px solid rgba(255,255,255,.08);
+        box-shadow: inset 0 1px 0 rgba(255,255,255,.04);
       }
 
       .generar-result-meta {

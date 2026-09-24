@@ -188,7 +188,7 @@ export default function ApiImagenModule({ context }: GenerarModuleProps) {
             {phase !== 'awaiting' && phase !== 'completed' ? (
               <button
                 type="button"
-                className="generar-primary-action"
+                className="generar-primary-action glass-glow-button"
                 disabled={!session || !prompt.trim() || busy}
                 onClick={() => void prepare()}
               >
@@ -200,7 +200,7 @@ export default function ApiImagenModule({ context }: GenerarModuleProps) {
               <>
                 <button
                   type="button"
-                  className="generar-primary-action"
+                  className="generar-primary-action glass-glow-button"
                   onClick={() => void generate()}
                 >
                   CONFIRMAR Y GENERAR
@@ -245,7 +245,7 @@ export default function ApiImagenModule({ context }: GenerarModuleProps) {
               <div className="generar-action-row">
                 <button
                   type="button"
-                  className="generar-primary-action"
+                  className="generar-primary-action glass-glow-button"
                   onClick={() => void onUseMedia?.(result)}
                 >
                   USAR EN EDITOR
