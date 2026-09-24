@@ -174,6 +174,7 @@ export async function startVercelSandboxRender(
 const DETACHED_SANDBOX_TIMEOUT_MS = 45 * 60 * 1000;
 const DETACHED_OUTPUT_FILE = '/tmp/nayla-render.mp4';
 const DETACHED_LOG_FILE = '/tmp/nayla-render.log';
+const DETACHED_PROGRESS_FILE = '/tmp/nayla-render-progress.json';
 const DETACHED_EXIT_FILE = '/tmp/nayla-render.exit.json';
 const DETACHED_CONFIG_FILE = '/tmp/nayla-render-config.json';
 const DETACHED_RUNNER_FILE = '/tmp/nayla-render-runner.sh';
@@ -353,13 +354,24 @@ export async function startVercelSandboxRenderDetached(
 set +e
 : > "${DETACHED_LOG_FILE}"
 rm -f "${DETACHED_EXIT_FILE}"
-node render-video.mjs "$(cat "${DETACHED_CONFIG_FILE}")" >> "${DETACHED_LOG_FILE}" 2>&1
-render_status=$?
+printf '{"stage":"opening-browser"}\\n' > "${DETACHED_PROGRESS_FILE}"
+
+node render-video.mjs "$(cat "${DETACHED_CONFIG_FILE}")" 2>&1 | while IFS= read -r line; do
+  printf '%s\\n' "$line" >> "${DETACHED_LOG_FILE}"
+  case "$line" in
+    *'"stage"'*'opening-browser'*|*'"stage"'*'selecting-composition'*|*'"stage"'*'render-progress'*)
+      printf '%s\\n' "$line" > "${DETACHED_PROGRESS_FILE}"
+      ;;
+  esac
+done
+render_status=\${PIPESTATUS[0]}
 if [ "$render_status" -ne 0 ]; then
-  printf '{"phase":"render","exitCode":%s}\n' "$render_status" > "${DETACHED_EXIT_FILE}"
+  printf '{"phase":"render","exitCode":%s}\\n' "$render_status" > "${DETACHED_EXIT_FILE}"
   exit "$render_status"
 fi
-printf '{"naylaStage":"uploading"}\n' >> "${DETACHED_LOG_FILE}"
+
+printf '{"naylaStage":"uploading"}\\n' >> "${DETACHED_LOG_FILE}"
+printf '{"naylaStage":"uploading"}\\n' > "${DETACHED_PROGRESS_FILE}"
 curl --fail --silent --show-error --retry 3 --retry-delay 2 \
   --request PUT \
   --header "Content-Type: video/mp4" \
@@ -367,14 +379,14 @@ curl --fail --silent --show-error --retry 3 --retry-delay 2 \
   "$R2_UPLOAD_URL" >> "${DETACHED_LOG_FILE}" 2>&1
 upload_status=$?
 if [ "$upload_status" -ne 0 ]; then
-  printf '{"phase":"upload","exitCode":%s}\n' "$upload_status" > "${DETACHED_EXIT_FILE}"
+  printf '{"phase":"upload","exitCode":%s}\\n' "$upload_status" > "${DETACHED_EXIT_FILE}"
   exit "$upload_status"
 fi
-printf '{"naylaStage":"uploaded"}\n' >> "${DETACHED_LOG_FILE}"
-printf '{"phase":"completed","exitCode":0}\n' > "${DETACHED_EXIT_FILE}"
+printf '{"naylaStage":"uploaded"}\\n' >> "${DETACHED_LOG_FILE}"
+printf '{"naylaStage":"uploaded"}\\n' > "${DETACHED_PROGRESS_FILE}"
+printf '{"phase":"completed","exitCode":0}\\n' > "${DETACHED_EXIT_FILE}"
 exit 0
 `;
-
     await sandbox.writeFiles([
       {
         path: DETACHED_CONFIG_FILE,
@@ -426,12 +438,20 @@ export async function pollVercelSandboxRenderDetached({
   const { Sandbox } = await import('@vercel/sandbox');
   const sandbox = await Sandbox.get({ sandboxId });
 
-  const [rawLog, rawExit] = await Promise.all([
-    readSandboxTextIfExists(sandbox, logFile),
+  const [rawProgress, rawExit] = await Promise.all([
+    readSandboxTextIfExists(sandbox, DETACHED_PROGRESS_FILE),
     readSandboxTextIfExists(sandbox, exitFile),
   ]);
 
-  const progress = parseDetachedProgress(rawLog);
+  const progress = rawProgress.trim()
+    ? parseDetachedProgress(rawProgress)
+    : {
+        state: 'running' as const,
+        stage: 'preparing' as const,
+        phase: 'Preparando render',
+        progress: 0.12,
+      };
+
   if (!rawExit.trim()) return progress;
 
   try {
@@ -446,6 +466,7 @@ export async function pollVercelSandboxRenderDetached({
       };
     }
 
+    const rawLog = await readSandboxTextIfExists(sandbox, logFile);
     const tail = rawLog.slice(-4000).replace(/\s+/g, ' ').trim();
     return {
       state: 'failed',
