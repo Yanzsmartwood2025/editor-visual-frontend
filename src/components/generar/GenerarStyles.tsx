@@ -530,6 +530,94 @@ export default function GenerarStyles() {
         height: 54px;
       }
 
+      .generar-3d-stage {
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+      }
+
+      .generar-3d-modebar {
+        width: min(980px, 100%);
+        margin: 0 auto 10px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        flex: 0 0 auto;
+      }
+
+      .generar-3d-count {
+        color: #73737b;
+        font-size: 9px;
+        font-weight: 800;
+        letter-spacing: .08em;
+      }
+
+      .generar-3d-studio-shell {
+        width: min(980px, 100%);
+        height: min(690px, calc(100dvh - 178px));
+        min-height: 440px;
+        margin: 0 auto;
+        overflow: hidden;
+        border-radius: 20px;
+        border: 1px solid rgba(var(--glow-color-rgb), calc(var(--glow-intensity) * .42));
+        background: rgba(0,0,0,.30);
+        box-shadow:
+          0 18px 48px rgba(0,0,0,.40),
+          inset 0 1px 0 rgba(255,255,255,.07),
+          0 0 calc(var(--glow-spread) * .42) rgba(var(--glow-color-rgb), calc(var(--glow-intensity) * .12));
+      }
+
+      .generar-3d-result {
+        margin-top: 14px;
+        padding: 14px;
+        display: grid;
+        grid-template-columns: 58px minmax(0, 1fr) auto;
+        gap: 12px;
+        align-items: center;
+        border-radius: 17px;
+        border: 1px solid rgba(var(--glow-color-rgb), .18);
+        background: linear-gradient(145deg, rgba(255,255,255,.05), rgba(255,255,255,.018));
+        box-shadow: inset 0 1px 0 rgba(255,255,255,.07);
+      }
+
+      .generar-3d-result-icon {
+        width: 58px;
+        height: 58px;
+        display: grid;
+        place-items: center;
+        border-radius: 16px;
+        color: #f2f2f4;
+        background: rgba(255,255,255,.04);
+        border: 1px solid rgba(var(--glow-color-rgb), .16);
+      }
+
+      .generar-3d-result-icon svg {
+        width: 31px;
+        height: 31px;
+      }
+
+      .generar-3d-result-copy {
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 5px;
+      }
+
+      .generar-3d-result-copy strong {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        font-size: 13px;
+      }
+
+      .generar-3d-result-copy span {
+        color: #777781;
+        font-size: 10px;
+        font-weight: 750;
+        letter-spacing: .05em;
+      }
+
       .generar-result-meta {
         display: flex;
         justify-content: space-between;
@@ -604,6 +692,36 @@ export default function GenerarStyles() {
         .generar-glass-panel {
           border-radius: 17px;
           padding: 14px;
+        }
+
+        .generar-3d-stage {
+          padding-left: 10px;
+          padding-right: 10px;
+        }
+
+        .generar-3d-modebar {
+          align-items: flex-start;
+        }
+
+        .generar-3d-studio-shell {
+          height: calc(100dvh - 160px);
+          min-height: 390px;
+          border-radius: 17px;
+        }
+
+        .generar-3d-result {
+          grid-template-columns: 48px minmax(0, 1fr);
+        }
+
+        .generar-3d-result-icon {
+          width: 48px;
+          height: 48px;
+          border-radius: 14px;
+        }
+
+        .generar-3d-result .generar-primary-action {
+          grid-column: 1 / -1;
+          width: 100%;
         }
       }
     `}</style>
