@@ -328,7 +328,7 @@ const parseAssetLine = (line: string, errors: string[]) => {
 const parseSubtitleLine = (line: string, errors: string[]) => {
   const parts = stripListPrefix(line).split('|').map((item) => item.trim());
   const range = parseRange(parts[0] || '');
-  const text = (parts[1] || '').replace(/\\\\n/g, '\n');
+  const text = (parts[1] || '').replace(/\\n/g, '\n');
   if (!range || !text) {
     errors.push(`Subtítulo inválido: "${stripListPrefix(line)}". Usa "0-5 | Texto".`);
     return null;
@@ -351,7 +351,7 @@ const parseSubtitleLine = (line: string, errors: string[]) => {
 const parseTitleLine = (line: string, errors: string[]) => {
   const parts = stripListPrefix(line).split('|').map((item) => item.trim());
   const range = parseRange(parts[0] || '');
-  const text = (parts[1] || '').replace(/\\\\n/g, '\n');
+  const text = (parts[1] || '').replace(/\\n/g, '\n');
   if (!range || !text) {
     errors.push(`Título inválido: "${stripListPrefix(line)}". Usa "0-3 | Texto".`);
     return null;
