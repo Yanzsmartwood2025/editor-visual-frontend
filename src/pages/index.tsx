@@ -5399,9 +5399,9 @@ if (!session) {
                           </p>
                           <div style={{ display: 'grid', gap: '6px' }}>
                             {[
-                              { value: '480p', label: 'Borrador · 480p', detail: 'Más rápido para revisar edición' },
-                              { value: '720p', label: 'Rápido · 720p', detail: 'Recomendado para pruebas y redes' },
-                              { value: '1080p', label: 'Final · 1080p', detail: 'Máxima calidad; tarda más' },
+                              { value: '480p', label: 'Borrador · 480p', detail: 'Máxima velocidad · transiciones CPU ligeras' },
+                              { value: '720p', label: 'Rápido · 720p', detail: 'Recomendado · transiciones optimizadas para CPU' },
+                              { value: '1080p', label: 'Final · 1080p', detail: 'Efectos completos · tarda más' },
                             ].map((profile) => {
                               const selected = calidadExportacion === profile.value;
                               const dims = getCanvasDimensionsFromRatio(canvasRatio, profile.value);
