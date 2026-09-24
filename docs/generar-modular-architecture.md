@@ -94,3 +94,19 @@ Cuarta activación funcional:
 - La generación no empieza hasta la confirmación explícita del usuario.
 
 La siguiente activación funcional de la rama API será 3D, reutilizando las capacidades 3D existentes sin duplicar el workspace.
+
+
+## Fase 5 — API 3D + Estudio compartido
+
+Quinta activación funcional:
+
+- API -> 3D deja de ser placeholder.
+- Texto -> 3D usa Nayla Cloud con las rutas 3D configuradas (Tripo, Meshy o fal.ai cuando corresponda).
+- Flujo: descripción -> preparar -> confirmar -> generar -> Bóveda 3D -> abrir en Estudio.
+- El resultado GLB se incorpora al mismo estado de modelos 3D que ya usa el editor; no se crea una segunda biblioteca paralela.
+- El Estudio 3D existente se reutiliza dentro de GENERAR. El visor, subida GLB, selección, borrado, animaciones y acciones avanzadas siguen viviendo en `Model3DWorkspace`.
+- En modo embebido el Estudio adopta cristal, blur, glow y bordes del resto de Nayla.
+- El creador Texto -> 3D de GENERAR es independiente del visor; al salir se desmonta y cancela el polling.
+- Se mantiene temporalmente la ruta antigua `mainNav === '3d'` como compatibilidad interna hasta terminar las pruebas de migración; la interfaz principal ya entra por GENERAR.
+
+Con esto la rama API tiene Imagen, Video, Audio, Música y 3D activados de forma modular. La siguiente etapa es activar la rama GPU módulo por módulo.
