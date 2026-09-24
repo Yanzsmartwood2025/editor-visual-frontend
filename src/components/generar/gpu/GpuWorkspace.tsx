@@ -14,12 +14,13 @@ const moduleMeta: Array<{
   id: GenerarModule;
   label: string;
   description: string;
+  ready: boolean;
 }> = [
-  { id: 'imagen', label: 'IMAGEN', description: 'Modelos de imagen dedicados' },
-  { id: 'video', label: 'VIDEO', description: 'Procesamiento de video' },
-  { id: 'audio', label: 'AUDIO', description: 'Voz y procesamiento' },
-  { id: 'musica', label: 'MÚSICA', description: 'Motor musical dedicado' },
-  { id: '3d', label: '3D', description: 'Reconstrucción y malla' },
+  { id: 'imagen', label: 'IMAGEN', description: 'Modelos de imagen dedicados', ready: false },
+  { id: 'video', label: 'VIDEO', description: 'Procesamiento de video', ready: false },
+  { id: 'audio', label: 'AUDIO', description: 'Voz y procesamiento', ready: false },
+  { id: 'musica', label: 'MÚSICA', description: 'ACE-Step dedicado', ready: true },
+  { id: '3d', label: '3D', description: 'Reconstrucción y malla', ready: false },
 ];
 
 export default function GpuWorkspace({
@@ -45,7 +46,7 @@ export default function GpuWorkspace({
             <span className="generar-module-copy">
               <strong>{item.label}</strong>
               <span>{item.description}</span>
-              <em>SIGUIENTE</em>
+              <em className={item.ready ? 'ready' : ''}>{item.ready ? 'ACTIVO' : 'PENDIENTE'}</em>
             </span>
           </button>
         ))}
