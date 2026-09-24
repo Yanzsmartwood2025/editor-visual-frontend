@@ -53,12 +53,14 @@ export const createMediaJobPlan = async ({
   threadId,
   action,
   attachmentIds = [],
+  providerActionOverrides = {},
 }: {
   userId: string;
   projectId?: string;
   threadId?: string;
   action: NaylaAction;
   attachmentIds?: string[];
+  providerActionOverrides?: Partial<Record<MediaProviderId, NaylaAction>>;
 }) => {
   const domain = domainForNaylaAction(action);
   const capability = capabilityForNaylaAction(action);
@@ -66,7 +68,14 @@ export const createMediaJobPlan = async ({
 
   const scope = await resolveOwnedWorkspaceScope({ userId, projectId, threadId });
   const candidates = getAvailableProvidersForAction(action)
-    .filter((provider) => providerCanExecuteAction(provider.id, action))
+    .filter((provider) => {
+      const effectiveAction = providerActionOverrides[provider.id] || action;
+      return providerCanExecuteAction(provider.id, effectiveAction);
+    })
+    .filter((provider) =>
+      Object.keys(providerActionOverrides).length === 0 ||
+      Boolean(providerActionOverrides[provider.id])
+    )
     .map((provider) => ({
       id: provider.id,
       label: provider.label,
@@ -102,6 +111,7 @@ export const createMediaJobPlan = async ({
         candidateProviders: candidates.map((candidate) => candidate.id),
         requestedProvider: requestedProviderForAction(action) || null,
         attachmentIds: Array.from(new Set(attachmentIds)),
+        providerActionOverrides,
       },
     })
     .select('*')
