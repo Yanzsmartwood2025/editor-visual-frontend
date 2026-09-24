@@ -82,6 +82,19 @@ assets:
     });
   });
 
+  it('convierte \\n en saltos reales dentro de subtítulos directos', () => {
+    const result = parseNaylaDirectInstruction(`@direct
+assets:
+- F1 | 5s | preset=poster-pop
+subtitles:
+- 0-5 | Línea uno\\nLínea dos | cinematic | center | 48
+`);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.plan.action.subtitles?.[0]?.text).toBe('Línea uno\nLínea dos');
+  });
+
   it('acepta JSON BUILD_TIMELINE después de @direct', () => {
     const result = parseNaylaDirectInstruction(`@direct
 {"action":"build-timeline","assets":[{"type":"foto","source":"label","label":"F1","durationInSeconds":5}],"render":true}`);
