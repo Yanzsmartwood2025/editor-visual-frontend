@@ -48,7 +48,7 @@ type ProfessionalEffect = {
 type GsapClipPreset = 'fade' | 'slide-left' | 'slide-right' | 'slide-up' | 'slide-down' | 'zoom-in' | 'zoom-out' | 'bounce' | 'elastic' | 'spin' | 'swing';
 type GsapClipMotion = { enter?: GsapClipPreset; exit?: GsapClipPreset; enterDuration?: number; exitDuration?: number; intensity?: number; };
 type ProceduralMotion = { preset: 'particles' | 'orbit' | 'pulse-grid' | 'starfield'; intensity?: number; speed?: number; seed?: number; color?: string; accentColor?: string; };
-type TimelineItem = { id: string; mediaId: string; tipo: 'foto' | 'video' | 'audio'; nombre: string; etiqueta: string; url: string; durationInSeconds?: number; originalDurationInSeconds?: number; volume?: number; volumeKeyframes?: { time: number; gain: number }[]; fadeIn?: number; fadeOut?: number; scale?: number; delay?: number; startFrom?: number; trimBefore?: number; trimAfter?: number; loop?: boolean; playbackRate?: number; transitionDuration?: number; transitionType?: 'fade' | 'none' | 'wipe' | 'slide' | 'zoom' | 'film-burn' | 'blur-slide' | 'cross-zoom' | 'dreamy-zoom' | 'linear-blur' | 'push-cut'; efecto?: string; brightness?: number; contrast?: number; saturation?: number; overlay?: string; overlayIntensity?: number; professionalEffects?: ProfessionalEffect[]; motionBlur?: { shutterAngle?: number; samples?: number }; gsapMotion?: GsapClipMotion; proceduralMotion?: ProceduralMotion; };
+type TimelineItem = { id: string; mediaId: string; tipo: 'foto' | 'video' | 'audio'; nombre: string; etiqueta: string; url: string; durationInSeconds?: number; originalDurationInSeconds?: number; volume?: number; volumeKeyframes?: { time: number; gain: number }[]; fadeIn?: number; fadeOut?: number; scale?: number; delay?: number; startFrom?: number; trimBefore?: number; trimAfter?: number; loop?: boolean; playbackRate?: number; transitionDuration?: number; transitionType?: 'fade' | 'none' | 'wipe' | 'slide' | 'zoom' | 'film-burn' | 'blur-slide' | 'cross-zoom' | 'dreamy-zoom' | 'linear-blur' | 'push-cut'; visualTemplate?: 'fragment-reveal' | 'carousel-card' | 'depth-stack' | 'split-panels' | 'poster-pop'; efecto?: string; brightness?: number; contrast?: number; saturation?: number; overlay?: string; overlayIntensity?: number; professionalEffects?: ProfessionalEffect[]; motionBlur?: { shutterAngle?: number; samples?: number }; gsapMotion?: GsapClipMotion; proceduralMotion?: ProceduralMotion; };
 type SubtitleItem = { id: string; texto: string; inicioSec: number; finSec: number; style?: 'clean' | 'cinematic' | 'tiktok' | 'karaoke'; position?: 'top' | 'center' | 'bottom'; fontSize?: number; fontFamily?: string; fontUrl?: string; };
 type LogoItem = { id: string; url: string; x: number; y: number; scale: number; opacity: number; inicioSec?: number; finSec?: number; fadeIn?: number; fadeOut?: number; };
 
@@ -571,6 +571,209 @@ const AnimatedPhoto: React.FC<{ clip: TimelineItem, durationInFrames: number }> 
   );
 };
 
+const VisualTemplatePhoto: React.FC<{
+  clip: TimelineItem;
+  durationInFrames: number;
+  revealUrl?: string;
+}> = ({ clip, durationInFrames, revealUrl }) => {
+  const frame = useCurrentFrame();
+  const end = Math.max(1, durationInFrames - 1);
+  const enter = interpolate(frame, [0, Math.max(1, Math.round(durationInFrames * 0.22))], [0, 1], {
+    extrapolateLeft: 'clamp',
+    extrapolateRight: 'clamp',
+  });
+  const exit = interpolate(frame, [Math.round(durationInFrames * 0.58), end], [0, 1], {
+    extrapolateLeft: 'clamp',
+    extrapolateRight: 'clamp',
+  });
+  const nextUrl = revealUrl || clip.url;
+  const commonImageStyle: React.CSSProperties = {
+    width: '100%',
+    height: '100%',
+    objectFit: 'contain',
+    filter: getFilterStyle(clip),
+  };
+
+  if (!clip.visualTemplate) {
+    return <AnimatedPhoto clip={clip} durationInFrames={durationInFrames} />;
+  }
+
+  if (clip.visualTemplate === 'fragment-reveal') {
+    const slices = 7;
+    return (
+      <AbsoluteFill style={{ overflow: 'hidden', backgroundColor: '#000' }}>
+        <PreloadedImage
+          src={nextUrl}
+          style={{ width: '100%', height: '100%', objectFit: 'contain', filter: 'brightness(0.78) saturate(0.92)' }}
+        />
+        <AbsoluteFill style={{ opacity: Math.max(0, 1 - exit * 1.15) }}>
+          <AnimatedPhoto clip={clip} durationInFrames={durationInFrames} />
+        </AbsoluteFill>
+        {Array.from({ length: slices }, (_, index) => {
+          const left = (index / slices) * 100;
+          const right = 100 - ((index + 1) / slices) * 100;
+          const direction = index % 2 === 0 ? -1 : 1;
+          const x = direction * (18 + index * 2.5) * exit;
+          const y = (index - (slices - 1) / 2) * 2.4 * exit;
+          const rotation = direction * (2.5 + index * 0.35) * exit;
+          return (
+            <AbsoluteFill
+              key={index}
+              style={{
+                clipPath: `inset(0 ${right}% 0 ${left}%)`,
+                transform: `translate(${x}%, ${y}%) rotate(${rotation}deg) scale(${1 + 0.015 * exit})`,
+                transformOrigin: 'center center',
+                filter: 'drop-shadow(0 0 18px rgba(0,0,0,0.35))',
+              }}
+            >
+              <PreloadedImage src={clip.url} style={commonImageStyle} />
+            </AbsoluteFill>
+          );
+        })}
+      </AbsoluteFill>
+    );
+  }
+
+  if (clip.visualTemplate === 'split-panels') {
+    const spread = 42 * exit;
+    return (
+      <AbsoluteFill style={{ overflow: 'hidden', backgroundColor: '#000' }}>
+        <PreloadedImage
+          src={nextUrl}
+          style={{ width: '100%', height: '100%', objectFit: 'contain', filter: 'brightness(0.82)' }}
+        />
+        <AbsoluteFill
+          style={{
+            clipPath: 'inset(0 50% 0 0)',
+            transform: `translateX(${-spread}%)`,
+            filter: 'drop-shadow(16px 0 22px rgba(0,0,0,.4))',
+          }}
+        >
+          <PreloadedImage src={clip.url} style={commonImageStyle} />
+        </AbsoluteFill>
+        <AbsoluteFill
+          style={{
+            clipPath: 'inset(0 0 0 50%)',
+            transform: `translateX(${spread}%)`,
+            filter: 'drop-shadow(-16px 0 22px rgba(0,0,0,.4))',
+          }}
+        >
+          <PreloadedImage src={clip.url} style={commonImageStyle} />
+        </AbsoluteFill>
+      </AbsoluteFill>
+    );
+  }
+
+  if (clip.visualTemplate === 'carousel-card') {
+    const x = interpolate(frame, [0, Math.round(end * 0.55), end], [22, 0, -34], {
+      extrapolateLeft: 'clamp',
+      extrapolateRight: 'clamp',
+    });
+    const rotation = interpolate(frame, [0, end], [-4.5, 3.5], {
+      extrapolateLeft: 'clamp',
+      extrapolateRight: 'clamp',
+    });
+    const scale = 0.88 + enter * 0.1;
+    return (
+      <AbsoluteFill style={{ overflow: 'hidden', backgroundColor: '#000' }}>
+        <PreloadedImage
+          src={nextUrl}
+          style={{ width: '100%', height: '100%', objectFit: 'cover', filter: 'blur(20px) brightness(0.42) saturate(0.8)', transform: 'scale(1.08)' }}
+        />
+        <div style={{
+          position: 'absolute',
+          left: '8%',
+          top: '8%',
+          width: '84%',
+          height: '84%',
+          overflow: 'hidden',
+          borderRadius: 28,
+          border: '1px solid rgba(255,255,255,.22)',
+          background: '#050505',
+          boxShadow: '0 28px 70px rgba(0,0,0,.55)',
+          transform: `translateX(${x}%) rotate(${rotation}deg) scale(${scale})`,
+          transformOrigin: 'center center',
+        }}>
+          <PreloadedImage src={clip.url} style={commonImageStyle} />
+        </div>
+      </AbsoluteFill>
+    );
+  }
+
+  if (clip.visualTemplate === 'depth-stack') {
+    const drift = interpolate(frame, [0, end], [-3, 4], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' });
+    return (
+      <AbsoluteFill style={{ overflow: 'hidden', backgroundColor: '#000' }}>
+        <PreloadedImage
+          src={nextUrl}
+          style={{ width: '100%', height: '100%', objectFit: 'cover', filter: 'blur(22px) brightness(.28)', transform: 'scale(1.1)' }}
+        />
+        {[2, 1].map((layer) => (
+          <div key={layer} style={{
+            position: 'absolute',
+            left: `${7 + layer * 2}%`,
+            top: `${6 + layer * 1.5}%`,
+            width: '82%',
+            height: '86%',
+            borderRadius: 24,
+            overflow: 'hidden',
+            opacity: layer === 2 ? 0.28 : 0.48,
+            transform: `translate(${drift * layer}px, ${layer * 12}px) rotate(${layer === 2 ? -3 : 2}deg) scale(${0.93 + layer * 0.015})`,
+            boxShadow: '0 22px 55px rgba(0,0,0,.5)',
+          }}>
+            <PreloadedImage src={clip.url} style={commonImageStyle} />
+          </div>
+        ))}
+        <div style={{
+          position: 'absolute',
+          left: '9%',
+          top: '7%',
+          width: '82%',
+          height: '86%',
+          borderRadius: 24,
+          overflow: 'hidden',
+          border: '1px solid rgba(255,255,255,.18)',
+          boxShadow: '0 30px 80px rgba(0,0,0,.58)',
+          transform: `translateX(${drift}px) scale(${0.96 + enter * 0.04})`,
+        }}>
+          <PreloadedImage src={clip.url} style={commonImageStyle} />
+        </div>
+      </AbsoluteFill>
+    );
+  }
+
+  if (clip.visualTemplate === 'poster-pop') {
+    const cardScale = 0.82 + enter * 0.18 + exit * 0.03;
+    const cardY = (1 - enter) * 7 - exit * 3;
+    return (
+      <AbsoluteFill style={{ overflow: 'hidden', backgroundColor: '#000' }}>
+        <PreloadedImage
+          src={clip.url}
+          style={{ width: '100%', height: '100%', objectFit: 'cover', filter: 'blur(26px) brightness(.3) saturate(.8)', transform: 'scale(1.12)' }}
+        />
+        <div style={{
+          position: 'absolute',
+          left: '7%',
+          top: '5%',
+          width: '86%',
+          height: '90%',
+          overflow: 'hidden',
+          borderRadius: 18,
+          background: '#050505',
+          border: '1px solid rgba(255,255,255,.2)',
+          boxShadow: '0 34px 90px rgba(0,0,0,.62)',
+          transform: `translateY(${cardY}%) scale(${cardScale})`,
+        }}>
+          <PreloadedImage src={clip.url} style={commonImageStyle} />
+        </div>
+      </AbsoluteFill>
+    );
+  }
+
+  return <AnimatedPhoto clip={clip} durationInFrames={durationInFrames} />;
+};
+
+
 const ProfessionalVideo: React.FC<{
   clip: TimelineItem;
   durationInFrames: number;
@@ -877,7 +1080,11 @@ export const MainComposition: React.FC<MainCompositionProps> = ({ timeline, subt
                   ) : (
                     <GsapClipMotionFrame clip={clip} durationInFrames={clip.durationInFrames}>
                       <AnimatedVisualFrame clip={clip} durationInFrames={clip.durationInFrames}>
-                        <AnimatedPhoto clip={clip} durationInFrames={clip.durationInFrames} />
+                        <VisualTemplatePhoto
+                          clip={clip}
+                          durationInFrames={clip.durationInFrames}
+                          revealUrl={visualSequences[index + 1]?.url}
+                        />
                       </AnimatedVisualFrame>
                     </GsapClipMotionFrame>
                   )}

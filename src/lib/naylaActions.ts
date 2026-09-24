@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { volumeKeyframesSchema } from './audioAutomation';
 import { getProviderCandidates } from './mediaProviders/registry';
 import type { MediaCapability, MediaProviderId } from './mediaProviders/types';
+import { applyNaylaVisualTemplate, NAYLA_VISUAL_TEMPLATE_NAMES } from './naylaVisualTemplates';
 
 const stockProviderSchema = z.enum(['pexels', 'pixabay', 'openverse']);
 const generationProviderSchema = z.enum(['fal', 'replicate', 'tripo', 'meshy']);
@@ -61,6 +62,7 @@ const buildTimelineAssetSchema = z.object({
     'tilt-3d',
     'parallax-3d',
   ]).optional(),
+  visualTemplate: z.enum(NAYLA_VISUAL_TEMPLATE_NAMES).optional(),
   brightness: z.number().min(0.1).max(3).optional(),
   contrast: z.number().min(0.1).max(3).optional(),
   saturation: z.number().min(0).max(4).optional(),
@@ -386,13 +388,18 @@ const normalizeNaylaActionShape = (value: unknown): unknown => {
     }
     delete asset.effect;
 
+    if (typeof asset.template === 'string' && typeof asset.visualTemplate !== 'string') {
+      asset.visualTemplate = asset.template;
+    }
+    delete asset.template;
+
     if (Array.isArray(asset.professionalEffects)) {
       asset.professionalEffects = asset.professionalEffects.map((effect) =>
         typeof effect === 'string' ? { type: effect } : effect
       );
     }
 
-    return asset;
+    return applyNaylaVisualTemplate(asset);
   });
 
   return action;

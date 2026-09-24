@@ -774,4 +774,20 @@ describe('Nayla action contracts', () => {
     });
   });
 
+  it('normaliza template a una plantilla visual válida', () => {
+    const action = parseNaylaAction(JSON.stringify({
+      action: 'BUILD_TIMELINE',
+      assets: [{ type: 'foto', source: 'label', label: 'F1', durationInSeconds: 5, template: 'fragment-reveal' }],
+      render: true,
+    }));
+
+    expect(action?.action).toBe('BUILD_TIMELINE');
+    if (action?.action !== 'BUILD_TIMELINE') return;
+    expect(action.assets[0]).toMatchObject({
+      visualTemplate: 'fragment-reveal',
+      efecto: 'push-in',
+      transitionType: 'push-cut',
+    });
+  });
+
 });

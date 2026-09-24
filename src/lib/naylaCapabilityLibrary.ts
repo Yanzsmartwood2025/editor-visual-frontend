@@ -3,14 +3,22 @@ import { z } from 'zod';
 import { NAYLA_EDITOR_CONTRACT } from './naylaEditorContract';
 import { NAYLA_EDITING_LIBRARY } from './naylaEditingLibrary';
 import { REMOTION_CPU_EFFECTS as effects } from './remotionEffects';
+import { NAYLA_VISUAL_TEMPLATE_NAMES } from './naylaVisualTemplates';
 
 // Versioned alongside the real controls. Installation alone never enables a chapter.
-export const EDITOR_LIBRARY_VERSION = '2026-09-23.2';
+export const EDITOR_LIBRARY_VERSION = '2026-09-24.1';
 const clip = (controls: Record<string, unknown>) => ({ action: 'BUILD_TIMELINE', assets: [{ type: 'foto', source: 'label', label: 'F1', durationInSeconds: 5, ...controls }], render: true });
 const layer = (key: string, value: Record<string, unknown>) => ({ action: 'BUILD_TIMELINE', assets: [], [key]: [value], render: true });
 export const EDITOR_BOOKS = [
   { id: 'montage', title: 'Montaje, fotos, videos, ritmo y recortes', fields: ['assets'], assetFields: ['type', 'source', 'label', 'url', 'durationInSeconds', 'delay', 'startFrom', 'trimBefore', 'trimAfter', 'playbackRate', 'loop', 'scale'],
     guide: 'Ordena F/V en assets. Duración y recortes deben respetar el archivo. Audio concurrente usa delay. Calcula duración neta restando solapes de transición. No inventes duración de medios desconocida.', options: ['duración', 'recorte', 'velocidad', 'repetición', 'escala', 'retraso'], example: clip({ playbackRate: 1, scale: 1.1 }) },
+  { id: 'visual-templates', title: 'Plantillas visuales compuestas', fields: ['assets'], assetFields: ['visualTemplate', 'efecto', 'transitionType', 'transitionDuration', 'overlay', 'overlayIntensity', 'gsapMotion', 'motionBlur', 'proceduralMotion', 'professionalEffects'],
+    guide: 'Usa estas plantillas cuando el usuario describa un resultado visual compuesto. fragment-reveal divide la foto en paneles y revela la siguiente; carousel-card mueve la foto como tarjeta de carrusel; depth-stack crea capas de profundidad; split-panels separa la imagen en dos mitades; poster-pop presenta la foto sobre fondo ampliado. Son nombres reales del renderer: no inventes otros. Los controles explícitos del usuario pueden afinar la plantilla.',
+    options: NAYLA_VISUAL_TEMPLATE_NAMES,
+    example: { action: 'BUILD_TIMELINE', assets: [
+      { type: 'foto', source: 'label', label: 'F1', durationInSeconds: 6, visualTemplate: 'fragment-reveal' },
+      { type: 'foto', source: 'label', label: 'F2', durationInSeconds: 6, visualTemplate: 'carousel-card' },
+    ], render: true } },
   { id: 'motion', title: 'Movimiento de fotos y perspectiva simulada', fields: ['assets'], assetFields: ['efecto'],
     guide: 'push-in acerca, pull-out aleja, pan desplaza lateralmente, ken-burns combina desplazamiento y zoom, float flota, rotate gira. tilt-3d inclina una tarjeta y parallax-3d simula profundidad: no reconstruyen la foto en 3D. Un efecto por clip; combina acabados mediante professionalEffects.', options: effects.motion, example: NAYLA_EDITING_LIBRARY[0].example },
   { id: 'transitions', title: 'Transiciones entre escenas', fields: ['assets'], assetFields: ['transitionType', 'transitionDuration'],

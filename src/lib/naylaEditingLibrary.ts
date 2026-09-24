@@ -13,6 +13,44 @@ export const NAYLA_EDITING_LIBRARY = [
     example: { action: 'BUILD_TIMELINE', assets: [{ type: 'foto', source: 'label', label: 'F1', durationInSeconds: 5, efecto: 'tilt-3d' }], render: false },
   },
   {
+    id: 'fragment-reveal',
+    recommendation: 'Revelado fragmentado: la foto se divide en paneles y al abrirse deja ver la siguiente imagen detrás.',
+    example: { action: 'BUILD_TIMELINE', assets: [
+      { type: 'foto', source: 'label', label: 'F1', durationInSeconds: 6, visualTemplate: 'fragment-reveal' },
+      { type: 'foto', source: 'label', label: 'F2', durationInSeconds: 6, visualTemplate: 'poster-pop' },
+    ], render: false },
+  },
+  {
+    id: 'carousel-card',
+    recommendation: 'Carrusel: cada foto aparece como tarjeta con profundidad y se desplaza para descubrir la siguiente.',
+    example: { action: 'BUILD_TIMELINE', assets: [
+      { type: 'foto', source: 'label', label: 'F1', durationInSeconds: 6, visualTemplate: 'carousel-card' },
+      { type: 'foto', source: 'label', label: 'F2', durationInSeconds: 6, visualTemplate: 'carousel-card' },
+    ], render: false },
+  },
+  {
+    id: 'depth-stack',
+    recommendation: 'Capas de profundidad: varias copias desplazadas crean sensación de volumen y separación del fondo.',
+    example: { action: 'BUILD_TIMELINE', assets: [
+      { type: 'foto', source: 'label', label: 'F1', durationInSeconds: 6, visualTemplate: 'depth-stack' },
+    ], render: false },
+  },
+  {
+    id: 'split-panels',
+    recommendation: 'Paneles divididos: la imagen se separa en dos mitades y revela la escena siguiente.',
+    example: { action: 'BUILD_TIMELINE', assets: [
+      { type: 'foto', source: 'label', label: 'F1', durationInSeconds: 6, visualTemplate: 'split-panels' },
+      { type: 'foto', source: 'label', label: 'F2', durationInSeconds: 6 },
+    ], render: false },
+  },
+  {
+    id: 'poster-pop',
+    recommendation: 'Póster dinámico: la foto principal flota sobre un fondo ampliado y desenfocado con entrada de profundidad.',
+    example: { action: 'BUILD_TIMELINE', assets: [
+      { type: 'foto', source: 'label', label: 'F1', durationInSeconds: 6, visualTemplate: 'poster-pop' },
+    ], render: false },
+  },
+  {
     id: 'cinematic-montage',
     recommendation: 'Cine: acercamiento en la foto, color en el video y transición con desenfoque.',
     example: { action: 'BUILD_TIMELINE', assets: [

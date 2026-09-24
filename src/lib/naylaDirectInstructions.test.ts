@@ -53,6 +53,48 @@ titles:
     });
   });
 
+  it('acepta plantillas visuales y controles avanzados en DSL directo', () => {
+    const result = parseNaylaDirectInstruction(`@direct
+ratio: 9:16
+render: yes
+assets:
+- F1 | 7s | template=fragment-reveal | professional=glow:0.2,vignette:0.3 | motionBlur=180/4 | gsapEnter=zoom-in | gsapExit=fade | procedural=particles | proceduralIntensity=0.2 | proceduralSpeed=0.6
+- F2 | 7s | preset=carousel-card
+`);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    expect(result.plan.action.assets[0]).toMatchObject({
+      label: 'F1',
+      visualTemplate: 'fragment-reveal',
+      efecto: 'push-in',
+      transitionType: 'push-cut',
+      motionBlur: { shutterAngle: 180, samples: 4 },
+      gsapMotion: { enter: 'zoom-in', exit: 'fade' },
+      proceduralMotion: { preset: 'particles', intensity: 0.2, speed: 0.6 },
+    });
+    expect(result.plan.action.assets[0].professionalEffects).toHaveLength(2);
+    expect(result.plan.action.assets[1]).toMatchObject({
+      label: 'F2',
+      visualTemplate: 'carousel-card',
+      transitionType: 'slide',
+    });
+  });
+
+  it('convierte \\n en saltos reales dentro de subtítulos directos', () => {
+    const result = parseNaylaDirectInstruction(`@direct
+assets:
+- F1 | 5s | preset=poster-pop
+subtitles:
+- 0-5 | Línea uno\\nLínea dos | cinematic | center | 48
+`);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.plan.action.subtitles?.[0]?.text).toBe('Línea uno\nLínea dos');
+  });
+
   it('acepta JSON BUILD_TIMELINE después de @direct', () => {
     const result = parseNaylaDirectInstruction(`@direct
 {"action":"build-timeline","assets":[{"type":"foto","source":"label","label":"F1","durationInSeconds":5}],"render":true}`);
