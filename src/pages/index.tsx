@@ -2411,6 +2411,7 @@ export default function NaylaCore() {
     let workingModels = [...modelos3d];
     let successCount = 0;
     let failedCount = 0;
+    let timelineChanged = false;
     const totalUploadBytes = selectedFiles.reduce((sum, file) => sum + file.size, 0);
     let completedUploadBytes = 0;
 
@@ -2496,7 +2497,12 @@ export default function NaylaCore() {
           if (!saved) throw new Error(`No se pudo guardar ${file.name}.`);
           workingMedia = [...workingMedia, saved];
           setGaleriaMultimedia((prev) => prev.some((item) => item.id === saved.id) ? prev : [...prev, saved]);
-          await agregarAlTimeline(saved, { preventDuplicate: true });
+          await agregarAlTimeline(saved, {
+            preventDuplicate: true,
+            useExistingMetadata: true,
+            deferSync: true,
+          });
+          timelineChanged = true;
           asset = {
             id: saved.id,
             tipo: saved.tipo as NaylaChannelKind,
@@ -2535,6 +2541,10 @@ export default function NaylaCore() {
           : progress
         );
       }
+    }
+
+    if (timelineChanged) {
+      await sincronizarLineaDeTiempo(lineaDeTiempoRef.current);
     }
 
     setChannelUploadingKind(null);
@@ -4072,15 +4082,27 @@ export default function NaylaCore() {
 
   const agregarAlTimeline = async (
     item: MediaItem,
-    options: { preventDuplicate?: boolean } = {}
+    options: {
+      preventDuplicate?: boolean;
+      useExistingMetadata?: boolean;
+      deferSync?: boolean;
+    } = {}
   ) => {
     let metadata: MediaMetadata = { ...(item.metadata || {}) };
+    const existingMetadataIsEnough =
+      item.tipo === 'foto'
+        ? Boolean(metadata.width && metadata.height)
+        : item.tipo === 'video'
+          ? Boolean(metadata.width && metadata.height && metadata.durationInSeconds)
+          : Boolean(metadata.durationInSeconds);
 
-    try {
-      const probed = await probeMediaUrl(item.url, item.tipo);
-      metadata = { ...metadata, ...probed };
-    } catch (error) {
-      console.warn('Could not load complete media metadata for', item.url, error);
+    if (!options.useExistingMetadata || !existingMetadataIsEnough) {
+      try {
+        const probed = await probeMediaUrl(item.url, item.tipo);
+        metadata = { ...metadata, ...probed };
+      } catch (error) {
+        console.warn('Could not load complete media metadata for', item.url, error);
+      }
     }
 
     let durationInSeconds = metadata.durationInSeconds;
@@ -4145,7 +4167,9 @@ export default function NaylaCore() {
       adoptarFormatoVisual(metadata);
     }
 
-    await sincronizarLineaDeTiempo(nuevaLinea);
+    if (!options.deferSync) {
+      await sincronizarLineaDeTiempo(nuevaLinea);
+    }
     return nuevo;
   };
 
