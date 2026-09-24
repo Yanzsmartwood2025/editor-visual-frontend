@@ -3,11 +3,19 @@ import { volumeKeyframesSchema } from '../../lib/audioAutomation';
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { randomUUID } from 'node:crypto';
 import { requireFirebaseUser } from '../../lib/firebaseAdmin';
-import { startVercelSandboxRender } from '../../lib/vercelSandboxRender';
+import {
+  pollVercelSandboxRenderDetached,
+  startVercelSandboxRenderDetached,
+  stopVercelSandboxRender,
+} from '../../lib/vercelSandboxRender';
 import { getCanvasDimensionsFromRatio } from '../../lib/mediaMetadata';
 import { getCompositionDurationInFrames } from '../../lib/timelineMetrics';
 import { getWorkspaceSupabaseAdmin, resolveOwnedWorkspaceScope } from '../../lib/workspaceStore';
-import { createR2PresignedGetUrl } from '../../lib/r2';
+import {
+  createR2PresignedGetUrl,
+  createR2PresignedPutUrl,
+  headR2Object,
+} from '../../lib/r2';
 
 const MAX_TIMELINE_ITEMS = 250;
 const MAX_RENDER_SECONDS = 20 * 60;
