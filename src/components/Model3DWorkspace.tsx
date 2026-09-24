@@ -10,6 +10,8 @@ type Model3DWorkspaceProps = {
   onUpload: (files: FileList) => void;
   onDelete: (asset: Model3DAsset) => void;
   onNaylaAction: (mode: 'text_to_3d' | 'image_to_3d' | 'multiview_to_3d' | 'texture' | 'optimize' | 'rig' | 'animate' | 'retarget', prompt?: string) => void;
+  embedded?: boolean;
+  showCreatePrompt?: boolean;
 };
 
 const MODEL_VIEWER_SRC =
@@ -23,6 +25,8 @@ export function Model3DWorkspace({
   onUpload,
   onDelete,
   onNaylaAction,
+  embedded = false,
+  showCreatePrompt = true,
 }: Model3DWorkspaceProps) {
   const activeAsset = assets.find((asset) => asset.id === activeAssetId) || assets[0] || null;
   const viewerRef = useRef<any>(null);
@@ -160,7 +164,51 @@ export function Model3DWorkspace({
         onLoad={() => setViewerReady(true)}
       />
 
-      <div style={{
+      {embedded && (
+        <style jsx global>{`
+          .model3d-workspace.embedded {
+            background:
+              radial-gradient(circle at 50% 42%, rgba(var(--glow-color-rgb), .07), transparent 46%),
+              rgba(2,3,5,.56) !important;
+          }
+          .model3d-workspace.embedded > div:last-child {
+            background: rgba(5,5,7,.66) !important;
+            border-top: 1px solid rgba(var(--glow-color-rgb), .14) !important;
+            backdrop-filter: blur(var(--glass-blur));
+            -webkit-backdrop-filter: blur(var(--glass-blur));
+          }
+          .model3d-workspace.embedded button,
+          .model3d-workspace.embedded label {
+            background: linear-gradient(145deg, rgba(255,255,255,.075), rgba(255,255,255,.025)) !important;
+            border-color: rgba(var(--glow-color-rgb), calc(var(--glow-intensity) * .42)) !important;
+            color: #f2f2f4 !important;
+            box-shadow:
+              inset 0 1px 0 rgba(255,255,255,.10),
+              0 8px 24px rgba(0,0,0,.26),
+              0 0 calc(var(--glow-spread) * .34) rgba(var(--glow-color-rgb), calc(var(--glow-intensity) * .10));
+            backdrop-filter: blur(calc(var(--glass-blur) * .7));
+            -webkit-backdrop-filter: blur(calc(var(--glass-blur) * .7));
+          }
+          .model3d-workspace.embedded button:hover,
+          .model3d-workspace.embedded label:hover {
+            background: linear-gradient(145deg, rgba(255,255,255,.12), rgba(255,255,255,.04)) !important;
+          }
+          .model3d-workspace.embedded input,
+          .model3d-workspace.embedded select {
+            background: rgba(0,0,0,.34) !important;
+            border-color: rgba(var(--glow-color-rgb), .18) !important;
+            color: #fff !important;
+            box-shadow: inset 0 1px 0 rgba(255,255,255,.04);
+          }
+          .model3d-workspace.embedded input:focus,
+          .model3d-workspace.embedded select:focus {
+            border-color: rgba(var(--glow-color-rgb), calc(var(--glow-intensity) * .76)) !important;
+            outline: none;
+          }
+        `}</style>
+      )}
+
+      <div className={`model3d-workspace ${embedded ? 'embedded' : ''}`} style={{
         width: '100%',
         height: '100%',
         display: 'grid',
@@ -375,6 +423,7 @@ export function Model3DWorkspace({
             })}
           </div>
 
+          {showCreatePrompt && (
           <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) auto', gap: 8 }}>
             <input
               value={prompt}
@@ -408,6 +457,7 @@ export function Model3DWorkspace({
               CREAR
             </button>
           </div>
+          )}
 
           <div style={{ display: 'flex', gap: 6, overflowX: 'auto', paddingBottom: 2 }}>
             {[
