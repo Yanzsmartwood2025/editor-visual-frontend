@@ -51,6 +51,7 @@ export type CloudProviderPoll =
     };
 
 export class UnsupportedCloudExecutionError extends Error {}
+export class ProviderCapacityError extends Error {}
 
 const requiredEnv = (key: string) => {
   const value = process.env[key]?.trim();
@@ -82,7 +83,17 @@ const jsonRequest = async (
         payload?.error ||
         payload?.raw ||
         `HTTP ${response.status}`;
-      throw new Error(typeof detail === 'string' ? detail : JSON.stringify(detail).slice(0, 2000));
+      const message = typeof detail === 'string'
+        ? detail
+        : JSON.stringify(detail).slice(0, 2000);
+      if (
+        response.status === 402 ||
+        response.status === 429 ||
+        /quota[_ -]?exceeded|insufficient.{0,24}(credit|quota|balance)|rate.{0,12}limit|too many requests|credits? exhausted|out of credits/i.test(message)
+      ) {
+        throw new ProviderCapacityError(message);
+      }
+      throw new Error(message);
     }
     return payload;
   } finally {
@@ -103,7 +114,15 @@ const binaryRequest = async (
     const response = await fetch(url, { ...init, signal: controller.signal });
     if (!response.ok) {
       const text = await response.text().catch(() => '');
-      throw new Error(text.slice(0, 2000) || `HTTP ${response.status}`);
+      const message = text.slice(0, 2000) || `HTTP ${response.status}`;
+      if (
+        response.status === 402 ||
+        response.status === 429 ||
+        /quota[_ -]?exceeded|insufficient.{0,24}(credit|quota|balance)|rate.{0,12}limit|too many requests|credits? exhausted|out of credits/i.test(message)
+      ) {
+        throw new ProviderCapacityError(message);
+      }
+      throw new Error(message);
     }
     const buffer = new Uint8Array(await response.arrayBuffer());
     if (!buffer.length) throw new Error('El motor devolvió un archivo vacío.');
@@ -417,7 +436,10 @@ const startDeepgram = async (action: NaylaAction): Promise<CloudProviderStart> =
     const defaultModel = requestedLanguage.startsWith('en')
       ? 'aura-2-thalia-en'
       : 'aura-2-celeste-es';
-    const model = process.env.DEEPGRAM_TTS_MODEL?.trim() || defaultModel;
+    const model =
+      action.voiceId ||
+      process.env.DEEPGRAM_TTS_MODEL?.trim() ||
+      defaultModel;
     const output = await binaryRequest(
       `https://api.deepgram.com/v1/speak?model=${encodeURIComponent(model)}`,
       {
@@ -461,40 +483,86 @@ const startDeepgram = async (action: NaylaAction): Promise<CloudProviderStart> =
 };
 
 const startCartesia = async (action: NaylaAction): Promise<CloudProviderStart> => {
-  if (action.action !== 'GENERATE_AUDIO' || action.mode !== 'tts') {
-    throw new UnsupportedCloudExecutionError('Este motor se usa aquí para texto a voz.');
+  if (action.action !== 'GENERATE_AUDIO') {
+    throw new UnsupportedCloudExecutionError('Esta operación no es de audio.');
   }
   const key = requiredEnv('CARTESIA_API_KEY');
-  const voice =
-    action.voiceId ||
-    process.env.CARTESIA_DEFAULT_VOICE_ID?.trim() ||
-    'db6b0ed5-d5d3-463d-ae85-518a07d3c2b4';
-  const model = process.env.CARTESIA_TTS_MODEL?.trim() || 'sonic-3.6';
-  const output = await binaryRequest(
-    'https://api.cartesia.ai/tts/bytes',
-    {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${key}`,
-        'Cartesia-Version': process.env.CARTESIA_API_VERSION?.trim() || '2026-08-14',
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model_id: model,
-        transcript: action.text || action.prompt || '',
-        voice,
-        output_format: {
-          container: 'wav',
-          encoding: 'pcm_s16le',
-          sample_rate: 44100,
+  const apiVersion = process.env.CARTESIA_API_VERSION?.trim() || '2026-08-14';
+  const headers = {
+    Authorization: `Bearer ${key}`,
+    'Cartesia-Version': apiVersion,
+  };
+
+  if (action.mode === 'tts') {
+    const voice =
+      action.voiceId ||
+      process.env.CARTESIA_DEFAULT_VOICE_ID?.trim() ||
+      'db6b0ed5-d5d3-463d-ae85-518a07d3c2b4';
+    const model = process.env.CARTESIA_TTS_MODEL?.trim() || 'sonic-3.6';
+    const output = await binaryRequest(
+      'https://api.cartesia.ai/tts/bytes',
+      {
+        method: 'POST',
+        headers: {
+          ...headers,
+          'Content-Type': 'application/json',
         },
-        ...(action.targetLanguage ? { language: action.targetLanguage } : {}),
-      }),
-    },
-    'audio/wav',
-    'wav'
-  );
-  return { state: 'completed', output, metadata: { model } };
+        body: JSON.stringify({
+          model_id: model,
+          transcript: action.text || action.prompt || '',
+          voice,
+          output_format: {
+            container: 'wav',
+            encoding: 'pcm_s16le',
+            sample_rate: 44100,
+          },
+          ...(action.targetLanguage ? { language: action.targetLanguage } : {}),
+        }),
+      },
+      'audio/wav',
+      'wav'
+    );
+    return { state: 'completed', output, metadata: { model } };
+  }
+
+  if (action.mode === 'speech_to_text') {
+    if (!action.inputUrl) throw new Error('La transcripción necesita un audio o video de entrada.');
+    const blob = await fetchedBlobForForm(action.inputUrl);
+    const form = new FormData();
+    form.append('file', blob, 'input');
+    form.append('model', process.env.CARTESIA_STT_MODEL?.trim() || 'ink-whisper');
+    if (action.targetLanguage) form.append('language', action.targetLanguage);
+    const payload = await jsonRequest(
+      'https://api.cartesia.ai/stt',
+      { method: 'POST', headers, body: form },
+      120_000
+    );
+    const transcript = String(payload?.text || '').trim();
+    if (!transcript) throw new Error('La transcripción terminó sin texto.');
+    return { state: 'completed', output: { kind: 'text', text: transcript } };
+  }
+
+  if (action.mode === 'voice_change') {
+    if (!action.inputUrl) throw new Error('El cambio de voz necesita un audio de entrada.');
+    if (!action.voiceId) throw new Error('El cambio de voz necesita una voz de salida.');
+    const blob = await fetchedBlobForForm(action.inputUrl);
+    const form = new FormData();
+    form.append('clip', blob, 'input');
+    form.append('voice_id', action.voiceId);
+    form.append('output_format[container]', 'wav');
+    form.append('output_format[sample_rate]', '44100');
+    form.append('output_format[encoding]', 'pcm_s16le');
+    const output = await binaryRequest(
+      'https://api.cartesia.ai/voice-changer/bytes',
+      { method: 'POST', headers, body: form },
+      'audio/wav',
+      'wav',
+      120_000
+    );
+    return { state: 'completed', output };
+  }
+
+  throw new UnsupportedCloudExecutionError('Este modo de audio no está implementado en este motor.');
 };
 
 const fetchedBlobForForm = async (url: string) => {
@@ -943,7 +1011,10 @@ export const providerCanExecuteAction = (
     return action.action === 'GENERATE_AUDIO' && ['tts', 'speech_to_text'].includes(action.mode);
   }
   if (provider === 'cartesia') {
-    return action.action === 'GENERATE_AUDIO' && action.mode === 'tts';
+    return (
+      action.action === 'GENERATE_AUDIO' &&
+      ['tts', 'speech_to_text', 'voice_change'].includes(action.mode)
+    );
   }
   if (provider === 'elevenlabs') {
     return (

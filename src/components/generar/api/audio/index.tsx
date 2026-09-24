@@ -34,11 +34,13 @@ type JobState = {
 type VoiceItem = {
   id: string;
   name: string;
-  category?: string | null;
+  category?: 'catalog' | 'cloned' | 'system' | null;
   description?: string | null;
+  language?: string | null;
   previewUrl?: string | null;
   labels?: Record<string, string>;
   isOwner?: boolean;
+  redundancy?: number;
   requiresVerification?: boolean;
 };
 
@@ -128,6 +130,19 @@ export default function ApiAudioModule({ context }: GenerarModuleProps) {
       ]),
     [mediaLibrary, localAudioItems]
   );
+
+  const voiceGroups = useMemo(() => {
+    const automaticas = voices.filter((voice) => voice.category === 'system');
+    const propias = voices.filter((voice) => voice.category === 'cloned' || voice.isOwner);
+    const catalogo = voices.filter(
+      (voice) => voice.category !== 'system' && voice.category !== 'cloned' && !voice.isOwner
+    );
+    return [
+      { id: 'auto', label: 'NAYLA AUTOMÁTICAS', voices: automaticas },
+      { id: 'mine', label: 'MIS VOCES', voices: propias },
+      { id: 'catalog', label: 'CATÁLOGO', voices: catalogo },
+    ].filter((group) => group.voices.length > 0);
+  }, [voices]);
 
   useEffect(() => {
     return () => {
@@ -422,6 +437,7 @@ export default function ApiAudioModule({ context }: GenerarModuleProps) {
           sampleIds: cloneSampleIds,
           removeBackgroundNoise: removeNoise,
           rightsConfirmed: true,
+          language,
           projectId,
           threadId,
         }),
@@ -547,6 +563,33 @@ export default function ApiAudioModule({ context }: GenerarModuleProps) {
                   />
                 </label>
               </div>
+              <div className="generar-input-meta">
+                <span>IDIOMA DE LA VOZ</span>
+                <div className="generar-segmented">
+                  <button
+                    type="button"
+                    className={`generar-segment-button glass-glow-button ${language === 'es' ? 'active' : ''}`}
+                    onClick={() => {
+                      setLanguage('es');
+                      setCloneReady(false);
+                    }}
+                    disabled={busy}
+                  >
+                    ES
+                  </button>
+                  <button
+                    type="button"
+                    className={`generar-segment-button glass-glow-button ${language === 'en' ? 'active' : ''}`}
+                    onClick={() => {
+                      setLanguage('en');
+                      setCloneReady(false);
+                    }}
+                    disabled={busy}
+                  >
+                    EN
+                  </button>
+                </div>
+              </div>
             </>
           ) : null}
 
@@ -634,38 +677,46 @@ export default function ApiAudioModule({ context }: GenerarModuleProps) {
                 </span>
               </div>
 
-              <div className="generar-voice-library">
-                {voices.map((voice) => (
-                  <button
-                    type="button"
-                    key={voice.id}
-                    className={`generar-voice-card ${selectedVoiceId === voice.id ? 'active' : ''}`}
-                    onClick={() => setSelectedVoiceId(voice.id)}
-                    disabled={busy}
-                  >
-                    <span className="generar-voice-avatar">{voice.name.slice(0, 2).toUpperCase()}</span>
-                    <span className="generar-voice-copy">
-                      <strong>{voice.name}</strong>
-                      <small>
-                        {(voice.category || (voice.isOwner ? 'propia' : 'voz')).toUpperCase()}
-                      </small>
-                    </span>
-                    {voice.previewUrl ? (
-                      <audio
-                        src={voice.previewUrl}
-                        controls
-                        preload="none"
-                        onClick={(event) => event.stopPropagation()}
-                      />
-                    ) : (
-                      <span className="generar-audio-check">{selectedVoiceId === voice.id ? '✓' : '○'}</span>
-                    )}
-                  </button>
+              <div className="generar-voice-groups">
+                {voiceGroups.map((group) => (
+                  <section key={group.id} className="generar-voice-group">
+                    <div className="generar-voice-group-title">{group.label}</div>
+                    <div className="generar-voice-library">
+                      {group.voices.map((voice) => (
+                        <button
+                          type="button"
+                          key={voice.id}
+                          className={`generar-voice-card ${selectedVoiceId === voice.id ? 'active' : ''}`}
+                          onClick={() => setSelectedVoiceId(voice.id)}
+                          disabled={busy}
+                        >
+                          <span className="generar-voice-avatar">{voice.name.slice(0, 2).toUpperCase()}</span>
+                          <span className="generar-voice-copy">
+                            <strong>{voice.name}</strong>
+                            <small>
+                              {voice.language ? voice.language.toUpperCase() : 'VOZ NAYLA'}
+                              {voice.redundancy && voice.redundancy > 1 ? ' · RESPALDO AUTO' : ''}
+                            </small>
+                          </span>
+                          {voice.previewUrl ? (
+                            <audio
+                              src={voice.previewUrl}
+                              controls
+                              preload="none"
+                              onClick={(event) => event.stopPropagation()}
+                            />
+                          ) : (
+                            <span className="generar-audio-check">{selectedVoiceId === voice.id ? '✓' : '○'}</span>
+                          )}
+                        </button>
+                      ))}
+                    </div>
+                  </section>
                 ))}
                 {!voicesLoading && !voices.length ? (
                   <div className="generar-audio-empty">
                     <strong>Sin voces cargadas</strong>
-                    <span>Puedes crear una desde CLONAR cuando la ruta avanzada esté configurada.</span>
+                    <span>Puedes crear una desde CLONAR cuando haya una ruta activa.</span>
                   </div>
                 ) : null}
               </div>

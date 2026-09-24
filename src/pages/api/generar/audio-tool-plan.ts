@@ -2,6 +2,9 @@ import type { NextApiRequest, NextApiResponse } from 'next';
 import { z } from 'zod';
 import { requireFirebaseUser } from '../../../lib/firebaseAdmin';
 import { createMediaJobPlan } from '../../../lib/mediaJobs';
+import { getNaylaVoiceProfile } from '../../../lib/naylaVoiceLibrary';
+import type { NaylaAction } from '../../../lib/naylaActions';
+import type { MediaProviderId } from '../../../lib/mediaProviders/types';
 import { createR2PresignedGetUrl } from '../../../lib/r2';
 import {
   getWorkspaceSupabaseAdmin,
@@ -103,22 +106,49 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       }
     }
 
-    const requiresAdvancedVoiceRoute =
-      data.mode === 'voice_change' ||
-      data.mode === 'voice_isolation' ||
-      data.mode === 'text_to_dialogue' ||
-      Boolean(data.voiceId);
-
-    const action = {
-      action: 'GENERATE_AUDIO' as const,
+    const action: NaylaAction = {
+      action: 'GENERATE_AUDIO',
       mode: data.mode,
-      ...(requiresAdvancedVoiceRoute ? { provider: 'elevenlabs' as const } : {}),
       ...(cleanText ? { text: cleanText } : {}),
       ...(cleanPrompt ? { prompt: cleanPrompt } : {}),
       ...(inputUrl ? { inputUrl } : {}),
-      ...(data.voiceId ? { voiceId: data.voiceId } : {}),
       targetLanguage: data.language,
     };
+
+    const providerActionOverrides: Partial<Record<MediaProviderId, NaylaAction>> = {};
+
+    if (data.voiceId) {
+      const voice = await getNaylaVoiceProfile(user.uid, data.voiceId);
+      if (!voice) {
+        return res.status(403).json({ error: 'La voz seleccionada no pertenece a tu biblioteca Nayla.' });
+      }
+
+      const requiredCapability =
+        data.mode === 'voice_change'
+          ? 'voice_change'
+          : data.mode === 'text_to_dialogue'
+            ? 'dialogue'
+            : 'tts';
+
+      for (const [provider, route] of Object.entries(voice.routes || {})) {
+        if (!route?.voiceId) continue;
+        const capabilities = Array.isArray(route.capabilities) ? route.capabilities : ['tts'];
+        if (!capabilities.includes(requiredCapability)) continue;
+
+        providerActionOverrides[provider as MediaProviderId] = {
+          ...action,
+          provider: provider as any,
+          voiceId: route.voiceId,
+        } as NaylaAction;
+      }
+
+      if (!Object.keys(providerActionOverrides).length) {
+        return res.status(200).json({
+          ready: false,
+          message: 'Esta voz no tiene una ruta compatible con la herramienta seleccionada.',
+        });
+      }
+    }
 
     const plan = await createMediaJobPlan({
       userId: user.uid,
@@ -126,6 +156,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       threadId: scope.threadId,
       action,
       attachmentIds: data.inputMediaId ? [data.inputMediaId] : [],
+      providerActionOverrides,
     });
 
     if (!plan || plan.status === 'unconfigured' || !plan.id) {

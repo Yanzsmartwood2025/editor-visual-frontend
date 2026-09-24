@@ -10,6 +10,7 @@ import {
   pollCloudProviderExecution,
   providerCanExecuteAction,
   startCloudProviderExecution,
+  ProviderCapacityError,
   UnsupportedCloudExecutionError,
   type CloudOutput,
 } from './mediaProviders/execution';
@@ -67,6 +68,17 @@ const parseAction = (job: MediaJobRow): NaylaAction => {
   const parsed = naylaActionSchema.safeParse(job.input);
   if (!parsed.success) throw new Error('El trabajo guardado tiene una acción inválida.');
   return parsed.data;
+};
+
+const actionForProvider = (
+  job: MediaJobRow,
+  provider: MediaProviderId,
+  fallback: NaylaAction
+): NaylaAction => {
+  const raw = job.metadata?.providerActionOverrides?.[provider];
+  if (!raw) return fallback;
+  const parsed = naylaActionSchema.safeParse(raw);
+  return parsed.success ? parsed.data : fallback;
 };
 
 const updateMediaJob = async (id: string, patch: Record<string, unknown>) => {
@@ -343,14 +355,15 @@ export const startMediaJobForUser = async ({
     return publicMediaJob(job);
   }
 
-  const action = parseAction(job);
-  const candidateIds: MediaProviderId[] = Array.isArray(job.metadata?.candidateProviders)
-    ? (job.metadata.candidateProviders as unknown[])
+  const plannedJob: MediaJobRow = job;
+  const action = parseAction(plannedJob);
+  const candidateIds: MediaProviderId[] = Array.isArray(plannedJob.metadata?.candidateProviders)
+    ? (plannedJob.metadata.candidateProviders as unknown[])
         .filter((value: unknown): value is MediaProviderId => typeof value === 'string')
-    : [job.provider as MediaProviderId];
+    : [plannedJob.provider as MediaProviderId];
 
   const uniqueCandidates: MediaProviderId[] = Array.from(new Set<MediaProviderId>(candidateIds))
-    .filter((provider) => providerCanExecuteAction(provider, action));
+    .filter((provider) => providerCanExecuteAction(provider, actionForProvider(plannedJob, provider, action)));
 
   if (!uniqueCandidates.length) {
     job = await updateMediaJob(job.id, {
@@ -363,8 +376,9 @@ export const startMediaJobForUser = async ({
 
   const errors: string[] = [];
   for (const provider of uniqueCandidates) {
+    const effectiveAction = actionForProvider(plannedJob, provider, action);
     try {
-      const started = await startCloudProviderExecution(provider, action);
+      const started = await startCloudProviderExecution(provider, effectiveAction);
 
       if (started.state === 'completed') {
         job = await updateMediaJob(job.id, {
@@ -403,13 +417,16 @@ export const startMediaJobForUser = async ({
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Error desconocido';
       errors.push(`${provider}: ${message}`);
-      if (error instanceof UnsupportedCloudExecutionError) {
+      if (
+        error instanceof UnsupportedCloudExecutionError ||
+        error instanceof ProviderCapacityError
+      ) {
+        console.warn('[nayla-cloud] Ruta no disponible; probando respaldo interno:', provider);
         continue;
       }
 
-      // Once a real provider request was attempted we do not cascade to another
-      // paid route: an ambiguous network/provider failure could otherwise
-      // create two billable generations.
+      // A non-capacity failure may have happened after billing started.
+      // Stop here to avoid producing or charging twice.
       console.warn('[nayla-cloud] La ruta elegida falló; se detiene para evitar doble gasto:', provider, error);
       break;
     }
