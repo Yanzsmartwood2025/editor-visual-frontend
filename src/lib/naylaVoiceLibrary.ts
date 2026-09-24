@@ -180,6 +180,75 @@ const upsertCatalog = async (voices: CatalogVoice[]) => {
   if (error) throw error;
 };
 
+const upsertSystemVoices = async () => {
+  const supabase = getWorkspaceSupabaseAdmin();
+  const cartesiaVoice =
+    process.env.CARTESIA_DEFAULT_VOICE_ID?.trim() ||
+    'db6b0ed5-d5d3-463d-ae85-518a07d3c2b4';
+  const elevenVoice =
+    process.env.ELEVENLABS_DEFAULT_VOICE_ID?.trim() ||
+    'JBFqnCBsd6RMkjVDRZzb';
+
+  const buildRoutes = (language: 'es' | 'en'): PrivateVoiceRoutes => {
+    const routes: PrivateVoiceRoutes = {};
+    if (providerConfigured('DEEPGRAM_API_KEY')) {
+      routes.deepgram = {
+        voiceId: language === 'es' ? 'aura-2-celeste-es' : 'aura-2-thalia-en',
+        language,
+        capabilities: ['tts'],
+      };
+    }
+    if (providerConfigured('CARTESIA_API_KEY')) {
+      routes.cartesia = {
+        voiceId: cartesiaVoice,
+        language,
+        capabilities: ['tts','voice_change'],
+      };
+    }
+    if (providerConfigured('ELEVENLABS_API_KEY')) {
+      routes.elevenlabs = {
+        voiceId: elevenVoice,
+        language,
+        capabilities: ['tts','voice_change','dialogue'],
+      };
+    }
+    return routes;
+  };
+
+  const rows = ([
+    {
+      route_key: 'nayla-system:auto-es',
+      user_id: null,
+      name: 'Nayla Natural ES',
+      kind: 'system',
+      language: 'es',
+      description: 'Voz automática en español con respaldo entre rutas disponibles.',
+      traits: { idioma: 'Español', modo: 'Automático' },
+      routes: buildRoutes('es'),
+      metadata: { source: 'nayla-system', autoRoute: true },
+      updated_at: new Date().toISOString(),
+    },
+    {
+      route_key: 'nayla-system:auto-en',
+      user_id: null,
+      name: 'Nayla Natural EN',
+      kind: 'system',
+      language: 'en',
+      description: 'Voz automática en inglés con respaldo entre rutas disponibles.',
+      traits: { idioma: 'English', modo: 'Automático' },
+      routes: buildRoutes('en'),
+      metadata: { source: 'nayla-system', autoRoute: true },
+      updated_at: new Date().toISOString(),
+    },
+  ]).filter((row) => Object.keys(row.routes).length > 0);
+
+  if (!rows.length) return;
+  const { error } = await supabase
+    .from('nayla_voice_profiles')
+    .upsert(rows, { onConflict: 'route_key' });
+  if (error) throw error;
+};
+
 export const syncNaylaVoiceCatalog = async () => {
   const catalogs = await Promise.allSettled([
     providerConfigured('ELEVENLABS_API_KEY') ? fetchElevenCatalog() : Promise.resolve([]),
@@ -190,7 +259,10 @@ export const syncNaylaVoiceCatalog = async () => {
     result.status === 'fulfilled' ? result.value : []
   );
   if (providerConfigured('DEEPGRAM_API_KEY')) external.push(...deepgramVoices);
-  await upsertCatalog(external);
+  await Promise.all([
+    upsertCatalog(external),
+    upsertSystemVoices(),
+  ]);
 };
 
 const rowToPublic = (row: any, userId: string): PublicNaylaVoice => {
@@ -229,6 +301,12 @@ export const listNaylaVoices = async (userId: string): Promise<PublicNaylaVoice[
   if (catalogError) throw catalogError;
   if (ownedError) throw ownedError;
   const seen = new Set<string>();
+  const priority: Record<PublicNaylaVoice['category'], number> = {
+    system: 0,
+    cloned: 1,
+    catalog: 2,
+  };
+
   return [...(owned || []), ...(catalog || [])]
     .map((row) => rowToPublic(row, userId))
     .filter((voice) => {
@@ -236,7 +314,11 @@ export const listNaylaVoices = async (userId: string): Promise<PublicNaylaVoice[
       if (seen.has(key)) return false;
       seen.add(key);
       return true;
-    });
+    })
+    .sort((a, b) =>
+      priority[a.category] - priority[b.category] ||
+      a.name.localeCompare(b.name)
+    );
 };
 
 export const getNaylaVoiceProfile = async (userId: string, id: string) => {
