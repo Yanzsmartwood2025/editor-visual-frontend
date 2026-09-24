@@ -54,6 +54,7 @@ export const createMediaJobPlan = async ({
   action,
   attachmentIds = [],
   providerActionOverrides = {},
+  preferredProviders = [],
 }: {
   userId: string;
   projectId?: string;
@@ -61,6 +62,7 @@ export const createMediaJobPlan = async ({
   action: NaylaAction;
   attachmentIds?: string[];
   providerActionOverrides?: Partial<Record<MediaProviderId, NaylaAction>>;
+  preferredProviders?: MediaProviderId[];
 }) => {
   const domain = domainForNaylaAction(action);
   const capability = capabilityForNaylaAction(action);
@@ -79,7 +81,15 @@ export const createMediaJobPlan = async ({
     .map((provider) => ({
       id: provider.id,
       label: provider.label,
-    }));
+    }))
+    .sort((a, b) => {
+      const aIndex = preferredProviders.indexOf(a.id);
+      const bIndex = preferredProviders.indexOf(b.id);
+      if (aIndex === -1 && bIndex === -1) return 0;
+      if (aIndex === -1) return 1;
+      if (bIndex === -1) return -1;
+      return aIndex - bIndex;
+    });
   const chosen = chooseProvider(action, candidates);
 
   if (!chosen) {
@@ -112,6 +122,7 @@ export const createMediaJobPlan = async ({
         requestedProvider: requestedProviderForAction(action) || null,
         attachmentIds: Array.from(new Set(attachmentIds)),
         providerActionOverrides,
+        preferredProviders,
       },
     })
     .select('*')
