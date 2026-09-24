@@ -511,6 +511,375 @@ export default function GenerarStyles() {
         height: 48px;
       }
 
+      .generar-sfx-settings {
+        display: grid;
+        gap: 12px;
+        margin-bottom: 18px;
+        padding: 13px;
+        border-radius: 16px;
+        border: 1px solid rgba(var(--glow-color-rgb), .13);
+        background:
+          radial-gradient(circle at 92% 8%, rgba(var(--glow-color-rgb), .08), transparent 34%),
+          rgba(255,255,255,.018);
+      }
+
+      .generar-sfx-duration-row {
+        display: grid;
+        grid-template-columns: minmax(150px, .7fr) minmax(0, 1.3fr);
+        gap: 12px;
+        align-items: center;
+      }
+
+      .generar-sfx-setting-copy {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+      }
+
+      .generar-sfx-setting-copy strong,
+      .generar-sfx-slider strong {
+        font-size: 9px;
+        letter-spacing: .08em;
+      }
+
+      .generar-sfx-setting-copy small {
+        color: #787880;
+        font-size: 9px;
+        line-height: 1.4;
+      }
+
+      .generar-sfx-presets {
+        display: flex;
+        gap: 6px;
+        flex-wrap: wrap;
+        justify-content: flex-end;
+      }
+
+      .generar-sfx-preset {
+        min-height: 34px;
+        min-width: 48px;
+        padding: 0 10px;
+        border-radius: 10px;
+        border: 1px solid rgba(255,255,255,.075);
+        color: #909097;
+        background: rgba(255,255,255,.025);
+        font-size: 9px;
+        font-weight: 850;
+        cursor: pointer;
+      }
+
+      .generar-sfx-preset.active {
+        color: #fff;
+        border-color: rgba(var(--glow-color-rgb), .28);
+        background: rgba(var(--glow-color-rgb), .08);
+        box-shadow: 0 0 16px rgba(var(--glow-color-rgb), .08);
+      }
+
+      .generar-sfx-slider {
+        display: grid;
+        gap: 8px;
+      }
+
+      .generar-sfx-slider > span {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+      }
+
+      .generar-sfx-slider em {
+        color: #a5a5ac;
+        font-size: 9px;
+        font-style: normal;
+        font-weight: 850;
+      }
+
+      .generar-sfx-slider input,
+      .generar-nayla-seek,
+      .generar-nayla-volume {
+        width: 100%;
+        accent-color: rgb(var(--glow-color-rgb));
+      }
+
+      .generar-sfx-options {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+        gap: 10px;
+        align-items: center;
+      }
+
+      .generar-sfx-toggle {
+        min-height: 54px;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 9px 11px;
+        border-radius: 13px;
+        color: #a8a8af;
+        background: rgba(255,255,255,.022);
+        border: 1px solid rgba(255,255,255,.07);
+        text-align: left;
+        cursor: pointer;
+      }
+
+      .generar-sfx-toggle > span:last-child {
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 3px;
+      }
+
+      .generar-sfx-toggle strong {
+        font-size: 9px;
+        letter-spacing: .06em;
+      }
+
+      .generar-sfx-toggle small {
+        color: #717179;
+        font-size: 8px;
+      }
+
+      .generar-sfx-switch {
+        width: 34px;
+        height: 19px;
+        flex: 0 0 auto;
+        padding: 2px;
+        display: flex;
+        align-items: center;
+        border-radius: 999px;
+        background: rgba(255,255,255,.09);
+        border: 1px solid rgba(255,255,255,.08);
+      }
+
+      .generar-sfx-switch i {
+        width: 13px;
+        height: 13px;
+        border-radius: 50%;
+        background: #77777f;
+        transition: transform .16s ease, background .16s ease;
+      }
+
+      .generar-sfx-toggle.active {
+        color: #fff;
+        border-color: rgba(var(--glow-color-rgb), .22);
+        background: rgba(var(--glow-color-rgb), .05);
+      }
+
+      .generar-sfx-toggle.active .generar-sfx-switch i {
+        transform: translateX(14px);
+        background: #fff;
+        box-shadow: 0 0 10px rgba(var(--glow-color-rgb), .35);
+      }
+
+      .generar-sfx-influence {
+        padding: 9px 11px;
+        border-radius: 13px;
+        background: rgba(255,255,255,.018);
+        border: 1px solid rgba(255,255,255,.065);
+      }
+
+      .generar-audio-progress-card {
+        display: grid;
+        gap: 10px;
+        margin-top: 14px;
+        padding: 13px;
+        border-radius: 15px;
+        border: 1px solid rgba(var(--glow-color-rgb), .14);
+        background:
+          radial-gradient(circle at 80% 0%, rgba(var(--glow-color-rgb), .09), transparent 38%),
+          rgba(255,255,255,.02);
+      }
+
+      .generar-audio-progress-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+      }
+
+      .generar-audio-progress-head > span {
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 3px;
+      }
+
+      .generar-audio-progress-head strong {
+        font-size: 10px;
+        letter-spacing: .07em;
+      }
+
+      .generar-audio-progress-head small {
+        color: #797981;
+        font-size: 9px;
+      }
+
+      .generar-audio-progress-head em {
+        flex: 0 0 auto;
+        color: #d8d8dc;
+        font-size: 13px;
+        font-style: normal;
+        font-weight: 900;
+      }
+
+      .generar-audio-progress-track {
+        height: 7px;
+        overflow: hidden;
+        border-radius: 999px;
+        background: rgba(255,255,255,.06);
+        box-shadow: inset 0 1px 2px rgba(0,0,0,.35);
+      }
+
+      .generar-audio-progress-track i {
+        display: block;
+        height: 100%;
+        border-radius: inherit;
+        background: linear-gradient(
+          90deg,
+          rgba(var(--glow-color-rgb), .42),
+          rgba(var(--glow-color-rgb), .95)
+        );
+        box-shadow: 0 0 16px rgba(var(--glow-color-rgb), .26);
+        transition: width .5s ease;
+      }
+
+      .generar-audio-result-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        margin-bottom: 10px;
+      }
+
+      .generar-audio-result-head > div {
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 3px;
+      }
+
+      .generar-audio-result-head span {
+        color: #74747c;
+        font-size: 8px;
+        font-weight: 900;
+        letter-spacing: .09em;
+      }
+
+      .generar-audio-result-head strong {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        font-size: 12px;
+      }
+
+      .generar-audio-download {
+        min-height: 38px;
+        padding: 0 12px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 7px;
+        border-radius: 11px;
+        color: #eeeef0;
+        font-size: 9px;
+        font-weight: 900;
+        letter-spacing: .04em;
+        cursor: pointer;
+        white-space: nowrap;
+      }
+
+      .generar-audio-download > span {
+        color: inherit;
+        font-size: 15px;
+      }
+
+      .generar-nayla-player {
+        display: grid;
+        gap: 10px;
+        padding: 12px;
+        border-radius: 15px;
+        border: 1px solid rgba(var(--glow-color-rgb), .12);
+        background:
+          radial-gradient(circle at 50% 45%, rgba(var(--glow-color-rgb), .08), transparent 54%),
+          rgba(0,0,0,.24);
+        box-shadow:
+          inset 0 1px 0 rgba(255,255,255,.035),
+          inset 0 -24px 50px rgba(0,0,0,.14);
+      }
+
+      .generar-nayla-player > audio {
+        display: none;
+      }
+
+      .generar-nayla-wave {
+        position: relative;
+        width: 100%;
+        height: 86px;
+        display: flex;
+        align-items: center;
+        gap: 3px;
+        padding: 8px 5px;
+        overflow: hidden;
+        border: 0;
+        background: transparent;
+        cursor: pointer;
+      }
+
+      .generar-nayla-wave i {
+        flex: 1 1 0;
+        min-width: 2px;
+        max-width: 5px;
+        border-radius: 999px;
+        background: rgba(255,255,255,.18);
+        box-shadow: 0 0 8px rgba(var(--glow-color-rgb), .03);
+        transition: background .12s ease, box-shadow .12s ease;
+      }
+
+      .generar-nayla-wave i.played {
+        background: rgba(255,255,255,.78);
+        box-shadow: 0 0 9px rgba(var(--glow-color-rgb), .22);
+      }
+
+      .generar-nayla-wave-cursor {
+        position: absolute;
+        top: 10px;
+        bottom: 10px;
+        width: 1px;
+        transform: translateX(-.5px);
+        background: rgba(255,255,255,.55);
+        box-shadow: 0 0 10px rgba(var(--glow-color-rgb), .3);
+        pointer-events: none;
+      }
+
+      .generar-nayla-player-controls {
+        display: grid;
+        grid-template-columns: 40px auto minmax(90px, 1fr) 32px 74px;
+        gap: 9px;
+        align-items: center;
+      }
+
+      .generar-nayla-play,
+      .generar-nayla-volume-button {
+        height: 36px;
+        border-radius: 10px;
+        color: #f2f2f4;
+        background: rgba(255,255,255,.045);
+        border: 1px solid rgba(255,255,255,.075);
+        cursor: pointer;
+      }
+
+      .generar-nayla-time {
+        color: #b8b8bf;
+        font-size: 10px;
+        font-variant-numeric: tabular-nums;
+        white-space: nowrap;
+      }
+
+      .generar-nayla-time em {
+        color: #62626a;
+        font-style: normal;
+      }
+
       .generar-music-orb span:nth-child(1),
       .generar-music-orb span:nth-child(7) {
         height: 14px;
@@ -2188,6 +2557,37 @@ export default function GenerarStyles() {
 
         .generar-audio-drawer {
           width: min(350px, 88vw);
+        }
+
+        .generar-sfx-duration-row,
+        .generar-sfx-options {
+          grid-template-columns: 1fr;
+        }
+
+        .generar-sfx-presets {
+          justify-content: flex-start;
+        }
+
+        .generar-audio-result-head {
+          align-items: stretch;
+          flex-direction: column;
+        }
+
+        .generar-audio-download {
+          width: 100%;
+        }
+
+        .generar-nayla-wave {
+          height: 76px;
+          gap: 2px;
+        }
+
+        .generar-nayla-player-controls {
+          grid-template-columns: 38px auto minmax(70px, 1fr) 32px;
+        }
+
+        .generar-nayla-volume {
+          display: none;
         }
       }
     `}</style>

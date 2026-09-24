@@ -98,6 +98,178 @@ const uniqueMedia = (items: GenerarMediaItem[]) => {
   });
 };
 
+const formatAudioClock = (seconds: number) => {
+  if (!Number.isFinite(seconds) || seconds < 0) return '0:00';
+  const whole = Math.floor(seconds);
+  const minutes = Math.floor(whole / 60);
+  const rest = whole % 60;
+  return `${minutes}:${String(rest).padStart(2, '0')}`;
+};
+
+const mediaFormatLabel = (item: GenerarMediaItem | null) => {
+  const fileName = String(item?.nombre || '').toLowerCase();
+  if (fileName.endsWith('.wav')) return 'WAV';
+  if (fileName.endsWith('.ogg')) return 'OGG';
+  if (fileName.endsWith('.flac')) return 'FLAC';
+  if (fileName.endsWith('.m4a')) return 'M4A';
+  const contentType = String(item?.metadata?.contentType || '').toLowerCase();
+  if (contentType.includes('wav')) return 'WAV';
+  if (contentType.includes('ogg')) return 'OGG';
+  if (contentType.includes('flac')) return 'FLAC';
+  if (contentType.includes('mp4')) return 'M4A';
+  return 'MP3';
+};
+
+function NaylaAudioResultPlayer({
+  src,
+}: {
+  src: string;
+}) {
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const [playing, setPlaying] = useState(false);
+  const [current, setCurrent] = useState(0);
+  const [duration, setDuration] = useState(0);
+  const [volume, setVolume] = useState(0.9);
+  const [muted, setMuted] = useState(false);
+
+  const bars = useMemo(
+    () =>
+      Array.from({ length: 54 }, (_, index) => {
+        const wave = Math.abs(
+          Math.sin(index * 0.73) * 0.52 +
+          Math.cos(index * 0.31) * 0.28 +
+          Math.sin(index * 1.17) * 0.2
+        );
+        return 24 + Math.round(wave * 70);
+      }),
+    []
+  );
+
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio) return;
+    audio.volume = volume;
+    audio.muted = muted;
+  }, [volume, muted]);
+
+  const togglePlayback = async () => {
+    const audio = audioRef.current;
+    if (!audio) return;
+    if (audio.paused) {
+      await audio.play();
+    } else {
+      audio.pause();
+    }
+  };
+
+  const seekToRatio = (ratio: number) => {
+    const audio = audioRef.current;
+    if (!audio || !Number.isFinite(audio.duration) || audio.duration <= 0) return;
+    const next = Math.max(0, Math.min(1, ratio)) * audio.duration;
+    audio.currentTime = next;
+    setCurrent(next);
+  };
+
+  const progress = duration > 0 ? Math.max(0, Math.min(1, current / duration)) : 0;
+
+  return (
+    <div className="generar-nayla-player">
+      <audio
+        ref={audioRef}
+        src={src}
+        preload="metadata"
+        onLoadedMetadata={(event) => {
+          const value = event.currentTarget.duration;
+          setDuration(Number.isFinite(value) ? value : 0);
+        }}
+        onDurationChange={(event) => {
+          const value = event.currentTarget.duration;
+          if (Number.isFinite(value)) setDuration(value);
+        }}
+        onTimeUpdate={(event) => setCurrent(event.currentTarget.currentTime || 0)}
+        onPlay={() => setPlaying(true)}
+        onPause={() => setPlaying(false)}
+        onEnded={() => setPlaying(false)}
+      />
+
+      <button
+        type="button"
+        className="generar-nayla-wave"
+        aria-label="Mover posición del audio"
+        onClick={(event) => {
+          const rect = event.currentTarget.getBoundingClientRect();
+          seekToRatio((event.clientX - rect.left) / Math.max(1, rect.width));
+        }}
+      >
+        {bars.map((height, index) => (
+          <i
+            key={index}
+            className={index / bars.length <= progress ? 'played' : ''}
+            style={{ height: `${height}%` }}
+          />
+        ))}
+        <span className="generar-nayla-wave-cursor" style={{ left: `${progress * 100}%` }} />
+      </button>
+
+      <div className="generar-nayla-player-controls">
+        <button
+          type="button"
+          className="generar-nayla-play"
+          aria-label={playing ? 'Pausar audio' : 'Reproducir audio'}
+          onClick={() => void togglePlayback()}
+        >
+          {playing ? 'Ⅱ' : '▶'}
+        </button>
+
+        <span className="generar-nayla-time">
+          {formatAudioClock(current)} <em>/</em> {formatAudioClock(duration)}
+        </span>
+
+        <input
+          className="generar-nayla-seek"
+          type="range"
+          min={0}
+          max={duration || 1}
+          step={0.01}
+          value={Math.min(current, duration || 1)}
+          onChange={(event) => {
+            const audio = audioRef.current;
+            if (!audio) return;
+            const value = Number(event.target.value);
+            audio.currentTime = value;
+            setCurrent(value);
+          }}
+          aria-label="Posición del audio"
+        />
+
+        <button
+          type="button"
+          className="generar-nayla-volume-button"
+          aria-label={muted ? 'Activar sonido' : 'Silenciar'}
+          onClick={() => setMuted((value) => !value)}
+        >
+          {muted || volume === 0 ? '×)' : '◖))'}
+        </button>
+
+        <input
+          className="generar-nayla-volume"
+          type="range"
+          min={0}
+          max={1}
+          step={0.05}
+          value={volume}
+          onChange={(event) => {
+            const next = Number(event.target.value);
+            setVolume(next);
+            if (next > 0) setMuted(false);
+          }}
+          aria-label="Volumen"
+        />
+      </div>
+    </div>
+  );
+}
+
 export default function ApiAudioModule({ context }: GenerarModuleProps) {
   const { session, projectId, threadId, onUseMedia, mediaLibrary = [] } = context;
   const [activeTool, setActiveTool] = useState<AudioTool>('tts');
@@ -126,6 +298,11 @@ export default function ApiAudioModule({ context }: GenerarModuleProps) {
   const [removeNoise, setRemoveNoise] = useState(false);
   const [rightsConfirmed, setRightsConfirmed] = useState(false);
   const [cloneReady, setCloneReady] = useState(false);
+  const [effectDurationSeconds, setEffectDurationSeconds] = useState<number | null>(null);
+  const [effectLoop, setEffectLoop] = useState(false);
+  const [effectPromptInfluence, setEffectPromptInfluence] = useState(0.3);
+  const [processProgress, setProcessProgress] = useState(0);
+  const [downloadingResult, setDownloadingResult] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
   const mountedRef = useRef(true);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -182,6 +359,28 @@ export default function ApiAudioModule({ context }: GenerarModuleProps) {
     };
   }, []);
 
+  useEffect(() => {
+    if (phase === 'completed') {
+      setProcessProgress(100);
+      return;
+    }
+    if (phase !== 'running' && phase !== 'planning') {
+      if (phase === 'idle' || phase === 'failed') setProcessProgress(0);
+      return;
+    }
+
+    setProcessProgress((current) => Math.max(current, phase === 'planning' ? 6 : 18));
+    const timer = window.setInterval(() => {
+      setProcessProgress((current) => {
+        const ceiling = phase === 'planning' ? 24 : 92;
+        if (current >= ceiling) return current;
+        const step = Math.max(1, Math.ceil((ceiling - current) * 0.08));
+        return Math.min(ceiling, current + step);
+      });
+    }, 700);
+    return () => window.clearInterval(timer);
+  }, [phase]);
+
   const resetExecution = () => {
     abortRef.current?.abort();
     abortRef.current = null;
@@ -189,6 +388,7 @@ export default function ApiAudioModule({ context }: GenerarModuleProps) {
     setJob(null);
     setMessage('');
     setCloneReady(false);
+    setProcessProgress(0);
     setPhase('idle');
   };
 
@@ -333,6 +533,7 @@ export default function ApiAudioModule({ context }: GenerarModuleProps) {
     if (!mountedRef.current) return;
     setJob(next);
     if (next.status === 'completed') {
+      setProcessProgress(100);
       setPhase('completed');
       setMessage(
         next.textOutput
@@ -340,9 +541,11 @@ export default function ApiAudioModule({ context }: GenerarModuleProps) {
           : 'Resultado listo y guardado en la Bóveda.'
       );
     } else if (next.status === 'failed' || next.status === 'cancelled') {
+      setProcessProgress(0);
       setPhase('failed');
       setMessage(next.error || 'La herramienta de audio no pudo completarse.');
     } else {
+      setProcessProgress((current) => Math.max(current, next.status === 'queued' ? 38 : 62));
       setPhase('running');
       setMessage(next.status === 'queued' ? 'Trabajo en cola…' : 'Nayla Cloud está procesando el audio…');
     }
@@ -401,6 +604,7 @@ export default function ApiAudioModule({ context }: GenerarModuleProps) {
       return;
     }
 
+    setProcessProgress(6);
     setPhase('planning');
     setJob(null);
     setMessage('Preparando herramienta…');
@@ -412,7 +616,14 @@ export default function ApiAudioModule({ context }: GenerarModuleProps) {
         body: JSON.stringify({
           mode,
           ...(toolUsesText(activeTool) ? { text: text.trim() } : {}),
-          ...(activeTool === 'sound_effects' ? { prompt: text.trim() } : {}),
+          ...(activeTool === 'sound_effects'
+            ? {
+                prompt: text.trim(),
+                durationSeconds: effectDurationSeconds,
+                loop: effectLoop,
+                promptInfluence: effectPromptInfluence,
+              }
+            : {}),
           inputMediaId: toolNeedsInput(activeTool) ? selectedInputId : null,
           voiceId: toolNeedsVoice(activeTool) ? selectedVoiceId || null : null,
           language,
@@ -444,6 +655,7 @@ export default function ApiAudioModule({ context }: GenerarModuleProps) {
     abortRef.current?.abort();
     const controller = new AbortController();
     abortRef.current = controller;
+    setProcessProgress(18);
     setPhase('running');
     setMessage('Iniciando Nayla Cloud…');
 
@@ -538,6 +750,36 @@ export default function ApiAudioModule({ context }: GenerarModuleProps) {
   };
 
   const result = job?.galleryItem || null;
+
+  const downloadResult = async () => {
+    if (!session || !result?.id || downloadingResult) return;
+    setDownloadingResult(true);
+    try {
+      const response = await fetch('/api/media/download?id=' + encodeURIComponent(result.id), {
+        method: 'GET',
+        headers: firebaseHeaders(session),
+        cache: 'no-store',
+      });
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({}));
+        throw new Error(payload?.error || 'No se pudo descargar el audio.');
+      }
+      const blob = await response.blob();
+      const objectUrl = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = objectUrl;
+      link.download = result.nombre || `nayla-audio.${mediaFormatLabel(result).toLowerCase()}`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1500);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'No se pudo descargar el audio.');
+    } finally {
+      setDownloadingResult(false);
+    }
+  };
+
   const busy = phase === 'planning' || phase === 'running';
   const currentMeta = tools.find((item) => item.id === activeTool)!;
   const showAudioTray =
@@ -955,6 +1197,96 @@ export default function ApiAudioModule({ context }: GenerarModuleProps) {
             </>
           ) : null}
 
+          {activeTool === 'sound_effects' ? (
+            <div className="generar-sfx-settings">
+              <div className="generar-audio-section-title">
+                <strong>AJUSTES DEL EFECTO</strong>
+                <span>Controla duración, bucle e intensidad de la descripción.</span>
+              </div>
+
+              <div className="generar-sfx-duration-row">
+                <div className="generar-sfx-setting-copy">
+                  <strong>DURACIÓN</strong>
+                  <small>
+                    {effectDurationSeconds === null
+                      ? 'Automática · Nayla limita la ruta de respaldo'
+                      : `${effectDurationSeconds.toFixed(effectDurationSeconds % 1 ? 1 : 0)} segundos`}
+                  </small>
+                </div>
+                <div className="generar-sfx-presets">
+                  {([
+                    [null, 'AUTO'],
+                    [2, '2 s'],
+                    [5, '5 s'],
+                    [10, '10 s'],
+                    [15, '15 s'],
+                    [30, '30 s'],
+                  ] as Array<[number | null, string]>).map(([value, label]) => (
+                    <button
+                      type="button"
+                      key={label}
+                      className={`generar-sfx-preset ${effectDurationSeconds === value ? 'active' : ''}`}
+                      onClick={() => setEffectDurationSeconds(value)}
+                      disabled={busy}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {effectDurationSeconds !== null ? (
+                <label className="generar-sfx-slider">
+                  <span>
+                    <strong>TIEMPO EXACTO</strong>
+                    <em>{effectDurationSeconds.toFixed(1)} s</em>
+                  </span>
+                  <input
+                    type="range"
+                    min={0.5}
+                    max={30}
+                    step={0.5}
+                    value={effectDurationSeconds}
+                    onChange={(event) => setEffectDurationSeconds(Number(event.target.value))}
+                    disabled={busy}
+                  />
+                </label>
+              ) : null}
+
+              <div className="generar-sfx-options">
+                <button
+                  type="button"
+                  className={`generar-sfx-toggle ${effectLoop ? 'active' : ''}`}
+                  onClick={() => setEffectLoop((value) => !value)}
+                  disabled={busy}
+                  aria-pressed={effectLoop}
+                >
+                  <span className="generar-sfx-switch"><i /></span>
+                  <span>
+                    <strong>LOOP CONTINUO</strong>
+                    <small>Unir final e inicio sin corte perceptible</small>
+                  </span>
+                </button>
+
+                <label className="generar-sfx-slider generar-sfx-influence">
+                  <span>
+                    <strong>FIDELIDAD AL PROMPT</strong>
+                    <em>{Math.round(effectPromptInfluence * 100)}%</em>
+                  </span>
+                  <input
+                    type="range"
+                    min={0}
+                    max={1}
+                    step={0.05}
+                    value={effectPromptInfluence}
+                    onChange={(event) => setEffectPromptInfluence(Number(event.target.value))}
+                    disabled={busy}
+                  />
+                </label>
+              </div>
+            </div>
+          ) : null}
+
           {(toolUsesText(activeTool) || activeTool === 'sound_effects') ? (
             <>
               <div className="generar-audio-section-title">
@@ -973,7 +1305,7 @@ export default function ApiAudioModule({ context }: GenerarModuleProps) {
                   if (phase !== 'running' && phase !== 'planning') resetExecution();
                 }}
                 disabled={busy}
-                maxLength={activeTool === 'sound_effects' ? 3000 : 10000}
+                maxLength={activeTool === 'sound_effects' ? 450 : 10000}
                 placeholder={
                   activeTool === 'sound_effects'
                     ? 'Ejemplo: puerta metálica pesada cerrándose en un hangar, golpe seco y reverberación corta…'
@@ -1081,6 +1413,21 @@ export default function ApiAudioModule({ context }: GenerarModuleProps) {
             ) : null}
           </div>
 
+          {(phase === 'planning' || phase === 'running') ? (
+            <div className="generar-audio-progress-card">
+              <div className="generar-audio-progress-head">
+                <span>
+                  <strong>{phase === 'planning' ? 'PREPARANDO' : activeTool === 'sound_effects' ? 'GENERANDO SONIDO' : 'PROCESANDO AUDIO'}</strong>
+                  <small>{phase === 'planning' ? 'Organizando la solicitud…' : 'Nayla está trabajando en tu resultado…'}</small>
+                </span>
+                <em>~{Math.round(processProgress)}%</em>
+              </div>
+              <div className="generar-audio-progress-track" aria-label="Progreso estimado">
+                <i style={{ width: `${processProgress}%` }} />
+              </div>
+            </div>
+          ) : null}
+
           {message ? (
             <div className={`generar-status-card ${phase === 'failed' ? 'error' : ''}`}>
               <strong>
@@ -1115,13 +1462,27 @@ export default function ApiAudioModule({ context }: GenerarModuleProps) {
 
           {result?.url ? (
             <div className="generar-result generar-audio-result">
-              <div className="generar-audio-orb" aria-hidden="true">
-                <span /><span /><span /><span /><span />
+              <div className="generar-audio-result-head">
+                <div>
+                  <span>RESULTADO</span>
+                  <strong>{activeTool === 'sound_effects' ? 'EFECTO GENERADO' : 'AUDIO GENERADO'}</strong>
+                </div>
+                <button
+                  type="button"
+                  className="generar-audio-download glass-glow-button"
+                  onClick={() => void downloadResult()}
+                  disabled={downloadingResult}
+                >
+                  <span aria-hidden="true">↓</span>
+                  {downloadingResult ? 'DESCARGANDO…' : `DESCARGAR ${mediaFormatLabel(result)}`}
+                </button>
               </div>
-              <audio src={result.url} controls preload="metadata" />
+
+              <NaylaAudioResultPlayer src={result.url} />
+
               <div className="generar-result-meta">
                 <span>{result.etiqueta || 'AUDIO'}</span>
-                <span>BÓVEDA PRIVADA</span>
+                <span>{mediaFormatLabel(result)} · BÓVEDA PRIVADA</span>
               </div>
               <div className="generar-action-row">
                 <button
