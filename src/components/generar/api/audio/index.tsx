@@ -507,8 +507,12 @@ export default function ApiAudioModule({ context }: GenerarModuleProps) {
 
           {!currentReady ? (
             <div className="generar-status-card">
-              <strong>PRÓXIMA ACTIVACIÓN</strong>
-              <p>La bandeja ya está reservada dentro del Estudio de audio. Se activará cuando el adaptador completo esté conectado y probado.</p>
+              <strong>{currentMeta.ready ? 'RUTA NO DISPONIBLE' : 'PRÓXIMA ACTIVACIÓN'}</strong>
+              <p>
+                {currentMeta.ready
+                  ? 'La herramienta está implementada, pero ahora mismo no hay una API compatible configurada para ejecutarla.'
+                  : 'La bandeja ya está reservada dentro del Estudio de audio. Se activará cuando el adaptador completo esté conectado y probado.'}
+              </p>
             </div>
           ) : null}
 
@@ -727,7 +731,7 @@ export default function ApiAudioModule({ context }: GenerarModuleProps) {
             </>
           ) : null}
 
-          {currentMeta.ready && activeTool !== 'clone' ? (
+          {currentReady && activeTool !== 'clone' ? (
             <>
               {toolUsesText(activeTool) || activeTool === 'sound_effects' ? (
                 <>
