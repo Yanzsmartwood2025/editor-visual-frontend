@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { firebaseHeaders } from '../../../../lib/apiClient';
+import { signOutFirebase } from '../../../../lib/firebaseClient';
 import { uploadMediaFilesToBodega } from '../../../../lib/mediaUpload';
 import type { GenerarMediaItem, GenerarModuleProps } from '../../types';
 
@@ -102,6 +103,8 @@ export default function ApiAudioModule({ context }: GenerarModuleProps) {
   const [activeTool, setActiveTool] = useState<AudioTool>('tts');
   const [page, setPage] = useState<AudioPage>('home');
   const [menuOpen, setMenuOpen] = useState(false);
+  const [accountMenuOpen, setAccountMenuOpen] = useState(false);
+  const [signingOut, setSigningOut] = useState(false);
   const [voiceSearch, setVoiceSearch] = useState('');
   const [voiceFilter, setVoiceFilter] = useState<VoiceFilter>('all');
   const [text, setText] = useState('');
@@ -265,6 +268,28 @@ export default function ApiAudioModule({ context }: GenerarModuleProps) {
       return;
     }
     chooseTool(next);
+  };
+
+  const handleReturnToNayla = () => {
+    setAccountMenuOpen(false);
+    setMenuOpen(false);
+    context.onReturnToNayla?.();
+  };
+
+  const handleAudioSignOut = async () => {
+    if (signingOut) return;
+    setSigningOut(true);
+    try {
+      await signOutFirebase();
+      setAccountMenuOpen(false);
+      setMenuOpen(false);
+      context.onReturnToNayla?.();
+    } catch (error) {
+      console.error('No se pudo cerrar la sesión de Nayla Audio.', error);
+      setMessage('No se pudo cerrar la sesión. Intenta nuevamente.');
+    } finally {
+      setSigningOut(false);
+    }
   };
 
   const handleUpload = async (files: FileList | null) => {
@@ -1144,7 +1169,14 @@ export default function ApiAudioModule({ context }: GenerarModuleProps) {
         </header>
 
         {menuOpen ? (
-          <div className="generar-audio-drawer-layer" role="presentation" onClick={() => setMenuOpen(false)}>
+          <div
+            className="generar-audio-drawer-layer"
+            role="presentation"
+            onClick={() => {
+              setAccountMenuOpen(false);
+              setMenuOpen(false);
+            }}
+          >
             <aside
               className="generar-audio-drawer"
               role="dialog"
@@ -1161,7 +1193,10 @@ export default function ApiAudioModule({ context }: GenerarModuleProps) {
                   type="button"
                   className="generar-audio-drawer-close"
                   aria-label="Cerrar menú"
-                  onClick={() => setMenuOpen(false)}
+                  onClick={() => {
+                    setAccountMenuOpen(false);
+                    setMenuOpen(false);
+                  }}
                 >
                   ‹
                 </button>
@@ -1208,6 +1243,64 @@ export default function ApiAudioModule({ context }: GenerarModuleProps) {
                   </div>
                 ))}
               </nav>
+
+              <div className="generar-audio-account">
+                {accountMenuOpen ? (
+                  <div className="generar-audio-account-menu" id="nayla-audio-account-menu">
+                    <button
+                      type="button"
+                      className="generar-audio-account-action"
+                      onClick={handleReturnToNayla}
+                    >
+                      <span aria-hidden="true">←</span>
+                      <span>
+                        <strong>REGRESAR A NAYLA</strong>
+                        <small>Volver al editor principal</small>
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      className="generar-audio-account-action danger"
+                      onClick={() => void handleAudioSignOut()}
+                      disabled={signingOut}
+                    >
+                      <span aria-hidden="true">↪</span>
+                      <span>
+                        <strong>{signingOut ? 'CERRANDO SESIÓN…' : 'CERRAR SESIÓN'}</strong>
+                        <small>Salir de esta cuenta</small>
+                      </span>
+                    </button>
+                  </div>
+                ) : null}
+
+                <button
+                  type="button"
+                  className={`generar-audio-account-button ${accountMenuOpen ? 'active' : ''}`}
+                  aria-label="Cuenta Nayla"
+                  aria-expanded={accountMenuOpen}
+                  aria-controls="nayla-audio-account-menu"
+                  onClick={() => setAccountMenuOpen((value) => !value)}
+                >
+                  {session?.user?.photoURL ? (
+                    <img
+                      src={session.user.photoURL}
+                      alt=""
+                      className="generar-audio-account-avatar"
+                    />
+                  ) : (
+                    <span className="generar-audio-account-avatar generar-audio-account-initial">
+                      {(session?.user?.email || 'N').slice(0, 1).toUpperCase()}
+                    </span>
+                  )}
+                  <span className="generar-audio-account-copy">
+                    <strong>{session?.user?.email || 'Cuenta Nayla'}</strong>
+                    <small>CUENTA CONECTADA</small>
+                  </span>
+                  <span className="generar-audio-account-chevron" aria-hidden="true">
+                    {accountMenuOpen ? '⌃' : '⌄'}
+                  </span>
+                </button>
+              </div>
             </aside>
           </div>
         ) : null}
@@ -1253,16 +1346,6 @@ export default function ApiAudioModule({ context }: GenerarModuleProps) {
           {page !== 'home' && page !== 'voices' ? renderToolPage() : null}
         </main>
 
-        <footer className="generar-audio-footer">
-          <button
-            type="button"
-            className="generar-audio-return-button"
-            onClick={() => context.onReturnToNayla?.()}
-          >
-            <span>←</span>
-            <strong>REGRESAR A NAYLA</strong>
-          </button>
-        </footer>
       </div>
     </section>
   );

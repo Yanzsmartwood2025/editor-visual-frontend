@@ -1244,7 +1244,7 @@ export default function GenerarStyles() {
         height: 100%;
         min-height: 0;
         display: grid;
-        grid-template-rows: 64px minmax(0, 1fr) 58px;
+        grid-template-rows: 64px minmax(0, 1fr);
         background:
           radial-gradient(circle at 84% 8%, rgba(var(--glow-color-rgb), .08), transparent 28%),
           rgba(3, 4, 6, .96);
@@ -1330,43 +1330,6 @@ export default function GenerarStyles() {
         padding: 20px max(16px, calc((100vw - 980px) / 2));
       }
 
-      .generar-audio-footer {
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        padding: 8px 14px;
-        border-top: 1px solid rgba(var(--glow-color-rgb), .12);
-        background: rgba(4, 5, 7, .92);
-        backdrop-filter: blur(var(--glass-blur));
-        -webkit-backdrop-filter: blur(var(--glass-blur));
-        z-index: 3;
-      }
-
-      .generar-audio-return-button {
-        width: min(420px, 100%);
-        min-height: 40px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        gap: 9px;
-        border: 0;
-        border-radius: 12px;
-        color: #c9c9ce;
-        background: transparent;
-        cursor: pointer;
-        font-size: 10px;
-        letter-spacing: .08em;
-      }
-
-      .generar-audio-return-button:hover {
-        color: #fff;
-        background: rgba(255,255,255,.035);
-      }
-
-      .generar-audio-return-button span {
-        font-size: 16px;
-      }
-
       .generar-audio-drawer-layer {
         position: absolute;
         inset: 0;
@@ -1440,6 +1403,143 @@ export default function GenerarStyles() {
         min-height: 0;
         overflow: auto;
         padding: 12px;
+      }
+
+      .generar-audio-account {
+        flex: 0 0 auto;
+        display: grid;
+        gap: 8px;
+        padding: 10px 12px max(10px, env(safe-area-inset-bottom));
+        border-top: 1px solid rgba(255,255,255,.07);
+        background: rgba(5, 6, 8, .96);
+      }
+
+      .generar-audio-account-menu {
+        display: grid;
+        gap: 6px;
+        padding: 6px;
+        border-radius: 14px;
+        background: rgba(255,255,255,.025);
+        border: 1px solid rgba(var(--glow-color-rgb), .12);
+        box-shadow: 0 -10px 30px rgba(0,0,0,.22);
+      }
+
+      .generar-audio-account-action {
+        width: 100%;
+        min-height: 52px;
+        display: grid;
+        grid-template-columns: 28px minmax(0, 1fr);
+        gap: 9px;
+        align-items: center;
+        padding: 8px 10px;
+        border-radius: 11px;
+        color: #d7d7dc;
+        background: transparent;
+        border: 1px solid transparent;
+        text-align: left;
+        cursor: pointer;
+      }
+
+      .generar-audio-account-action:hover {
+        color: #fff;
+        background: rgba(255,255,255,.045);
+        border-color: rgba(var(--glow-color-rgb), .12);
+      }
+
+      .generar-audio-account-action:disabled {
+        opacity: .55;
+        cursor: progress;
+      }
+
+      .generar-audio-account-action.danger {
+        color: #d2a2a2;
+      }
+
+      .generar-audio-account-action > span:first-child {
+        display: grid;
+        place-items: center;
+        font-size: 16px;
+      }
+
+      .generar-audio-account-action > span:nth-child(2) {
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 3px;
+      }
+
+      .generar-audio-account-action strong {
+        font-size: 10px;
+        letter-spacing: .05em;
+      }
+
+      .generar-audio-account-action small {
+        color: #73737b;
+        font-size: 8px;
+      }
+
+      .generar-audio-account-button {
+        width: 100%;
+        min-height: 58px;
+        display: grid;
+        grid-template-columns: 38px minmax(0, 1fr) auto;
+        gap: 10px;
+        align-items: center;
+        padding: 9px 10px;
+        border-radius: 14px;
+        color: #dedee2;
+        background: rgba(255,255,255,.025);
+        border: 1px solid rgba(255,255,255,.07);
+        text-align: left;
+        cursor: pointer;
+      }
+
+      .generar-audio-account-button:hover,
+      .generar-audio-account-button.active {
+        background: rgba(255,255,255,.055);
+        border-color: rgba(var(--glow-color-rgb), .17);
+      }
+
+      .generar-audio-account-avatar {
+        width: 38px;
+        height: 38px;
+        border-radius: 12px;
+        object-fit: cover;
+        border: 1px solid rgba(255,255,255,.10);
+        background: rgba(255,255,255,.05);
+      }
+
+      .generar-audio-account-initial {
+        display: grid;
+        place-items: center;
+        font-size: 12px;
+        font-weight: 900;
+      }
+
+      .generar-audio-account-copy {
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 3px;
+      }
+
+      .generar-audio-account-copy strong {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        font-size: 11px;
+      }
+
+      .generar-audio-account-copy small {
+        color: #707078;
+        font-size: 8px;
+        font-weight: 850;
+        letter-spacing: .07em;
+      }
+
+      .generar-audio-account-chevron {
+        color: #787880;
+        font-size: 13px;
       }
 
       .generar-audio-nav-section {
@@ -2006,7 +2106,7 @@ export default function GenerarStyles() {
         }
 
         .generar-audio-app {
-          grid-template-rows: 58px minmax(0, 1fr) 54px;
+          grid-template-rows: 58px minmax(0, 1fr);
         }
 
         .generar-audio-app-header {
