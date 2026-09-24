@@ -384,7 +384,7 @@ export default function NaylaCore() {
   const [globalSettings, setGlobalSettings] = useState<{ fadeOutFinal?: number; decorations?: any[] }>({});
   const [clipSeleccionado, setClipSeleccionado] = useState<string | null>(null);
   const [canvasRatio, setCanvasRatio] = useState<string>('9/16');
-  const [calidadExportacion, setCalidadExportacion] = useState('1080p');
+  const [calidadExportacion, setCalidadExportacion] = useState('720p');
   const canvasPreviewDimensions = getCanvasDimensionsFromRatio(canvasRatio, '1080p');
   const [isDownloadMenuOpen, setIsDownloadMenuOpen] = useState(false);
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
@@ -778,7 +778,7 @@ export default function NaylaCore() {
     };
 
     void refresh();
-    const timer = window.setInterval(refresh, 1000);
+    const timer = window.setInterval(refresh, 2500);
     return () => {
       cancelled = true;
       window.clearInterval(timer);
@@ -5392,13 +5392,52 @@ if (!session) {
                     {subTool === 'render' && (
                       <div>
                         <p style={{ fontSize: '0.75rem', color: '#fff', fontWeight: 'bold', marginBottom: '0.5rem' }}>RENDERIZAR VIDEO</p>
-                        <p style={{ fontSize: '0.7rem', color: '#737373', marginBottom: '1rem' }}>Clips en timeline: {lineaDeTiempo.length}</p>
+                        <p style={{ fontSize: '0.7rem', color: '#737373', marginBottom: '0.75rem' }}>Clips en timeline: {lineaDeTiempo.length}</p>
+                        <div style={{ marginBottom: '0.9rem' }}>
+                          <p style={{ fontSize: '0.62rem', color: '#a3a3a3', fontWeight: 'bold', marginBottom: '6px', letterSpacing: '0.7px' }}>
+                            CALIDAD DEL RENDER
+                          </p>
+                          <div style={{ display: 'grid', gap: '6px' }}>
+                            {[
+                              { value: '480p', label: 'Borrador · 480p', detail: 'Más rápido para revisar edición' },
+                              { value: '720p', label: 'Rápido · 720p', detail: 'Recomendado para pruebas y redes' },
+                              { value: '1080p', label: 'Final · 1080p', detail: 'Máxima calidad; tarda más' },
+                            ].map((profile) => {
+                              const selected = calidadExportacion === profile.value;
+                              const dims = getCanvasDimensionsFromRatio(canvasRatio, profile.value);
+                              return (
+                                <button
+                                  key={profile.value}
+                                  type="button"
+                                  onClick={() => setCalidadExportacion(profile.value)}
+                                  disabled={isProcessing}
+                                  style={{
+                                    width: '100%',
+                                    padding: '9px 10px',
+                                    borderRadius: '9px',
+                                    border: selected ? '1px solid #fff' : '1px solid #262626',
+                                    backgroundColor: selected ? '#fff' : '#0b0b0b',
+                                    color: selected ? '#000' : '#fff',
+                                    cursor: isProcessing ? 'not-allowed' : 'pointer',
+                                    textAlign: 'left',
+                                    opacity: isProcessing ? 0.65 : 1,
+                                  }}
+                                >
+                                  <span style={{ display: 'block', fontSize: '0.68rem', fontWeight: 850 }}>{profile.label}</span>
+                                  <span style={{ display: 'block', marginTop: '2px', fontSize: '0.58rem', opacity: 0.72 }}>
+                                    {profile.detail} · {dims.width}×{dims.height}
+                                  </span>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
                         <button onClick={async () => {
                           if (lineaDeTiempo.length === 0) return showAlert('Añade al menos un clip.');
                           setIsProcessing(true);
                           try {
                             const lineaValidada = await validarTimelineParaRender(lineaDeTiempo);
-                            await solicitarRenderTimeline(lineaValidada);
+                            await solicitarRenderTimeline(lineaValidada, calidadExportacion);
                             setIsProcessing(false);
                           } catch (err: any) {
                             setIsProcessing(false);
