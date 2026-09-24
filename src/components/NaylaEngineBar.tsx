@@ -37,6 +37,19 @@ type SystemCatalog = {
   };
 };
 
+export type NaylaCodeTrace = {
+  active?: boolean;
+  stage?: string;
+  label?: string;
+  request?: string;
+  blueprint?: string;
+  payload?: unknown;
+  failedPayload?: string;
+  validationIssues?: string[];
+  chapters?: string[];
+  history?: Array<{ stage: string; label: string }>;
+};
+
 type ComputeCard = {
   selectionId: string;
   gpuName: string;
@@ -60,14 +73,16 @@ export function NaylaEngineBar({
   mode,
   onModeChange,
   compact = false,
+  codeTrace,
 }: {
   session: FirebaseSession | null;
   mode: NaylaEngineMode;
   onModeChange: (mode: NaylaEngineMode) => void;
   compact?: boolean;
+  codeTrace?: NaylaCodeTrace | null;
 }) {
   const [catalog, setCatalog] = useState<SystemCatalog | null>(null);
-  const [openPanel, setOpenPanel] = useState<'cloud' | 'compute' | 'energy' | null>(null);
+  const [openPanel, setOpenPanel] = useState<'cloud' | 'compute' | 'energy' | 'code' | null>(null);
   const [workload, setWorkload] = useState<'image' | 'video' | 'audio' | '3d'>('video');
   const [cards, setCards] = useState<ComputeCard[]>([]);
   const [computeReady, setComputeReady] = useState<boolean | null>(null);
@@ -150,10 +165,15 @@ export function NaylaEngineBar({
     whiteSpace: 'nowrap',
   });
 
-  const togglePanel = (panel: 'cloud' | 'compute' | 'energy') => {
+  const togglePanel = (panel: 'cloud' | 'compute' | 'energy' | 'code') => {
     setOpenPanel((current) => current === panel ? null : panel);
     if (panel === 'cloud') onModeChange('cloud');
     if (panel === 'compute') onModeChange('compute');
+  };
+
+  const copyPayload = async () => {
+    if (!codeTrace?.payload || typeof navigator === 'undefined' || !navigator.clipboard) return;
+    await navigator.clipboard.writeText(JSON.stringify(codeTrace.payload, null, 2));
   };
 
   return (
@@ -192,7 +212,28 @@ export function NaylaEngineBar({
         >
           {compact ? '◇ Energy' : energyLabel.toUpperCase()}
         </button>
+        <button
+          type="button"
+          onClick={() => togglePanel('code')}
+          style={buttonStyle(openPanel === 'code')}
+        >
+          {compact ? '⌘ Code' : 'CODE'}
+        </button>
       </div>
+
+      {compact && codeTrace?.active && (
+        <div style={{
+          paddingTop: 5,
+          color: '#aaa',
+          fontSize: '0.61rem',
+          lineHeight: 1.25,
+          whiteSpace: 'nowrap',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+        }}>
+          <span style={{ color: '#f4f4f4' }}>●</span> {codeTrace.label || 'Nayla está trabajando…'}
+        </div>
+      )}
 
       {openPanel && (
         <div style={{
@@ -334,6 +375,109 @@ export function NaylaEngineBar({
                   </div>
                 </>
               )}
+            </div>
+          )}
+
+          {openPanel === 'code' && (
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+                <div>
+                  <div style={{ fontWeight: 800, fontSize: '0.82rem' }}>Nayla Code</div>
+                  <div style={{ color: '#888', fontSize: '0.69rem', marginTop: 3 }}>
+                    Seguimiento del pedido y código preparado para el editor.
+                  </div>
+                </div>
+                {codeTrace?.payload ? (
+                  <button
+                    type="button"
+                    onClick={() => void copyPayload()}
+                    style={{
+                      border: '1px solid #333',
+                      borderRadius: 8,
+                      background: '#111',
+                      color: '#ddd',
+                      padding: '6px 9px',
+                      fontSize: '0.66rem',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    COPIAR
+                  </button>
+                ) : null}
+              </div>
+
+              <div style={{ display: 'grid', gap: 8, marginTop: 11 }}>
+                <div style={{ border: '1px solid #292929', borderRadius: 10, background: '#0c0c0c', padding: '9px 10px' }}>
+                  <div style={{ color: '#777', fontSize: '0.62rem', textTransform: 'uppercase', letterSpacing: '0.07em' }}>Etapa</div>
+                  <div style={{ color: '#eee', fontSize: '0.76rem', marginTop: 4 }}>
+                    {codeTrace?.label || 'Sin tarea activa'}
+                  </div>
+                  {codeTrace?.history?.length ? (
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginTop: 8 }}>
+                      {codeTrace.history.map((item, index) => (
+                        <span key={item.stage + '-' + index} style={{
+                          border: '1px solid #2e2e2e',
+                          borderRadius: 999,
+                          padding: '3px 7px',
+                          color: item.stage === codeTrace.stage ? '#fff' : '#777',
+                          background: item.stage === codeTrace.stage ? '#171717' : '#0a0a0a',
+                          fontSize: '0.61rem',
+                        }}>
+                          {item.label}
+                        </span>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
+
+                <div style={{ border: '1px solid #292929', borderRadius: 10, background: '#0c0c0c', padding: '9px 10px' }}>
+                  <div style={{ color: '#777', fontSize: '0.62rem', textTransform: 'uppercase', letterSpacing: '0.07em' }}>Pedido</div>
+                  <pre style={{ margin: '6px 0 0', color: '#d8d8d8', whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', fontSize: '0.68rem', lineHeight: 1.45, fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace' }}>
+                    {codeTrace?.request || 'Todavía no hay un pedido registrado.'}
+                  </pre>
+                </div>
+
+                {codeTrace?.blueprint ? (
+                  <div style={{ border: '1px solid #292929', borderRadius: 10, background: '#0c0c0c', padding: '9px 10px' }}>
+                    <div style={{ color: '#777', fontSize: '0.62rem', textTransform: 'uppercase', letterSpacing: '0.07em' }}>Interpretación</div>
+                    <pre style={{ margin: '6px 0 0', color: '#d8d8d8', whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', fontSize: '0.68rem', lineHeight: 1.45, fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace' }}>
+                      {codeTrace.blueprint}
+                    </pre>
+                  </div>
+                ) : null}
+
+                <div style={{ border: '1px solid #292929', borderRadius: 10, background: '#050505', padding: '9px 10px' }}>
+                  <div style={{ color: '#777', fontSize: '0.62rem', textTransform: 'uppercase', letterSpacing: '0.07em' }}>Payload</div>
+                  <pre style={{
+                    margin: '6px 0 0',
+                    maxHeight: '30dvh',
+                    overflow: 'auto',
+                    color: '#e7e7e7',
+                    whiteSpace: 'pre-wrap',
+                    overflowWrap: 'anywhere',
+                    fontSize: '0.66rem',
+                    lineHeight: 1.45,
+                    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+                  }}>
+                    {codeTrace?.payload
+                      ? JSON.stringify(codeTrace.payload, null, 2)
+                      : codeTrace?.failedPayload || 'El payload todavía no se ha generado.'}
+                  </pre>
+                </div>
+
+                {codeTrace?.validationIssues?.length ? (
+                  <div style={{ border: '1px solid #4a2d2d', borderRadius: 10, background: '#120b0b', padding: '9px 10px' }}>
+                    <div style={{ color: '#b98b8b', fontSize: '0.62rem', textTransform: 'uppercase', letterSpacing: '0.07em' }}>Validación</div>
+                    <div style={{ display: 'grid', gap: 4, marginTop: 6 }}>
+                      {codeTrace.validationIssues.map((issue, index) => (
+                        <div key={index} style={{ color: '#d7b1b1', fontSize: '0.66rem', lineHeight: 1.4 }}>
+                          {issue}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+              </div>
             </div>
           )}
 
