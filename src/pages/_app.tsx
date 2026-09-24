@@ -1,6 +1,7 @@
 import type { AppProps } from "next/app";
 import { useEffect } from "react";
 import "../../styles/global.css";
+import { SentryBrowserLoader } from "../components/diagnostics/SentryBrowserLoader";
 
 function MyApp({ Component, pageProps }: AppProps) {
   useEffect(() => {
@@ -40,7 +41,12 @@ function MyApp({ Component, pageProps }: AppProps) {
     };
   }, []);
 
-  return <Component {...pageProps} />;
+  return (
+    <>
+      <SentryBrowserLoader />
+      <Component {...pageProps} />
+    </>
+  );
 }
 
 export default MyApp;

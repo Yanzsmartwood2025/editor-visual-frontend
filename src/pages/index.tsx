@@ -1,6 +1,5 @@
 // @ts-nocheck
 import dynamic from 'next/dynamic';
-import { formatPlaybackTime } from '../lib/playbackTime';
 import { NaylaEditorReview } from '../components/NaylaEditorReview';
 import type { EditorReview } from '../lib/naylaEditorReview';
 /* eslint-disable */
@@ -21,13 +20,24 @@ import {
   uploadDocumentFilesToBodega,
   uploadMediaFilesToBodega,
   type DocumentItem,
+  type UploadProgressSnapshot,
 } from '../lib/mediaUpload';
 import { groupSpeechWordsIntoCaptions } from '../lib/autoCaptions';
 import { buildMediaMetadata, getCanvasDimensionsFromRatio, probeMediaUrl, type MediaMetadata } from '../lib/mediaMetadata';
 import { getCompositionDurationInFrames } from '../lib/timelineMetrics';
+import {
+  formatPlaybackClock,
+  getVisualClipStartSeconds,
+  getVisualTimelineDurationSeconds,
+  resolveVisualTimelineTime,
+} from '../lib/playerTimeline';
 import { getFirebaseSession, observeFirebaseSession, signOutFirebase, signInWithCustomTokenValue, type FirebaseSession } from '../lib/firebaseClient';
 import { firebaseHeaders } from '../lib/apiClient';
 import { Model3DWorkspace } from '../components/Model3DWorkspace';
+import GenerarWorkspace from '../components/generar/GenerarWorkspace';
+import DiagnosticsWorkspace from '../components/diagnostics/DiagnosticsWorkspace';
+import DiagnosticsClientReporter from '../components/diagnostics/DiagnosticsClientReporter';
+import { isDiagnosticsAdmin } from '../lib/diagnostics';
 import { GpuQuoteModal, type GpuQuoteView } from '../components/GpuQuoteModal';
 import { NaylaEngineBar } from '../components/NaylaEngineBar';
 import SocialHub from '../components/SocialHub';
@@ -240,7 +250,7 @@ const createRenderRequestId = () => {
   });
 };
 
-const NaylaCompositionPreview = dynamic(async () => { const { LoadSkia } = await import('@shopify/react-native-skia/lib/module/web'); await LoadSkia({ locateFile: () => '/canvaskit.wasm' }); return import('../components/NaylaCompositionPreview'); }, { ssr: false });
+const NaylaCompositionPreview = dynamic(() => import('../components/NaylaCompositionPreview'), { ssr: false });
 export default function NaylaCore() {
 
   const [darkMode, setDarkMode] = useState(true);
@@ -306,6 +316,8 @@ export default function NaylaCore() {
   const [mainNav, setMainNav] = useState<string>('boveda');
   const [subTool, setSubTool] = useState<string | null>(null);
   const [isVideoExpanded, setIsVideoExpanded] = useState<boolean>(false);
+  const diagnosticsAdmin = isDiagnosticsAdmin(session?.user?.email);
+  const visibleMainTools = MAIN_TOOLS.filter((tool: any) => !tool.adminOnly || diagnosticsAdmin);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -358,6 +370,10 @@ export default function NaylaCore() {
   const [gpuQuoteLoading, setGpuQuoteLoading] = useState(false);
   const [gpuQuoteConfirming, setGpuQuoteConfirming] = useState(false);
   const [lineaDeTiempo, setLineaDeTiempo] = useState<TimelineItem[]>([]);
+  const lineaDeTiempoRef = useRef<TimelineItem[]>([]);
+  useEffect(() => {
+    lineaDeTiempoRef.current = lineaDeTiempo;
+  }, [lineaDeTiempo]);
   const [subtitulos, setSubtitulos] = useState<SubtitleItem[]>([]);
   const [motionTitles, setMotionTitles] = useState<MotionTitleItem[]>([]);
   const [threeRenderScenes, setThreeRenderScenes] = useState<ThreeRenderScene[]>([]);
@@ -374,8 +390,8 @@ export default function NaylaCore() {
   const [showIntro, setShowIntro] = useState(true);
     const [isProcessing, setIsProcessing] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
-  const [playbackSeconds, setPlaybackSeconds] = useState(0);
-  const [playbackDuration, setPlaybackDuration] = useState(0);
+  const [playbackPositionSeconds, setPlaybackPositionSeconds] = useState(0);
+  const [nativePlaybackDurationSeconds, setNativePlaybackDurationSeconds] = useState(0);
   const [mediaActivaUrl, setMediaActivaUrl] = useState<string | null>(null);
   const [videoResultadoUrl, setVideoResultadoUrl] = useState<string | null>(null);
   const [videoResultadoNombre, setVideoResultadoNombre] = useState<string | null>(null);
@@ -401,12 +417,16 @@ export default function NaylaCore() {
     galeriaMultimedia.find(item => item.url === mediaActivaUrl && (item.tipo === 'video' || item.tipo === 'foto')) ||
     pistaVideo[0] ||
     null;
-  useEffect(() => {
-    setPlaybackSeconds(0);
-    setPlaybackDuration(0);
-    setIsPlaying(false);
-  }, [videoResultadoUrl, visualActivo?.url, mediaActivaUrl]);
 
+
+  const activeTimelineClip = visualActivo
+    ? pistaVideo.find((item) => item.id === visualActivo.id || item.url === visualActivo.url) || null
+    : null;
+  const visualTimelineDurationSeconds = getVisualTimelineDurationSeconds(pistaVideo);
+  const playbackTotalSeconds =
+    videoResultadoUrl || !activeTimelineClip
+      ? nativePlaybackDurationSeconds
+      : (visualTimelineDurationSeconds || nativePlaybackDurationSeconds);
 
   const adoptarFormatoVisual = (metadata?: MediaMetadata) => {
     if (metadata?.aspectRatioLabel) {
@@ -483,6 +503,8 @@ export default function NaylaCore() {
   const containerRef = useRef<HTMLDivElement>(null);
   const previewFullscreenRef = useRef<HTMLDivElement>(null);
   const playerRef = useRef<HTMLVideoElement>(null);
+  const pendingPlaybackSeekRef = useRef<number | null>(null);
+  const resumePlaybackAfterSourceChangeRef = useRef(false);
   const timelineRef = useRef<HTMLDivElement>(null);
   const mainToolsCarouselRef = useRef<HTMLDivElement>(null);
   const subToolsCarouselRef = useRef<HTMLDivElement>(null);
@@ -520,7 +542,13 @@ export default function NaylaCore() {
   const [chatAttachMenuOpen, setChatAttachMenuOpen] = useState(false);
   const chatDirectUploadRef = useRef<HTMLInputElement | null>(null);
   const [chatAttachmentIds, setChatAttachmentIds] = useState<string[]>([]);
-  const [chatUploadProgress, setChatUploadProgress] = useState<{ total: number; done: number; failed: number } | null>(null);
+  const [chatUploadProgress, setChatUploadProgress] = useState<{
+    total: number;
+    done: number;
+    failed: number;
+    percent: number;
+    currentFile?: string;
+  } | null>(null);
   const [channelUploadingKind, setChannelUploadingKind] = useState<NaylaChannelKind | null>(null);
 
   useEffect(() => {
@@ -1209,8 +1237,16 @@ export default function NaylaCore() {
             fullscreenPreview.webkitRequestFullscreen?.bind(fullscreenPreview);
           if (request) await request();
         }
+
+        if (isPhoneViewport && sourceVideoRatio !== null) {
+          const orientation = screen.orientation as any;
+          const preferredOrientation = sourceVideoRatio > 1.15 ? 'landscape' : 'portrait';
+          if (orientation?.lock) {
+            await orientation.lock(preferredOrientation);
+          }
+        }
       } catch {
-        // Some mobile browsers reject native fullscreen; the CSS immersive mode remains active.
+        // Some mobile browsers reject native fullscreen/orientation lock; CSS immersive mode remains active.
       }
 
       requestAnimationFrame(() => {
@@ -1253,18 +1289,18 @@ export default function NaylaCore() {
     if (target?.closest('button, input, textarea, select, a')) return;
     if (subTool === 'delogo') return;
 
-    // Mouse/trackpad uses onDoubleClick. Touch/pen gets an explicit detector
-    // because Android browsers do not dispatch dblclick consistently.
-    if (e.pointerType === 'mouse') return;
-
+    // Use one detector for mouse, touch and pen. Previously touch could trigger
+    // this detector and then a synthetic dblclick, immediately toggling
+    // fullscreen back off on some Android browsers.
     const now = Date.now();
     const previous = lastVideoSurfaceTapRef.current;
     const closeEnough =
       previous &&
-      now - previous.time <= 520 &&
-      Math.hypot(e.clientX - previous.x, e.clientY - previous.y) <= 56;
+      now - previous.time <= 560 &&
+      Math.hypot(e.clientX - previous.x, e.clientY - previous.y) <= 72;
 
     if (closeEnough) {
+      e.preventDefault();
       lastVideoSurfaceTapRef.current = null;
       togglePreviewFullscreen();
       return;
@@ -1347,6 +1383,9 @@ export default function NaylaCore() {
     setMainNav(tool.id);
     setIsChatOpen(false);
     setSubTool(null);
+    if (tool.id === 'generar' || tool.id === 'diagnostico') {
+      setIsSubPanelOpen(false);
+    }
   };
 
   const handleSubCarouselToolPress = (tool: any) => {
@@ -1407,15 +1446,75 @@ export default function NaylaCore() {
     setIsPlaying(false);
   }, [mainNav]);
 
+  const seekPlaybackToSeconds = (seconds: number) => {
+    const safeSeconds = Number.isFinite(seconds) ? Math.max(0, seconds) : 0;
+
+    if (videoResultadoUrl || !pistaVideo.length) {
+      const duration =
+        nativePlaybackDurationSeconds ||
+        (playerRef.current && Number.isFinite(playerRef.current.duration) ? playerRef.current.duration : safeSeconds);
+      const target = Math.min(Math.max(0, duration || safeSeconds), safeSeconds);
+      if (playerRef.current) playerRef.current.currentTime = target;
+      setPlaybackPositionSeconds(target);
+      return;
+    }
+
+    const resolved = resolveVisualTimelineTime(pistaVideo, safeSeconds);
+    if (!resolved) return;
+
+    setPlaybackPositionSeconds(resolved.absoluteTime);
+
+    if (resolved.clip.tipo === 'foto') {
+      setClipSeleccionado(resolved.clip.id);
+      setMediaActivaUrl(resolved.clip.url);
+      setVideoResultadoUrl(null);
+      setVideoResultadoNombre(null);
+      setVideoResultadoEtiqueta(null);
+      setIsPlaying(false);
+      return;
+    }
+
+    const sameClip = activeTimelineClip?.id === resolved.clip.id;
+    if (sameClip && playerRef.current) {
+      playerRef.current.currentTime = resolved.localTime;
+      return;
+    }
+
+    pendingPlaybackSeekRef.current = resolved.localTime;
+    resumePlaybackAfterSourceChangeRef.current = isPlaying;
+    setClipSeleccionado(resolved.clip.id);
+    setMediaActivaUrl(resolved.clip.url);
+    setVideoResultadoUrl(null);
+    setVideoResultadoNombre(null);
+    setVideoResultadoEtiqueta(null);
+  };
+
   const seekBy = (seconds: number) => {
-    if (!playerRef.current) return;
-    const duration = Number.isFinite(playerRef.current.duration) ? playerRef.current.duration : Number.POSITIVE_INFINITY;
-    playerRef.current.currentTime = Math.min(duration, Math.max(0, playerRef.current.currentTime + seconds));
+    seekPlaybackToSeconds(playbackPositionSeconds + seconds);
+  };
+
+  const syncPlaybackClockFromVideo = (video: HTMLVideoElement) => {
+    const localTime = Number.isFinite(video.currentTime) ? Math.max(0, video.currentTime) : 0;
+    const duration = Number.isFinite(video.duration) && video.duration > 0 ? video.duration : 0;
+    if (duration) setNativePlaybackDurationSeconds(duration);
+
+    if (videoResultadoUrl || !activeTimelineClip) {
+      setPlaybackPositionSeconds(localTime);
+      return;
+    }
+
+    const offset = getVisualClipStartSeconds(pistaVideo, activeTimelineClip.id);
+    setPlaybackPositionSeconds(Math.min(visualTimelineDurationSeconds || Number.POSITIVE_INFINITY, offset + localTime));
   };
 
   const isPortraitSourceVideo = sourceVideoRatio !== null && sourceVideoRatio < 1;
   const isLandscapeSourceVideo = sourceVideoRatio !== null && sourceVideoRatio > 1.15;
-  const phoneVideoObjectFit = 'contain';
+  const phoneVideoObjectFit = isPhoneViewport && isPortraitSourceVideo ? 'cover' : 'contain';
+  const forceCssLandscapeFullscreen =
+    isCleanMode &&
+    isPhoneViewport &&
+    isLandscapeSourceVideo &&
+    deviceOrientation === 'portrait';
 
   const validarTimelineParaRender = async (timeline: TimelineItem[]) => {
     const lineaValidada: TimelineItem[] = [];
@@ -2050,28 +2149,7 @@ export default function NaylaCore() {
       }
 
       if (addToTimeline && savedItem) {
-        const alreadyInTimeline = lineaDeTiempo.some(item => item.mediaId === savedItem!.id);
-        if (!alreadyInTimeline) {
-          const timelineItem: TimelineItem = {
-            id: `stock-timeline-${Date.now()}`,
-            mediaId: savedItem.id,
-            tipo: savedItem.tipo,
-            nombre: savedItem.nombre,
-            etiqueta: savedItem.etiqueta,
-            url: savedItem.url,
-            durationInSeconds: savedItem.tipo === 'foto' ? 5 : savedItem.metadata?.durationInSeconds,
-            originalDurationInSeconds: savedItem.tipo === 'foto' ? 5 : savedItem.metadata?.durationInSeconds,
-            metadata: savedItem.metadata,
-          };
-          const next = await validarTimelineParaRender([...lineaDeTiempo, timelineItem]);
-          setLineaDeTiempo(next);
-          sincronizarLineaDeTiempo(next);
-          setClipSeleccionado(timelineItem.id);
-          if (savedItem.tipo !== 'audio') {
-            setMediaActivaUrl(savedItem.url);
-            adoptarFormatoVisual(savedItem.metadata);
-          }
-        }
+        await agregarAlTimeline(savedItem, { preventDuplicate: true });
         showAlert('Medio guardado en la Bóveda y añadido al timeline.');
       } else {
         showAlert(existing ? 'Ese medio ya estaba guardado en la Bóveda.' : 'Medio guardado en la Bóveda.');
@@ -2281,6 +2359,13 @@ export default function NaylaCore() {
   };
 
   const toggleChatAttachment = (asset: NaylaChannelAsset) => {
+    const alreadyAttached = chatAttachmentIds.includes(asset.id);
+
+    if (!alreadyAttached && (asset.tipo === 'foto' || asset.tipo === 'video' || asset.tipo === 'audio')) {
+      const media = galeriaMultimedia.find((item) => item.id === asset.id);
+      if (media) void agregarAlTimeline(media, { preventDuplicate: true });
+    }
+
     setChatAttachmentIds((prev) => {
       if (prev.includes(asset.id)) {
         return prev.filter((id) => id !== asset.id);
@@ -2318,15 +2403,30 @@ export default function NaylaCore() {
     setChatAttachMenuOpen(false);
     setProjectMenuOpen(false);
     if (forcedKind) setChannelUploadingKind(forcedKind);
-    setChatUploadProgress({ total: selectedFiles.length, done: 0, failed: 0 });
+    setChatUploadProgress({ total: selectedFiles.length, done: 0, failed: 0, percent: 0 });
 
     let workingMedia = [...galeriaMultimedia];
     let workingDocuments = [...chatDocuments];
     let workingModels = [...modelos3d];
     let successCount = 0;
     let failedCount = 0;
+    const totalUploadBytes = selectedFiles.reduce((sum, file) => sum + file.size, 0);
+    let completedUploadBytes = 0;
 
     for (const file of selectedFiles) {
+      setChatUploadProgress((progress) => progress ? { ...progress, currentFile: file.name } : progress);
+
+      const updateCurrentFileProgress = (progress: UploadProgressSnapshot) => {
+        const loaded = completedUploadBytes + Math.min(file.size, progress.loadedBytes);
+        const percent = totalUploadBytes > 0
+          ? Math.min(99, Math.floor((loaded / totalUploadBytes) * 100))
+          : 0;
+        setChatUploadProgress((current) => current
+          ? { ...current, percent, currentFile: file.name }
+          : current
+        );
+      };
+
       try {
         let asset: NaylaChannelAsset | null = null;
         let kind = forcedKind;
@@ -2367,6 +2467,7 @@ export default function NaylaCore() {
             fuente: 'chat:documento',
             projectId: activeProjectId,
             threadId: activeThreadId,
+            onProgress: updateCurrentFileProgress,
           });
           const saved = savedItems[0];
           if (!saved) throw new Error(`No se pudo guardar ${file.name}.`);
@@ -2388,11 +2489,13 @@ export default function NaylaCore() {
             fuente: `chat:canal-${kind}`,
             projectId: activeProjectId,
             threadId: activeThreadId,
+            onProgress: updateCurrentFileProgress,
           });
           const saved = savedItems[0];
           if (!saved) throw new Error(`No se pudo guardar ${file.name}.`);
           workingMedia = [...workingMedia, saved];
           setGaleriaMultimedia((prev) => prev.some((item) => item.id === saved.id) ? prev : [...prev, saved]);
+          await agregarAlTimeline(saved, { preventDuplicate: true });
           asset = {
             id: saved.id,
             tipo: saved.tipo as NaylaChannelKind,
@@ -2416,11 +2519,17 @@ export default function NaylaCore() {
         failedCount += 1;
         console.error('Error subiendo archivo al chat:', file.name, error);
       } finally {
+        completedUploadBytes += file.size;
+        const overallPercent = totalUploadBytes > 0
+          ? Math.min(100, Math.floor((completedUploadBytes / totalUploadBytes) * 100))
+          : 100;
         setChatUploadProgress((progress) => progress
           ? {
               ...progress,
               done: Math.min(progress.total, progress.done + 1),
               failed: failedCount,
+              percent: overallPercent,
+              currentFile: file.name,
             }
           : progress
         );
@@ -2442,7 +2551,6 @@ export default function NaylaCore() {
       );
     }
   };
-
   const subirArchivosDesdeCanal = async (kind: NaylaChannelKind, files: FileList) => {
     await uploadFilesIntoChat(files, kind);
   };
@@ -3269,30 +3377,10 @@ export default function NaylaCore() {
 
 
   useEffect(() => {
-    if (!playerRef.current || !timelineRef.current || isUserScrolling) return;
-
-    // We poll the player's current frame because Remotion player doesn't have an onFrameChange callback right now.
-    // However, it does have `getCurrentFrame()`. Let's use requestAnimationFrame.
-    let animationFrameId: number;
-    const syncScroll = () => {
-      if (playerRef.current && timelineRef.current && !isUserScrolling) {
-         const frame = Math.round(playerRef.current.currentTime * 30);
-         const fps = 30;
-         const seconds = frame / fps;
-         // Our scale is 20px per second.
-         const containerWidth = timelineRef.current.clientWidth;
-         const scrollPos = (seconds * 20) - (containerWidth / 2);
-         timelineRef.current.scrollLeft = Math.max(0, scrollPos);
-      }
-      animationFrameId = requestAnimationFrame(syncScroll);
-    };
-
-    if (isPlaying) {
-      animationFrameId = requestAnimationFrame(syncScroll);
-    }
-
-    return () => cancelAnimationFrame(animationFrameId);
-  }, [isPlaying, isUserScrolling]);
+    if (!timelineRef.current || isUserScrolling || videoResultadoUrl) return;
+    // Left/right padding place time 0 exactly under the centered playhead.
+    timelineRef.current.scrollLeft = Math.max(0, playbackPositionSeconds * 20);
+  }, [playbackPositionSeconds, isUserScrolling, videoResultadoUrl]);
 
   useEffect(() => {
     let unsubscribe: (() => void) | undefined;
@@ -3737,6 +3825,7 @@ export default function NaylaCore() {
   };
 
   const [subiendoArchivo, setSubiendoArchivo] = useState(false);
+  const [vaultUploadProgress, setVaultUploadProgress] = useState<UploadProgressSnapshot | null>(null);
 
   const handleSubirMultimedia = async (e: React.ChangeEvent<HTMLInputElement>, tipo: 'foto' | 'video' | 'audio') => {
     if (!e.target.files || e.target.files.length === 0) return;
@@ -3751,6 +3840,15 @@ export default function NaylaCore() {
 
     const files = Array.from(e.target.files);
     setSubiendoArchivo(true);
+    setVaultUploadProgress({
+      percent: 0,
+      loadedBytes: 0,
+      totalBytes: files.reduce((sum, file) => sum + file.size, 0),
+      fileIndex: 1,
+      fileCount: files.length,
+      fileName: files[0]?.name || '',
+      phase: 'uploading',
+    });
 
     try {
       const nuevosItems = await uploadMediaFilesToBodega({
@@ -3761,28 +3859,29 @@ export default function NaylaCore() {
         fuente: 'manual',
         projectId: activeProjectId || undefined,
         threadId: activeThreadId || undefined,
+        onProgress: setVaultUploadProgress,
       });
 
       setGaleriaMultimedia(prev => [...prev, ...nuevosItems]);
 
-      const primerVisualIndex = nuevosItems.findIndex(item => item.tipo === 'video' || item.tipo === 'foto');
-      const primerVisual = primerVisualIndex >= 0 ? nuevosItems[primerVisualIndex] : null;
-
-      if (primerVisual && pistaVideo.length === 0 && !mediaActivaUrl) {
-        setMediaActivaUrl(primerVisual.url);
-        setClipSeleccionado(primerVisual.id);
-        setVideoResultadoUrl(null);
-        adoptarFormatoVisual(primerVisual.metadata);
+      for (const item of nuevosItems) {
+        await agregarAlTimeline(item, { preventDuplicate: true });
       }
+
+      showAlert(
+        nuevosItems.length === 1
+          ? `${nuevosItems[0]?.nombre || 'Archivo'} se guardó en la Bóveda y se añadió a la línea de tiempo.`
+          : `${nuevosItems.length} archivos se guardaron en la Bóveda y se añadieron a la línea de tiempo.`
+      );
     } catch (err: any) {
       console.error('Error procesando subida:', err);
       showAlert(err?.message || 'Hubo un error al procesar los archivos.');
     } finally {
       e.target.value = '';
       setSubiendoArchivo(false);
+      setVaultUploadProgress(null);
     }
   };
-
   const eliminarItemsGaleria = async (ids: string[]) => {
     if (!session || ids.length === 0) return;
 
@@ -3860,7 +3959,10 @@ export default function NaylaCore() {
     }
   };
 
-  const agregarAlTimeline = async (item: MediaItem) => {
+  const agregarAlTimeline = async (
+    item: MediaItem,
+    options: { preventDuplicate?: boolean } = {}
+  ) => {
     let metadata: MediaMetadata = { ...(item.metadata || {}) };
 
     try {
@@ -3890,6 +3992,20 @@ export default function NaylaCore() {
 
     if (durationInSeconds) metadata.durationInSeconds = metadata.durationInSeconds || durationInSeconds;
 
+    const currentTimeline = lineaDeTiempoRef.current;
+    const existingClip = options.preventDuplicate
+      ? currentTimeline.find((clip) => clip.mediaId === item.id)
+      : undefined;
+
+    if (existingClip) {
+      setClipSeleccionado(existingClip.id);
+      if (item.tipo !== 'audio') {
+        setMediaActivaUrl(existingClip.url);
+        setVideoResultadoUrl(null);
+      }
+      return existingClip;
+    }
+
     const nuevo: TimelineItem = {
       id: createMediaId(),
       mediaId: item.id,
@@ -3901,19 +4017,25 @@ export default function NaylaCore() {
       originalDurationInSeconds: durationInSeconds,
       metadata
     };
-    const nuevaLinea = [...lineaDeTiempo, nuevo];
+
+    const hadVisual = currentTimeline.some((clip) => clip.tipo === 'foto' || clip.tipo === 'video');
+    const nuevaLinea = [...currentTimeline, nuevo];
+    lineaDeTiempoRef.current = nuevaLinea;
     setLineaDeTiempo(nuevaLinea);
 
     setClipSeleccionado(nuevo.id);
-    setMediaActivaUrl(nuevo.url);
-    setVideoResultadoUrl(null);
-    setRects([]);
+    if (nuevo.tipo !== 'audio') {
+      setMediaActivaUrl(nuevo.url);
+      setVideoResultadoUrl(null);
+      setRects([]);
+    }
 
-    if ((nuevo.tipo === 'foto' || nuevo.tipo === 'video') && pistaVideo.length === 0) {
+    if ((nuevo.tipo === 'foto' || nuevo.tipo === 'video') && !hadVisual) {
       adoptarFormatoVisual(metadata);
     }
 
-    sincronizarLineaDeTiempo(nuevaLinea);
+    await sincronizarLineaDeTiempo(nuevaLinea);
+    return nuevo;
   };
 
   const quitarDelTimeline = (id: string) => {
@@ -3962,29 +4084,37 @@ export default function NaylaCore() {
   };
 
   const handleVideoEnded = () => {
-    setIsPlaying(false);
-    if (videoResultadoUrl) return;
-    if (!clipSeleccionado) return;
-    const currentIndex = lineaDeTiempo.findIndex(t => t.id === clipSeleccionado);
-    if (currentIndex !== -1 && currentIndex < lineaDeTiempo.length - 1) {
-      // Es un clip de la línea de tiempo y hay uno siguiente
-      const nextClip = lineaDeTiempo[currentIndex + 1];
-      if (nextClip.tipo === 'video' || nextClip.tipo === 'foto') {
-        setClipSeleccionado(nextClip.id);
-        setMediaActivaUrl(nextClip.url);
-        setVideoResultadoUrl(null);
-        setVideoResultadoNombre(null);
-        setVideoResultadoEtiqueta(null);
-        // Play is handled automatically in a useEffect or by the user hitting play again if we don't want autoplay
-        // But for "reproducción de corrido" we should autoplay:
-        setTimeout(() => {
-          if (playerRef.current) {
-            const playPromise = playerRef.current.play(); if (playPromise !== undefined) { playPromise.catch(error => console.log('Autoplay prevented:', error)); }
-            setIsPlaying(true);
-          }
-        }, 100);
-      }
+    if (videoResultadoUrl || !activeTimelineClip) {
+      setIsPlaying(false);
+      setPlaybackPositionSeconds(playbackTotalSeconds || nativePlaybackDurationSeconds);
+      return;
     }
+
+    const currentIndex = pistaVideo.findIndex((clip) => clip.id === activeTimelineClip.id);
+    const nextClip = currentIndex >= 0 ? pistaVideo[currentIndex + 1] : null;
+
+    if (!nextClip) {
+      setIsPlaying(false);
+      setPlaybackPositionSeconds(visualTimelineDurationSeconds);
+      return;
+    }
+
+    if (nextClip.tipo === 'foto') {
+      setClipSeleccionado(nextClip.id);
+      setMediaActivaUrl(nextClip.url);
+      setIsPlaying(false);
+      setPlaybackPositionSeconds(getVisualClipStartSeconds(pistaVideo, nextClip.id));
+      return;
+    }
+
+    pendingPlaybackSeekRef.current = 0;
+    resumePlaybackAfterSourceChangeRef.current = true;
+    setClipSeleccionado(nextClip.id);
+    setMediaActivaUrl(nextClip.url);
+    setVideoResultadoUrl(null);
+    setVideoResultadoNombre(null);
+    setVideoResultadoEtiqueta(null);
+    setPlaybackPositionSeconds(getVisualClipStartSeconds(pistaVideo, nextClip.id));
   };
 
   const handleDescargar = (calidad?: string) => {
@@ -4753,7 +4883,7 @@ if (!session) {
               zIndex: 40,
               overflowY: 'auto'
             }}>
-              {MAIN_TOOLS.map((tool) => {
+              {visibleMainTools.map((tool) => {
                 const isActive = mainNav === tool.id && isSubPanelOpen;
                 return (
                   <button
@@ -4761,6 +4891,13 @@ if (!session) {
                     className={`main-btn ${isActive ? 'active' : ''}`}
                     title={tool.nombre}
                     onClick={() => {
+                      if (tool.id === 'generar' || tool.id === 'diagnostico') {
+                        setMainNav(tool.id);
+                        setIsSubPanelOpen(false);
+                        setSubTool(null);
+                        setToolMessage(null);
+                        return;
+                      }
                       if (mainNav === tool.id && isSubPanelOpen) {
                         setIsSubPanelOpen(false);
                       } else {
@@ -4826,8 +4963,8 @@ if (!session) {
                     return (
                       <label key={tool.id} className="sub-btn">
                         <div className="icon-container">{tool.icon}</div>
-                        <span>{tool.nombre}</span>
-                        <input type="file" multiple accept="video/*,image/*" onChange={(e) => handleSubirMultimedia(e, 'video')} style={{ display: 'none' }} />
+                        <span>{subiendoArchivo ? `Subiendo ${vaultUploadProgress?.percent ?? 0}%` : tool.nombre}</span>
+                        <input type="file" multiple accept="video/*,image/*" disabled={subiendoArchivo} onChange={(e) => handleSubirMultimedia(e, 'video')} style={{ display: 'none' }} />
                       </label>
                     );
                   }
@@ -4835,8 +4972,8 @@ if (!session) {
                     return (
                       <label key={tool.id} className="sub-btn">
                         <div className="icon-container">{tool.icon}</div>
-                        <span>{tool.nombre}</span>
-                        <input type="file" multiple accept="audio/*" onChange={(e) => handleSubirMultimedia(e, 'audio')} style={{ display: 'none' }} />
+                        <span>{subiendoArchivo ? `Subiendo ${vaultUploadProgress?.percent ?? 0}%` : tool.nombre}</span>
+                        <input type="file" multiple accept="audio/*" disabled={subiendoArchivo} onChange={(e) => handleSubirMultimedia(e, 'audio')} style={{ display: 'none' }} />
                       </label>
                     );
                   }
@@ -5221,8 +5358,8 @@ if (!session) {
                           </button>
                           <div
                             onClick={() => {
-                              setMediaActivaUrl(item.url);
-                              setClipSeleccionado(item.id);
+                              void agregarAlTimeline(item, { preventDuplicate: true });
+                              if (item.tipo !== 'audio') setMediaActivaUrl(item.url);
                               if (item.tipo === 'video' && String(item.fuente || '').startsWith('render:')) {
                                 setVideoResultadoUrl(item.url);
                                 setVideoResultadoNombre(item.nombre);
@@ -5256,17 +5393,23 @@ if (!session) {
           <div
             ref={previewFullscreenRef}
             onPointerMove={resetPlaybackControlsTimer}
-            onDoubleClick={(e) => {
-              e.stopPropagation();
-              if (subTool !== 'delogo') togglePreviewFullscreen();
-            }}
             data-testid="video-preview-container"
             style={{
               flex: isCleanMode ? 'none' : 1,
-              width: isCleanMode ? '100dvw' : undefined,
-              height: isCleanMode ? '100dvh' : '100%',
+              width: isCleanMode
+                ? (forceCssLandscapeFullscreen ? '100dvh' : '100dvw')
+                : undefined,
+              height: isCleanMode
+                ? (forceCssLandscapeFullscreen ? '100dvw' : '100dvh')
+                : '100%',
               position: isCleanMode ? 'fixed' : 'relative',
-              inset: isCleanMode ? 0 : undefined,
+              inset: isCleanMode && !forceCssLandscapeFullscreen ? 0 : undefined,
+              top: forceCssLandscapeFullscreen ? '50%' : undefined,
+              left: forceCssLandscapeFullscreen ? '50%' : undefined,
+              transform: forceCssLandscapeFullscreen
+                ? 'translate(-50%, -50%) rotate(90deg)'
+                : undefined,
+              transformOrigin: 'center center',
               zIndex: isCleanMode ? 100000 : undefined,
               backgroundColor: '#000',
               display: 'flex',
@@ -5300,6 +5443,53 @@ if (!session) {
                   onNaylaAction={(mode, prompt) => void handle3DNaylaAction(mode, prompt)}
                 />
               </div>
+            )}
+            {mainNav === 'generar' && (
+              <GenerarWorkspace
+                session={session}
+                projectId={activeProjectId}
+                threadId={activeThreadId}
+                onUseMedia={async (item) => {
+                  const media = item as MediaItem;
+                  setGaleriaMultimedia((prev) =>
+                    prev.some((existing) => existing.id === media.id)
+                      ? prev
+                      : [...prev, media]
+                  );
+                  await agregarAlTimeline(media, { preventDuplicate: true });
+                  showAlert('Resultado añadido a la Bóveda y a la línea de tiempo.');
+                  setMainNav('boveda');
+                  setIsSubPanelOpen(false);
+                  setSubTool(null);
+                }}
+                mediaLibrary={galeriaMultimedia}
+                selectedMediaIds={selectedMediaIds}
+                threeDStudio={{
+                  assets: modelos3d,
+                  activeAssetId: modelo3dActivoId,
+                  uploading: subiendo3d,
+                  onSelect: (asset) => setModelo3dActivoId(asset.id),
+                  onUpload: (files) => void handleSubir3D(files),
+                  onDelete: (asset) => void handleEliminar3D(asset),
+                  onNaylaAction: (mode, prompt) => void handle3DNaylaAction(mode, prompt),
+                  onGenerated: (asset) => {
+                    setModelos3d((prev) =>
+                      prev.some((existing) => existing.id === asset.id)
+                        ? prev
+                        : [...prev, asset]
+                    );
+                    setModelo3dActivoId(asset.id);
+                  },
+                }}
+                onClose={() => { setMainNav('boveda'); setIsSubPanelOpen(false); setSubTool(null); }}
+              />
+            )}
+            <DiagnosticsClientReporter session={session} />
+            {mainNav === 'diagnostico' && diagnosticsAdmin && session && (
+              <DiagnosticsWorkspace
+                session={session}
+                onClose={() => { setMainNav('boveda'); setIsSubPanelOpen(false); setSubTool(null); }}
+              />
             )}
             {/* BOTÓN FLOTANTE DE NAYLA */}
             {!isCleanMode && (
@@ -5345,7 +5535,7 @@ if (!session) {
                 handleVideoSurfaceTap(event);
               }}
               onPointerLeave={handlePointerUp}
-              style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative' }}
+              style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative', touchAction: 'manipulation' }}
             >
               {(visualActivo || videoResultadoUrl || mediaActivaUrl) ? (
                 <>
@@ -5354,7 +5544,7 @@ if (!session) {
                       key={visualActivo.url}
                       src={visualActivo.url}
                       alt={visualActivo.nombre || 'Imagen activa'}
-                      style={{ width: '100%', height: '100%', objectFit: phoneVideoObjectFit, backgroundColor: '#000', maxWidth: '100dvw', maxHeight: '100dvh' }}
+                      style={{ width: '100%', height: '100%', objectFit: phoneVideoObjectFit, backgroundColor: '#000', maxWidth: '100%', maxHeight: '100%', touchAction: 'manipulation' }}
                       onLoad={(e) => {
                         const image = e.currentTarget;
                         if (image.naturalWidth && image.naturalHeight) {
@@ -5371,7 +5561,7 @@ if (!session) {
                     <video
                       key={videoResultadoUrl || visualActivo?.url || mediaActivaUrl || 'video-preview'}
                       src={videoResultadoUrl || visualActivo?.url || mediaActivaUrl || ''}
-                      style={{ width: '100%', height: '100%', objectFit: 'contain', backgroundColor: '#000', maxWidth: '100dvw', maxHeight: '100dvh' }}
+                      style={{ width: '100%', height: '100%', objectFit: phoneVideoObjectFit, backgroundColor: '#000', maxWidth: '100%', maxHeight: '100%', touchAction: 'manipulation' }}
                       controls={false}
                       playsInline
                       muted={false}
@@ -5379,20 +5569,43 @@ if (!session) {
                       onEnded={handleVideoEnded}
                       onPlay={() => setIsPlaying(true)}
                       onPause={() => setIsPlaying(false)}
-                      onTimeUpdate={(e) => setPlaybackSeconds(e.currentTarget.currentTime)}
-                      onSeeking={(e) => setPlaybackSeconds(e.currentTarget.currentTime)}
-                      onDurationChange={(e) => setPlaybackDuration(Number.isFinite(e.currentTarget.duration) ? e.currentTarget.duration : 0)}
-                      onEmptied={() => { setPlaybackSeconds(0); setPlaybackDuration(0); setIsPlaying(false); }}
+                      onTimeUpdate={(e) => syncPlaybackClockFromVideo(e.currentTarget)}
+                      onDurationChange={(e) => {
+                        const duration = e.currentTarget.duration;
+                        if (Number.isFinite(duration) && duration > 0) {
+                          setNativePlaybackDurationSeconds(duration);
+                        }
+                      }}
                       onLoadedMetadata={(e) => {
                         const video = e.currentTarget;
-                        setPlaybackSeconds(video.currentTime);
-                        setPlaybackDuration(Number.isFinite(video.duration) ? video.duration : 0);
+                        if (Number.isFinite(video.duration) && video.duration > 0) {
+                          setNativePlaybackDurationSeconds(video.duration);
+                        }
                         if (video.videoWidth && video.videoHeight) {
                           const detected = buildMediaMetadata(video.videoWidth, video.videoHeight, Number.isFinite(video.duration) ? video.duration : undefined);
                           setSourceVideoRatio(video.videoWidth / video.videoHeight);
                           setVideoMetadata({ width: video.videoWidth, height: video.videoHeight });
                           if (!visualActivo?.metadata?.aspectRatioLabel && pistaVideo.length <= 1 && !videoResultadoUrl) {
                             adoptarFormatoVisual(detected);
+                          }
+                        }
+
+                        if (pendingPlaybackSeekRef.current !== null) {
+                          const target = Math.min(
+                            Number.isFinite(video.duration) ? video.duration : pendingPlaybackSeekRef.current,
+                            Math.max(0, pendingPlaybackSeekRef.current)
+                          );
+                          video.currentTime = target;
+                          pendingPlaybackSeekRef.current = null;
+                        }
+
+                        syncPlaybackClockFromVideo(video);
+
+                        if (resumePlaybackAfterSourceChangeRef.current) {
+                          resumePlaybackAfterSourceChangeRef.current = false;
+                          const playPromise = video.play();
+                          if (playPromise !== undefined) {
+                            playPromise.catch(error => console.log('Autoplay prevented:', error));
                           }
                         }
                       }}
@@ -5445,8 +5658,10 @@ if (!session) {
                   : ((showPlaybackControls || !isPlaying) ? 'auto' : 'none')
               }}
             >
-              {!isCleanMode && <NaylaCompositionPreview inputProps={{ timeline: lineaDeTiempo, subtitles: subtitulos, titles: motionTitles, threeScenes: threeRenderScenes, vectorAnimations, skiaGraphics, logos, canvasRatio, settings: globalSettings }} />}
-              {!isCleanMode && <span aria-label="Tiempo de reproducción" style={{ color: '#ddd', fontSize: '0.7rem', fontFamily: 'monospace', fontVariantNumeric: 'tabular-nums' }}>{formatPlaybackTime(playbackSeconds)} / {formatPlaybackTime(playbackDuration)}</span>}
+              {!isCleanMode && <NaylaCompositionPreview onOpen={() => playerRef.current?.pause()} inputProps={{ timeline: lineaDeTiempo, subtitles: subtitulos, titles: motionTitles, threeScenes: threeRenderScenes, vectorAnimations, skiaGraphics, logos, canvasRatio, settings: globalSettings }} />}
+              <span style={{ color: '#c4c4c4', fontSize: '0.68rem', fontFamily: 'monospace', minWidth: '54px', textAlign: 'right' }}>
+                {formatPlaybackClock(playbackPositionSeconds)}
+              </span>
               <div style={{ display: 'flex', alignItems: 'center', gap: isCleanMode ? '18px' : '12px' }}>
                 <button onClick={(e) => { e.stopPropagation(); seekBy(-10); }} style={{ background: 'none', border: 'none', color: '#ffffff', fontSize: '0.9rem', cursor: 'pointer', outline: 'none' }}>↺10</button>
                 <button
@@ -5480,7 +5695,9 @@ if (!session) {
                 </button>
                 <button onClick={(e) => { e.stopPropagation(); seekBy(10); }} style={{ background: 'none', border: 'none', color: '#ffffff', fontSize: '0.9rem', cursor: 'pointer', outline: 'none' }}>10↻</button>
               </div>
-              {!isCleanMode && <span aria-label="Tiempo de reproducción" style={{ color: '#ddd', fontSize: '0.7rem', fontFamily: 'monospace', fontVariantNumeric: 'tabular-nums' }}>{formatPlaybackTime(playbackSeconds)} / {formatPlaybackTime(playbackDuration)}</span>}
+              <span style={{ color: '#c4c4c4', fontSize: '0.68rem', fontFamily: 'monospace', minWidth: '54px' }}>
+                {formatPlaybackClock(playbackTotalSeconds)}
+              </span>
             </div>
           </div>
         </div>
@@ -5499,26 +5716,26 @@ if (!session) {
           overflow: 'hidden'
         }} onClick={() => setClipSeleccionado(null)}>
           <div style={{ position: 'absolute', left: '50%', top: 0, bottom: 0, width: '2px', backgroundColor: '#fff', zIndex: 50, pointerEvents: 'none', boxShadow: '0 0 10px rgba(255,255,255,0.8)' }} />
+          {!videoResultadoUrl && (
+            <div
+              className="neon-btn"
+              onClick={(e) => { e.stopPropagation(); setMainNav('boveda'); setIsSubPanelOpen(true); }}
+              style={{ position: 'absolute', left: 8, top: 8, width: '36px', height: '44px', borderRadius: '8px', zIndex: 60, borderStyle: 'dashed', cursor: 'pointer', fontSize: '1.2rem' }}
+            >
+              +
+            </div>
+          )}
           <div className="timeline-track" ref={timelineRef}
             onScroll={(e) => {
               if (!isUserScrolling) return;
-              if (!playerRef.current) return;
               const scrollPos = e.currentTarget.scrollLeft;
-              const seconds = scrollPos / 20;
-              const frame = Math.round(seconds * 30);
-              playerRef.current.currentTime = (Math.max(0, frame)) / 30;
+              seekPlaybackToSeconds(scrollPos / 20);
             }}
             onPointerDown={() => setIsUserScrolling(true)}
             onPointerUp={() => { setTimeout(() => setIsUserScrolling(false), 50); }}
             onPointerLeave={() => { setTimeout(() => setIsUserScrolling(false), 50); }}
             style={{ paddingLeft: '50%', paddingRight: '50%' }}
             onClick={(e) => e.stopPropagation()}>
-            {!videoResultadoUrl && (
-              <div className="neon-btn"
-                onClick={(e) => { e.stopPropagation(); setMainNav('boveda'); setIsSubPanelOpen(true); }}
-                style={{ width: '36px', height: '44px', minWidth: '36px', borderRadius: '8px', flexShrink: 0, marginRight: hayClips ? '6px' : '0', borderStyle: 'dashed', cursor: 'pointer', fontSize: '1.2rem' }}>+</div>
-            )}
-
             {videoResultadoUrl ? (
               <>
               <button
@@ -5604,14 +5821,9 @@ if (!session) {
                       setVideoResultadoUrl(null);
                       setVideoResultadoNombre(null);
                       setVideoResultadoEtiqueta(null);
-                      if (playerRef.current) {
-                        let frameCount = 0;
-                        for (let i = 0; i < lineaDeTiempo.length; i++) {
-                          if (lineaDeTiempo[i].id === clip.id) break;
-                          frameCount += Math.round((lineaDeTiempo[i].durationInSeconds || 5) * 30);
-                        }
-                        playerRef.current.currentTime = (frameCount) / 30;
-                      }
+                      pendingPlaybackSeekRef.current = 0;
+                      resumePlaybackAfterSourceChangeRef.current = false;
+                      setPlaybackPositionSeconds(getVisualClipStartSeconds(pistaVideo, clip.id));
                     }}
                     onRemove={() => quitarDelTimeline(clip.id)}
                   />
@@ -6245,7 +6457,9 @@ if (!session) {
               justifyContent: 'space-between',
               gap: 10,
             }}>
-              <span>Subiendo archivos…</span>
+              <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                Subiendo {chatUploadProgress.currentFile || 'archivos'}… {chatUploadProgress.percent}%
+              </span>
               <span>{chatUploadProgress.done}/{chatUploadProgress.total}{chatUploadProgress.failed ? ` · ${chatUploadProgress.failed} error${chatUploadProgress.failed === 1 ? '' : 'es'}` : ''}</span>
             </div>
           )}
@@ -6849,6 +7063,40 @@ if (!session) {
                     : 'ELIMINAR'}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {vaultUploadProgress && (
+        <div
+          role="status"
+          aria-live="polite"
+          style={{
+            position: 'fixed',
+            left: '50%',
+            bottom: '24px',
+            transform: 'translateX(-50%)',
+            width: 'min(420px, calc(100vw - 28px))',
+            zIndex: 99998,
+            background: 'rgba(8,8,8,.96)',
+            border: '1px solid rgba(255,255,255,.24)',
+            borderRadius: 14,
+            padding: '12px 14px',
+            boxShadow: '0 12px 40px rgba(0,0,0,.55)',
+            color: '#fff',
+          }}
+        >
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, fontSize: 11, marginBottom: 8 }}>
+            <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {vaultUploadProgress.phase === 'registering' ? 'Guardando en la Bóveda…' : `Subiendo ${vaultUploadProgress.fileName}`}
+            </span>
+            <strong>{vaultUploadProgress.percent}%</strong>
+          </div>
+          <div style={{ height: 5, borderRadius: 999, background: '#262626', overflow: 'hidden' }}>
+            <div style={{ height: '100%', width: `${vaultUploadProgress.percent}%`, background: '#eee', transition: 'width .15s linear' }} />
+          </div>
+          <div style={{ marginTop: 6, color: '#888', fontSize: 9.5 }}>
+            Archivo {vaultUploadProgress.fileIndex} de {vaultUploadProgress.fileCount}
           </div>
         </div>
       )}

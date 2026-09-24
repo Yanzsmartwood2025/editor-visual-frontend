@@ -1,0 +1,76 @@
+name: Monitoring smoke
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  playwright-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Start editor
+        run: |
+          npm run dev -- --hostname 127.0.0.1 > /tmp/nayla-editor.log 2>&1 &
+          for i in {1..60}; do
+            if curl -fsS http://127.0.0.1:3000/?dev=1 >/dev/null; then
+              exit 0
+            fi
+            sleep 2
+          done
+          cat /tmp/nayla-editor.log
+          exit 1
+
+      - name: Test GENERAR flow
+        run: npm run test:e2e:smoke
+
+      - name: Upload dev log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nayla-editor-dev-log
+          path: /tmp/nayla-editor.log
+
+  sync-checkly:
+    if: ${{ always() && github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+    needs: playwright-smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Sync Checkly and publish live CI result
+        env:
+          CHECKLY_API_KEY: ${{ secrets.CHECKLY_API_KEY }}
+          CHECKLY_ACCOUNT_ID: ${{ secrets.CHECKLY_ACCOUNT_ID }}
+          CHECKLY_TARGET_URL: https://editor-visual-frontend-cauc.vercel.app/
+          DIAGNOSTICS_BASE_URL: https://editor-visual-frontend-cauc.vercel.app
+          PLAYWRIGHT_RESULT: ${{ needs.playwright-smoke.result }}
+        run: node scripts/sync-checkly-monitor.mjs

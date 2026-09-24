@@ -56,3 +56,9 @@ Emojis: respetar la atribución CC BY 4.0 del recurso Google Animated Emoji. Fue
 ### Pendiente
 
 No hay confirmación visual ni prueba autenticada de conversación → aceptación → video final. El navegador local no pudo descargarse por ERR_PROXY_TUNNEL. La compilación y las pruebas de contrato no sustituyen esas verificaciones. Los seis paquetes sin referencia están explicados arriba; no se presentan como activos. No se cambió el modelo ni se publicó a producción.
+
+## Revisión de integración — 24 septiembre 2026
+
+Se integró main `3c10d44` en la rama de la propuesta, conservando el reloj y la navegación recientes del reproductor y los módulos de generación. Se resolvieron los conflictos del reproductor sin sustituirlos por la implementación anterior. La vista previa carga CanvasKit al abrirse, muestra fallos de carga dentro del diálogo y pausa el reproductor original.
+
+Verificación nueva: 208 pruebas en 41 archivos pasan; `npm run build` completo pasa, incluido TypeScript. Una prueba adicional del endpoint de aceptación confirma que capas, fuente y contexto de render guardados se devuelven juntos. El historial ya consulta el estado real de los planes en el servidor. `git diff --check` pasa. La descarga de Chromium se volvió a intentar y falla con `ERR_PROXY_TUNNEL`; la prueba visual y el recorrido autenticado con el proveedor LLM no están verificados. No se ha fusionado la propuesta en main ni publicado a producción.

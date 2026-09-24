@@ -43,3 +43,15 @@ describe('editor plan acceptance', () => {
     expect((await invoke()).status).toBe(401); expect(mocks.pending).not.toHaveBeenCalled();
   });
 });
+
+it('dispatches saved layers, typography and render settings together', async () => {
+  const decorations = [{ kind: 'emoji', emoji: 'sparkles', start: 0, end: 8 }];
+  const renderContext = { settings: { decorations }, canvasRatio: '16:9', exportQuality: '1080p' };
+  mocks.pending.mockResolvedValue({ plan: { id: planId, metadata: { renderContext } }, items: [{ payload: { ...payload, decorations, subtitles: [{ ...payload.subtitles[0], fontFamily: 'Montserrat' }] } }] });
+  const result = await invoke();
+  expect(result.status).toBe(200);
+  expect(result.data.decorations[0]).toMatchObject(decorations[0]);
+  expect(result.data.subtitles[0].fontFamily).toBe('Montserrat');
+  expect(result.data.renderContext).toEqual(renderContext);
+  expect(mocks.finish.mock.calls[0][0].result).toMatchObject({ renderContext, dispatched: true, renderCompleted: false });
+});
