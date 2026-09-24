@@ -17,6 +17,7 @@ import {
 import { searchStockMedia } from '../../lib/mediaProviders/stock';
 import {
   getAvailableProvidersForAction,
+  getNaylaActionValidationIssues,
   parseNaylaAction,
   type NaylaAction,
 } from '../../lib/naylaActions';
@@ -1321,18 +1322,29 @@ Reglas:
     const expectsAction = executionConfirmed || /["']action["']\s*:/.test(responseText);
     if (!parsedAction && expectsAction && responseText.trim()) {
       try {
-        const repairBasePrompt = stagedCompilerPrompt || fullPrompt;
-        const repairSystemPrompt = stagedCompilerPrompt ? compilerSystemPrompt : compactSystemPrompt;
+        const validationIssues = getNaylaActionValidationIssues(responseText);
+        const compactRepairInstruction = [
+          'REPARACIÓN DE JSON BUILD_TIMELINE.',
+          'Devuelve SOLO un objeto JSON completo, sin Markdown ni explicación.',
+          'Conserva los medios, efectos, movimientos, tiempos y texto que ya aparecen en la respuesta fallida.',
+          'Corrige únicamente lo necesario para cumplir el contrato.',
+          'No inventes etiquetas ni URLs.',
+          validationIssues.length ? `ERRORES DEL VALIDADOR:\n${validationIssues.join('\n')}` : '',
+          `RESPUESTA FALLIDA:\n${responseText.slice(0, 14000)}`,
+          stagedEditorWorkflow
+            ? `CONTRATO MÍNIMO RELEVANTE:\n${JSON.stringify(compilerContract)}`
+            : '',
+          stagedEditorWorkflow
+            ? `ORDEN ORIGINAL RESUMIDA PARA NO PERDER RESTRICCIONES:\n${clipRoutingText(activePlanningContext, 3200)}`
+            : `ORDEN ORIGINAL RESUMIDA:\n${clipRoutingText(message, 3200)}`,
+        ].filter(Boolean).join('\n\n');
+
         responseText = await executeDirectLlm({
           provider,
           task: 'repair',
-          prompt: [
-            repairBasePrompt,
-            'REPARACIÓN: la respuesta anterior no pasó el validador. Devuelve un único JSON completo y válido. Conserva todos los medios, efectos, movimientos, textos y restricciones; no simplifiques a fotos estáticas.',
-            responseText,
-          ].join('\n\n'),
-          systemPrompt: repairSystemPrompt,
-          maxCompletionTokens: 9000,
+          prompt: compactRepairInstruction,
+          systemPrompt: 'Eres el validador final de Nayla. Repara el JSON con el menor cambio posible y responde únicamente JSON válido.',
+          maxCompletionTokens: 7000,
           signal: llmSignal,
         });
         parsedAction = parseNaylaAction(responseText);
