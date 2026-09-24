@@ -773,6 +773,15 @@ export default function NaylaCore() {
                 ? prev
                 : [...prev, galleryItem]
             );
+
+            if (status === 'completed') {
+              setVideoResultadoUrl(galleryItem.url);
+              setVideoResultadoNombre(galleryItem.nombre || 'Nayla_Render.mp4');
+              setVideoResultadoEtiqueta(galleryItem.etiqueta || 'R');
+              setMediaActivaUrl(galleryItem.url);
+              setClipSeleccionado(null);
+              setIsPlaying(false);
+            }
           }
 
           updateRenderTask(requestId, {
