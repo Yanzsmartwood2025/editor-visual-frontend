@@ -20,6 +20,8 @@ type Props = {
   projectId: string | null;
   threadId: string | null;
   onUseMedia?: (item: GenerarMediaItem) => void | Promise<void>;
+  mediaLibrary?: GenerarMediaItem[];
+  selectedMediaIds?: string[];
   threeDStudio?: Generar3DStudioContext;
 };
 
@@ -29,6 +31,8 @@ export default function GenerarWorkspace({
   projectId,
   threadId,
   onUseMedia,
+  mediaLibrary,
+  selectedMediaIds,
   threeDStudio,
 }: Props) {
   const [engine, setEngine] = useState<GenerarEngine | null>(null);
@@ -53,6 +57,8 @@ export default function GenerarWorkspace({
     projectId,
     threadId,
     onUseMedia,
+    mediaLibrary,
+    selectedMediaIds,
     threeDStudio,
   };
 
