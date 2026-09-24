@@ -5420,6 +5420,23 @@ if (!session) {
                   setIsSubPanelOpen(false);
                   setSubTool(null);
                 }}
+                threeDStudio={{
+                  assets: modelos3d,
+                  activeAssetId: modelo3dActivoId,
+                  uploading: subiendo3d,
+                  onSelect: (asset) => setModelo3dActivoId(asset.id),
+                  onUpload: (files) => void handleSubir3D(files),
+                  onDelete: (asset) => void handleEliminar3D(asset),
+                  onNaylaAction: (mode, prompt) => void handle3DNaylaAction(mode, prompt),
+                  onGenerated: (asset) => {
+                    setModelos3d((prev) =>
+                      prev.some((existing) => existing.id === asset.id)
+                        ? prev
+                        : [...prev, asset]
+                    );
+                    setModelo3dActivoId(asset.id);
+                  },
+                }}
                 onClose={() => { setMainNav('boveda'); setIsSubPanelOpen(false); setSubTool(null); }}
               />
             )}
