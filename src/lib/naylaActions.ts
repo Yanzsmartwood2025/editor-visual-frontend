@@ -377,12 +377,98 @@ const normalizeNaylaActionShape = (value: unknown): unknown => {
   return action;
 };
 
+const extractNaylaJsonCandidate = (raw: string) => {
+  const cleaned = raw
+    .replace(/^\`\`\`json\s*/i, '')
+    .replace(/^\`\`\`\s*/i, '')
+    .replace(/\s*\`\`\`$/i, '')
+    .trim();
+
+  if (cleaned.startsWith('{') && cleaned.endsWith('}')) return cleaned;
+
+  let depth = 0;
+  let start = -1;
+  let inString = false;
+  let escaped = false;
+
+  for (let index = 0; index < cleaned.length; index += 1) {
+    const char = cleaned[index];
+
+    if (inString) {
+      if (escaped) {
+        escaped = false;
+      } else if (char === '\\\\') {
+        escaped = true;
+      } else if (char === '"') {
+        inString = false;
+      }
+      continue;
+    }
+
+    if (char === '"') {
+      inString = true;
+      continue;
+    }
+
+    if (char === '{') {
+      if (depth === 0) start = index;
+      depth += 1;
+      continue;
+    }
+
+    if (char === '}') {
+      if (depth === 0) continue;
+      depth -= 1;
+      if (depth === 0 && start >= 0) {
+        return cleaned.slice(start, index + 1);
+      }
+    }
+  }
+
+  return cleaned;
+};
+
+export const getNaylaActionValidationIssues = (raw: string): string[] => {
+  const candidate = extractNaylaJsonCandidate(raw);
+  try {
+    const json = normalizeNaylaActionShape(JSON.parse(candidate));
+    const parsed = naylaActionSchema.safeParse(json);
+    if (!parsed.success) {
+      return parsed.error.issues.slice(0, 12).map((issue) =>
+        `${issue.path.join('.') || 'root'}: ${issue.message}`
+      );
+    }
+
+    if (
+      parsed.data.action === 'BUILD_TIMELINE' &&
+      [...(parsed.data.subtitles || []), ...(parsed.data.titles || [])]
+        .some((item) => !fontSelectionSchema.safeParse(item).success)
+    ) {
+      return ['subtitles/titles: selección de fuente inválida'];
+    }
+
+    if (
+      parsed.data.action === 'BUILD_TIMELINE' &&
+      parsed.data.assets.length === 0 &&
+      (!parsed.data.decorations || parsed.data.decorations.length === 0) &&
+      (!parsed.data.threeScenes || parsed.data.threeScenes.length === 0) &&
+      (!parsed.data.vectorAnimations || parsed.data.vectorAnimations.length === 0) &&
+      (!parsed.data.skiaGraphics || parsed.data.skiaGraphics.length === 0)
+    ) {
+      return ['BUILD_TIMELINE: el plan no contiene ningún medio o capa renderizable'];
+    }
+
+    return [];
+  } catch (error) {
+    return [`JSON: ${error instanceof Error ? error.message : 'formato inválido'}`];
+  }
+};
+
 export const parseNaylaAction = (raw: string): NaylaAction | null => {
-  const cleaned = raw.replace(/^\`\`\`json\s*/i, '').replace(/^\`\`\`\s*/i, '').replace(/\s*\`\`\`$/i, '').trim();
-  if (!cleaned.startsWith('{') || !cleaned.endsWith('}')) return null;
+  const candidate = extractNaylaJsonCandidate(raw);
 
   try {
-    const json = normalizeNaylaActionShape(JSON.parse(cleaned));
+    const json = normalizeNaylaActionShape(JSON.parse(candidate));
     const parsed = naylaActionSchema.safeParse(json);
     if (!parsed.success) return null;
     if (parsed.data.action === 'BUILD_TIMELINE' && [...(parsed.data.subtitles || []), ...(parsed.data.titles || [])].some(item => !fontSelectionSchema.safeParse(item).success)) return null;
