@@ -714,7 +714,7 @@ const getRenderStatus = async (req: NextApiRequest, res: NextApiResponse) => {
 
       const { data: requests, error } = await supabase
         .from('render_requests')
-        .select('id,status,engine,usage,error_message,gallery_item_id,r2_key,created_at,completed_at')
+        .select('id,user_id,project_id,thread_id,status,engine,usage,error_message,gallery_item_id,r2_key,created_at,completed_at')
         .eq('user_id', user.uid)
         .eq('project_id', scope.projectId)
         .eq('thread_id', threadId)
@@ -737,7 +737,7 @@ const getRenderStatus = async (req: NextApiRequest, res: NextApiResponse) => {
 
     const { data: request, error } = await supabase
       .from('render_requests')
-      .select('id,status,engine,usage,error_message,gallery_item_id,r2_key,created_at,completed_at')
+      .select('id,user_id,project_id,thread_id,status,engine,usage,error_message,gallery_item_id,r2_key,created_at,completed_at')
       .eq('id', id)
       .eq('user_id', user.uid)
       .maybeSingle();
@@ -745,8 +745,14 @@ const getRenderStatus = async (req: NextApiRequest, res: NextApiResponse) => {
     if (error) throw error;
     if (!request) return res.status(404).json({ error: 'Trabajo no encontrado.' });
 
+    const refreshed = await refreshDetachedRenderRequest({
+      supabase,
+      userId: user.uid,
+      request,
+    });
+
     return res.status(200).json(
-      await renderStatusPayload(supabase, user.uid, request)
+      await renderStatusPayload(supabase, user.uid, refreshed)
     );
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'No se pudo consultar el trabajo.';
@@ -813,70 +819,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     );
     const durationInSeconds = durationInFrames / 30;
 
-    let lastProgressWrite = 0;
-    let lastProgressValue = -1;
-    let lastCancelCheck = 0;
-    let cancellationObserved = false;
-
-    const shouldCancel = async () => {
-      if (!renderLedger || !renderRequestId) return false;
-      const now = Date.now();
-      if (cancellationObserved) return true;
-      if (now - lastCancelCheck < 450) return false;
-      lastCancelCheck = now;
-
-      const { data: current } = await renderLedger
-        .from('render_requests')
-        .select('status')
-        .eq('id', renderRequestId)
-        .eq('user_id', user.uid)
-        .maybeSingle();
-
-      cancellationObserved = current?.status === 'cancelled';
-      return cancellationObserved;
-    };
-
-    const data = await startVercelSandboxRender(
-      inputProps,
-      {
-        ownerId: user.uid,
-        projectId: scope.projectId,
-        threadId: scope.threadId,
-      },
-      async (update) => {
-        if (!renderLedger || !renderRequestId) return;
-
-        const now = Date.now();
-        const progress = Math.max(0, Math.min(1, Number(update.progress) || 0));
-        const shouldWrite =
-          progress >= 1 ||
-          progress - lastProgressValue >= 0.025 ||
-          now - lastProgressWrite >= 900;
-
-        if (!shouldWrite) return;
-        lastProgressWrite = now;
-        lastProgressValue = progress;
-
-        await renderLedger
-          .from('render_requests')
-          .update({
-            usage: {
-              stage: update.stage,
-              phase: update.phase,
-              progress,
-              framesDone: Math.min(durationInFrames, Math.round(durationInFrames * progress)),
-              framesTotal: durationInFrames,
-              canvasWidth: inputProps.canvasWidth,
-              canvasHeight: inputProps.canvasHeight,
-              mediaDurationSeconds: durationInSeconds,
-            },
-          })
-          .eq('id', renderRequestId)
-          .eq('user_id', user.uid);
-      },
-      shouldCancel
-    );
-
     const { data: existingRenders, error: countError } = await renderLedger
       .from('galeria_multimedia')
       .select('etiqueta')
@@ -903,69 +845,74 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     if (projectError) throw projectError;
     const projectFileBase = safeProjectFileBase(projectRow?.name);
+    const galleryItemId = randomUUID();
+    const threadSegment = scope.threadId ? `threads/${scope.threadId}` : 'shared';
+    const r2Key =
+      `${user.uid}/projects/${scope.projectId}/${threadSegment}/renders/` +
+      `${renderRequestId}.mp4`;
+    const r2Upload = createR2PresignedPutUrl({
+      key: r2Key,
+      contentType: 'video/mp4',
+      expiresIn: 3600,
+    });
 
-    const galleryItem = {
-      id: randomUUID(),
-      user_id: user.uid,
-      project_id: scope.projectId,
-      thread_id: scope.threadId || null,
-      url: data.output.storageUrl,
-      r2_key: data.output.r2Key,
-      privacy: 'private',
-      tipo: 'video',
-      nombre: `${projectFileBase}_${renderLabel}.mp4`,
-      creado_en: new Date().toISOString(),
-      esOverlay: false,
-      etiqueta: renderLabel,
-      fuente: 'render:cpu',
-      metadata: {
-        width: inputProps.canvasWidth,
-        height: inputProps.canvasHeight,
-        durationInSeconds,
-        fps: 30,
-        renderEngine: 'remotion-cpu-sandbox',
-        usage: data.usage,
+    const detached = await startVercelSandboxRenderDetached(
+      inputProps,
+      r2Upload.uploadUrl
+    );
+
+    const initialUsage = {
+      stage: 'preparing',
+      phase: 'Preparando motor de edición',
+      progress: 0.1,
+      framesDone: 0,
+      framesTotal: durationInFrames,
+      canvasWidth: inputProps.canvasWidth,
+      canvasHeight: inputProps.canvasHeight,
+      mediaDurationSeconds: durationInSeconds,
+      detached: {
+        sandboxId: detached.sandboxId,
+        cmdId: detached.cmdId,
+        outputFile: detached.outputFile,
+        logFile: detached.logFile,
+        exitFile: detached.exitFile,
+        r2Key,
+        storageUrl: r2Upload.url,
+        galleryItemId,
+        renderLabel,
+        projectFileBase,
       },
     };
 
-    const { data: insertedGalleryItem, error: galleryError } = await renderLedger
-      .from('galeria_multimedia')
-      .insert(galleryItem)
-      .select('*')
-      .single();
-
-    if (galleryError) throw galleryError;
-
-    await renderLedger
+    const { error: startedError } = await renderLedger
       .from('render_requests')
       .update({
-        status: 'completed',
-        output_url: data.output?.storageUrl || null,
-        r2_key: data.output?.r2Key || null,
-        engine: data.engine,
-        usage: {
-          ...data.usage,
-          stage: 'completed',
-          phase: 'Resultado listo',
-          progress: 1,
-          framesDone: durationInFrames,
-          framesTotal: durationInFrames,
-          mediaDurationSeconds: durationInSeconds,
-          frames: durationInFrames,
-          canvasWidth: inputProps.canvasWidth,
-          canvasHeight: inputProps.canvasHeight,
-        },
-        gallery_item_id: insertedGalleryItem.id,
-        completed_at: new Date().toISOString(),
+        engine: detached.engine,
+        usage: initialUsage,
       })
-      .eq('id', renderRequestId);
+      .eq('id', renderRequestId)
+      .eq('user_id', user.uid)
+      .eq('status', 'started');
 
-    return res.status(200).json({
-      ...data,
+    if (startedError) {
+      await stopVercelSandboxRender(detached.sandboxId);
+      throw startedError;
+    }
+
+    res.setHeader('Cache-Control', 'private, no-store');
+    return res.status(202).json({
+      status: 'started',
+      engine: detached.engine,
       requestId: renderRequestId,
-      galleryItem: {
-        ...insertedGalleryItem,
-        url: data.output.url,
+      usage: {
+        stage: initialUsage.stage,
+        phase: initialUsage.phase,
+        progress: initialUsage.progress,
+        framesDone: initialUsage.framesDone,
+        framesTotal: initialUsage.framesTotal,
+        canvasWidth: initialUsage.canvasWidth,
+        canvasHeight: initialUsage.canvasHeight,
+        mediaDurationSeconds: initialUsage.mediaDurationSeconds,
       },
     });
   } catch (error: unknown) {
