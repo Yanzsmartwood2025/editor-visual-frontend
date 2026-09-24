@@ -3,11 +3,19 @@ import { volumeKeyframesSchema } from '../../lib/audioAutomation';
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { randomUUID } from 'node:crypto';
 import { requireFirebaseUser } from '../../lib/firebaseAdmin';
-import { startVercelSandboxRender } from '../../lib/vercelSandboxRender';
+import {
+  pollVercelSandboxRenderDetached,
+  startVercelSandboxRenderDetached,
+  stopVercelSandboxRender,
+} from '../../lib/vercelSandboxRender';
 import { getCanvasDimensionsFromRatio } from '../../lib/mediaMetadata';
 import { getCompositionDurationInFrames } from '../../lib/timelineMetrics';
 import { getWorkspaceSupabaseAdmin, resolveOwnedWorkspaceScope } from '../../lib/workspaceStore';
-import { createR2PresignedGetUrl } from '../../lib/r2';
+import {
+  createR2PresignedGetUrl,
+  createR2PresignedPutUrl,
+  headR2Object,
+} from '../../lib/r2';
 
 const MAX_TIMELINE_ITEMS = 250;
 const MAX_RENDER_SECONDS = 20 * 60;
@@ -381,7 +389,8 @@ const cancelRender = async (req: NextApiRequest, res: NextApiResponse) => {
       });
     }
 
-    const usage = request.usage && typeof request.usage === 'object' ? request.usage : {};
+    const usage = request.usage && typeof request.usage === 'object' ? request.usage as Record<string, any> : {};
+    const sandboxId = String(usage?.detached?.sandboxId || '');
     const { error: updateError } = await supabase
       .from('render_requests')
       .update({
@@ -399,6 +408,7 @@ const cancelRender = async (req: NextApiRequest, res: NextApiResponse) => {
       .eq('status', 'started');
 
     if (updateError) throw updateError;
+    if (sandboxId) await stopVercelSandboxRender(sandboxId);
 
     return res.status(200).json({
       requestId: id,
@@ -439,18 +449,249 @@ const renderStatusPayload = async (
   supabase: ReturnType<typeof getWorkspaceSupabaseAdmin>,
   userId: string,
   request: any
-) => ({
-  requestId: request.id,
-  status: request.status,
-  engine: request.engine || 'nayla-render',
-  usage: request.usage || {},
-  error: request.status === 'failed'
-    ? publicRenderError(String(request.error_message || ''))
-    : null,
-  galleryItem: await hydrateRenderGalleryItem(supabase, userId, request.gallery_item_id),
-  createdAt: request.created_at,
-  completedAt: request.completed_at,
-});
+) => {
+  const rawUsage = request.usage && typeof request.usage === 'object'
+    ? request.usage as Record<string, any>
+    : {};
+  const { detached: _privateDetached, ...publicUsage } = rawUsage;
+
+  return {
+    requestId: request.id,
+    status: request.status,
+    engine: request.engine || 'nayla-render',
+    usage: publicUsage,
+    error: request.status === 'failed'
+      ? publicRenderError(String(request.error_message || ''))
+      : null,
+    galleryItem: await hydrateRenderGalleryItem(supabase, userId, request.gallery_item_id),
+    createdAt: request.created_at,
+    completedAt: request.completed_at,
+  };
+};
+
+const refreshDetachedRenderRequest = async ({
+  supabase,
+  userId,
+  request,
+}: {
+  supabase: ReturnType<typeof getWorkspaceSupabaseAdmin>;
+  userId: string;
+  request: any;
+}) => {
+  if (!request || request.status !== 'started') return request;
+
+  const usage = request.usage && typeof request.usage === 'object'
+    ? request.usage as Record<string, any>
+    : {};
+  const detached = usage.detached && typeof usage.detached === 'object'
+    ? usage.detached as Record<string, any>
+    : null;
+
+  if (!detached?.sandboxId) {
+    const ageMs = Date.now() - new Date(request.created_at || Date.now()).getTime();
+    if (ageMs > 6 * 60 * 1000) {
+      const errorMessage = 'El render anterior quedó interrumpido por el límite de ejecución de la función.';
+      const nextUsage = {
+        ...usage,
+        stage: 'failed',
+        phase: 'Procesamiento interrumpido',
+      };
+      await supabase
+        .from('render_requests')
+        .update({
+          status: 'failed',
+          usage: nextUsage,
+          error_message: errorMessage,
+          completed_at: new Date().toISOString(),
+        })
+        .eq('id', request.id)
+        .eq('user_id', userId)
+        .eq('status', 'started');
+      return {
+        ...request,
+        status: 'failed',
+        usage: nextUsage,
+        error_message: errorMessage,
+        completed_at: new Date().toISOString(),
+      };
+    }
+    return request;
+  }
+
+  let polled;
+  try {
+    polled = await pollVercelSandboxRenderDetached({
+      sandboxId: String(detached.sandboxId),
+      logFile: typeof detached.logFile === 'string' ? detached.logFile : undefined,
+      exitFile: typeof detached.exitFile === 'string' ? detached.exitFile : undefined,
+    });
+  } catch (error) {
+    const ageMs = Date.now() - new Date(request.created_at || Date.now()).getTime();
+    if (ageMs <= 46 * 60 * 1000) return request;
+
+    const errorMessage = error instanceof Error ? error.message : 'El entorno de render dejó de estar disponible.';
+    const nextUsage = {
+      ...usage,
+      stage: 'failed',
+      phase: 'Procesamiento interrumpido',
+    };
+    await supabase
+      .from('render_requests')
+      .update({
+        status: 'failed',
+        usage: nextUsage,
+        error_message: errorMessage.slice(0, 2000),
+        completed_at: new Date().toISOString(),
+      })
+      .eq('id', request.id)
+      .eq('user_id', userId)
+      .eq('status', 'started');
+    return {
+      ...request,
+      status: 'failed',
+      usage: nextUsage,
+      error_message: errorMessage,
+      completed_at: new Date().toISOString(),
+    };
+  }
+
+  const framesTotal = Number(usage.framesTotal) || 0;
+  const progress = Math.max(0, Math.min(1, Number(polled.progress) || 0));
+  const nextUsage = {
+    ...usage,
+    stage: polled.stage,
+    phase: polled.phase,
+    progress,
+    framesDone: framesTotal ? Math.min(framesTotal, Math.round(framesTotal * progress)) : undefined,
+  };
+
+  if (polled.state === 'running') {
+    const previousProgress = Number(usage.progress) || 0;
+    const shouldWrite =
+      polled.stage !== usage.stage ||
+      polled.phase !== usage.phase ||
+      progress - previousProgress >= 0.005;
+
+    if (shouldWrite) {
+      await supabase
+        .from('render_requests')
+        .update({ usage: nextUsage })
+        .eq('id', request.id)
+        .eq('user_id', userId)
+        .eq('status', 'started');
+    }
+
+    return { ...request, usage: nextUsage };
+  }
+
+  if (polled.state === 'failed') {
+    const errorMessage = String(polled.error || 'El render se interrumpió.').slice(0, 2000);
+    const failedUsage = {
+      ...nextUsage,
+      stage: 'failed',
+      phase: polled.phase || 'Procesamiento interrumpido',
+    };
+    await supabase
+      .from('render_requests')
+      .update({
+        status: 'failed',
+        usage: failedUsage,
+        error_message: errorMessage,
+        completed_at: new Date().toISOString(),
+      })
+      .eq('id', request.id)
+      .eq('user_id', userId)
+      .eq('status', 'started');
+    await stopVercelSandboxRender(String(detached.sandboxId));
+    return {
+      ...request,
+      status: 'failed',
+      usage: failedUsage,
+      error_message: errorMessage,
+      completed_at: new Date().toISOString(),
+    };
+  }
+
+  const r2Key = String(detached.r2Key || '');
+  const galleryItemId = String(detached.galleryItemId || '');
+  const renderLabel = String(detached.renderLabel || 'R');
+  const projectFileBase = String(detached.projectFileBase || 'Nayla');
+  const storageUrl = String(detached.storageUrl || '');
+  if (!r2Key || !UUID_RE.test(galleryItemId) || !storageUrl) {
+    throw new Error('El render terminó, pero faltan datos para registrar el archivo final.');
+  }
+
+  const storedObject = await headR2Object(r2Key);
+  const completedUsage = {
+    ...nextUsage,
+    stage: 'completed',
+    phase: 'Resultado listo',
+    progress: 1,
+    framesDone: framesTotal || undefined,
+    outputBytes: Number(storedObject.contentLength) || undefined,
+  };
+
+  const galleryItem = {
+    id: galleryItemId,
+    user_id: userId,
+    project_id: request.project_id,
+    thread_id: request.thread_id || null,
+    url: storageUrl,
+    r2_key: r2Key,
+    privacy: 'private',
+    tipo: 'video',
+    nombre: `${projectFileBase}_${renderLabel}.mp4`,
+    creado_en: new Date().toISOString(),
+    esOverlay: false,
+    etiqueta: renderLabel,
+    fuente: 'render:cpu',
+    metadata: {
+      width: Number(usage.canvasWidth) || null,
+      height: Number(usage.canvasHeight) || null,
+      durationInSeconds: Number(usage.mediaDurationSeconds) || null,
+      fps: 30,
+      renderEngine: 'remotion-cpu-sandbox-detached',
+      outputBytes: Number(storedObject.contentLength) || null,
+    },
+  };
+
+  const { data: insertedGalleryItem, error: galleryError } = await supabase
+    .from('galeria_multimedia')
+    .upsert(galleryItem, { onConflict: 'id' })
+    .select('*')
+    .single();
+
+  if (galleryError) throw galleryError;
+
+  const completedAt = new Date().toISOString();
+  await supabase
+    .from('render_requests')
+    .update({
+      status: 'completed',
+      output_url: storageUrl,
+      r2_key: r2Key,
+      engine: 'remotion-cpu-sandbox-detached',
+      usage: completedUsage,
+      gallery_item_id: insertedGalleryItem.id,
+      completed_at: completedAt,
+    })
+    .eq('id', request.id)
+    .eq('user_id', userId)
+    .eq('status', 'started');
+
+  await stopVercelSandboxRender(String(detached.sandboxId));
+
+  return {
+    ...request,
+    status: 'completed',
+    engine: 'remotion-cpu-sandbox-detached',
+    usage: completedUsage,
+    gallery_item_id: insertedGalleryItem.id,
+    r2_key: r2Key,
+    output_url: storageUrl,
+    completed_at: completedAt,
+  };
+};
 
 const getRenderStatus = async (req: NextApiRequest, res: NextApiResponse) => {
   try {
@@ -473,7 +714,7 @@ const getRenderStatus = async (req: NextApiRequest, res: NextApiResponse) => {
 
       const { data: requests, error } = await supabase
         .from('render_requests')
-        .select('id,status,engine,usage,error_message,gallery_item_id,r2_key,created_at,completed_at')
+        .select('id,user_id,project_id,thread_id,status,engine,usage,error_message,gallery_item_id,r2_key,created_at,completed_at')
         .eq('user_id', user.uid)
         .eq('project_id', scope.projectId)
         .eq('thread_id', threadId)
@@ -496,7 +737,7 @@ const getRenderStatus = async (req: NextApiRequest, res: NextApiResponse) => {
 
     const { data: request, error } = await supabase
       .from('render_requests')
-      .select('id,status,engine,usage,error_message,gallery_item_id,r2_key,created_at,completed_at')
+      .select('id,user_id,project_id,thread_id,status,engine,usage,error_message,gallery_item_id,r2_key,created_at,completed_at')
       .eq('id', id)
       .eq('user_id', user.uid)
       .maybeSingle();
@@ -504,8 +745,14 @@ const getRenderStatus = async (req: NextApiRequest, res: NextApiResponse) => {
     if (error) throw error;
     if (!request) return res.status(404).json({ error: 'Trabajo no encontrado.' });
 
+    const refreshed = await refreshDetachedRenderRequest({
+      supabase,
+      userId: user.uid,
+      request,
+    });
+
     return res.status(200).json(
-      await renderStatusPayload(supabase, user.uid, request)
+      await renderStatusPayload(supabase, user.uid, refreshed)
     );
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'No se pudo consultar el trabajo.';
@@ -572,70 +819,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     );
     const durationInSeconds = durationInFrames / 30;
 
-    let lastProgressWrite = 0;
-    let lastProgressValue = -1;
-    let lastCancelCheck = 0;
-    let cancellationObserved = false;
-
-    const shouldCancel = async () => {
-      if (!renderLedger || !renderRequestId) return false;
-      const now = Date.now();
-      if (cancellationObserved) return true;
-      if (now - lastCancelCheck < 450) return false;
-      lastCancelCheck = now;
-
-      const { data: current } = await renderLedger
-        .from('render_requests')
-        .select('status')
-        .eq('id', renderRequestId)
-        .eq('user_id', user.uid)
-        .maybeSingle();
-
-      cancellationObserved = current?.status === 'cancelled';
-      return cancellationObserved;
-    };
-
-    const data = await startVercelSandboxRender(
-      inputProps,
-      {
-        ownerId: user.uid,
-        projectId: scope.projectId,
-        threadId: scope.threadId,
-      },
-      async (update) => {
-        if (!renderLedger || !renderRequestId) return;
-
-        const now = Date.now();
-        const progress = Math.max(0, Math.min(1, Number(update.progress) || 0));
-        const shouldWrite =
-          progress >= 1 ||
-          progress - lastProgressValue >= 0.025 ||
-          now - lastProgressWrite >= 900;
-
-        if (!shouldWrite) return;
-        lastProgressWrite = now;
-        lastProgressValue = progress;
-
-        await renderLedger
-          .from('render_requests')
-          .update({
-            usage: {
-              stage: update.stage,
-              phase: update.phase,
-              progress,
-              framesDone: Math.min(durationInFrames, Math.round(durationInFrames * progress)),
-              framesTotal: durationInFrames,
-              canvasWidth: inputProps.canvasWidth,
-              canvasHeight: inputProps.canvasHeight,
-              mediaDurationSeconds: durationInSeconds,
-            },
-          })
-          .eq('id', renderRequestId)
-          .eq('user_id', user.uid);
-      },
-      shouldCancel
-    );
-
     const { data: existingRenders, error: countError } = await renderLedger
       .from('galeria_multimedia')
       .select('etiqueta')
@@ -662,69 +845,74 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     if (projectError) throw projectError;
     const projectFileBase = safeProjectFileBase(projectRow?.name);
+    const galleryItemId = randomUUID();
+    const threadSegment = scope.threadId ? `threads/${scope.threadId}` : 'shared';
+    const r2Key =
+      `${user.uid}/projects/${scope.projectId}/${threadSegment}/renders/` +
+      `${renderRequestId}.mp4`;
+    const r2Upload = createR2PresignedPutUrl({
+      key: r2Key,
+      contentType: 'video/mp4',
+      expiresIn: 3600,
+    });
 
-    const galleryItem = {
-      id: randomUUID(),
-      user_id: user.uid,
-      project_id: scope.projectId,
-      thread_id: scope.threadId || null,
-      url: data.output.storageUrl,
-      r2_key: data.output.r2Key,
-      privacy: 'private',
-      tipo: 'video',
-      nombre: `${projectFileBase}_${renderLabel}.mp4`,
-      creado_en: new Date().toISOString(),
-      esOverlay: false,
-      etiqueta: renderLabel,
-      fuente: 'render:cpu',
-      metadata: {
-        width: inputProps.canvasWidth,
-        height: inputProps.canvasHeight,
-        durationInSeconds,
-        fps: 30,
-        renderEngine: 'remotion-cpu-sandbox',
-        usage: data.usage,
+    const detached = await startVercelSandboxRenderDetached(
+      inputProps,
+      r2Upload.uploadUrl
+    );
+
+    const initialUsage = {
+      stage: 'preparing',
+      phase: 'Preparando motor de edición',
+      progress: 0.1,
+      framesDone: 0,
+      framesTotal: durationInFrames,
+      canvasWidth: inputProps.canvasWidth,
+      canvasHeight: inputProps.canvasHeight,
+      mediaDurationSeconds: durationInSeconds,
+      detached: {
+        sandboxId: detached.sandboxId,
+        cmdId: detached.cmdId,
+        outputFile: detached.outputFile,
+        logFile: detached.logFile,
+        exitFile: detached.exitFile,
+        r2Key,
+        storageUrl: r2Upload.url,
+        galleryItemId,
+        renderLabel,
+        projectFileBase,
       },
     };
 
-    const { data: insertedGalleryItem, error: galleryError } = await renderLedger
-      .from('galeria_multimedia')
-      .insert(galleryItem)
-      .select('*')
-      .single();
-
-    if (galleryError) throw galleryError;
-
-    await renderLedger
+    const { error: startedError } = await renderLedger
       .from('render_requests')
       .update({
-        status: 'completed',
-        output_url: data.output?.storageUrl || null,
-        r2_key: data.output?.r2Key || null,
-        engine: data.engine,
-        usage: {
-          ...data.usage,
-          stage: 'completed',
-          phase: 'Resultado listo',
-          progress: 1,
-          framesDone: durationInFrames,
-          framesTotal: durationInFrames,
-          mediaDurationSeconds: durationInSeconds,
-          frames: durationInFrames,
-          canvasWidth: inputProps.canvasWidth,
-          canvasHeight: inputProps.canvasHeight,
-        },
-        gallery_item_id: insertedGalleryItem.id,
-        completed_at: new Date().toISOString(),
+        engine: detached.engine,
+        usage: initialUsage,
       })
-      .eq('id', renderRequestId);
+      .eq('id', renderRequestId)
+      .eq('user_id', user.uid)
+      .eq('status', 'started');
 
-    return res.status(200).json({
-      ...data,
+    if (startedError) {
+      await stopVercelSandboxRender(detached.sandboxId);
+      throw startedError;
+    }
+
+    res.setHeader('Cache-Control', 'private, no-store');
+    return res.status(202).json({
+      status: 'started',
+      engine: detached.engine,
       requestId: renderRequestId,
-      galleryItem: {
-        ...insertedGalleryItem,
-        url: data.output.url,
+      usage: {
+        stage: initialUsage.stage,
+        phase: initialUsage.phase,
+        progress: initialUsage.progress,
+        framesDone: initialUsage.framesDone,
+        framesTotal: initialUsage.framesTotal,
+        canvasWidth: initialUsage.canvasWidth,
+        canvasHeight: initialUsage.canvasHeight,
+        mediaDurationSeconds: initialUsage.mediaDurationSeconds,
       },
     });
   } catch (error: unknown) {
