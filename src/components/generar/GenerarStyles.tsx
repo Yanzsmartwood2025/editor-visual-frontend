@@ -2000,6 +2000,95 @@ export default function GenerarStyles() {
           width: 66px;
           height: 66px;
         }
+
+        .generar-audio-immersive {
+          padding: 0;
+        }
+
+        .generar-audio-app {
+          grid-template-rows: 58px minmax(0, 1fr) 54px;
+        }
+
+        .generar-audio-app-header {
+          grid-template-columns: 42px minmax(0, 1fr) auto;
+          padding: 0 10px;
+          gap: 9px;
+        }
+
+        .generar-audio-menu-button {
+          width: 38px;
+          height: 38px;
+          border-radius: 12px;
+        }
+
+        .generar-audio-app-content {
+          padding: 16px 12px 20px;
+        }
+
+        .generar-audio-home-hero h1,
+        .generar-audio-page-intro h2 {
+          font-size: 28px;
+        }
+
+        .generar-audio-home-grid {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+          gap: 8px;
+        }
+
+        .generar-audio-home-card,
+        .generar-audio-home-card.featured {
+          grid-column: auto;
+          min-height: 118px;
+          padding: 12px;
+          border-radius: 15px;
+        }
+
+        .generar-audio-home-card.featured {
+          grid-column: 1 / -1;
+          min-height: 104px;
+        }
+
+        .generar-voice-library-page {
+          grid-template-columns: 1fr;
+        }
+
+        .generar-selected-voice-bar {
+          align-items: stretch;
+          flex-direction: column;
+          bottom: 4px;
+        }
+
+        .generar-selected-voice-bar .generar-primary-action {
+          width: 100%;
+        }
+
+        .generar-audio-tool-intro {
+          padding-right: 0;
+          padding-top: 30px;
+        }
+
+        .generar-audio-tool-intro > .generar-audio-live,
+        .generar-audio-tool-intro > .generar-audio-pending {
+          left: 0;
+          right: auto;
+        }
+
+        .generar-compact-voice {
+          align-items: stretch;
+          flex-direction: column;
+        }
+
+        .generar-compact-voice .generar-secondary-action {
+          width: 100%;
+        }
+
+        .generar-audio-main-textarea {
+          min-height: 210px;
+        }
+
+        .generar-audio-drawer {
+          width: min(350px, 88vw);
+        }
       }
     `}</style>
   );
