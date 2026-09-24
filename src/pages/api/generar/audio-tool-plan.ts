@@ -103,10 +103,16 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       }
     }
 
+    const requiresAdvancedVoiceRoute =
+      data.mode === 'voice_change' ||
+      data.mode === 'voice_isolation' ||
+      data.mode === 'text_to_dialogue' ||
+      Boolean(data.voiceId);
+
     const action = {
       action: 'GENERATE_AUDIO' as const,
       mode: data.mode,
-      provider: 'elevenlabs' as const,
+      ...(requiresAdvancedVoiceRoute ? { provider: 'elevenlabs' as const } : {}),
       ...(cleanText ? { text: cleanText } : {}),
       ...(cleanPrompt ? { prompt: cleanPrompt } : {}),
       ...(inputUrl ? { inputUrl } : {}),
