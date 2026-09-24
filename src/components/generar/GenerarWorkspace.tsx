@@ -8,6 +8,7 @@ import type {
   GenerarMediaItem,
   GenerarModule,
   GenerarModuleContext,
+  Generar3DStudioContext,
 } from './types';
 
 const ApiWorkspace = lazy(() => import('./api/ApiWorkspace'));
@@ -19,6 +20,7 @@ type Props = {
   projectId: string | null;
   threadId: string | null;
   onUseMedia?: (item: GenerarMediaItem) => void | Promise<void>;
+  threeDStudio?: Generar3DStudioContext;
 };
 
 export default function GenerarWorkspace({
@@ -27,6 +29,7 @@ export default function GenerarWorkspace({
   projectId,
   threadId,
   onUseMedia,
+  threeDStudio,
 }: Props) {
   const [engine, setEngine] = useState<GenerarEngine | null>(null);
   const [module, setModule] = useState<GenerarModule | null>(null);
@@ -50,6 +53,7 @@ export default function GenerarWorkspace({
     projectId,
     threadId,
     onUseMedia,
+    threeDStudio,
   };
 
   return (

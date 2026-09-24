@@ -20,7 +20,7 @@ const moduleMeta: Array<{
   { id: 'video', label: 'VIDEO', description: 'Texto → video · 5 s', ready: true },
   { id: 'audio', label: 'AUDIO', description: 'Texto → voz', ready: true },
   { id: 'musica', label: 'MÚSICA', description: 'Texto → música', ready: true },
-  { id: '3d', label: '3D', description: 'Modelos y procesos 3D', ready: false },
+  { id: '3d', label: '3D', description: 'Texto → 3D · Estudio', ready: true },
 ];
 
 export default function ApiWorkspace({
