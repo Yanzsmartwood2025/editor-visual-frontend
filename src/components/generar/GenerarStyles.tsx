@@ -1023,6 +1023,24 @@ export default function GenerarStyles() {
         letter-spacing: .06em;
       }
 
+      .generar-voice-groups {
+        display: grid;
+        gap: 14px;
+      }
+
+      .generar-voice-group {
+        display: grid;
+        gap: 7px;
+      }
+
+      .generar-voice-group-title {
+        color: #8b8b93;
+        font-size: 8px;
+        font-weight: 900;
+        letter-spacing: .10em;
+        padding: 0 2px;
+      }
+
       .generar-audio-source-list,
       .generar-voice-library {
         display: grid;
