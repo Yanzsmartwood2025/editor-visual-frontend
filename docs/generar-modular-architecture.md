@@ -110,3 +110,23 @@ Quinta activación funcional:
 - Se mantiene temporalmente la ruta antigua `mainNav === '3d'` como compatibilidad interna hasta terminar las pruebas de migración; la interfaz principal ya entra por GENERAR.
 
 Con esto la rama API tiene Imagen, Video, Audio, Música y 3D activados de forma modular. La siguiente etapa es activar la rama GPU módulo por módulo.
+
+
+## Fase 6 — GPU Música
+
+Primera activación funcional de la rama GPU:
+
+- GPU -> Música usa la receta concreta `ace-step-music` con ACE-Step 1.5.
+- Antes de alquilar una máquina, Nayla Compute cotiza las tarjetas compatibles y muestra precio por hora + tope estimado.
+- El usuario elige una tarjeta y confirma. La misma selección se vuelve a verificar justo antes de reservar.
+- Duraciones iniciales: 15, 30 y 60 segundos, instrumental.
+- Flujo: descripción -> cotizar -> elegir GPU -> confirmar -> generar -> R2/Bóveda -> cierre automático de GPU -> escuchar -> USAR EN EDITOR -> pista de audio.
+- El navegador deja de hacer polling al salir del módulo; el trabajo servidor conserva su vencimiento y limpieza automática.
+- La UI de cotización vive en un componente compartido `GpuQuotePanel` para reutilizarlo en GPU 3D sin duplicar lógica visual.
+
+### Capacidades GPU todavía no activadas
+
+- GPU Imagen: infraestructura genérica existe, pero todavía no hay receta/worker concreto aprobado.
+- GPU Video: infraestructura genérica existe, pero todavía no hay receta/worker concreto aprobado.
+- GPU Audio/Voz: infraestructura genérica existe, pero todavía no hay receta/worker concreto aprobado.
+- GPU 3D: sí existe la receta concreta `triposr-image-to-3d`; es la siguiente activación.
