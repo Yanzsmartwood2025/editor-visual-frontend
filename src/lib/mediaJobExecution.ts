@@ -355,14 +355,15 @@ export const startMediaJobForUser = async ({
     return publicMediaJob(job);
   }
 
-  const action = parseAction(job);
-  const candidateIds: MediaProviderId[] = Array.isArray(job.metadata?.candidateProviders)
-    ? (job.metadata.candidateProviders as unknown[])
+  const plannedJob: MediaJobRow = job;
+  const action = parseAction(plannedJob);
+  const candidateIds: MediaProviderId[] = Array.isArray(plannedJob.metadata?.candidateProviders)
+    ? (plannedJob.metadata.candidateProviders as unknown[])
         .filter((value: unknown): value is MediaProviderId => typeof value === 'string')
-    : [job.provider as MediaProviderId];
+    : [plannedJob.provider as MediaProviderId];
 
   const uniqueCandidates: MediaProviderId[] = Array.from(new Set<MediaProviderId>(candidateIds))
-    .filter((provider) => providerCanExecuteAction(provider, actionForProvider(job, provider, action)));
+    .filter((provider) => providerCanExecuteAction(provider, actionForProvider(plannedJob, provider, action)));
 
   if (!uniqueCandidates.length) {
     job = await updateMediaJob(job.id, {
@@ -375,7 +376,7 @@ export const startMediaJobForUser = async ({
 
   const errors: string[] = [];
   for (const provider of uniqueCandidates) {
-    const effectiveAction = actionForProvider(job, provider, action);
+    const effectiveAction = actionForProvider(plannedJob, provider, action);
     try {
       const started = await startCloudProviderExecution(provider, effectiveAction);
 
