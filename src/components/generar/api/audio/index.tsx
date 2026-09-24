@@ -670,7 +670,7 @@ export default function ApiAudioModule({ context }: GenerarModuleProps) {
   );
 
   const renderCompactVoicePicker = () => {
-    if (!toolNeedsVoice(activeTool) || activeTool === 'clone') return null;
+    if (!toolNeedsVoice(activeTool)) return null;
 
     return (
       <div className="generar-compact-voice">
