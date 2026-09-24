@@ -80,6 +80,7 @@ const requestSchema = z.object({
   attachmentIds: z.array(z.string().uuid()).max(200).optional(),
   mediaLibrary: z.array(mediaLibraryItemSchema).max(500).optional(),
   currentEditorState: z.record(z.string(), z.unknown()).optional(),
+  streamProgress: z.boolean().optional().default(false),
   currentTimeline: z.array(z.object({
     id: z.string().optional(),
     tipo: z.enum(['foto', 'video', 'audio']),
@@ -662,6 +663,33 @@ const analyzeVisionBatches = async ({
 };
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+  let progressStreaming = false;
+  let progressStreamRequested = false;
+
+  const beginProgressStream = () => {
+    if (!progressStreamRequested || progressStreaming) return;
+    progressStreaming = true;
+    res.statusCode = 200;
+    res.setHeader('Content-Type', 'application/x-ndjson; charset=utf-8');
+    res.setHeader('Cache-Control', 'no-cache, no-transform');
+    res.setHeader('X-Accel-Buffering', 'no');
+    res.flushHeaders?.();
+  };
+
+  const emitProgress = (stage: string, label: string, detail?: Record<string, unknown>) => {
+    if (!progressStreaming || res.writableEnded) return;
+    res.write(JSON.stringify({ type: 'progress', stage, label, ...(detail || {}) }) + '\n');
+  };
+
+  const sendResult = (status: number, data: Record<string, unknown>) => {
+    if (progressStreaming && !res.writableEnded) {
+      res.write(JSON.stringify({ type: 'result', status, data }) + '\n');
+      res.end();
+      return;
+    }
+    return res.status(status).json(data);
+  };
+
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
@@ -693,7 +721,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       mediaLibrary,
       currentTimeline,
       currentEditorState,
+      streamProgress,
     } = parsedBody.data;
+    progressStreamRequested = Boolean(streamProgress);
 
     const scope = await resolveOwnedWorkspaceScope({
       userId: firebaseUser.uid,
@@ -1044,6 +1074,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       content: clipRoutingText(item.content, 1200),
     }));
 
+    beginProgressStream();
+    emitProgress('router', 'Interpretando tu pedido…', {
+      request: message,
+    });
+
     let libraryRoutingSucceeded = false;
     try {
       const selected = await executeDirectLlm({
@@ -1065,6 +1100,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       console.warn('[chat.ts] El despachador no respondió; se conserva el flujo anterior como respaldo.', error);
     }
     const libraryChapters = libraryRoutingSucceeded && editorSession ? editorSession.chapters : EDITOR_BOOK_INDEX.map(book => book.id);
+    emitProgress('library', 'Consultando las capacidades necesarias…', {
+      chapters: libraryChapters,
+      brief: editorSession?.brief || '',
+    });
     let acceptedRecipes: Awaited<ReturnType<typeof findAcceptedEditorRecipes>> = [];
     try { acceptedRecipes = await findAcceptedEditorRecipes(firebaseUser.uid, scope.projectId, libraryChapters); }
     catch { /* Optional reference memory must not block planning. */ }
@@ -1266,6 +1305,7 @@ Reglas:
     let stagedCompilerPrompt = '';
     try {
       if (stagedEditorWorkflow) {
+        emitProgress('planner', 'Diseñando el tratamiento creativo…');
         stagedBlueprint = await executeDirectLlm({
           provider,
           task: 'planner',
@@ -1277,6 +1317,9 @@ Reglas:
         });
 
         if (editorMode === 'prepare') {
+          emitProgress('compiler', 'Traduciendo el plan a código del editor…', {
+            blueprint: stagedBlueprint,
+          });
           stagedCompilerPrompt = makeCompilerPrompt(stagedBlueprint);
           responseText = await executeDirectLlm({
             provider,
@@ -1288,8 +1331,12 @@ Reglas:
           });
         } else {
           responseText = stagedBlueprint;
+          emitProgress('ready', 'Plan creativo listo.', {
+            blueprint: stagedBlueprint,
+          });
         }
       } else {
+        emitProgress('planner', 'Preparando la respuesta con el flujo compatible…');
         // Safe compatibility path if the small dispatcher cannot classify the turn.
         responseText = await executeDirectLlm({
           provider,
@@ -1308,7 +1355,10 @@ Reglas:
           isLlmCapacityError(error) ||
           isLlmCapacityError(error?.cause);
 
-        return res.status(capacityLimited ? 503 : 500).json({
+        emitProgress('failed', capacityLimited
+          ? 'Las rutas de IA están temporalmente ocupadas.'
+          : 'Nayla no pudo completar esta etapa.');
+        return sendResult(capacityLimited ? 503 : 500, {
           error: capacityLimited
             ? 'Nayla está temporalmente sin capacidad en sus rutas de IA. No se perdió tu tarea; inténtalo nuevamente en un momento.'
             : 'Nayla no pudo procesar esta solicitud en este momento. Inténtalo nuevamente.',
@@ -1318,11 +1368,21 @@ Reglas:
     }
 
     // A malformed creative plan must never silently become a plain slideshow.
+    if (editorMode === 'prepare' || executionConfirmed) {
+      emitProgress('validate', 'Validando el código antes de enviarlo al editor…', {
+        blueprint: stagedBlueprint || undefined,
+      });
+    }
     let parsedAction = parseNaylaAction(responseText);
     const expectsAction = executionConfirmed || /["']action["']\s*:/.test(responseText);
     if (!parsedAction && expectsAction && responseText.trim()) {
       try {
         const validationIssues = getNaylaActionValidationIssues(responseText);
+        emitProgress('repair', 'Corrigiendo el código que no pasó la validación…', {
+          blueprint: stagedBlueprint || undefined,
+          validationIssues,
+          failedPayload: responseText.slice(0, 14000),
+        });
         const compactRepairInstruction = [
           'REPARACIÓN DE JSON BUILD_TIMELINE.',
           'Devuelve SOLO un objeto JSON completo, sin Markdown ni explicación.',
@@ -1353,8 +1413,28 @@ Reglas:
       }
     }
     if (!parsedAction && expectsAction) {
-      return res.status(422).json({
+      const validationIssues = getNaylaActionValidationIssues(responseText);
+      console.warn('[chat.ts] El plan final no pasó validación:', validationIssues);
+      emitProgress('failed', 'El código no pasó la validación final.', {
+        blueprint: stagedBlueprint || undefined,
+        validationIssues,
+        failedPayload: responseText.slice(0, 14000),
+      });
+      return sendResult(422, {
         error: 'No pude preparar las instrucciones completas del video. No inicié un montaje simplificado. Tu plan sigue en el chat; puedes volver a intentarlo.',
+        debug: {
+          request: message,
+          blueprint: stagedBlueprint || null,
+          validationIssues,
+          failedPayload: responseText.slice(0, 14000),
+        },
+      });
+    }
+
+    if (parsedAction && expectsAction) {
+      emitProgress('ready', 'Código validado y listo para revisión.', {
+        blueprint: stagedBlueprint || undefined,
+        payload: parsedAction,
       });
     }
 
@@ -1454,7 +1534,7 @@ Reglas:
           : parsedAction;
 
     if (action?.action === 'BUILD_TIMELINE') {
-      if (!scope.threadId) return res.status(400).json({ error: 'Abre un chat para revisar y aceptar el plan.' });
+      if (!scope.threadId) return sendResult(400, { error: 'Abre un chat para revisar y aceptar el plan.' });
       const decorations = (action.decorations ?? (currentEditorState?.settings as any)?.decorations ?? []).map((item: any) => {
         if (item.kind !== 'gif' || !item.label) return item;
         const media = mergedLibrary.find((entry: any) => entry.tipo === 'foto' && entry.etiqueta?.toUpperCase() === item.label.toUpperCase());
@@ -1484,7 +1564,18 @@ Reglas:
       const text = 'Revisa los medios, los tiempos, los efectos y el texto exacto. Puedes pedirme cambios o aceptar este plan.';
       await insertChatMessageForUser({ userId: firebaseUser.uid, projectId: scope.projectId, threadId: scope.threadId,
         role: 'assistant', content: text, metadata: { responseType: 'editor-plan', editorReview: review, editorSession } });
-      return res.status(200).json({ text, editorReview: review, projectId: scope.projectId, threadId: scope.threadId });
+      return sendResult(200, {
+        text,
+        editorReview: review,
+        projectId: scope.projectId,
+        threadId: scope.threadId,
+        debug: {
+          request: message,
+          blueprint: stagedBlueprint || null,
+          payload: parsedAction || null,
+          stage: 'ready',
+        },
+      });
     }
 
     if (action?.action === 'RUN_GPU_JOB' && !canStartGpuCompute(engineMode)) {
@@ -1506,7 +1597,7 @@ Reglas:
         });
       }
 
-      return res.status(200).json({
+      return sendResult(200, {
         text: cloudFirstText,
         planning: true,
         requiresConfirmation: false,
@@ -1538,7 +1629,7 @@ Reglas:
         });
       }
 
-      return res.status(200).json({
+      return sendResult(200, {
         text: planningText,
         planning: true,
         requiresConfirmation: true,
@@ -1582,7 +1673,7 @@ Reglas:
           });
         }
 
-        return res.status(200).json({
+        return sendResult(200, {
           ...executed,
           projectId: scope.projectId,
           threadId: scope.threadId || null,
@@ -1591,7 +1682,7 @@ Reglas:
         const actionMessage = sanitizeNaylaPublicText(
           error instanceof Error ? error.message : 'La acción de Nayla no pudo ejecutarse.'
         );
-        return res.status(502).json({
+        return sendResult(502, {
           error: actionMessage,
           action: action.action,
           projectId: scope.projectId,
@@ -1627,16 +1718,26 @@ Reglas:
       });
     }
 
-    return res.status(200).json({
+    return sendResult(200, {
       text: publicResponseText,
       projectId: scope.projectId,
       threadId: scope.threadId || null,
+      debug: {
+        request: message,
+        blueprint: stagedBlueprint || null,
+        payload: parsedAction || null,
+        stage: parsedAction ? 'ready' : 'planner',
+      },
     });
   } catch (error: any) {
     console.error('[chat.ts] Error general:', error);
     const rawMessage = error?.message || 'Error interno de Nayla.';
     const message = sanitizeNaylaPublicText(rawMessage);
     const status = rawMessage.includes('no pertenece') || rawMessage.includes('no existe') ? 403 : 500;
+    if (progressStreaming) {
+      emitProgress('failed', 'La tarea se detuvo por un error interno.');
+      return sendResult(status, { error: message });
+    }
     return res.status(status).json({ error: message });
   }
 }
