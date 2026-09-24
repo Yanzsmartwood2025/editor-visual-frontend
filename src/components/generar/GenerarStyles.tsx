@@ -712,6 +712,92 @@ export default function GenerarStyles() {
         gap: 7px;
       }
 
+      .generar-photo-picker {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 8px;
+        max-height: 230px;
+        overflow: auto;
+      }
+
+      .generar-photo-card {
+        min-width: 0;
+        padding: 6px;
+        display: grid;
+        gap: 6px;
+        border-radius: 13px;
+        border: 1px solid rgba(var(--glow-color-rgb), .12);
+        background: rgba(255,255,255,.025);
+        color: #aaa;
+        cursor: pointer;
+      }
+
+      .generar-photo-card.active {
+        border-color: rgba(var(--glow-color-rgb), calc(var(--glow-intensity) * .76));
+        background: linear-gradient(145deg, rgba(255,255,255,.10), rgba(255,255,255,.035));
+        box-shadow:
+          inset 0 1px 0 rgba(255,255,255,.10),
+          0 0 calc(var(--glow-spread) * .42) rgba(var(--glow-color-rgb), calc(var(--glow-intensity) * .16));
+      }
+
+      .generar-photo-card img {
+        width: 100%;
+        aspect-ratio: 1;
+        object-fit: cover;
+        border-radius: 9px;
+        background: #050505;
+      }
+
+      .generar-photo-card span {
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        font-size: 9px;
+        font-weight: 800;
+        text-align: center;
+      }
+
+      .generar-selected-source {
+        margin-top: 12px;
+        padding: 10px;
+        display: grid;
+        grid-template-columns: 82px minmax(0, 1fr);
+        gap: 12px;
+        align-items: center;
+        border-radius: 15px;
+        border: 1px solid rgba(var(--glow-color-rgb), .15);
+        background: rgba(255,255,255,.024);
+      }
+
+      .generar-selected-source img {
+        width: 82px;
+        height: 82px;
+        object-fit: cover;
+        border-radius: 12px;
+        border: 1px solid rgba(255,255,255,.08);
+      }
+
+      .generar-selected-source > div {
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 5px;
+      }
+
+      .generar-selected-source strong {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        font-size: 13px;
+      }
+
+      .generar-selected-source small {
+        color: #777781;
+        font-size: 9px;
+        letter-spacing: .05em;
+      }
+
       .generar-gpu-runtime span {
         padding: 5px 8px;
         border-radius: 999px;
@@ -834,6 +920,19 @@ export default function GenerarStyles() {
         .generar-3d-result .generar-primary-action {
           grid-column: 1 / -1;
           width: 100%;
+        }
+
+        .generar-photo-picker {
+          grid-template-columns: repeat(3, minmax(0, 1fr));
+        }
+
+        .generar-selected-source {
+          grid-template-columns: 66px minmax(0, 1fr);
+        }
+
+        .generar-selected-source img {
+          width: 66px;
+          height: 66px;
         }
       }
     `}</style>
