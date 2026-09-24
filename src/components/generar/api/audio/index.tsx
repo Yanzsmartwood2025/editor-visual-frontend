@@ -111,7 +111,6 @@ export default function ApiAudioModule({ context }: GenerarModuleProps) {
   const [job, setJob] = useState<JobState | null>(null);
   const [message, setMessage] = useState('');
   const [voices, setVoices] = useState<VoiceItem[]>([]);
-  const [voicesConfigured, setVoicesConfigured] = useState<boolean | null>(null);
   const [voicesLoading, setVoicesLoading] = useState(false);
   const [toolAvailability, setToolAvailability] = useState<AudioToolAvailability>({});
   const [selectedVoiceId, setSelectedVoiceId] = useState('');
@@ -203,7 +202,6 @@ export default function ApiAudioModule({ context }: GenerarModuleProps) {
       if (!response.ok) throw new Error(payload?.error || 'No se pudo leer la biblioteca de voces.');
 
       const nextVoices = Array.isArray(payload?.voices) ? payload.voices : [];
-      setVoicesConfigured(Boolean(payload?.configured));
       setToolAvailability(
         payload?.tools && typeof payload.tools === 'object'
           ? {
@@ -229,7 +227,6 @@ export default function ApiAudioModule({ context }: GenerarModuleProps) {
       });
     } catch (error) {
       if (!mountedRef.current) return;
-      setVoicesConfigured(false);
       setToolAvailability({});
       setMessage(error instanceof Error ? error.message : 'No se pudo leer la biblioteca de voces.');
     } finally {
