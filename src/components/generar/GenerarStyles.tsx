@@ -611,6 +611,118 @@ export default function GenerarStyles() {
         font-size: 13px;
       }
 
+      .generar-gpu-quote {
+        margin-top: 14px;
+        padding: 14px;
+        border-radius: 17px;
+        border: 1px solid rgba(var(--glow-color-rgb), .17);
+        background: linear-gradient(145deg, rgba(255,255,255,.045), rgba(255,255,255,.018));
+        box-shadow: inset 0 1px 0 rgba(255,255,255,.07);
+      }
+
+      .generar-gpu-quote-head {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        gap: 12px;
+        margin-bottom: 10px;
+      }
+
+      .generar-gpu-quote-head > div {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+      }
+
+      .generar-gpu-quote-head > div > strong {
+        font-size: 14px;
+      }
+
+      .generar-gpu-quote-head > span {
+        color: #777781;
+        font-size: 9px;
+        font-weight: 800;
+        letter-spacing: .07em;
+      }
+
+      .generar-gpu-card-list {
+        display: grid;
+        gap: 7px;
+        max-height: 310px;
+        overflow: auto;
+      }
+
+      .generar-gpu-card {
+        width: 100%;
+        min-height: 66px;
+        display: grid;
+        grid-template-columns: minmax(0,1fr) auto;
+        gap: 10px;
+        align-items: center;
+        padding: 10px 12px;
+        border-radius: 14px;
+        text-align: left;
+        color: #ededf0;
+        background: rgba(255,255,255,.025);
+        border: 1px solid rgba(var(--glow-color-rgb), .12);
+        cursor: pointer;
+      }
+
+      .generar-gpu-card.active {
+        background: linear-gradient(145deg, rgba(255,255,255,.10), rgba(255,255,255,.04));
+        border-color: rgba(var(--glow-color-rgb), calc(var(--glow-intensity) * .72));
+        box-shadow:
+          inset 0 1px 0 rgba(255,255,255,.12),
+          0 0 calc(var(--glow-spread) * .48) rgba(var(--glow-color-rgb), calc(var(--glow-intensity) * .17));
+      }
+
+      .generar-gpu-card > span:first-child,
+      .generar-gpu-price {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+      }
+
+      .generar-gpu-card small {
+        color: #777781;
+        font-size: 9px;
+      }
+
+      .generar-gpu-card em {
+        color: #9b7b7b;
+        font-size: 9px;
+        font-style: normal;
+      }
+
+      .generar-gpu-price {
+        text-align: right;
+      }
+
+      .generar-gpu-quote-note {
+        margin-top: 10px;
+        color: #777781;
+        font-size: 10px;
+        line-height: 1.45;
+      }
+
+      .generar-gpu-runtime {
+        margin-top: 12px;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 7px;
+      }
+
+      .generar-gpu-runtime span {
+        padding: 5px 8px;
+        border-radius: 999px;
+        border: 1px solid rgba(var(--glow-color-rgb), .13);
+        background: rgba(255,255,255,.025);
+        color: #94949b;
+        font-size: 9px;
+        font-weight: 800;
+        letter-spacing: .05em;
+      }
+
       .generar-3d-result-copy span {
         color: #777781;
         font-size: 10px;
