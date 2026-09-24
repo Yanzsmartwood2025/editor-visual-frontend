@@ -40,6 +40,8 @@ async function client() {
 
 const NAYLA_CORS_RULE_ID = 'nayla-direct-uploads';
 const NAYLA_PRODUCTION_ORIGIN = 'https://editor-visual-frontend-cauc.vercel.app';
+const NAYLA_CORS_CACHE_TTL_MS = 15 * 60 * 1000;
+const naylaCorsVerifiedUntil = new Map<string, number>();
 
 const isTrustedNaylaOrigin = (origin?: string | null) => {
   if (!origin) return false;
@@ -57,6 +59,11 @@ const isTrustedNaylaOrigin = (origin?: string | null) => {
 
 export async function ensureNaylaR2UploadCors(origin?: string | null) {
   if (!isTrustedNaylaOrigin(origin)) return false;
+
+  const cacheKey = origin!;
+  if ((naylaCorsVerifiedUntil.get(cacheKey) || 0) > Date.now()) {
+    return true;
+  }
 
   const { config, s3 } = await client();
   let currentRules: any[] = [];
@@ -88,7 +95,10 @@ export async function ensureNaylaR2UploadCors(origin?: string | null) {
     ['GET', 'HEAD', 'PUT'].every((method) => existingRule.AllowedMethods?.includes(method)) &&
     existingRule.AllowedHeaders?.includes('*');
 
-  if (hasRequiredRule) return true;
+  if (hasRequiredRule) {
+    naylaCorsVerifiedUntil.set(cacheKey, Date.now() + NAYLA_CORS_CACHE_TTL_MS);
+    return true;
+  }
 
   const nextRules = [
     ...currentRules.filter((rule) => rule?.ID !== NAYLA_CORS_RULE_ID),
@@ -107,6 +117,7 @@ export async function ensureNaylaR2UploadCors(origin?: string | null) {
       Bucket: config.bucket,
       CORSConfiguration: { CORSRules: nextRules },
     }));
+    naylaCorsVerifiedUntil.set(cacheKey, Date.now() + NAYLA_CORS_CACHE_TTL_MS);
     return true;
   } catch (error) {
     console.warn('Nayla no pudo actualizar automáticamente la política de subida de la Bóveda:', error);
