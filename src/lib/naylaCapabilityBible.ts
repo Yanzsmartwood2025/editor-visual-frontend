@@ -12,7 +12,7 @@ export type NaylaCapability = {
   usefulFor: string[];
 };
 
-export const NAYLA_CAPABILITY_BIBLE_VERSION = '2026-09-25';
+export const NAYLA_CAPABILITY_BIBLE_VERSION = '2026-09-25.2';
 
 export const NAYLA_CAPABILITY_BIBLE: NaylaCapability[] = [
   {
@@ -44,6 +44,16 @@ export const NAYLA_CAPABILITY_BIBLE: NaylaCapability[] = [
     engine: 'render',
     aliases: ['audio', 'musica', 'volumen', 'fade audio', 'entrada de audio', 'salida de audio', 'mezclar sonido', 'ducking', 'bajar musica con voz', 'locutor', 'voz de fondo', 'master', 'ambiente', 'sfx'],
     usefulFor: ['locución sobre música', 'podcast', 'música de fondo', 'ambiente', 'crossfades', 'entradas suaves', 'cierres de audio', 'efectos sincronizados'],
+  },
+  {
+    id: 'audio-dsp',
+    category: 'Audio',
+    label: 'Masterización, EQ y efectos de audio',
+    description: 'Procesamiento MASTER real antes de guardar el MP4: EQ, low/high cut, compresor, limiter, normalización, reducción de ruido, noise gate, de-esser, reverb, echo/delay y paneo estéreo. También admite pitch por pista durante el render.',
+    status: 'ready',
+    engine: 'render',
+    aliases: ['ecualizar', 'eq', 'compresor', 'limiter', 'normalizar', 'ruido', 'noise gate', 'de esser', 'reverb', 'eco', 'delay audio', 'pan', 'estereo', 'telefono', 'radio', 'underwater', 'club', 'pitch', 'tono'],
+    usefulFor: ['pulir locución', 'masterizar podcast', 'limitar picos', 'limpiar ruido', 'efecto teléfono', 'efecto radio', 'ambiente con reverb', 'cambiar tono'],
   },
   {
     id: 'transition-basic',
