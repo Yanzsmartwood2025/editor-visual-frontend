@@ -521,6 +521,17 @@ describe('Nayla action contracts', () => {
           style: 'karaoke',
           position: 'center',
         },
+        {
+          text: 'Profundidad real',
+          start: 5,
+          end: 7,
+          style: 'extrude-3d',
+          position: 'center',
+          fontSize: 64,
+          color: '#ffffff',
+          accentColor: '#7dd3fc',
+          backgroundColor: 'rgba(0,0,0,0.5)',
+        },
       ],
       render: true,
     }));
@@ -531,6 +542,7 @@ describe('Nayla action contracts', () => {
       subtitles: [
         expect.objectContaining({ style: 'cinematic', position: 'bottom', fontSize: 48 }),
         expect.objectContaining({ style: 'karaoke', position: 'center' }),
+        expect.objectContaining({ style: 'extrude-3d', accentColor: '#7dd3fc' }),
       ],
     });
 
