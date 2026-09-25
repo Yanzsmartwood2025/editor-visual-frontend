@@ -76,7 +76,7 @@ type TimelineProfessionalEffect = {
 type TimelineGsapPreset = 'fade' | 'slide-left' | 'slide-right' | 'slide-up' | 'slide-down' | 'zoom-in' | 'zoom-out' | 'bounce' | 'elastic' | 'spin' | 'swing';
 type TimelineGsapMotion = { enter?: TimelineGsapPreset; exit?: TimelineGsapPreset; enterDuration?: number; exitDuration?: number; intensity?: number; };
 type TimelineItem = { id: string; mediaId: string; tipo: 'foto' | 'video' | 'audio'; nombre: string; etiqueta: string; url: string; durationInSeconds?: number; originalDurationInSeconds?: number; volume?: number; volumeKeyframes?: { time: number; gain: number }[]; fadeIn?: number; fadeOut?: number; scale?: number; delay?: number; startFrom?: number; trimBefore?: number; trimAfter?: number; loop?: boolean; playbackRate?: number; transitionDuration?: number; transitionType?: 'fade' | 'none' | 'wipe' | 'slide' | 'zoom' | 'film-burn' | 'blur-slide' | 'cross-zoom' | 'dreamy-zoom' | 'linear-blur' | 'push-cut'; visualTemplate?: 'fragment-reveal' | 'carousel-card' | 'depth-stack' | 'split-panels' | 'poster-pop'; efecto?: string; brightness?: number; contrast?: number; saturation?: number; overlay?: string; overlayIntensity?: number; professionalEffects?: TimelineProfessionalEffect[]; motionBlur?: { shutterAngle?: number; samples?: number }; gsapMotion?: TimelineGsapMotion; proceduralMotion?: { preset: 'particles' | 'orbit' | 'pulse-grid' | 'starfield'; intensity?: number; speed?: number; seed?: number; color?: string; accentColor?: string; }; metadata?: MediaMetadata; };
-type SubtitleItem = { id: string; texto: string; inicioSec: number; finSec: number; style?: 'clean' | 'cinematic' | 'tiktok' | 'karaoke'; position?: 'top' | 'center' | 'bottom'; fontSize?: number; generated?: boolean; sourceLabel?: string; };
+type SubtitleItem = { id: string; texto: string; inicioSec: number; finSec: number; style?: NaylaSubtitleStyle; position?: 'top' | 'center' | 'bottom'; fontSize?: number; fontFamily?: string; fontUrl?: string; color?: string; accentColor?: string; backgroundColor?: string; generated?: boolean; sourceLabel?: string; };
 type MotionTitleItem = {
   id: string;
   text: string;
@@ -1938,7 +1938,7 @@ export default function NaylaCore() {
             fontFamily: sub.fontFamily, fontUrl: sub.fontUrl,
             inicioSec: Math.max(0, Number(sub.start)),
             finSec: Math.max(0, Number(sub.end)),
-            style: ['clean', 'cinematic', 'tiktok', 'karaoke'].includes(sub.style)
+            style: NAYLA_SUBTITLE_STYLES.includes(sub.style as NaylaSubtitleStyle)
               ? sub.style
               : 'clean',
             position: ['top', 'center', 'bottom'].includes(sub.position)
@@ -1947,6 +1947,9 @@ export default function NaylaCore() {
             ...(Number.isFinite(Number(sub.fontSize))
               ? { fontSize: Math.max(20, Math.min(120, Number(sub.fontSize))) }
               : {}),
+            ...(typeof sub.color === 'string' && sub.color.trim() ? { color: sub.color.trim() } : {}),
+            ...(typeof sub.accentColor === 'string' && sub.accentColor.trim() ? { accentColor: sub.accentColor.trim() } : {}),
+            ...(typeof sub.backgroundColor === 'string' && sub.backgroundColor.trim() ? { backgroundColor: sub.backgroundColor.trim() } : {}),
           }))
       : subtitulos;
 
