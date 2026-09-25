@@ -1,8 +1,10 @@
 import { REMOTION_CPU_EFFECTS } from './remotionEffects';
 import { NAYLA_FILTER_PRESETS } from './naylaFilterPresets';
 import { NAYLA_SUBTITLE_STYLE_GUIDE } from './naylaSubtitleStyles';
+import { NAYLA_AUDIO_BUSES, NAYLA_AUDIO_MIX_PRESET_INFO } from './naylaAudioMix';
+import { SOUND_NAMES } from './naylaDecorations';
 
-export const NAYLA_FEATURE_CATALOG_VERSION = '2026-09-24.1';
+export const NAYLA_FEATURE_CATALOG_VERSION = '2026-09-25.1';
 
 export type NaylaFeatureCatalogItem = {
   id: string;
@@ -57,7 +59,8 @@ const LABELS: Record<string, string> = {
 
 const title = (id: string) =>
   LABELS[id] || id
-    .split('-')
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .split(/[-_\s]+/)
     .map((part) => part ? part[0].toUpperCase() + part.slice(1) : part)
     .join(' ');
 
@@ -85,6 +88,44 @@ const professionalDescriptions: Record<string, string> = {
 };
 
 export const NAYLA_EDITOR_FEATURE_CATALOG: NaylaFeatureCatalogCategory[] = [
+  {
+    id: 'audio-mix',
+    label: 'Audio · Mezcla',
+    description: 'Buses, presets y automatización de volumen disponibles en el renderer.',
+    items: [
+      ...NAYLA_AUDIO_BUSES.map((id) => ({
+        id: `bus-${id}`,
+        label: `Bus ${title(id)}`,
+        description:
+          id === 'voice' ? 'Locución y diálogo. Puede activar ducking automático sobre la música.'
+          : id === 'music' ? 'Música principal o de fondo. Puede bajar automáticamente cuando entra la voz.'
+          : id === 'ambience' ? 'Atmósferas, room tone, naturaleza y fondos ambientales.'
+          : 'Efectos puntuales e impactos sincronizados.',
+        status: 'active' as const,
+      })),
+      ...NAYLA_AUDIO_MIX_PRESET_INFO.map((preset) => ({
+        id: `mix-${preset.id}`,
+        label: `Mezcla · ${preset.label}`,
+        description: preset.description,
+        status: 'active' as const,
+      })),
+      { id: 'auto-ducking', label: 'Ducking automático', description: 'Baja la música durante los intervalos de VOZ y la recupera con ataque/salida suaves.', status: 'active' as const },
+      { id: 'volume-keyframes', label: 'Curvas de volumen', description: 'Automatización manual de volumen por puntos de tiempo y ganancia.', status: 'active' as const },
+      { id: 'crossfade-audio', label: 'Crossfade de audio', description: 'Una pista se desvanece mientras entra otra mediante fadeIn/fadeOut y solape.', status: 'active' as const },
+      { id: 'master-gain', label: 'MASTER', description: 'Ganancia global aplicada al resultado de todas las pistas del render.', status: 'active' as const },
+    ],
+  },
+  {
+    id: 'audio-sfx',
+    label: 'Audio · Efectos SFX',
+    description: 'Efectos sonoros incluidos en la biblioteca @remotion/sfx y sincronizables por tiempo.',
+    items: SOUND_NAMES.map((id) => ({
+      id: `sfx-${String(id)}`,
+      label: title(String(id)),
+      description: 'Efecto sonoro activo; controla inicio, final y volumen.',
+      status: 'active' as const,
+    })),
+  },
   {
     id: 'filters',
     label: 'Filtros / Looks',
