@@ -4,6 +4,7 @@ import { volumeKeyframesSchema } from './audioAutomation';
 import { getProviderCandidates } from './mediaProviders/registry';
 import type { MediaCapability, MediaProviderId } from './mediaProviders/types';
 import { applyNaylaVisualTemplate, NAYLA_VISUAL_TEMPLATE_NAMES } from './naylaVisualTemplates';
+import { NAYLA_SUBTITLE_STYLES } from './naylaSubtitleStyles';
 
 const stockProviderSchema = z.enum(['pexels', 'pixabay', 'openverse']);
 const generationProviderSchema = z.enum(['fal', 'replicate', 'tripo', 'meshy']);
@@ -157,9 +158,12 @@ export const naylaActionSchema = z.discriminatedUnion('action', [
       text: z.string().trim().min(1).max(1200),
       start: z.number().min(0).max(7200),
       end: z.number().min(0).max(7200),
-      style: z.enum(['clean', 'cinematic', 'tiktok', 'karaoke']).optional().default('clean'),
+      style: z.enum(NAYLA_SUBTITLE_STYLES).optional().default('clean'),
       position: z.enum(['top', 'center', 'bottom']).optional().default('bottom'),
       fontSize: z.number().min(20).max(120).optional(),
+      color: z.string().trim().min(1).max(64).optional(),
+      accentColor: z.string().trim().min(1).max(64).optional(),
+      backgroundColor: z.string().trim().min(1).max(64).optional(),
     }).refine((item) => item.end > item.start, {
       message: 'El final del subtítulo debe ser posterior al inicio.',
     })).max(300).optional(),
