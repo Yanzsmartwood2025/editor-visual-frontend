@@ -38,6 +38,7 @@ import { NaylaVectorAnimationRenderer, type NaylaVectorAnimation } from './Nayla
 import { NaylaSkiaGraphicRenderer, type NaylaSkiaGraphic } from './NaylaSkiaGraphic';
 import type { NaylaSubtitleStyle } from '../lib/naylaSubtitleStyles';
 import { getNaylaAudioBusGain, getNaylaMusicDuckGain, resolveNaylaAudioMix, type NaylaAudioBus, type NaylaAudioMixSettings, type NaylaVoiceInterval } from '../lib/naylaAudioMix';
+import type { NaylaAudioMasterSettings } from '../lib/naylaAudioMaster';
 import { getNaylaFilterCssFilter } from '../lib/naylaFilterPresets';
 
 // Interfaces based on main file
@@ -68,6 +69,7 @@ interface MainCompositionProps {
     fadeOutFinal?: number;
     decorations?: NaylaDecoration[];
     audioMix?: NaylaAudioMixSettings;
+    audioMaster?: NaylaAudioMasterSettings;
   };
 }
 
