@@ -404,6 +404,8 @@ export default function NaylaCore() {
   const [renderQualitySelection, setRenderQualitySelection] = useState<string | null>(null);
   const canvasPreviewDimensions = getCanvasDimensionsFromRatio(canvasRatio, '1080p');
   const [isDownloadMenuOpen, setIsDownloadMenuOpen] = useState(false);
+  const [downloadBusy, setDownloadBusy] = useState(false);
+  const [downloadStatus, setDownloadStatus] = useState<string | null>(null);
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
   const [showIntro, setShowIntro] = useState(true);
     const [isProcessing, setIsProcessing] = useState(false);
@@ -4358,9 +4360,24 @@ export default function NaylaCore() {
     setPlaybackPositionSeconds(getVisualClipStartSeconds(pistaVideo, nextClip.id));
   };
 
-  const handleDescargar = (calidad?: string) => {
-    const exportQuality = calidad || calidadExportacion;
-    if (calidad) setCalidadExportacion(calidad);
+  const formatDownloadBytes = (value: unknown) => {
+    const bytes = Number(value);
+    if (!Number.isFinite(bytes) || bytes <= 0) return '—';
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
+    if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(bytes < 10 * 1024 * 1024 ? 1 : 0)} MB`;
+    return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+  };
+
+  const formatDownloadDuration = (value: unknown) => {
+    const seconds = Number(value);
+    if (!Number.isFinite(seconds) || seconds <= 0) return '—';
+    const rounded = Math.round(seconds);
+    const minutes = Math.floor(rounded / 60);
+    const remainder = rounded % 60;
+    return `${String(minutes).padStart(2, '0')}:${String(remainder).padStart(2, '0')}`;
+  };
+
+  const handleDescargar = async () => {
     const url = videoResultadoUrl || mediaActivaUrl;
     if (!url) return showAlert('No hay ningún video cargado para descargar.');
 
@@ -4368,15 +4385,39 @@ export default function NaylaCore() {
     const preferredName =
       (videoResultadoUrl ? videoResultadoNombre : null) ||
       matchingItem?.nombre ||
-      `Nayla_Export_${exportQuality}.mp4`;
+      'Nayla_Export.mp4';
     const cleanName = preferredName.toLowerCase().endsWith('.mp4')
       ? preferredName
       : `${preferredName.replace(/\.[a-z0-9]+$/i, '')}.mp4`;
 
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = cleanName;
-    a.click();
+    setDownloadBusy(true);
+    setDownloadStatus('Preparando archivo…');
+
+    try {
+      const response = await fetch(url, { cache: 'no-store' });
+      if (!response.ok) throw new Error(`No se pudo descargar el archivo (${response.status}).`);
+
+      setDownloadStatus('Generando descarga segura…');
+      const blob = await response.blob();
+      const blobUrl = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = blobUrl;
+      a.download = cleanName;
+      a.style.display = 'none';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+
+      window.setTimeout(() => URL.revokeObjectURL(blobUrl), 1500);
+      setDownloadStatus('Descarga iniciada');
+      window.setTimeout(() => setDownloadStatus(null), 1800);
+    } catch (error) {
+      console.error(error);
+      setDownloadStatus(null);
+      showAlert(error instanceof Error ? error.message : 'No se pudo preparar la descarga.');
+    } finally {
+      setDownloadBusy(false);
+    }
   };
 
 
@@ -4945,12 +4986,13 @@ if (!session) {
             <button
               onClick={() => {
                 setIsUserMenuOpen(false);
-                if (videoResultadoUrl) {
-                  setIsDownloadMenuOpen(false);
-                  handleDescargar();
+                const url = videoResultadoUrl || mediaActivaUrl;
+                if (!url) {
+                  showAlert('No hay ningún video cargado para descargar.');
                   return;
                 }
-                setIsDownloadMenuOpen(!isDownloadMenuOpen);
+                setDownloadStatus(null);
+                setIsDownloadMenuOpen(true);
               }}
               className="neon-btn nav-btn"
               style={{ padding: '6px 12px', fontSize: '0.65rem', display: 'flex', alignItems: 'center', gap: '6px', backgroundColor: '#111' }}
@@ -4959,53 +5001,151 @@ if (!session) {
               DESCARGAR
             </button>
 
-            {/* BANDEJA DESPLEGABLE DE DESCARGA */}
-            {isDownloadMenuOpen && (
-              <div style={{
-                position: 'absolute',
-                top: 'calc(100% + 8px)',
-                right: 0,
-                backgroundColor: 'var(--glass-bg)',
-                backdropFilter: 'blur(var(--glass-blur))',
-                WebkitBackdropFilter: 'blur(var(--glass-blur))',
-                border: '1px solid rgba(var(--glow-color-rgb), calc(var(--glow-intensity) * 0.6))',
-                borderRadius: '12px',
-                padding: '8px',
-                minWidth: '160px',
-                zIndex: 200,
-                boxShadow: '0 10px 30px rgba(0,0,0,0.8), 0 0 var(--glow-spread) rgba(var(--glow-color-rgb), var(--glow-intensity))',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: '4px'
-              }}>
-                <span style={{ fontSize: '0.6rem', color: '#737373', fontWeight: 'bold', padding: '4px 8px', letterSpacing: '1px' }}>
-                  CALIDAD DE EXPORTACIÓN
-                </span>
-                {['480p', '720p', '1080p', '4K'].map((res) => (
-                  <button
-                    key={res}
-                    onClick={() => {
-                      setIsDownloadMenuOpen(false);
-                      handleDescargar(res.toLowerCase());
-                    }}
+            {/* BANDEJA NAYLA DE DESCARGA */}
+            {isDownloadMenuOpen && (() => {
+              const url = videoResultadoUrl || mediaActivaUrl;
+              const item = galeriaMultimedia.find((media) => media.url === url);
+              const metadata = (item?.metadata || {}) as Record<string, any>;
+              const width = Number(metadata.width) || videoMetadata.width || null;
+              const height = Number(metadata.height) || videoMetadata.height || null;
+              const duration = Number(metadata.durationInSeconds) || nativePlaybackDurationSeconds || visualTimelineDurationSeconds || null;
+              const bytes = Number(metadata.outputBytes) || null;
+              const qualityLabel = height
+                ? height >= 2160 ? '4K' : height >= 1920 ? '1080p' : height >= 1280 ? '720p' : height >= 854 ? '480p' : `${height}p`
+                : calidadExportacion.toUpperCase();
+              const fileName = (videoResultadoUrl ? videoResultadoNombre : null) || item?.nombre || 'Nayla_Export.mp4';
+
+              return (
+                <div
+                  onClick={() => setIsDownloadMenuOpen(false)}
+                  style={{
+                    position: 'fixed',
+                    inset: 0,
+                    zIndex: 320000,
+                    background: 'rgba(0,0,0,.76)',
+                    backdropFilter: 'blur(12px)',
+                    WebkitBackdropFilter: 'blur(12px)',
+                    display: 'flex',
+                    alignItems: isPhoneViewport ? 'flex-end' : 'center',
+                    justifyContent: 'center',
+                    padding: isPhoneViewport ? 0 : 18,
+                  }}
+                >
+                  <div
+                    onClick={(event) => event.stopPropagation()}
                     style={{
-                      padding: '8px 12px',
-                      backgroundColor: calidadExportacion === res.toLowerCase() ? '#ffffff' : '#111111',
-                      color: calidadExportacion === res.toLowerCase() ? '#000000' : '#ffffff',
-                      border: '1px solid #262626',
-                      borderRadius: '8px',
-                      fontSize: '0.7rem',
-                      fontWeight: 'bold',
-                      cursor: 'pointer',
-                      textAlign: 'left',
-                      transition: 'all 0.15s ease'
+                      width: isPhoneViewport ? '100%' : 'min(460px, 94vw)',
+                      borderRadius: isPhoneViewport ? '24px 24px 0 0' : 22,
+                      border: '1px solid #2b2b2b',
+                      background: 'linear-gradient(180deg, rgba(20,20,20,.98), rgba(6,6,6,.99))',
+                      boxShadow: '0 -12px 55px rgba(0,0,0,.65)',
+                      padding: '18px 18px calc(18px + env(safe-area-inset-bottom))',
+                      color: '#fff',
                     }}
                   >
-                    {res}
-                  </button>
-                ))}
-              </div>
-            )}
+                    <div style={{ width: 42, height: 4, borderRadius: 999, background: '#3a3a3a', margin: '0 auto 16px' }} />
+                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'flex-start' }}>
+                      <div>
+                        <div style={{ fontSize: '0.64rem', letterSpacing: '1.2px', color: '#8d8d8d', fontWeight: 900 }}>NAYLA · EXPORTACIÓN</div>
+                        <div style={{ marginTop: 5, fontSize: '1rem', fontWeight: 900 }}>Tu video está listo</div>
+                      </div>
+                      <button
+                        type="button"
+                        aria-label="Cerrar bandeja de descarga"
+                        onClick={() => setIsDownloadMenuOpen(false)}
+                        style={{ width: 36, height: 36, borderRadius: 11, border: '1px solid #333', background: '#111', color: '#fff', fontSize: 22, cursor: 'pointer' }}
+                      >
+                        ×
+                      </button>
+                    </div>
+
+                    <div style={{
+                      marginTop: 16,
+                      border: '1px solid #2a2a2a',
+                      borderRadius: 16,
+                      padding: 13,
+                      background: '#0d0d0d',
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                        <div style={{
+                          width: 54,
+                          height: 72,
+                          borderRadius: 12,
+                          background: 'linear-gradient(145deg, #171717, #050505)',
+                          border: '1px solid #333',
+                          display: 'grid',
+                          placeItems: 'center',
+                          flex: '0 0 auto',
+                        }}>
+                          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                            <polygon points="23 7 16 12 23 17 23 7" />
+                            <rect x="1" y="5" width="15" height="14" rx="2" ry="2" />
+                          </svg>
+                        </div>
+                        <div style={{ minWidth: 0, flex: 1 }}>
+                          <div style={{ fontSize: '0.78rem', fontWeight: 850, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{fileName}</div>
+                          <div style={{ marginTop: 5, color: '#8b8b8b', fontSize: '0.62rem' }}>
+                            MP4 · {qualityLabel}{width && height ? ` · ${width}×${height}` : ''}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 7, marginTop: 12 }}>
+                        {[
+                          ['CALIDAD', qualityLabel],
+                          ['DURACIÓN', formatDownloadDuration(duration)],
+                          ['TAMAÑO', formatDownloadBytes(bytes)],
+                        ].map(([label, value]) => (
+                          <div key={label} style={{ padding: '9px 7px', borderRadius: 10, background: '#141414', border: '1px solid #262626', textAlign: 'center' }}>
+                            <div style={{ fontSize: '0.5rem', color: '#666', fontWeight: 900, letterSpacing: '.7px' }}>{label}</div>
+                            <div style={{ marginTop: 4, fontSize: '0.68rem', fontWeight: 850 }}>{value}</div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      disabled={downloadBusy}
+                      onClick={() => void handleDescargar()}
+                      style={{
+                        width: '100%',
+                        minHeight: 52,
+                        marginTop: 14,
+                        borderRadius: 14,
+                        border: '1px solid #fff',
+                        background: downloadBusy ? '#bdbdbd' : '#fff',
+                        color: '#050505',
+                        fontWeight: 950,
+                        letterSpacing: '.45px',
+                        cursor: downloadBusy ? 'wait' : 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: 9,
+                      }}
+                    >
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                        <polyline points="7 10 12 15 17 10"/>
+                        <line x1="12" y1="15" x2="12" y2="3"/>
+                      </svg>
+                      {downloadBusy ? 'PREPARANDO…' : 'DESCARGAR MP4'}
+                    </button>
+
+                    {downloadStatus && (
+                      <div style={{ marginTop: 9, textAlign: 'center', fontSize: '0.62rem', color: downloadStatus === 'Descarga iniciada' ? '#fff' : '#8d8d8d' }}>
+                        {downloadStatus}
+                      </div>
+                    )}
+
+                    <div style={{ marginTop: 11, color: '#707070', fontSize: '0.57rem', lineHeight: 1.45, textAlign: 'center' }}>
+                      Esta bandeja descarga el archivo renderizado real. Para cambiar de resolución debes generar un nuevo render.
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
           </div>
 
           {/* BOTÓN Y PANEL DE PERFIL DE USUARIO / LOGIN */}
