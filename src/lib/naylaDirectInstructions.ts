@@ -2,6 +2,7 @@ import { getNaylaActionValidationIssues, parseNaylaAction, type NaylaAction } fr
 import { isNaylaVisualTemplateName } from './naylaVisualTemplates';
 import { NAYLA_SUBTITLE_STYLES } from './naylaSubtitleStyles';
 import { NAYLA_FILTER_PRESET_NAMES } from './naylaFilterPresets';
+import { NAYLA_AUDIO_BUSES, NAYLA_AUDIO_MIX_PRESET_NAMES } from './naylaAudioMix';
 
 export type NaylaDirectPlan = {
   action: Extract<NaylaAction, { action: 'BUILD_TIMELINE' }>;
@@ -29,6 +30,8 @@ const SUBTITLE_STYLES = new Set<string>(NAYLA_SUBTITLE_STYLES);
 const TITLE_STYLES = new Set(['clean', 'cinematic', 'neon', 'minimal']);
 const POSITIONS = new Set(['top', 'center', 'bottom']);
 const TITLE_ANIMATIONS = new Set(['fade-up', 'slide-left', 'slide-right', 'pop', 'zoom-in', 'word-rise', 'lower-third']);
+const AUDIO_BUSES = new Set<string>(NAYLA_AUDIO_BUSES);
+const AUDIO_MIX_PRESETS = new Set<string>(NAYLA_AUDIO_MIX_PRESET_NAMES);
 const PROFESSIONAL_EFFECTS = new Set(['chromatic-aberration', 'color-correction', 'glow', 'pixelate', 'zoom-blur', 'vignette', 'light-leak']);
 const GSAP_MOTIONS = new Set(['fade', 'slide-left', 'slide-right', 'slide-up', 'slide-down', 'zoom-in', 'zoom-out', 'bounce', 'elastic', 'spin', 'swing']);
 const PROCEDURAL_PRESETS = new Set(['particles', 'orbit', 'pulse-grid', 'starfield']);
@@ -153,6 +156,14 @@ const parseAssetLine = (line: string, errors: string[]) => {
           if (numeric === null) errors.push(`${label}: volumen inválido.`);
           else asset.volume = numeric;
           break;
+        case 'bus':
+        case 'audiobus':
+        case 'canal': {
+          const bus = normalize(pair.value);
+          if (!AUDIO_BUSES.has(bus)) errors.push(`${label}: bus de audio no reconocido "${pair.value}". Usa voice, music, ambience o sfx.`);
+          else asset.audioBus = bus;
+          break;
+        }
         case 'fadein':
           if (seconds === null) errors.push(`${label}: fadeIn inválido.`);
           else asset.fadeIn = seconds;
@@ -316,6 +327,10 @@ const parseAssetLine = (line: string, errors: string[]) => {
       asset.loop = true;
       continue;
     }
+    if (AUDIO_BUSES.has(normalized)) {
+      asset.audioBus = normalized;
+      continue;
+    }
     if (transitionSeen && seconds !== null) {
       asset.transitionDuration = seconds;
       continue;
@@ -446,6 +461,28 @@ export const parseNaylaDirectInstruction = (raw: string): NaylaDirectParseResult
         exportQuality = value;
       } else if (key === 'render') {
         action.render = parseBool(value, true);
+      } else if (key === 'mix' || key === 'audiomix' || key === 'mezcla') {
+        const preset = normalize(value);
+        if (!AUDIO_MIX_PRESETS.has(preset)) errors.push(`Preset de mezcla no reconocido: "${value}".`);
+        else action.audioMix = { ...((action.audioMix as object) || {}), preset };
+      } else if (key === 'master' || key === 'mastergain') {
+        const gain = parseNumber(value);
+        if (gain === null || gain < 0 || gain > 1.25) errors.push('Ganancia MASTER inválida. Usa 0 a 1.25.');
+        else action.audioMix = { ...((action.audioMix as object) || {}), masterGain: gain };
+      } else if (key === 'ducking' || key === 'autoducking') {
+        action.audioMix = { ...((action.audioMix as object) || {}), autoDucking: parseBool(value, true) };
+      } else if (key === 'duckgain' || key === 'duckmusicgain') {
+        const gain = parseNumber(value);
+        if (gain === null || gain < 0 || gain > 1) errors.push('duckMusicGain inválido. Usa 0 a 1.');
+        else action.audioMix = { ...((action.audioMix as object) || {}), duckMusicGain: gain };
+      } else if (key === 'duckattack') {
+        const seconds = parseSeconds(value);
+        if (seconds === null || seconds < 0 || seconds > 5) errors.push('duckAttack inválido. Usa 0 a 5 segundos.');
+        else action.audioMix = { ...((action.audioMix as object) || {}), duckAttack: seconds };
+      } else if (key === 'duckrelease') {
+        const seconds = parseSeconds(value);
+        if (seconds === null || seconds < 0 || seconds > 8) errors.push('duckRelease inválido. Usa 0 a 8 segundos.');
+        else action.audioMix = { ...((action.audioMix as object) || {}), duckRelease: seconds };
       } else {
         errors.push(`Opción directa no reconocida: "${rootPair[1]}".`);
       }
