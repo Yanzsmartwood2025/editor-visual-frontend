@@ -1,3 +1,5 @@
+import { NAYLA_SUBTITLE_STYLES } from './naylaSubtitleStyles';
+
 export const REMOTION_CPU_EFFECTS = {
   transitions: [
     'fade',
@@ -63,7 +65,7 @@ export const REMOTION_CPU_EFFECTS = {
   },
   captions: {
     supported: true,
-    styles: ['clean', 'cinematic', 'tiktok', 'karaoke'] as const,
+    styles: NAYLA_SUBTITLE_STYLES,
     positions: ['top', 'center', 'bottom'] as const,
     fontSize: { min: 20, max: 120 },
     maxItemsPerRender: 300,
