@@ -84,6 +84,21 @@ export const NAYLA_EDITING_LIBRARY = [
     ], render: false },
   },
   {
+    id: 'voice-polish-master',
+    recommendation: 'Locución más limpia: mezcla con voz protagonista y aplica un master de voz pulida con control de picos.',
+    example: { action: 'BUILD_TIMELINE', audioMix: { preset: 'voice-focus', autoDucking: true }, audioMaster: { preset: 'voice-polish', limiter: true }, assets: [
+      { type: 'audio', source: 'label', label: 'A1', durationInSeconds: 12, audioBus: 'voice', volume: 1 },
+      { type: 'audio', source: 'label', label: 'A2', durationInSeconds: 20, audioBus: 'music', volume: 0.75 },
+    ], render: false },
+  },
+  {
+    id: 'telephone-master',
+    recommendation: 'Para llamada, recuerdo o radio interna usa el preset telephone en el MASTER final.',
+    example: { action: 'BUILD_TIMELINE', audioMaster: { preset: 'telephone' }, assets: [
+      { type: 'audio', source: 'label', label: 'A1', durationInSeconds: 8, audioBus: 'voice' },
+    ], render: false },
+  },
+  {
     id: 'real-3d',
     recommendation: 'Objeto 3D real: requiere un modelo GLB disponible como M1. Permite girarlo e iluminarlo.',
     example: { action: 'BUILD_TIMELINE', assets: [], threeScenes: [{ label: 'M1', start: 0, end: 5, autoRotate: true, lighting: 'studio' }], render: false },
@@ -98,7 +113,7 @@ ASESORÍA PARA PERSONAS SIN CONOCIMIENTOS TÉCNICOS:
 - La biblioteca contiene ejemplos válidos, no archivos disponibles: sustituye etiquetas, tiempos y parámetros con el contexto real. No copies F1/A2/M1 si no existen. Combina recetas cuando corresponda.
 - Una receta de audio no reemplaza el resto del montaje: conserva escenas, efectos, textos y pistas existentes salvo que el usuario pida cambiarlos.
 - volumeKeyframes es una curva de ganancia multiplicativa (0 silencio, 1 nivel base volume); time son segundos desde la entrada del clip. Se interpola linealmente. No son segundos del archivo original y no se reinicia al repetir el audio.
-- Para locución separada de música, prefiere audioBus voice/music + audioMix con autoDucking para una mezcla reutilizable. Usa volumeKeyframes cuando el usuario quiera una curva manual específica. Distingue sonido propio de V1 y pistas A1/A2.
+- Para locución separada de música, prefiere audioBus voice/music + audioMix con autoDucking para una mezcla reutilizable. Usa volumeKeyframes cuando el usuario quiera una curva manual específica. Para pulido final usa audioMaster; recuerda que afecta a toda la mezcla. pitch sí puede aplicarse por pista. Distingue sonido propio de V1 y pistas A1/A2.
 - No afirmes detectar voz, golpes musicales o silencios si no tienes ese análisis. Si no se conocen los tiempos necesarios, pregunta una sola cosa concreta o propone un intervalo explícito antes de ejecutar.
 - Mantén las restricciones del usuario. Si no hay herramienta capaz de cumplir una petición, explica qué parte sí puedes realizar sin inventar una función.
 `;
