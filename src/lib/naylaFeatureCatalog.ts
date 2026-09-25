@@ -2,9 +2,10 @@ import { REMOTION_CPU_EFFECTS } from './remotionEffects';
 import { NAYLA_FILTER_PRESETS } from './naylaFilterPresets';
 import { NAYLA_SUBTITLE_STYLE_GUIDE } from './naylaSubtitleStyles';
 import { NAYLA_AUDIO_BUSES, NAYLA_AUDIO_MIX_PRESET_INFO } from './naylaAudioMix';
+import { NAYLA_AUDIO_MASTER_PRESET_INFO } from './naylaAudioMaster';
 import { SOUND_NAMES } from './naylaDecorations';
 
-export const NAYLA_FEATURE_CATALOG_VERSION = '2026-09-25.1';
+export const NAYLA_FEATURE_CATALOG_VERSION = '2026-09-25.2';
 
 export type NaylaFeatureCatalogItem = {
   id: string;
@@ -113,6 +114,33 @@ export const NAYLA_EDITOR_FEATURE_CATALOG: NaylaFeatureCatalogCategory[] = [
       { id: 'volume-keyframes', label: 'Curvas de volumen', description: 'Automatización manual de volumen por puntos de tiempo y ganancia.', status: 'active' as const },
       { id: 'crossfade-audio', label: 'Crossfade de audio', description: 'Una pista se desvanece mientras entra otra mediante fadeIn/fadeOut y solape.', status: 'active' as const },
       { id: 'master-gain', label: 'MASTER', description: 'Ganancia global aplicada al resultado de todas las pistas del render.', status: 'active' as const },
+    ],
+  },
+  {
+    id: 'audio-master',
+    label: 'Audio · Masterización y DSP',
+    description: 'Procesamiento final real con FFmpeg antes de guardar el MP4.',
+    items: [
+      ...NAYLA_AUDIO_MASTER_PRESET_INFO.map((preset) => ({
+        id: `master-${preset.id}`,
+        label: preset.label,
+        description: preset.description,
+        status: 'active' as const,
+      })),
+      { id: 'pitch', label: 'Pitch por pista', description: 'Cambia el tono de una pista entre 0.25× y 2× durante el render.', status: 'active' as const },
+      { id: 'eq-low-cut', label: 'EQ · Low Cut', description: 'Elimina graves por debajo de una frecuencia configurable.', status: 'active' as const },
+      { id: 'eq-high-cut', label: 'EQ · High Cut', description: 'Recorta agudos por encima de una frecuencia configurable.', status: 'active' as const },
+      { id: 'eq-bass', label: 'EQ · Graves', description: 'Refuerza o reduce graves en dB.', status: 'active' as const },
+      { id: 'eq-presence', label: 'EQ · Presencia', description: 'Refuerza o reduce la zona de presencia de voz e instrumentos.', status: 'active' as const },
+      { id: 'compressor', label: 'Compresor', description: 'Controla diferencias de volumen y hace la mezcla más estable.', status: 'active' as const },
+      { id: 'limiter', label: 'Limiter', description: 'Evita picos excesivos al final de la cadena.', status: 'active' as const },
+      { id: 'normalization', label: 'Normalización', description: 'Normaliza loudness del resultado final con loudnorm.', status: 'active' as const },
+      { id: 'noise-reduction', label: 'Reducción de ruido', description: 'Reduce ruido de fondo con filtrado FFT.', status: 'active' as const },
+      { id: 'noise-gate', label: 'Noise Gate', description: 'Atenúa ruido cuando la señal cae por debajo del umbral.', status: 'active' as const },
+      { id: 'de-esser', label: 'De-Esser', description: 'Reduce sibilancia fuerte en la zona alta de la voz.', status: 'active' as const },
+      { id: 'reverb', label: 'Reverb', description: 'Añade cola espacial mediante ecos múltiples controlados.', status: 'active' as const },
+      { id: 'echo', label: 'Echo / Delay', description: 'Añade repetición retardada controlable.', status: 'active' as const },
+      { id: 'stereo-pan', label: 'Paneo estéreo', description: 'Desplaza el resultado hacia izquierda o derecha.', status: 'active' as const },
     ],
   },
   {
