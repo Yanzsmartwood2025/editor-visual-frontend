@@ -37,6 +37,7 @@ import { NaylaThreeSceneRenderer, type NaylaThreeScene } from './NaylaThreeScene
 import { NaylaVectorAnimationRenderer, type NaylaVectorAnimation } from './NaylaVectorAnimation';
 import { NaylaSkiaGraphicRenderer, type NaylaSkiaGraphic } from './NaylaSkiaGraphic';
 import type { NaylaSubtitleStyle } from '../lib/naylaSubtitleStyles';
+import { getNaylaAudioBusGain, getNaylaMusicDuckGain, resolveNaylaAudioMix, type NaylaAudioBus, type NaylaAudioMixSettings, type NaylaVoiceInterval } from '../lib/naylaAudioMix';
 import { getNaylaFilterCssFilter } from '../lib/naylaFilterPresets';
 
 // Interfaces based on main file
@@ -50,7 +51,7 @@ type ProfessionalEffect = {
 type GsapClipPreset = 'fade' | 'slide-left' | 'slide-right' | 'slide-up' | 'slide-down' | 'zoom-in' | 'zoom-out' | 'bounce' | 'elastic' | 'spin' | 'swing';
 type GsapClipMotion = { enter?: GsapClipPreset; exit?: GsapClipPreset; enterDuration?: number; exitDuration?: number; intensity?: number; };
 type ProceduralMotion = { preset: 'particles' | 'orbit' | 'pulse-grid' | 'starfield'; intensity?: number; speed?: number; seed?: number; color?: string; accentColor?: string; };
-type TimelineItem = { id: string; mediaId: string; tipo: 'foto' | 'video' | 'audio'; nombre: string; etiqueta: string; url: string; durationInSeconds?: number; originalDurationInSeconds?: number; volume?: number; volumeKeyframes?: { time: number; gain: number }[]; fadeIn?: number; fadeOut?: number; scale?: number; delay?: number; startFrom?: number; trimBefore?: number; trimAfter?: number; loop?: boolean; playbackRate?: number; transitionDuration?: number; transitionType?: 'fade' | 'none' | 'wipe' | 'slide' | 'zoom' | 'film-burn' | 'blur-slide' | 'cross-zoom' | 'dreamy-zoom' | 'linear-blur' | 'push-cut'; visualTemplate?: 'fragment-reveal' | 'carousel-card' | 'depth-stack' | 'split-panels' | 'poster-pop'; efecto?: string; brightness?: number; contrast?: number; saturation?: number; overlay?: string; overlayIntensity?: number; professionalEffects?: ProfessionalEffect[]; motionBlur?: { shutterAngle?: number; samples?: number }; gsapMotion?: GsapClipMotion; proceduralMotion?: ProceduralMotion; };
+type TimelineItem = { id: string; mediaId: string; tipo: 'foto' | 'video' | 'audio'; nombre: string; etiqueta: string; url: string; durationInSeconds?: number; originalDurationInSeconds?: number; volume?: number; audioBus?: NaylaAudioBus; volumeKeyframes?: { time: number; gain: number }[]; fadeIn?: number; fadeOut?: number; scale?: number; delay?: number; startFrom?: number; trimBefore?: number; trimAfter?: number; loop?: boolean; playbackRate?: number; transitionDuration?: number; transitionType?: 'fade' | 'none' | 'wipe' | 'slide' | 'zoom' | 'film-burn' | 'blur-slide' | 'cross-zoom' | 'dreamy-zoom' | 'linear-blur' | 'push-cut'; visualTemplate?: 'fragment-reveal' | 'carousel-card' | 'depth-stack' | 'split-panels' | 'poster-pop'; efecto?: string; brightness?: number; contrast?: number; saturation?: number; overlay?: string; overlayIntensity?: number; professionalEffects?: ProfessionalEffect[]; motionBlur?: { shutterAngle?: number; samples?: number }; gsapMotion?: GsapClipMotion; proceduralMotion?: ProceduralMotion; };
 type SubtitleItem = { id: string; texto: string; inicioSec: number; finSec: number; style?: NaylaSubtitleStyle; position?: 'top' | 'center' | 'bottom'; fontSize?: number; fontFamily?: string; fontUrl?: string; color?: string; accentColor?: string; backgroundColor?: string; };
 type LogoItem = { id: string; url: string; x: number; y: number; scale: number; opacity: number; inicioSec?: number; finSec?: number; fadeIn?: number; fadeOut?: number; };
 
@@ -66,6 +67,7 @@ interface MainCompositionProps {
   settings?: {
     fadeOutFinal?: number;
     decorations?: NaylaDecoration[];
+    audioMix?: NaylaAudioMixSettings;
   };
 }
 
@@ -810,7 +812,25 @@ const GlobalFadeOverlay: React.FC<{ durationInFrames: number }> = ({ durationInF
   return <AbsoluteFill style={{ backgroundColor: 'black', opacity }} />;
 };
 
-const AnimatedVolume: React.FC<{ clip: TimelineItem, durationInFrames: number, render: (volume: number) => React.ReactNode, absoluteStartFrame?: number, totalCompositionFrames?: number, globalFadeOutFrames?: number }> = ({ clip, durationInFrames, render, absoluteStartFrame, totalCompositionFrames, globalFadeOutFrames }) => {
+const AnimatedVolume: React.FC<{
+  clip: TimelineItem;
+  durationInFrames: number;
+  render: (volume: number) => React.ReactNode;
+  absoluteStartFrame?: number;
+  totalCompositionFrames?: number;
+  globalFadeOutFrames?: number;
+  audioMix?: NaylaAudioMixSettings;
+  voiceIntervals?: NaylaVoiceInterval[];
+}> = ({
+  clip,
+  durationInFrames,
+  render,
+  absoluteStartFrame,
+  totalCompositionFrames,
+  globalFadeOutFrames,
+  audioMix,
+  voiceIntervals = [],
+}) => {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
 
@@ -836,7 +856,7 @@ const AnimatedVolume: React.FC<{ clip: TimelineItem, durationInFrames: number, r
       0,
       fadeInFrames,
       Math.max(fadeInFrames + 1, effectiveDuration - fadeOutFrames - 1),
-      Math.max(fadeInFrames + 2, effectiveDuration - 1)
+      Math.max(fadeInFrames + 2, effectiveDuration - 1),
     ];
 
     currentVolume = interpolate(
@@ -848,22 +868,32 @@ const AnimatedVolume: React.FC<{ clip: TimelineItem, durationInFrames: number, r
   }
 
   if (globalFadeOutFrames && globalFadeOutFrames > 0 && absoluteStartFrame !== undefined && totalCompositionFrames !== undefined) {
-      const globalFadeStartFrame = totalCompositionFrames - globalFadeOutFrames;
-      const absoluteCurrentFrame = absoluteStartFrame + frame;
+    const globalFadeStartFrame = totalCompositionFrames - globalFadeOutFrames;
+    const absoluteCurrentFrame = absoluteStartFrame + frame;
 
-      if (absoluteCurrentFrame >= globalFadeStartFrame) {
-         const fadeOutProgress = interpolate(
-             absoluteCurrentFrame,
-             [globalFadeStartFrame, totalCompositionFrames],
-             [1, 0],
-             { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' }
-         );
-         currentVolume = currentVolume * fadeOutProgress;
-      }
+    if (absoluteCurrentFrame >= globalFadeStartFrame) {
+      const fadeOutProgress = interpolate(
+        absoluteCurrentFrame,
+        [globalFadeStartFrame, totalCompositionFrames],
+        [1, 0],
+        { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' }
+      );
+      currentVolume *= fadeOutProgress;
+    }
   }
 
   currentVolume *= getAutomatedGain(clip.volumeKeyframes, frame / fps);
-  return <>{render(currentVolume)}</>;
+
+  const resolvedMix = resolveNaylaAudioMix(audioMix);
+  currentVolume *= resolvedMix.masterGain;
+  currentVolume *= getNaylaAudioBusGain(clip.audioBus, resolvedMix);
+
+  if (clip.audioBus === 'music' && absoluteStartFrame !== undefined) {
+    const absoluteSeconds = (absoluteStartFrame + frame) / fps;
+    currentVolume *= getNaylaMusicDuckGain(absoluteSeconds, voiceIntervals, resolvedMix);
+  }
+
+  return <>{render(Math.max(0, currentVolume))}</>;
 };
 
 const DynamicSubtitle: React.FC<{ subtitle: SubtitleItem }> = ({ subtitle }) => {
@@ -1192,6 +1222,26 @@ export const MainComposition: React.FC<MainCompositionProps> = ({ timeline, subt
     [visualClips, fps]
   );
 
+  const voiceIntervals = useMemo<NaylaVoiceInterval[]>(() => {
+    const intervals: NaylaVoiceInterval[] = [];
+
+    for (const clip of audioClips) {
+      if (clip.audioBus !== 'voice' || !clip.durationInSeconds) continue;
+      const start = Math.max(0, Number(clip.delay) || 0);
+      intervals.push({ start, end: start + Math.max(0, Number(clip.durationInSeconds) || 0) });
+    }
+
+    for (const clip of visualSequences) {
+      if (clip.tipo !== 'video' || clip.audioBus !== 'voice') continue;
+      intervals.push({
+        start: clip.absoluteStartFrame / fps,
+        end: (clip.absoluteStartFrame + clip.durationInFrames) / fps,
+      });
+    }
+
+    return intervals.sort((a, b) => a.start - b.start);
+  }, [audioClips, visualSequences, fps]);
+
   const totalCompositionFrames = getCompositionDurationInFrames(
     timeline,
     fps,
@@ -1234,7 +1284,7 @@ export const MainComposition: React.FC<MainCompositionProps> = ({ timeline, subt
                   {clip.tipo === 'video' ? (
                     <GsapClipMotionFrame clip={clip} durationInFrames={clip.durationInFrames}>
                       <AnimatedVisualFrame clip={clip} durationInFrames={clip.durationInFrames}>
-                        <AnimatedVolume clip={clip} durationInFrames={clip.durationInFrames} absoluteStartFrame={clip.absoluteStartFrame} totalCompositionFrames={totalCompositionFrames} globalFadeOutFrames={globalFadeOutFrames} render={(volume) => (
+                        <AnimatedVolume clip={clip} durationInFrames={clip.durationInFrames} absoluteStartFrame={clip.absoluteStartFrame} totalCompositionFrames={totalCompositionFrames} globalFadeOutFrames={globalFadeOutFrames} audioMix={settings.audioMix} voiceIntervals={voiceIntervals} render={(volume) => (
                           <ProfessionalVideo
                             clip={clip}
                             durationInFrames={clip.durationInFrames}
@@ -1342,7 +1392,7 @@ export const MainComposition: React.FC<MainCompositionProps> = ({ timeline, subt
         const startFrame = getItemDelayInFrames(clip, fps);
         return (
           <Sequence key={clip.id} from={startFrame} durationInFrames={audioDurationInFrames}>
-            <AnimatedVolume clip={clip} durationInFrames={audioDurationInFrames} absoluteStartFrame={startFrame} totalCompositionFrames={totalCompositionFrames} globalFadeOutFrames={globalFadeOutFrames} render={(volume) => (
+            <AnimatedVolume clip={clip} durationInFrames={audioDurationInFrames} absoluteStartFrame={startFrame} totalCompositionFrames={totalCompositionFrames} globalFadeOutFrames={globalFadeOutFrames} audioMix={settings.audioMix} voiceIntervals={voiceIntervals} render={(volume) => (
                <Audio
                  src={clip.url}
                  volume={volume}

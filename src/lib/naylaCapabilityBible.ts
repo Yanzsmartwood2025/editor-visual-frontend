@@ -12,7 +12,7 @@ export type NaylaCapability = {
   usefulFor: string[];
 };
 
-export const NAYLA_CAPABILITY_BIBLE_VERSION = '2026-09-24';
+export const NAYLA_CAPABILITY_BIBLE_VERSION = '2026-09-25';
 
 export const NAYLA_CAPABILITY_BIBLE: NaylaCapability[] = [
   {
@@ -39,11 +39,11 @@ export const NAYLA_CAPABILITY_BIBLE: NaylaCapability[] = [
     id: 'audio-mix',
     category: 'Audio',
     label: 'Mezcla, curvas de volumen y fades de audio',
-    description: 'Ajusta volumen, entrada, salida, mezcla y sincronía de pistas existentes. volumeKeyframes permite bajar música bajo otra pista y recuperarla con puntos de tiempo y ganancia; no detecta voz automáticamente.',
+    description: 'Mezclador por buses VOZ, MÚSICA, AMBIENTE y SFX con MASTER global, presets de mezcla, fades, crossfade, curvas de volumen y ducking automático. El ducking usa los intervalos conocidos de las pistas marcadas como voice para bajar music y recuperarla con attack/release; no analiza por sí solo el contenido hablado.',
     status: 'ready',
     engine: 'render',
-    aliases: ['audio', 'musica', 'volumen', 'fade audio', 'entrada de audio', 'salida de audio', 'mezclar sonido'],
-    usefulFor: ['música de fondo', 'entradas suaves', 'cierres de audio'],
+    aliases: ['audio', 'musica', 'volumen', 'fade audio', 'entrada de audio', 'salida de audio', 'mezclar sonido', 'ducking', 'bajar musica con voz', 'locutor', 'voz de fondo', 'master', 'ambiente', 'sfx'],
+    usefulFor: ['locución sobre música', 'podcast', 'música de fondo', 'ambiente', 'crossfades', 'entradas suaves', 'cierres de audio', 'efectos sincronizados'],
   },
   {
     id: 'transition-basic',

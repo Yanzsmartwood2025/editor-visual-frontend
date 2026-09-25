@@ -1,5 +1,6 @@
 import { NAYLA_SUBTITLE_STYLES } from './naylaSubtitleStyles';
 import { NAYLA_FILTER_PRESET_NAMES } from './naylaFilterPresets';
+import { NAYLA_AUDIO_BUSES, NAYLA_AUDIO_MIX_PRESET_NAMES } from './naylaAudioMix';
 
 export const REMOTION_CPU_EFFECTS = {
   transitions: [
@@ -105,6 +106,13 @@ export const REMOTION_CPU_EFFECTS = {
     placement: ['start', 'end', 'x', 'y', 'scale', 'opacity'] as const,
     maxItemsPerRender: 40,
   },
+  audioMix: {
+    supported: true,
+    buses: NAYLA_AUDIO_BUSES,
+    presets: NAYLA_AUDIO_MIX_PRESET_NAMES,
+    controls: ['volume', 'volumeKeyframes', 'fadeIn', 'fadeOut', 'delay', 'trimBefore', 'trimAfter', 'playbackRate', 'loop', 'masterGain', 'autoDucking', 'duckMusicGain', 'duckAttack', 'duckRelease'] as const,
+    automaticDucking: true,
+  },
   three: {
     supported: true,
     input: 'GLB',
@@ -141,11 +149,14 @@ export const REMOTION_CPU_PUBLIC_CATALOG = {
   proceduralMotion: REMOTION_CPU_EFFECTS.proceduralMotion,
   skiaGraphics: REMOTION_CPU_EFFECTS.skiaGraphics,
   vectorAnimations: REMOTION_CPU_EFFECTS.vectorAnimations,
+  audioMix: REMOTION_CPU_EFFECTS.audioMix,
   three: REMOTION_CPU_EFFECTS.three,
   controls: [
     'duración por clip',
     'volumen',
-    'curvas volumeKeyframes: time en segundos locales y gain de 0 a 1; bajadas y recuperaciones de música bajo otra pista',
+    'buses de mezcla VOZ/MÚSICA/AMBIENTE/SFX con MASTER global',
+    'ducking automático de música cuando una pista VOZ está activa, con attack/release configurables',
+    'curvas volumeKeyframes: time en segundos locales y gain de 0 a 1; bajadas y recuperaciones manuales',
     'fade de audio/video',
     'velocidad',
     'recorte',
