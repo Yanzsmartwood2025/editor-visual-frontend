@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 import { uploadR2Object } from './r2';
 import { VERCEL_SANDBOX_CHROMIUM_OPTIONS } from './remotionSandboxOptions';
+import { buildNaylaAudioMasterFilter, type NaylaAudioMasterSettings } from './naylaAudioMaster';
 
 const COMPOSITION_ID = 'MainComposition';
 const BUNDLE_DIR = path.join(process.cwd(), '.remotion');
@@ -178,6 +179,8 @@ const DETACHED_PROGRESS_FILE = '/tmp/nayla-render-progress.json';
 const DETACHED_EXIT_FILE = '/tmp/nayla-render.exit.json';
 const DETACHED_CONFIG_FILE = '/tmp/nayla-render-config.json';
 const DETACHED_RUNNER_FILE = '/tmp/nayla-render-runner.sh';
+const DETACHED_AUDIO_FILTER_FILE = '/tmp/nayla-audio-master-filter.txt';
+const DETACHED_MASTERED_OUTPUT_FILE = '/tmp/nayla-render-mastered.mp4';
 
 export type NaylaDetachedRenderStart = {
   status: 'started';
@@ -221,12 +224,21 @@ const parseDetachedProgress = (rawLog: string): NaylaDetachedRenderPoll => {
     try {
       const message = JSON.parse(line) as Record<string, unknown>;
       const naylaStage = String(message.naylaStage || '');
+      if (naylaStage === 'mastering-audio') {
+        result = {
+          state: 'running',
+          stage: 'saving',
+          phase: 'Procesando y masterizando audio',
+          progress: Math.max(result.progress, 0.93),
+        };
+        continue;
+      }
       if (naylaStage === 'uploading') {
         result = {
           state: 'running',
           stage: 'saving',
           phase: 'Guardando resultado',
-          progress: Math.max(result.progress, 0.94),
+          progress: Math.max(result.progress, 0.96),
         };
         continue;
       }
@@ -235,7 +247,7 @@ const parseDetachedProgress = (rawLog: string): NaylaDetachedRenderPoll => {
           state: 'running',
           stage: 'saving',
           phase: 'Confirmando archivo final',
-          progress: Math.max(result.progress, 0.99),
+          progress: Math.max(result.progress, 0.995),
         };
         continue;
       }
@@ -289,6 +301,12 @@ export async function startVercelSandboxRenderDetached(
   uploadUrl: string
 ): Promise<NaylaDetachedRenderStart> {
   const props = inputPropsToRecord(inputProps);
+  const rawSettings = props.settings && typeof props.settings === 'object' && !Array.isArray(props.settings)
+    ? props.settings as Record<string, unknown>
+    : {};
+  const audioMasterFilter = buildNaylaAudioMasterFilter(
+    rawSettings.audioMaster as NaylaAudioMasterSettings | undefined
+  );
   const { addBundleToSandbox, createSandbox } = await import('@remotion/vercel').catch(() => {
     throw new Error('El adaptador de render no está disponible en este entorno.');
   });
@@ -370,6 +388,43 @@ if [ "$render_status" -ne 0 ]; then
   exit "$render_status"
 fi
 
+if [ -s "${DETACHED_AUDIO_FILTER_FILE}" ]; then
+  printf '{"naylaStage":"mastering-audio"}\\n' >> "${DETACHED_LOG_FILE}"
+  printf '{"naylaStage":"mastering-audio"}\\n' > "${DETACHED_PROGRESS_FILE}"
+  audio_filter="$(cat "${DETACHED_AUDIO_FILTER_FILE}")"
+
+  run_nayla_ffmpeg() {
+    if command -v ffmpeg >/dev/null 2>&1; then
+      ffmpeg "$@"
+      return $?
+    fi
+    if [ -x "./node_modules/.bin/remotion" ]; then
+      "./node_modules/.bin/remotion" ffmpeg "$@"
+      return $?
+    fi
+    npx --yes @remotion/cli@4.0.526 ffmpeg "$@"
+  }
+
+  rm -f "${DETACHED_MASTERED_OUTPUT_FILE}"
+  run_nayla_ffmpeg \
+    -y \
+    -i "${DETACHED_OUTPUT_FILE}" \
+    -map "0:v:0?" \
+    -map "0:a:0?" \
+    -c:v copy \
+    -af "$audio_filter" \
+    -c:a aac \
+    -b:a 192k \
+    -movflags +faststart \
+    "${DETACHED_MASTERED_OUTPUT_FILE}" >> "${DETACHED_LOG_FILE}" 2>&1
+  audio_status=$?
+  if [ "$audio_status" -ne 0 ]; then
+    printf '{"phase":"audio-master","exitCode":%s}\\n' "$audio_status" > "${DETACHED_EXIT_FILE}"
+    exit "$audio_status"
+  fi
+  mv "${DETACHED_MASTERED_OUTPUT_FILE}" "${DETACHED_OUTPUT_FILE}"
+fi
+
 printf '{"naylaStage":"uploading"}\\n' >> "${DETACHED_LOG_FILE}"
 printf '{"naylaStage":"uploading"}\\n' > "${DETACHED_PROGRESS_FILE}"
 curl --fail --silent --show-error --retry 3 --retry-delay 2 \
@@ -395,6 +450,10 @@ exit 0
       {
         path: DETACHED_RUNNER_FILE,
         content: Buffer.from(runner),
+      },
+      {
+        path: DETACHED_AUDIO_FILTER_FILE,
+        content: Buffer.from(audioMasterFilter || ''),
       },
     ]);
 
@@ -481,9 +540,9 @@ export async function pollVercelSandboxRenderDetached({
     return {
       state: 'failed',
       stage: progress.stage,
-      phase: exit.phase === 'upload' ? 'No se pudo guardar el resultado' : 'El render se interrumpió',
+      phase: exit.phase === 'upload' ? 'No se pudo guardar el resultado' : exit.phase === 'audio-master' ? 'No se pudo masterizar el audio' : 'El render se interrumpió',
       progress: progress.progress,
-      error: tail || `El proceso terminó con código ${exitCode}.`,
+      error: tail || (exit.phase === 'audio-master' ? 'No se pudo procesar el audio final.' : `El proceso terminó con código ${exitCode}.`),
     };
   } catch {
     return {

@@ -38,6 +38,7 @@ import { NaylaVectorAnimationRenderer, type NaylaVectorAnimation } from './Nayla
 import { NaylaSkiaGraphicRenderer, type NaylaSkiaGraphic } from './NaylaSkiaGraphic';
 import type { NaylaSubtitleStyle } from '../lib/naylaSubtitleStyles';
 import { getNaylaAudioBusGain, getNaylaMusicDuckGain, resolveNaylaAudioMix, type NaylaAudioBus, type NaylaAudioMixSettings, type NaylaVoiceInterval } from '../lib/naylaAudioMix';
+import type { NaylaAudioMasterSettings } from '../lib/naylaAudioMaster';
 import { getNaylaFilterCssFilter } from '../lib/naylaFilterPresets';
 
 // Interfaces based on main file
@@ -51,7 +52,7 @@ type ProfessionalEffect = {
 type GsapClipPreset = 'fade' | 'slide-left' | 'slide-right' | 'slide-up' | 'slide-down' | 'zoom-in' | 'zoom-out' | 'bounce' | 'elastic' | 'spin' | 'swing';
 type GsapClipMotion = { enter?: GsapClipPreset; exit?: GsapClipPreset; enterDuration?: number; exitDuration?: number; intensity?: number; };
 type ProceduralMotion = { preset: 'particles' | 'orbit' | 'pulse-grid' | 'starfield'; intensity?: number; speed?: number; seed?: number; color?: string; accentColor?: string; };
-type TimelineItem = { id: string; mediaId: string; tipo: 'foto' | 'video' | 'audio'; nombre: string; etiqueta: string; url: string; durationInSeconds?: number; originalDurationInSeconds?: number; volume?: number; audioBus?: NaylaAudioBus; volumeKeyframes?: { time: number; gain: number }[]; fadeIn?: number; fadeOut?: number; scale?: number; delay?: number; startFrom?: number; trimBefore?: number; trimAfter?: number; loop?: boolean; playbackRate?: number; transitionDuration?: number; transitionType?: 'fade' | 'none' | 'wipe' | 'slide' | 'zoom' | 'film-burn' | 'blur-slide' | 'cross-zoom' | 'dreamy-zoom' | 'linear-blur' | 'push-cut'; visualTemplate?: 'fragment-reveal' | 'carousel-card' | 'depth-stack' | 'split-panels' | 'poster-pop'; efecto?: string; brightness?: number; contrast?: number; saturation?: number; overlay?: string; overlayIntensity?: number; professionalEffects?: ProfessionalEffect[]; motionBlur?: { shutterAngle?: number; samples?: number }; gsapMotion?: GsapClipMotion; proceduralMotion?: ProceduralMotion; };
+type TimelineItem = { id: string; mediaId: string; tipo: 'foto' | 'video' | 'audio'; nombre: string; etiqueta: string; url: string; durationInSeconds?: number; originalDurationInSeconds?: number; volume?: number; audioBus?: NaylaAudioBus; pitch?: number; volumeKeyframes?: { time: number; gain: number }[]; fadeIn?: number; fadeOut?: number; scale?: number; delay?: number; startFrom?: number; trimBefore?: number; trimAfter?: number; loop?: boolean; playbackRate?: number; transitionDuration?: number; transitionType?: 'fade' | 'none' | 'wipe' | 'slide' | 'zoom' | 'film-burn' | 'blur-slide' | 'cross-zoom' | 'dreamy-zoom' | 'linear-blur' | 'push-cut'; visualTemplate?: 'fragment-reveal' | 'carousel-card' | 'depth-stack' | 'split-panels' | 'poster-pop'; efecto?: string; brightness?: number; contrast?: number; saturation?: number; overlay?: string; overlayIntensity?: number; professionalEffects?: ProfessionalEffect[]; motionBlur?: { shutterAngle?: number; samples?: number }; gsapMotion?: GsapClipMotion; proceduralMotion?: ProceduralMotion; };
 type SubtitleItem = { id: string; texto: string; inicioSec: number; finSec: number; style?: NaylaSubtitleStyle; position?: 'top' | 'center' | 'bottom'; fontSize?: number; fontFamily?: string; fontUrl?: string; color?: string; accentColor?: string; backgroundColor?: string; };
 type LogoItem = { id: string; url: string; x: number; y: number; scale: number; opacity: number; inicioSec?: number; finSec?: number; fadeIn?: number; fadeOut?: number; };
 
@@ -68,6 +69,7 @@ interface MainCompositionProps {
     fadeOutFinal?: number;
     decorations?: NaylaDecoration[];
     audioMix?: NaylaAudioMixSettings;
+    audioMaster?: NaylaAudioMasterSettings;
   };
 }
 
@@ -764,6 +766,7 @@ const ProfessionalVideo: React.FC<{
       trimAfter={clip.trimAfter !== undefined ? Math.round(clip.trimAfter * fps) : undefined}
       loop={clip.loop}
       playbackRate={clip.playbackRate || 1}
+      toneFrequency={clip.pitch}
       effects={getProfessionalEffects(clip, frame, durationInFrames)}
       style={{ width: '100%', height: '100%', objectFit: 'contain', filter: getFilterStyle(clip) }}
     />
@@ -1400,6 +1403,7 @@ export const MainComposition: React.FC<MainCompositionProps> = ({ timeline, subt
                       trimAfter={clip.trimAfter !== undefined ? Math.round(clip.trimAfter * fps) : undefined}
                  loop={clip.loop}
                  playbackRate={clip.playbackRate || 1}
+                 toneFrequency={clip.pitch}
                />
             )} />
           </Sequence>
