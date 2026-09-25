@@ -3,6 +3,7 @@ import { isNaylaVisualTemplateName } from './naylaVisualTemplates';
 import { NAYLA_SUBTITLE_STYLES } from './naylaSubtitleStyles';
 import { NAYLA_FILTER_PRESET_NAMES } from './naylaFilterPresets';
 import { NAYLA_AUDIO_BUSES, NAYLA_AUDIO_MIX_PRESET_NAMES } from './naylaAudioMix';
+import { NAYLA_AUDIO_MASTER_PRESETS } from './naylaAudioMaster';
 
 export type NaylaDirectPlan = {
   action: Extract<NaylaAction, { action: 'BUILD_TIMELINE' }>;
@@ -32,6 +33,7 @@ const POSITIONS = new Set(['top', 'center', 'bottom']);
 const TITLE_ANIMATIONS = new Set(['fade-up', 'slide-left', 'slide-right', 'pop', 'zoom-in', 'word-rise', 'lower-third']);
 const AUDIO_BUSES = new Set<string>(NAYLA_AUDIO_BUSES);
 const AUDIO_MIX_PRESETS = new Set<string>(NAYLA_AUDIO_MIX_PRESET_NAMES);
+const AUDIO_MASTER_PRESETS = new Set<string>(NAYLA_AUDIO_MASTER_PRESETS);
 const PROFESSIONAL_EFFECTS = new Set(['chromatic-aberration', 'color-correction', 'glow', 'pixelate', 'zoom-blur', 'vignette', 'light-leak']);
 const GSAP_MOTIONS = new Set(['fade', 'slide-left', 'slide-right', 'slide-up', 'slide-down', 'zoom-in', 'zoom-out', 'bounce', 'elastic', 'spin', 'swing']);
 const PROCEDURAL_PRESETS = new Set(['particles', 'orbit', 'pulse-grid', 'starfield']);
@@ -164,6 +166,12 @@ const parseAssetLine = (line: string, errors: string[]) => {
           else asset.audioBus = bus;
           break;
         }
+        case 'pitch':
+        case 'tono':
+        case 'tonefrequency':
+          if (numeric === null || numeric < 0.25 || numeric > 2) errors.push(`${label}: pitch inválido. Usa 0.25 a 2.`);
+          else asset.pitch = numeric;
+          break;
         case 'fadein':
           if (seconds === null) errors.push(`${label}: fadeIn inválido.`);
           else asset.fadeIn = seconds;
@@ -483,6 +491,52 @@ export const parseNaylaDirectInstruction = (raw: string): NaylaDirectParseResult
         const seconds = parseSeconds(value);
         if (seconds === null || seconds < 0 || seconds > 8) errors.push('duckRelease inválido. Usa 0 a 8 segundos.');
         else action.audioMix = { ...((action.audioMix as object) || {}), duckRelease: seconds };
+      } else if (key === 'masterfx' || key === 'audiomaster' || key === 'masterpreset') {
+        const preset = normalize(value);
+        if (!AUDIO_MASTER_PRESETS.has(preset)) errors.push(`Preset MASTER de audio no reconocido: "${value}".`);
+        else action.audioMaster = { ...((action.audioMaster as object) || {}), preset };
+      } else if (key === 'lowcut' || key === 'lowcuthz') {
+        const hz = parseNumber(value);
+        if (hz === null || hz < 20 || hz > 1200) errors.push('lowCut inválido. Usa 20 a 1200 Hz.');
+        else action.audioMaster = { ...((action.audioMaster as object) || {}), lowCutHz: hz };
+      } else if (key === 'highcut' || key === 'highcuthz') {
+        const hz = parseNumber(value);
+        if (hz === null || hz < 800 || hz > 20000) errors.push('highCut inválido. Usa 800 a 20000 Hz.');
+        else action.audioMaster = { ...((action.audioMaster as object) || {}), highCutHz: hz };
+      } else if (key === 'bass' || key === 'bassdb') {
+        const db = parseNumber(value);
+        if (db === null || db < -12 || db > 12) errors.push('Bass EQ inválido. Usa -12 a 12 dB.');
+        else action.audioMaster = { ...((action.audioMaster as object) || {}), bassDb: db };
+      } else if (key === 'presence' || key === 'presencedb') {
+        const db = parseNumber(value);
+        if (db === null || db < -12 || db > 12) errors.push('Presence EQ inválido. Usa -12 a 12 dB.');
+        else action.audioMaster = { ...((action.audioMaster as object) || {}), presenceDb: db };
+      } else if (key === 'compressor' || key === 'compression') {
+        action.audioMaster = { ...((action.audioMaster as object) || {}), compressor: parseBool(value, true) };
+      } else if (key === 'limiter') {
+        action.audioMaster = { ...((action.audioMaster as object) || {}), limiter: parseBool(value, true) };
+      } else if (key === 'normalize' || key === 'normalizar') {
+        action.audioMaster = { ...((action.audioMaster as object) || {}), normalize: parseBool(value, true) };
+      } else if (key === 'noisereduction' || key === 'denoise') {
+        action.audioMaster = { ...((action.audioMaster as object) || {}), noiseReduction: parseBool(value, true) };
+      } else if (key === 'noisegate' || key === 'gate') {
+        action.audioMaster = { ...((action.audioMaster as object) || {}), noiseGate: parseBool(value, true) };
+      } else if (key === 'deesser') {
+        const amount = parseNumber(value);
+        if (amount === null || amount < 0 || amount > 1) errors.push('De-esser inválido. Usa 0 a 1.');
+        else action.audioMaster = { ...((action.audioMaster as object) || {}), deEsser: amount };
+      } else if (key === 'reverb') {
+        const amount = parseNumber(value);
+        if (amount === null || amount < 0 || amount > 1) errors.push('Reverb inválido. Usa 0 a 1.');
+        else action.audioMaster = { ...((action.audioMaster as object) || {}), reverb: amount };
+      } else if (key === 'echo' || key === 'delayfx') {
+        const amount = parseNumber(value);
+        if (amount === null || amount < 0 || amount > 1) errors.push('Echo inválido. Usa 0 a 1.');
+        else action.audioMaster = { ...((action.audioMaster as object) || {}), echo: amount };
+      } else if (key === 'pan' || key === 'stereopan') {
+        const amount = parseNumber(value);
+        if (amount === null || amount < -1 || amount > 1) errors.push('Pan inválido. Usa -1 (izquierda) a 1 (derecha).');
+        else action.audioMaster = { ...((action.audioMaster as object) || {}), pan: amount };
       } else {
         errors.push(`Opción directa no reconocida: "${rootPair[1]}".`);
       }
