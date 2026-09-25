@@ -44,6 +44,7 @@ import SocialHub from '../components/SocialHub';
 import NaylaPlay from '../components/NaylaPlay';
 import NaylaPc from '../components/NaylaPc';
 import type { NaylaEngineMode } from '../lib/naylaSystemCatalog';
+import { NAYLA_EDITOR_FEATURE_CATALOG, NAYLA_FEATURE_CATALOG_VERSION, getNaylaFeatureCatalogTotal } from '../lib/naylaFeatureCatalog';
 import {
   NaylaProjectMenu,
   type NaylaProject,
@@ -339,6 +340,7 @@ export default function NaylaCore() {
   const [expandedSurface, setExpandedSurface] = useState<ExpandedSurface>(null);
   const [filtroGaleria, setFiltroGaleria] = useState<string>('todo'); // todo, videos, fotos, audios
   const [searchQuery, setSearchQuery] = useState('');
+  const [featureCatalogQuery, setFeatureCatalogQuery] = useState('');
 
   const [isMultiSelectMode, setIsMultiSelectMode] = useState(false);
   const longPressTimerRef = useRef<NodeJS.Timeout | null>(null);
@@ -5641,8 +5643,124 @@ if (!session) {
               <div style={{ flex: 1, overflowY: 'auto', padding: '12px' }}>
                 {toolMessage ? (
                   <div style={{ textAlign: 'center', padding: '2rem', color: '#a3a3a3', fontSize: '0.9rem', letterSpacing: '1px' }}>{toolMessage}</div>
-                ) : subTool && ['cristal', 'marco', 'delogo', 'script', 'supervisor', 'render', 'tema', 'vista'].includes(subTool) ? (
+                ) : subTool && ['biblioteca', 'cristal', 'marco', 'delogo', 'script', 'supervisor', 'render', 'tema', 'vista'].includes(subTool) ? (
                   <div>
+                    {subTool === 'biblioteca' && (() => {
+                      const normalized = featureCatalogQuery.trim().toLowerCase();
+                      const categories = NAYLA_EDITOR_FEATURE_CATALOG
+                        .map((category) => ({
+                          ...category,
+                          items: category.items.filter((item) => {
+                            if (!normalized) return true;
+                            return [item.id, item.label, item.description, category.label]
+                              .some((value) => value.toLowerCase().includes(normalized));
+                          }),
+                        }))
+                        .filter((category) => category.items.length > 0);
+
+                      return (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                          <div>
+                            <div style={{ fontSize: '0.78rem', color: '#fff', fontWeight: 900, letterSpacing: '0.8px' }}>
+                              BIBLIOTECA NAYLA
+                            </div>
+                            <div style={{ marginTop: 5, fontSize: '0.62rem', color: '#7f7f7f', lineHeight: 1.5 }}>
+                              {getNaylaFeatureCatalogTotal()} capacidades activas · catálogo {NAYLA_FEATURE_CATALOG_VERSION}
+                            </div>
+                            <div style={{ marginTop: 3, fontSize: '0.58rem', color: '#606060', lineHeight: 1.45 }}>
+                              Esta lista sale del mismo catálogo que usa el renderer. Cuando activemos algo nuevo, se añade aquí.
+                            </div>
+                          </div>
+
+                          <input
+                            value={featureCatalogQuery}
+                            onChange={(event) => setFeatureCatalogQuery(event.target.value)}
+                            placeholder="Buscar: 3D, neón, horror, carrusel…"
+                            style={{
+                              width: '100%',
+                              height: 40,
+                              borderRadius: 10,
+                              border: '1px solid #2b2b2b',
+                              background: '#080808',
+                              color: '#fff',
+                              padding: '0 11px',
+                              outline: 'none',
+                              fontSize: '0.66rem',
+                            }}
+                          />
+
+                          {categories.length === 0 ? (
+                            <div style={{ padding: '18px 10px', textAlign: 'center', color: '#777', fontSize: '0.65rem' }}>
+                              No encontré una capacidad con ese nombre.
+                            </div>
+                          ) : categories.map((category) => (
+                            <div key={category.id} style={{
+                              border: '1px solid #252525',
+                              borderRadius: 12,
+                              overflow: 'hidden',
+                              background: '#090909',
+                            }}>
+                              <div style={{
+                                padding: '10px 11px',
+                                borderBottom: '1px solid #202020',
+                                background: '#0d0d0d',
+                              }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'center' }}>
+                                  <strong style={{ fontSize: '0.67rem', color: '#fff' }}>{category.label.toUpperCase()}</strong>
+                                  <span style={{
+                                    fontSize: '0.5rem',
+                                    border: '1px solid #333',
+                                    color: '#9b9b9b',
+                                    borderRadius: 999,
+                                    padding: '2px 6px',
+                                  }}>
+                                    {category.items.length}
+                                  </span>
+                                </div>
+                                <div style={{ marginTop: 4, fontSize: '0.55rem', color: '#696969', lineHeight: 1.4 }}>
+                                  {category.description}
+                                </div>
+                              </div>
+
+                              <div style={{ display: 'grid', gap: 1, background: '#1b1b1b' }}>
+                                {category.items.map((item) => (
+                                  <div key={category.id + '-' + item.id} style={{
+                                    padding: '9px 10px',
+                                    background: '#090909',
+                                    display: 'grid',
+                                    gridTemplateColumns: '1fr auto',
+                                    gap: 8,
+                                    alignItems: 'start',
+                                  }}>
+                                    <div style={{ minWidth: 0 }}>
+                                      <div style={{ fontSize: '0.63rem', fontWeight: 850, color: '#f4f4f4' }}>{item.label}</div>
+                                      <div style={{ marginTop: 3, fontSize: '0.53rem', color: '#696969', lineHeight: 1.4 }}>
+                                        {item.description}
+                                      </div>
+                                      <div style={{ marginTop: 4, fontSize: '0.48rem', color: '#4f4f4f', fontFamily: 'monospace' }}>
+                                        {item.id}
+                                      </div>
+                                    </div>
+                                    <span style={{
+                                      fontSize: '0.48rem',
+                                      fontWeight: 900,
+                                      letterSpacing: '0.5px',
+                                      color: '#fff',
+                                      border: '1px solid #343434',
+                                      background: '#151515',
+                                      borderRadius: 999,
+                                      padding: '3px 6px',
+                                    }}>
+                                      ACTIVO
+                                    </span>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      );
+                    })()}
                     {subTool === 'cristal' && (
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
                         <p style={{ fontSize: '0.75rem', color: '#fff', fontWeight: 'bold', margin: 0, letterSpacing: '0.5px' }}>
