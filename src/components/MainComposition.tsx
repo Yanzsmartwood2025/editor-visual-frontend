@@ -36,6 +36,7 @@ import { NaylaGsapTitle, type NaylaMotionTitle } from './NaylaGsapTitle';
 import { NaylaThreeSceneRenderer, type NaylaThreeScene } from './NaylaThreeScene';
 import { NaylaVectorAnimationRenderer, type NaylaVectorAnimation } from './NaylaVectorAnimation';
 import { NaylaSkiaGraphicRenderer, type NaylaSkiaGraphic } from './NaylaSkiaGraphic';
+import type { NaylaSubtitleStyle } from '../lib/naylaSubtitleStyles';
 
 // Interfaces based on main file
 type ProfessionalEffect = {
@@ -49,7 +50,7 @@ type GsapClipPreset = 'fade' | 'slide-left' | 'slide-right' | 'slide-up' | 'slid
 type GsapClipMotion = { enter?: GsapClipPreset; exit?: GsapClipPreset; enterDuration?: number; exitDuration?: number; intensity?: number; };
 type ProceduralMotion = { preset: 'particles' | 'orbit' | 'pulse-grid' | 'starfield'; intensity?: number; speed?: number; seed?: number; color?: string; accentColor?: string; };
 type TimelineItem = { id: string; mediaId: string; tipo: 'foto' | 'video' | 'audio'; nombre: string; etiqueta: string; url: string; durationInSeconds?: number; originalDurationInSeconds?: number; volume?: number; volumeKeyframes?: { time: number; gain: number }[]; fadeIn?: number; fadeOut?: number; scale?: number; delay?: number; startFrom?: number; trimBefore?: number; trimAfter?: number; loop?: boolean; playbackRate?: number; transitionDuration?: number; transitionType?: 'fade' | 'none' | 'wipe' | 'slide' | 'zoom' | 'film-burn' | 'blur-slide' | 'cross-zoom' | 'dreamy-zoom' | 'linear-blur' | 'push-cut'; visualTemplate?: 'fragment-reveal' | 'carousel-card' | 'depth-stack' | 'split-panels' | 'poster-pop'; efecto?: string; brightness?: number; contrast?: number; saturation?: number; overlay?: string; overlayIntensity?: number; professionalEffects?: ProfessionalEffect[]; motionBlur?: { shutterAngle?: number; samples?: number }; gsapMotion?: GsapClipMotion; proceduralMotion?: ProceduralMotion; };
-type SubtitleItem = { id: string; texto: string; inicioSec: number; finSec: number; style?: 'clean' | 'cinematic' | 'tiktok' | 'karaoke'; position?: 'top' | 'center' | 'bottom'; fontSize?: number; fontFamily?: string; fontUrl?: string; };
+type SubtitleItem = { id: string; texto: string; inicioSec: number; finSec: number; style?: NaylaSubtitleStyle; position?: 'top' | 'center' | 'bottom'; fontSize?: number; fontFamily?: string; fontUrl?: string; color?: string; accentColor?: string; backgroundColor?: string; };
 type LogoItem = { id: string; url: string; x: number; y: number; scale: number; opacity: number; inicioSec?: number; finSec?: number; fadeIn?: number; fadeOut?: number; };
 
 interface MainCompositionProps {
@@ -901,65 +902,287 @@ const DynamicSubtitle: React.FC<{ subtitle: SubtitleItem }> = ({ subtitle }) => 
   const style = subtitle.style || 'clean';
   const position = subtitle.position || 'bottom';
   const fontSize = subtitle.fontSize || (style === 'cinematic' ? 46 : 42);
+  const color = subtitle.color || '#ffffff';
+  const accentColor = subtitle.accentColor || (
+    style === 'starlight' ? '#c4b5fd'
+      : style === 'neon' || style === 'glow' ? '#7dd3fc'
+        : style === 'retro' ? '#fbbf24'
+          : '#ffffff'
+  );
+  const backgroundColor = subtitle.backgroundColor || (
+    style === 'boxed' ? 'rgba(0,0,0,0.82)'
+      : style === 'minimal-dark' ? 'rgba(3,3,3,0.72)'
+        : 'rgba(0,0,0,0.55)'
+  );
 
+  const durationFrames = Math.max(1, Math.round((subtitle.finSec - subtitle.inicioSec) * fps));
   const durationMs = Math.max(1, (subtitle.finSec - subtitle.inicioSec) * 1000);
-  const words = subtitle.texto.trim().split(/\s+/).filter(Boolean);
-  const captions: Caption[] = words.map((word, index) => {
-    const startMs = (durationMs * index) / Math.max(1, words.length);
-    const endMs = (durationMs * (index + 1)) / Math.max(1, words.length);
-    return {
-      text: (index === 0 ? '' : ' ') + word,
-      startMs,
-      endMs,
-      timestampMs: (startMs + endMs) / 2,
-      confidence: null,
-    };
+  const progress = interpolate(frame, [0, Math.max(1, durationFrames - 1)], [0, 1], {
+    extrapolateLeft: 'clamp',
+    extrapolateRight: 'clamp',
   });
-
-  const combineMs =
-    style === 'karaoke'
-      ? Math.min(1800, durationMs)
-      : style === 'tiktok'
-        ? Math.min(1200, durationMs)
-        : durationMs + 1;
-
-  const pages = createTikTokStyleCaptions({
-    captions,
-    combineTokensWithinMilliseconds: combineMs,
-    breakOnSilenceAfterMilliseconds: 900,
-  }).pages;
-
-  const currentMs = (frame / fps) * 1000;
-  const page = pages.find((item) => currentMs >= item.startMs && currentMs < item.startMs + item.durationMs) || pages[0];
-  if (!page) return null;
-
-  const activeIndex = page.tokens.findIndex((token) => currentMs >= token.fromMs && currentMs < token.toMs);
+  const enter = interpolate(frame, [0, Math.max(1, Math.round(fps * 0.42))], [0, 1], {
+    extrapolateLeft: 'clamp',
+    extrapolateRight: 'clamp',
+  });
 
   const justifyContent =
     position === 'top' ? 'flex-start' : position === 'center' ? 'center' : 'flex-end';
   const verticalPadding =
     position === 'top' ? '10%' : position === 'bottom' ? '10%' : 0;
 
-  const shellStyle: React.CSSProperties =
-    style === 'cinematic'
-      ? {
-          backgroundColor: 'rgba(0,0,0,0.55)',
-          color: '#fff',
+  const shellStyle: React.CSSProperties = (() => {
+    switch (style) {
+      case 'cinematic':
+        return {
+          backgroundColor,
+          color,
           borderRadius: 10,
           padding: '10px 18px',
           textShadow: '0 2px 8px rgba(0,0,0,0.85)',
           letterSpacing: '0.02em',
-        }
-      : style === 'clean'
-        ? {
-            color: '#fff',
-            textShadow: '0 2px 8px rgba(0,0,0,0.9), 0 0 2px #000',
-          }
-        : {
-            color: '#fff',
-            textShadow: '0 2px 7px rgba(0,0,0,0.9)',
-            fontWeight: 900,
-          };
+        };
+      case 'neon':
+        return {
+          color,
+          fontWeight: 850,
+          textShadow: `0 0 4px ${color}, 0 0 10px ${accentColor}, 0 0 22px ${accentColor}, 0 0 40px ${accentColor}`,
+          letterSpacing: '0.035em',
+        };
+      case 'glow':
+        return {
+          color,
+          fontWeight: 800,
+          textShadow: `0 2px 4px rgba(0,0,0,.95), 0 0 10px ${accentColor}, 0 0 24px ${accentColor}`,
+        };
+      case 'outline':
+        return {
+          color,
+          fontWeight: 900,
+          WebkitTextStroke: `2px ${accentColor === '#ffffff' ? '#050505' : accentColor}`,
+          paintOrder: 'stroke fill',
+          textShadow: '0 3px 10px rgba(0,0,0,.75)',
+        };
+      case 'shadow-3d':
+        return {
+          color,
+          fontWeight: 900,
+          textShadow: `1px 1px 0 ${accentColor}, 2px 2px 0 ${accentColor}, 3px 3px 0 ${accentColor}, 5px 6px 12px rgba(0,0,0,.72)`,
+          transform: 'perspective(700px) rotateX(3deg)',
+        };
+      case 'extrude-3d':
+        return {
+          color,
+          fontWeight: 950,
+          letterSpacing: '0.025em',
+          textShadow: `1px 1px 0 ${accentColor}, 2px 2px 0 ${accentColor}, 3px 3px 0 ${accentColor}, 4px 4px 0 ${accentColor}, 5px 5px 0 ${accentColor}, 6px 6px 0 ${accentColor}, 9px 12px 18px rgba(0,0,0,.75)`,
+          transform: `perspective(850px) rotateX(${4 - enter * 4}deg) rotateY(${-5 + enter * 5}deg)`,
+          transformOrigin: 'center',
+        };
+      case 'glass':
+        return {
+          color,
+          fontWeight: 750,
+          padding: '12px 20px',
+          borderRadius: 16,
+          background: backgroundColor === 'rgba(0,0,0,0.55)' ? 'rgba(20,20,20,.42)' : backgroundColor,
+          border: '1px solid rgba(255,255,255,.22)',
+          boxShadow: '0 12px 36px rgba(0,0,0,.32)',
+          backdropFilter: 'blur(14px)',
+          WebkitBackdropFilter: 'blur(14px)',
+          textShadow: '0 2px 7px rgba(0,0,0,.75)',
+        };
+      case 'boxed':
+        return {
+          color,
+          backgroundColor,
+          border: `1px solid ${accentColor}`,
+          borderRadius: 12,
+          padding: '10px 18px',
+          fontWeight: 850,
+          boxShadow: '0 8px 28px rgba(0,0,0,.4)',
+        };
+      case 'marker':
+        return {
+          color,
+          padding: '4px 10px',
+          borderRadius: 4,
+          fontWeight: 900,
+          background: `linear-gradient(transparent 38%, ${accentColor} 38%, ${accentColor} 88%, transparent 88%)`,
+          textShadow: '0 2px 5px rgba(0,0,0,.8)',
+        };
+      case 'underline':
+        return {
+          color,
+          fontWeight: 850,
+          borderBottom: `5px solid ${accentColor}`,
+          paddingBottom: 5,
+          textShadow: '0 2px 7px rgba(0,0,0,.85)',
+        };
+      case 'minimal-dark':
+        return {
+          color,
+          backgroundColor,
+          borderRadius: 8,
+          padding: '8px 14px',
+          fontWeight: 650,
+          letterSpacing: '0.015em',
+        };
+      case 'gradient':
+        return {
+          color: 'transparent',
+          fontWeight: 900,
+          backgroundImage: `linear-gradient(90deg, ${color}, ${accentColor})`,
+          backgroundClip: 'text',
+          WebkitBackgroundClip: 'text',
+          WebkitTextFillColor: 'transparent',
+          filter: 'drop-shadow(0 3px 8px rgba(0,0,0,.75))',
+        };
+      case 'retro':
+        return {
+          color: subtitle.color || '#fef3c7',
+          fontWeight: 950,
+          letterSpacing: '0.055em',
+          textTransform: 'uppercase',
+          textShadow: `3px 3px 0 ${accentColor}, 6px 6px 0 rgba(140,40,40,.75), 8px 10px 15px rgba(0,0,0,.65)`,
+        };
+      case 'glitch': {
+        const glitchX = frame % 8 < 2 ? 3 : frame % 11 < 2 ? -3 : 0;
+        return {
+          color,
+          fontWeight: 900,
+          transform: `translateX(${glitchX}px)`,
+          textShadow: `-3px 0 #22d3ee, 3px 0 #fb7185, 0 3px 8px rgba(0,0,0,.8)`,
+          letterSpacing: '0.025em',
+        };
+      }
+      case 'starlight':
+        return {
+          color: 'transparent',
+          fontWeight: 760,
+          letterSpacing: '0.035em',
+          backgroundImage: `linear-gradient(90deg, ${color}, ${accentColor}, #f9a8d4, ${color})`,
+          backgroundClip: 'text',
+          WebkitBackgroundClip: 'text',
+          WebkitTextFillColor: 'transparent',
+          filter: `drop-shadow(0 0 7px ${accentColor}) drop-shadow(0 3px 8px rgba(0,0,0,.7))`,
+        };
+      case 'tiktok':
+      case 'karaoke':
+      case 'word-rise':
+      case 'pop':
+      case 'typewriter':
+        return {
+          color,
+          fontWeight: 900,
+          textShadow: '0 2px 7px rgba(0,0,0,0.9)',
+        };
+      case 'clean':
+      default:
+        return {
+          color,
+          textShadow: '0 2px 8px rgba(0,0,0,0.9), 0 0 2px #000',
+        };
+    }
+  })();
+
+  const commonStyle: React.CSSProperties = {
+    ...shellStyle,
+    maxWidth: '86%',
+    textAlign: 'center',
+    fontSize,
+    fontFamily,
+    lineHeight: 1.16,
+    whiteSpace: 'pre-wrap',
+    opacity: enter,
+  };
+
+  const renderTrackedWords = () => {
+    const words = subtitle.texto.trim().split(/\s+/).filter(Boolean);
+    const captions: Caption[] = words.map((word, index) => {
+      const startMs = (durationMs * index) / Math.max(1, words.length);
+      const endMs = (durationMs * (index + 1)) / Math.max(1, words.length);
+      return {
+        text: (index === 0 ? '' : ' ') + word,
+        startMs,
+        endMs,
+        timestampMs: (startMs + endMs) / 2,
+        confidence: null,
+      };
+    });
+    const combineMs = style === 'karaoke' ? Math.min(1800, durationMs) : Math.min(1200, durationMs);
+    const pages = createTikTokStyleCaptions({
+      captions,
+      combineTokensWithinMilliseconds: combineMs,
+      breakOnSilenceAfterMilliseconds: 900,
+    }).pages;
+    const currentMs = (frame / fps) * 1000;
+    const page = pages.find((item) => currentMs >= item.startMs && currentMs < item.startMs + item.durationMs) || pages[0];
+    if (!page) return null;
+    const activeIndex = page.tokens.findIndex((token) => currentMs >= token.fromMs && currentMs < token.toMs);
+
+    return page.tokens.map((token, index) => {
+      const active = index === activeIndex;
+      return (
+        <span
+          key={token.fromMs + '-' + index}
+          style={{
+            display: 'inline-block',
+            whiteSpace: 'pre',
+            padding: active ? '2px 5px' : '2px 1px',
+            margin: active ? '0 1px' : 0,
+            borderRadius: active ? 6 : 0,
+            background: active
+              ? (style === 'karaoke' ? accentColor : `${accentColor}33`)
+              : 'transparent',
+            color: active && style === 'karaoke' ? backgroundColor : color,
+            transform: active ? 'scale(1.07)' : 'scale(1)',
+          }}
+        >
+          {token.text}
+        </span>
+      );
+    });
+  };
+
+  const renderAnimatedText = () => {
+    if (style === 'typewriter') {
+      const chars = Math.max(1, subtitle.texto.length);
+      const shown = Math.min(chars, Math.floor(progress * (chars + 1)));
+      return subtitle.texto.slice(0, shown);
+    }
+
+    if (style === 'word-rise' || style === 'pop') {
+      let wordIndex = 0;
+      return subtitle.texto.split(/(\s+)/).map((piece, index) => {
+        if (/^\s+$/.test(piece)) return <React.Fragment key={index}>{piece}</React.Fragment>;
+        const currentWord = wordIndex++;
+        const delayFrames = currentWord * Math.max(1, Math.round(fps * 0.055));
+        const local = interpolate(frame, [delayFrames, delayFrames + Math.max(1, Math.round(fps * 0.32))], [0, 1], {
+          extrapolateLeft: 'clamp',
+          extrapolateRight: 'clamp',
+        });
+        const y = style === 'word-rise' ? (1 - local) * 28 : 0;
+        const scale = style === 'pop'
+          ? 0.72 + local * 0.34 + Math.sin(local * Math.PI) * 0.08
+          : 1;
+        return (
+          <span
+            key={index}
+            style={{
+              display: 'inline-block',
+              opacity: local,
+              transform: `translateY(${y}px) scale(${scale})`,
+            }}
+          >
+            {piece}
+          </span>
+        );
+      });
+    }
+
+    return subtitle.texto;
+  };
 
   return (
     <AbsoluteFill
@@ -971,38 +1194,10 @@ const DynamicSubtitle: React.FC<{ subtitle: SubtitleItem }> = ({ subtitle }) => 
         pointerEvents: 'none',
       }}
     >
-      <div
-        style={{
-          ...shellStyle,
-          maxWidth: '86%',
-          textAlign: 'center',
-          fontSize,
-          fontFamily,
-          lineHeight: 1.16,
-        }}
-      >
-        {page.tokens.map((token, index) => {
-          const active = index === activeIndex && (style === 'tiktok' || style === 'karaoke');
-          return (
-            <span
-              key={token.fromMs + '-' + index}
-              style={{
-                display: 'inline-block',
-                whiteSpace: 'pre',
-                padding: active ? '2px 5px' : '2px 1px',
-                margin: active ? '0 1px' : 0,
-                borderRadius: active ? 6 : 0,
-                background: active
-                  ? (style === 'karaoke' ? 'rgba(255,255,255,0.92)' : 'rgba(255,255,255,0.18)')
-                  : 'transparent',
-                color: active && style === 'karaoke' ? '#080808' : '#fff',
-                transform: active ? 'scale(1.07)' : 'scale(1)',
-              }}
-            >
-              {token.text}
-            </span>
-          );
-        })}
+      <div style={commonStyle}>
+        {style === 'tiktok' || style === 'karaoke'
+          ? renderTrackedWords()
+          : renderAnimatedText()}
       </div>
     </AbsoluteFill>
   );
