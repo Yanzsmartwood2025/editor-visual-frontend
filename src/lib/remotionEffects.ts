@@ -1,6 +1,7 @@
 import { NAYLA_SUBTITLE_STYLES } from './naylaSubtitleStyles';
 import { NAYLA_FILTER_PRESET_NAMES } from './naylaFilterPresets';
 import { NAYLA_AUDIO_BUSES, NAYLA_AUDIO_MIX_PRESET_NAMES } from './naylaAudioMix';
+import { NAYLA_AUDIO_MASTER_PRESETS } from './naylaAudioMaster';
 
 export const REMOTION_CPU_EFFECTS = {
   transitions: [
@@ -113,6 +114,27 @@ export const REMOTION_CPU_EFFECTS = {
     controls: ['volume', 'volumeKeyframes', 'fadeIn', 'fadeOut', 'delay', 'trimBefore', 'trimAfter', 'playbackRate', 'loop', 'masterGain', 'autoDucking', 'duckMusicGain', 'duckAttack', 'duckRelease'] as const,
     automaticDucking: true,
   },
+  audioMaster: {
+    supported: true,
+    engine: 'ffmpeg-postprocess',
+    presets: NAYLA_AUDIO_MASTER_PRESETS,
+    trackControls: ['pitch'] as const,
+    controls: [
+      'lowCutHz',
+      'highCutHz',
+      'bassDb',
+      'presenceDb',
+      'compressor',
+      'limiter',
+      'normalize',
+      'noiseReduction',
+      'noiseGate',
+      'deEsser',
+      'reverb',
+      'echo',
+      'pan',
+    ] as const,
+  },
   three: {
     supported: true,
     input: 'GLB',
@@ -150,6 +172,7 @@ export const REMOTION_CPU_PUBLIC_CATALOG = {
   skiaGraphics: REMOTION_CPU_EFFECTS.skiaGraphics,
   vectorAnimations: REMOTION_CPU_EFFECTS.vectorAnimations,
   audioMix: REMOTION_CPU_EFFECTS.audioMix,
+  audioMaster: REMOTION_CPU_EFFECTS.audioMaster,
   three: REMOTION_CPU_EFFECTS.three,
   controls: [
     'duración por clip',
@@ -158,6 +181,8 @@ export const REMOTION_CPU_PUBLIC_CATALOG = {
     'ducking automático de música cuando una pista VOZ está activa, con attack/release configurables',
     'curvas volumeKeyframes: time en segundos locales y gain de 0 a 1; bajadas y recuperaciones manuales',
     'fade de audio/video',
+    'pitch por pista durante render',
+    'MASTER DSP: EQ, compresor, limiter, normalización, reducción de ruido, gate, de-esser, reverb, echo y paneo estéreo',
     'velocidad',
     'recorte',
     'retraso',
