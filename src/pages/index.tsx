@@ -45,6 +45,7 @@ import NaylaPlay from '../components/NaylaPlay';
 import NaylaPc from '../components/NaylaPc';
 import type { NaylaEngineMode } from '../lib/naylaSystemCatalog';
 import { NAYLA_EDITOR_FEATURE_CATALOG, NAYLA_FEATURE_CATALOG_VERSION, getNaylaFeatureCatalogTotal } from '../lib/naylaFeatureCatalog';
+import type { NaylaAudioBus, NaylaAudioMixSettings } from '../lib/naylaAudioMix';
 import {
   NaylaProjectMenu,
   type NaylaProject,
@@ -76,7 +77,7 @@ type TimelineProfessionalEffect = {
 };
 type TimelineGsapPreset = 'fade' | 'slide-left' | 'slide-right' | 'slide-up' | 'slide-down' | 'zoom-in' | 'zoom-out' | 'bounce' | 'elastic' | 'spin' | 'swing';
 type TimelineGsapMotion = { enter?: TimelineGsapPreset; exit?: TimelineGsapPreset; enterDuration?: number; exitDuration?: number; intensity?: number; };
-type TimelineItem = { id: string; mediaId: string; tipo: 'foto' | 'video' | 'audio'; nombre: string; etiqueta: string; url: string; durationInSeconds?: number; originalDurationInSeconds?: number; volume?: number; volumeKeyframes?: { time: number; gain: number }[]; fadeIn?: number; fadeOut?: number; scale?: number; delay?: number; startFrom?: number; trimBefore?: number; trimAfter?: number; loop?: boolean; playbackRate?: number; transitionDuration?: number; transitionType?: 'fade' | 'none' | 'wipe' | 'slide' | 'zoom' | 'film-burn' | 'blur-slide' | 'cross-zoom' | 'dreamy-zoom' | 'linear-blur' | 'push-cut'; visualTemplate?: 'fragment-reveal' | 'carousel-card' | 'depth-stack' | 'split-panels' | 'poster-pop'; efecto?: string; brightness?: number; contrast?: number; saturation?: number; overlay?: string; overlayIntensity?: number; professionalEffects?: TimelineProfessionalEffect[]; motionBlur?: { shutterAngle?: number; samples?: number }; gsapMotion?: TimelineGsapMotion; proceduralMotion?: { preset: 'particles' | 'orbit' | 'pulse-grid' | 'starfield'; intensity?: number; speed?: number; seed?: number; color?: string; accentColor?: string; }; metadata?: MediaMetadata; };
+type TimelineItem = { id: string; mediaId: string; tipo: 'foto' | 'video' | 'audio'; nombre: string; etiqueta: string; url: string; durationInSeconds?: number; originalDurationInSeconds?: number; volume?: number; audioBus?: NaylaAudioBus; volumeKeyframes?: { time: number; gain: number }[]; fadeIn?: number; fadeOut?: number; scale?: number; delay?: number; startFrom?: number; trimBefore?: number; trimAfter?: number; loop?: boolean; playbackRate?: number; transitionDuration?: number; transitionType?: 'fade' | 'none' | 'wipe' | 'slide' | 'zoom' | 'film-burn' | 'blur-slide' | 'cross-zoom' | 'dreamy-zoom' | 'linear-blur' | 'push-cut'; visualTemplate?: 'fragment-reveal' | 'carousel-card' | 'depth-stack' | 'split-panels' | 'poster-pop'; efecto?: string; brightness?: number; contrast?: number; saturation?: number; overlay?: string; overlayIntensity?: number; professionalEffects?: TimelineProfessionalEffect[]; motionBlur?: { shutterAngle?: number; samples?: number }; gsapMotion?: TimelineGsapMotion; proceduralMotion?: { preset: 'particles' | 'orbit' | 'pulse-grid' | 'starfield'; intensity?: number; speed?: number; seed?: number; color?: string; accentColor?: string; }; metadata?: MediaMetadata; };
 type SubtitleItem = { id: string; texto: string; inicioSec: number; finSec: number; style?: NaylaSubtitleStyle; position?: 'top' | 'center' | 'bottom'; fontSize?: number; fontFamily?: string; fontUrl?: string; color?: string; accentColor?: string; backgroundColor?: string; generated?: boolean; sourceLabel?: string; };
 type MotionTitleItem = {
   id: string;
@@ -383,7 +384,7 @@ export default function NaylaCore() {
   const [vectorAnimations, setVectorAnimations] = useState<VectorAnimationItem[]>([]);
   const [skiaGraphics, setSkiaGraphics] = useState<SkiaGraphicItem[]>([]);
   const [logos, setLogos] = useState<LogoItem[]>([]);
-  const [globalSettings, setGlobalSettings] = useState<{ fadeOutFinal?: number; decorations?: any[] }>({});
+  const [globalSettings, setGlobalSettings] = useState<{ fadeOutFinal?: number; decorations?: any[]; audioMix?: NaylaAudioMixSettings }>({});
   const [clipSeleccionado, setClipSeleccionado] = useState<string | null>(null);
   const [canvasRatio, setCanvasRatio] = useState<string>('9/16');
   const [calidadExportacion, setCalidadExportacion] = useState('720p');
@@ -397,7 +398,7 @@ export default function NaylaCore() {
     threeScenesOverride?: ThreeRenderScene[];
     vectorAnimationsOverride?: VectorAnimationItem[];
     skiaGraphicsOverride?: SkiaGraphicItem[];
-    renderContext?: { logos?: LogoItem[]; settings?: { fadeOutFinal?: number; decorations?: any[] } };
+    renderContext?: { logos?: LogoItem[]; settings?: { fadeOutFinal?: number; decorations?: any[]; audioMix?: NaylaAudioMixSettings } };
   } | null>(null);
   const pendingRenderQualityResolverRef = useRef<{
     resolve: (value: any) => void;
@@ -1611,7 +1612,7 @@ export default function NaylaCore() {
     threeScenesOverride?: ThreeRenderScene[],
     vectorAnimationsOverride?: VectorAnimationItem[],
     skiaGraphicsOverride?: SkiaGraphicItem[],
-    renderContext?: { logos?: LogoItem[]; settings?: { fadeOutFinal?: number; decorations?: any[] } }
+    renderContext?: { logos?: LogoItem[]; settings?: { fadeOutFinal?: number; decorations?: any[]; audioMix?: NaylaAudioMixSettings } }
   ) => {
     const renderProjectId = scopeOverride?.projectId ?? activeProjectId;
     const renderThreadId = scopeOverride?.threadId ?? activeThreadId;
@@ -1769,7 +1770,7 @@ export default function NaylaCore() {
     threeScenesOverride?: ThreeRenderScene[],
     vectorAnimationsOverride?: VectorAnimationItem[],
     skiaGraphicsOverride?: SkiaGraphicItem[],
-    renderContext?: { logos?: LogoItem[]; settings?: { fadeOutFinal?: number; decorations?: any[] } }
+    renderContext?: { logos?: LogoItem[]; settings?: { fadeOutFinal?: number; decorations?: any[]; audioMix?: NaylaAudioMixSettings } }
   ) => new Promise<any>((resolve, reject) => {
     const suggestedQuality = qualityOverride || calidadExportacion || '720p';
     setCalidadExportacion(suggestedQuality);
@@ -1890,6 +1891,7 @@ export default function NaylaCore() {
         ...(Number.isFinite(Number(asset.fadeIn)) ? { fadeIn: Number(asset.fadeIn) } : {}),
         ...(Number.isFinite(Number(asset.fadeOut)) ? { fadeOut: Number(asset.fadeOut) } : {}),
         ...(Number.isFinite(Number(asset.volume)) ? { volume: Number(asset.volume) } : {}),
+        ...(['voice', 'music', 'ambience', 'sfx'].includes(asset.audioBus) ? { audioBus: asset.audioBus as NaylaAudioBus } : {}),
         ...(Array.isArray(asset.volumeKeyframes) ? { volumeKeyframes: asset.volumeKeyframes } : {}),
         ...(Number.isFinite(Number(asset.scale)) ? { scale: Number(asset.scale) } : {}),
         ...(Number.isFinite(Number(asset.delay)) ? { delay: Number(asset.delay) } : {}),
@@ -2127,9 +2129,21 @@ export default function NaylaCore() {
 
     const targetThreadId = scopeOverride?.threadId ?? activeThreadId;
     const stillInOriginChat = !targetThreadId || activeThreadIdRef.current === targetThreadId;
+    const actionRenderSettings = {
+      ...globalSettings,
+      ...(actionData.renderContext?.settings || {}),
+      ...(Array.isArray(actionData.decorations) ? { decorations: actionData.decorations } : {}),
+      ...(actionData.audioMix && typeof actionData.audioMix === 'object' ? { audioMix: actionData.audioMix as NaylaAudioMixSettings } : {}),
+    };
+    const actionRenderContext = {
+      ...(actionData.renderContext || {}),
+      settings: actionRenderSettings,
+    };
 
     if (stillInOriginChat) {
-      if (actionData.renderContext?.settings) setGlobalSettings(actionData.renderContext.settings);
+      if (actionData.renderContext?.settings || actionData.audioMix || Array.isArray(actionData.decorations)) {
+        setGlobalSettings(actionRenderSettings);
+      }
       setLineaDeTiempo(timelineValidado);
       sincronizarLineaDeTiempo(timelineValidado);
       const firstTimelineItem = timelineValidado[0];
@@ -2174,7 +2188,7 @@ export default function NaylaCore() {
         hasThreeSceneDirective ? actionThreeScenes : undefined,
         hasVectorAnimationDirective ? actionVectorAnimations : undefined,
         hasSkiaGraphicDirective ? actionSkiaGraphics : undefined,
-        actionData.renderContext
+        actionRenderContext
       );
     } else {
       showAlert('Nayla armó el timeline con los medios existentes.');
