@@ -4787,7 +4787,7 @@ export default function NaylaCore() {
         },
         modificar: (etiqueta: string, opciones: any) => {
           if (etiqueta === 'global') {
-            const opcionesGlobalesPermitidas = ['fadeOutFinal'];
+            const opcionesGlobalesPermitidas = ['fadeOutFinal', 'audioMix'];
             const opcionesDesconocidas = Object.keys(opciones).filter(k => !opcionesGlobalesPermitidas.includes(k));
             if (opcionesDesconocidas.length > 0) {
               const msj = `Advertencia: Las siguientes opciones en NaylaEngine.modificar('global') no son reconocidas y serán ignoradas: ${opcionesDesconocidas.join(', ')}`;
@@ -4798,7 +4798,7 @@ export default function NaylaCore() {
             return;
           }
 
-          const opcionesPermitidas = ['volume', 'fadeIn', 'fadeOut', 'scale', 'delay', 'startFrom', 'trimBefore', 'trimAfter', 'loop', 'url', 'nombre', 'durationInSeconds', 'playbackRate', 'transitionDuration', 'transitionType', 'efecto', 'brightness', 'contrast', 'saturation', 'blur', 'overlay', 'overlayIntensity'];
+          const opcionesPermitidas = ['volume', 'volumeKeyframes', 'audioBus', 'fadeIn', 'fadeOut', 'scale', 'delay', 'startFrom', 'trimBefore', 'trimAfter', 'loop', 'url', 'nombre', 'durationInSeconds', 'playbackRate', 'transitionDuration', 'transitionType', 'efecto', 'brightness', 'contrast', 'saturation', 'blur', 'overlay', 'overlayIntensity'];
           const opcionesDesconocidas = Object.keys(opciones).filter(k => !opcionesPermitidas.includes(k));
 
           if (opcionesDesconocidas.length > 0) {
