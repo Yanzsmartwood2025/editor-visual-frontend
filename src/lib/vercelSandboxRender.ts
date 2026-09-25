@@ -540,7 +540,7 @@ export async function pollVercelSandboxRenderDetached({
     return {
       state: 'failed',
       stage: progress.stage,
-      phase: exit.phase === 'upload' ? 'No se pudo guardar el resultado' : 'El render se interrumpió',
+      phase: exit.phase === 'upload' ? 'No se pudo guardar el resultado' : exit.phase === 'audio-master' ? 'No se pudo masterizar el audio' : 'El render se interrumpió',
       progress: progress.progress,
       error: tail || (exit.phase === 'audio-master' ? 'No se pudo procesar el audio final.' : `El proceso terminó con código ${exitCode}.`),
     };
