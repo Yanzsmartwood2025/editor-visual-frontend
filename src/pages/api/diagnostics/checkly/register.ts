@@ -1,5 +1,5 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
-import { registerDiagnosticIntegration } from '../../../../lib/diagnosticStore';
+import { recordDiagnosticEvent, registerDiagnosticIntegration } from '../../../../lib/diagnosticStore';
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Método no permitido.' });
@@ -27,6 +27,16 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       provider: 'checkly',
       secret: callbackSecret,
       metadata: { accountId, registeredAt: new Date().toISOString() },
+    });
+
+    await recordDiagnosticEvent({
+      source: 'checkly',
+      service: 'checkly',
+      status: 'ok',
+      severity: 'info',
+      title: 'Checkly conectado',
+      message: 'Monitor de producción y canal de alertas preparados.',
+      details: { registration: 'verified' },
     });
 
     return res.status(200).json({ registered: true });
