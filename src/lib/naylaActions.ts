@@ -7,6 +7,7 @@ import { applyNaylaVisualTemplate, NAYLA_VISUAL_TEMPLATE_NAMES } from './naylaVi
 import { NAYLA_SUBTITLE_STYLES } from './naylaSubtitleStyles';
 import { NAYLA_FILTER_PRESET_NAMES } from './naylaFilterPresets';
 import { audioBusSchema, audioMixSettingsSchema } from './naylaAudioMix';
+import { audioMasterSettingsSchema } from './naylaAudioMaster';
 
 const stockProviderSchema = z.enum(['pexels', 'pixabay', 'openverse']);
 const generationProviderSchema = z.enum(['fal', 'replicate', 'tripo', 'meshy']);
@@ -24,6 +25,7 @@ const buildTimelineAssetSchema = z.object({
   originalDurationInSeconds: z.number().min(0.1).max(7200).optional(),
   volume: z.number().min(0).max(2).optional(),
   audioBus: audioBusSchema.optional(),
+  pitch: z.number().min(0.25).max(2).optional(),
   volumeKeyframes: volumeKeyframesSchema.optional(),
   fadeIn: z.number().min(0).max(30).optional(),
   fadeOut: z.number().min(0).max(30).optional(),
@@ -148,6 +150,7 @@ export const naylaActionSchema = z.discriminatedUnion('action', [
     action: z.literal('BUILD_TIMELINE'),
     decorations: decorationsSchema.optional(),
     audioMix: audioMixSettingsSchema.optional(),
+    audioMaster: audioMasterSettingsSchema.optional(),
     assets: z.array(buildTimelineAssetSchema).max(250).optional().default([]),
     subtitles: z.array(z.object({
       ...fontFields,
