@@ -12,7 +12,7 @@ export type NaylaCapability = {
   usefulFor: string[];
 };
 
-export const NAYLA_CAPABILITY_BIBLE_VERSION = '2026-09-22';
+export const NAYLA_CAPABILITY_BIBLE_VERSION = '2026-09-24';
 
 export const NAYLA_CAPABILITY_BIBLE: NaylaCapability[] = [
   {
@@ -59,10 +59,10 @@ export const NAYLA_CAPABILITY_BIBLE: NaylaCapability[] = [
     id: 'look-cinematic',
     category: 'Color y estilo',
     label: 'Look cinematográfico',
-    description: 'Contraste, brillo, saturación y estilos cinematográfico, suave, vintage, monocromo o alto contraste.',
+    description: 'Contraste, brillo y saturación más una biblioteca de looks activos: cinematográfico, suave, vintage, monocromo, frío azul, cálido, teal-orange, noir, drama desaturado, horror verdoso, dreamy, faded film, cyberpunk, moonlight, sunset, bleach bypass, purple night y blue fire.',
     status: 'ready',
     engine: 'render',
-    aliases: ['cinematografico', 'pelicula', 'cine', 'dramatico', 'vintage', 'suave', 'contraste', 'color', 'blanco y negro', 'sepia'],
+    aliases: ['cinematografico', 'pelicula', 'cine', 'dramatico', 'vintage', 'suave', 'contraste', 'color', 'blanco y negro', 'sepia', 'frio azul', 'calido', 'teal orange', 'noir', 'horror', 'dreamy', 'cyberpunk', 'moonlight', 'sunset', 'purple night', 'blue fire'],
     usefulFor: ['dar identidad visual', 'crear ambiente', 'igualar escenas'],
   },
   {
@@ -109,7 +109,7 @@ export const NAYLA_CAPABILITY_BIBLE: NaylaCapability[] = [
     id: 'captions-professional',
     category: 'Texto y subtítulos',
     label: 'Subtítulos profesionales',
-    description: 'Subtítulos sincronizados conectados con estilos limpio, cinematográfico, TikTok y karaoke, posición configurable y palabra activa.',
+    description: 'Subtítulos sincronizados con clean, cinematic, TikTok, karaoke, neon, glow, outline, shadow/extrude 3D, glass, boxed, marker, underline, minimal dark, gradient, retro, glitch, starlight, word-rise, pop y typewriter, con posición, tamaño y color configurables.',
     status: 'ready',
     engine: 'render',
     aliases: ['subtitulos', 'caption', 'srt', 'palabra por palabra', 'karaoke', 'texto sincronizado', 'texto en pantalla'],
