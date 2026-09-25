@@ -95,6 +95,26 @@ subtitles:
     expect(result.plan.action.subtitles?.[0]?.text).toBe('Línea uno\nLínea dos');
   });
 
+  it('acepta subtítulos 3D y colores en DSL directo', () => {
+    const result = parseNaylaDirectInstruction(`@direct
+assets:
+- F1 | 5s | preset=depth-stack
+subtitles:
+- 0-5 | Texto 3D | extrude-3d | center | 64 | #ffffff | #7dd3fc | rgba(0,0,0,0.6)
+`);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.plan.action.subtitles?.[0]).toMatchObject({
+      style: 'extrude-3d',
+      position: 'center',
+      fontSize: 64,
+      color: '#ffffff',
+      accentColor: '#7dd3fc',
+      backgroundColor: 'rgba(0,0,0,0.6)',
+    });
+  });
+
   it('acepta JSON BUILD_TIMELINE después de @direct', () => {
     const result = parseNaylaDirectInstruction(`@direct
 {"action":"build-timeline","assets":[{"type":"foto","source":"label","label":"F1","durationInSeconds":5}],"render":true}`);

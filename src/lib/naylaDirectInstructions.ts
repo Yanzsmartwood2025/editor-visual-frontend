@@ -1,5 +1,6 @@
 import { getNaylaActionValidationIssues, parseNaylaAction, type NaylaAction } from './naylaActions';
 import { isNaylaVisualTemplateName } from './naylaVisualTemplates';
+import { NAYLA_SUBTITLE_STYLES } from './naylaSubtitleStyles';
 
 export type NaylaDirectPlan = {
   action: Extract<NaylaAction, { action: 'BUILD_TIMELINE' }>;
@@ -23,7 +24,7 @@ const TRANSITIONS = new Set([
 ]);
 
 const OVERLAYS = new Set(['none', 'vignette', 'film-grain', 'light-leak', 'letterbox']);
-const SUBTITLE_STYLES = new Set(['clean', 'cinematic', 'tiktok', 'karaoke']);
+const SUBTITLE_STYLES = new Set<string>(NAYLA_SUBTITLE_STYLES);
 const TITLE_STYLES = new Set(['clean', 'cinematic', 'neon', 'minimal']);
 const POSITIONS = new Set(['top', 'center', 'bottom']);
 const TITLE_ANIMATIONS = new Set(['fade-up', 'slide-left', 'slide-right', 'pop', 'zoom-in', 'word-rise', 'lower-third']);
@@ -337,6 +338,9 @@ const parseSubtitleLine = (line: string, errors: string[]) => {
   const style = normalize(parts[2] || 'clean');
   const position = normalize(parts[3] || 'bottom');
   const fontSize = parts[4] ? parseNumber(parts[4]) : null;
+  const color = parts[5]?.trim();
+  const accentColor = parts[6]?.trim();
+  const backgroundColor = parts[7]?.trim();
 
   return {
     text,
@@ -345,6 +349,9 @@ const parseSubtitleLine = (line: string, errors: string[]) => {
     style: SUBTITLE_STYLES.has(style) ? style : 'clean',
     position: POSITIONS.has(position) ? position : 'bottom',
     ...(fontSize !== null ? { fontSize } : {}),
+    ...(color ? { color } : {}),
+    ...(accentColor ? { accentColor } : {}),
+    ...(backgroundColor ? { backgroundColor } : {}),
   };
 };
 
