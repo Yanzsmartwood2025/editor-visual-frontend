@@ -5,6 +5,7 @@ import { getProviderCandidates } from './mediaProviders/registry';
 import type { MediaCapability, MediaProviderId } from './mediaProviders/types';
 import { applyNaylaVisualTemplate, NAYLA_VISUAL_TEMPLATE_NAMES } from './naylaVisualTemplates';
 import { NAYLA_SUBTITLE_STYLES } from './naylaSubtitleStyles';
+import { NAYLA_FILTER_PRESET_NAMES } from './naylaFilterPresets';
 
 const stockProviderSchema = z.enum(['pexels', 'pixabay', 'openverse']);
 const generationProviderSchema = z.enum(['fal', 'replicate', 'tripo', 'meshy']);
@@ -45,15 +46,7 @@ const buildTimelineAssetSchema = z.object({
   ]).optional(),
   transitionDuration: z.number().min(0).max(10).optional(),
   efecto: z.enum([
-    'none',
-    'grayscale',
-    'sepia',
-    'vintage',
-    'cinematic',
-    'blur',
-    'glow',
-    'high-contrast',
-    'soft',
+    ...NAYLA_FILTER_PRESET_NAMES,
     'ken-burns',
     'pan',
     'rotate',
@@ -62,7 +55,7 @@ const buildTimelineAssetSchema = z.object({
     'float',
     'tilt-3d',
     'parallax-3d',
-  ]).optional(),
+  ] as [string, ...string[]]).optional(),
   visualTemplate: z.enum(NAYLA_VISUAL_TEMPLATE_NAMES).optional(),
   brightness: z.number().min(0.1).max(3).optional(),
   contrast: z.number().min(0.1).max(3).optional(),

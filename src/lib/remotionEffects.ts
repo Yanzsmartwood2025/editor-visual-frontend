@@ -1,4 +1,5 @@
 import { NAYLA_SUBTITLE_STYLES } from './naylaSubtitleStyles';
+import { NAYLA_FILTER_PRESET_NAMES } from './naylaFilterPresets';
 
 export const REMOTION_CPU_EFFECTS = {
   transitions: [
@@ -13,17 +14,7 @@ export const REMOTION_CPU_EFFECTS = {
     'linear-blur',
     'push-cut',
   ] as const,
-  looks: [
-    'none',
-    'grayscale',
-    'sepia',
-    'vintage',
-    'cinematic',
-    'blur',
-    'glow',
-    'high-contrast',
-    'soft',
-  ] as const,
+  looks: NAYLA_FILTER_PRESET_NAMES,
   motion: [
     'none',
     'ken-burns',

@@ -1,6 +1,7 @@
 import { getNaylaActionValidationIssues, parseNaylaAction, type NaylaAction } from './naylaActions';
 import { isNaylaVisualTemplateName } from './naylaVisualTemplates';
 import { NAYLA_SUBTITLE_STYLES } from './naylaSubtitleStyles';
+import { NAYLA_FILTER_PRESET_NAMES } from './naylaFilterPresets';
 
 export type NaylaDirectPlan = {
   action: Extract<NaylaAction, { action: 'BUILD_TIMELINE' }>;
@@ -14,8 +15,8 @@ export type NaylaDirectParseResult =
   | { ok: false; errors: string[] };
 
 const EFFECTS = new Set([
-  'none', 'grayscale', 'sepia', 'vintage', 'cinematic', 'blur', 'glow', 'high-contrast',
-  'soft', 'ken-burns', 'pan', 'rotate', 'push-in', 'pull-out', 'float', 'tilt-3d', 'parallax-3d',
+  ...NAYLA_FILTER_PRESET_NAMES,
+  'ken-burns', 'pan', 'rotate', 'push-in', 'pull-out', 'float', 'tilt-3d', 'parallax-3d',
 ]);
 
 const TRANSITIONS = new Set([

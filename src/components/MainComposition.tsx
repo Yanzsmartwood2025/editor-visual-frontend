@@ -37,6 +37,7 @@ import { NaylaThreeSceneRenderer, type NaylaThreeScene } from './NaylaThreeScene
 import { NaylaVectorAnimationRenderer, type NaylaVectorAnimation } from './NaylaVectorAnimation';
 import { NaylaSkiaGraphicRenderer, type NaylaSkiaGraphic } from './NaylaSkiaGraphic';
 import type { NaylaSubtitleStyle } from '../lib/naylaSubtitleStyles';
+import { getNaylaFilterCssFilter } from '../lib/naylaFilterPresets';
 
 // Interfaces based on main file
 type ProfessionalEffect = {
@@ -110,45 +111,15 @@ const ClipWithFades: React.FC<{ clip: TimelineItem, durationInFrames: number, ch
 // Helper to get CSS filter string based on clip properties
 const getFilterStyle = (clip: TimelineItem): string | undefined => {
   const filters: string[] = [];
-
-  if (clip.efecto) {
-    switch (clip.efecto) {
-      case 'grayscale':
-        filters.push('grayscale(100%)');
-        break;
-      case 'sepia':
-        filters.push('sepia(100%)');
-        break;
-      case 'vintage':
-        filters.push('sepia(50%) contrast(1.2) brightness(0.9)');
-        break;
-      case 'cinematic':
-        filters.push('contrast(1.3) brightness(0.9) saturate(1.2)');
-        break;
-      case 'blur':
-        filters.push('blur(10px)');
-        break;
-      case 'glow':
-        filters.push('saturate(1.18) contrast(1.08) brightness(1.05) drop-shadow(0 0 18px rgba(255,255,255,0.22))');
-        break;
-      case 'high-contrast':
-        filters.push('contrast(1.55) saturate(1.08)');
-        break;
-      case 'soft':
-        filters.push('contrast(0.92) brightness(1.05) saturate(0.92)');
-        break;
-      // You can add more predefined effects here if needed
-    }
-  }
+  const presetFilter = getNaylaFilterCssFilter(clip.efecto);
+  if (presetFilter) filters.push(presetFilter);
 
   if (clip.brightness !== undefined) filters.push(`brightness(${clip.brightness})`);
   if (clip.contrast !== undefined) filters.push(`contrast(${clip.contrast})`);
   if (clip.saturation !== undefined) filters.push(`saturate(${clip.saturation})`);
-  // If the user manually provided a blur number instead of string effect
-  if (/* eslint-disable-next-line @typescript-eslint/no-explicit-any */
-  (clip as any).blur !== undefined && typeof /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
-  (clip as any).blur === 'number') filters.push(`blur(${/* eslint-disable-next-line @typescript-eslint/no-explicit-any */
-  (clip as any).blur}px)`);
+  if ((clip as any).blur !== undefined && typeof (clip as any).blur === 'number') {
+    filters.push(`blur(${(clip as any).blur}px)`);
+  }
 
   return filters.length > 0 ? filters.join(' ') : undefined;
 };
