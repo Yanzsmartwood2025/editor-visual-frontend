@@ -13,6 +13,11 @@ import { ensureSocialProfile, recordSocialUsage } from '../store';
 import { replyUploadPostComment, sendUploadPostDm } from '../providers/uploadPost';
 import { replyZernioComment, sendZernioMessage } from '../providers/zernio';
 import { publishSocialVideo } from '../publishing/service';
+import {
+  getLatestProgramSummary,
+  listPublicationPackages,
+} from '../knowledge/store';
+import type { SocialPlatform } from '../types';
 
 type Candidate = {
   interactionId: string;
@@ -222,6 +227,37 @@ const planPublishCommand = async ({
 
   if (!selectedMedia || !accountIds.length) return null;
 
+  const latestProgram = await getLatestProgramSummary({ userId, projectId });
+  const packageRows = latestProgram
+    ? await listPublicationPackages({ userId, projectId, programId: latestProgram.id })
+    : [];
+  const packageByPlatform = new Map<string, any>();
+  for (const item of packageRows) {
+    const key = String(item.platform);
+    const existing = packageByPlatform.get(key);
+    if (!existing || String(item.language) === 'es') {
+      packageByPlatform.set(key, item);
+    }
+  }
+
+  const variants: Partial<Record<SocialPlatform, {
+    title?: string;
+    caption?: string;
+    hashtags?: string[];
+  }>> = {};
+
+  for (const accountId of accountIds) {
+    const account = allowedAccounts.get(accountId) as any;
+    if (!account) continue;
+    const socialPackage = packageByPlatform.get(String(account.platform));
+    if (!socialPackage) continue;
+    variants[account.platform as SocialPlatform] = {
+      title: String(socialPackage.title || ''),
+      caption: String(socialPackage.caption || ''),
+      hashtags: Array.isArray(socialPackage.hashtags) ? socialPackage.hashtags.map(String) : [],
+    };
+  }
+
   const destinations = accountIds
     .map((id) => allowedAccounts.get(id))
     .filter(Boolean)
@@ -234,10 +270,22 @@ const planPublishCommand = async ({
   const caption = String(parsed.caption || '').trim().slice(0, 10000);
   const label = selectedMedia.etiqueta || selectedMedia.nombre || 'video';
 
+  const variantLines = Object.entries(variants).map(([platform, variant]) => {
+    const cleanTitle = String(variant?.title || '').trim();
+    const cleanCaption = String(variant?.caption || '').trim();
+    const hashtags = Array.isArray(variant?.hashtags) ? variant!.hashtags!.join(' ') : '';
+    const preview = [cleanTitle, cleanCaption, hashtags].filter(Boolean).join(' · ');
+    return preview ? `${platform}: ${preview.slice(0, 360)}${preview.length > 360 ? '…' : ''}` : '';
+  }).filter(Boolean);
+
   const summary = [
     `Voy a publicar ${label} en ${destinations.join(', ')}.`,
-    title ? `Título: ${title}` : '',
-    caption ? `Descripción: ${caption}` : '',
+    variantLines.length
+      ? 'Usaré un texto distinto para cada red:'
+      : '',
+    ...variantLines,
+    !variantLines.length && title ? `Título: ${title}` : '',
+    !variantLines.length && caption ? `Descripción: ${caption}` : '',
     '',
     'No he publicado nada todavía. Si está bien, dime “Dale” y lo ejecuto.',
   ].filter(Boolean).join('\n');
@@ -257,6 +305,8 @@ const planPublishCommand = async ({
         accountIds,
         title,
         caption,
+        variants,
+        programId: latestProgram?.id || null,
         destinations,
       },
     }],
@@ -536,6 +586,9 @@ const executePublishItem = async ({
     : [];
   const title = String(item.payload?.title || '');
   const caption = String(item.payload?.caption || '');
+  const variants = item.payload?.variants && typeof item.payload.variants === 'object'
+    ? item.payload.variants
+    : undefined;
 
   if (!mediaId || !accountIds.length) {
     throw new Error('La orden de publicación está incompleta.');
@@ -548,6 +601,7 @@ const executePublishItem = async ({
     accountIds,
     title,
     caption,
+    variants,
     source: 'nayla_universal_dale',
   });
 };
