@@ -255,6 +255,7 @@ export const createSocialPostWithTargets = async ({
   title,
   caption,
   accounts,
+  metadata = {},
 }: {
   userId: string;
   projectId: string;
@@ -263,6 +264,7 @@ export const createSocialPostWithTargets = async ({
   title: string;
   caption: string;
   accounts: any[];
+  metadata?: Record<string, unknown>;
 }) => {
   const supabase = getWorkspaceSupabaseAdmin();
   const { data: post, error } = await supabase
@@ -275,6 +277,7 @@ export const createSocialPostWithTargets = async ({
       title,
       caption,
       status: 'publishing',
+      metadata,
     })
     .select('*')
     .single();

@@ -84,6 +84,51 @@ export const getUploadPostProfile = async (username: string) => {
   return payload?.profile || payload;
 };
 
+export const ensureUploadPostProfileWebhook = async ({
+  username,
+  url,
+}: {
+  username: string;
+  url: string;
+}) => {
+  if (!username || !url) return { configured: false, reason: 'missing_input' as const };
+
+  const params = new URLSearchParams({ profile_username: username });
+  let existing: any = null;
+  try {
+    existing = await request(`/api/uploadposts/users/profile-webhook?${params.toString()}`);
+  } catch (error: any) {
+    if (error?.status !== 404) throw error;
+  }
+
+  const normalizedUrl = url.replace(/\/+$/, '');
+  const currentUrl = String(
+    existing?.webhook_url ||
+    existing?.profile_webhook?.webhook_url ||
+    ''
+  ).replace(/\/+$/, '');
+
+  if (currentUrl === normalizedUrl) {
+    return { configured: true, created: false, webhook: existing };
+  }
+
+  const created = await request('/api/uploadposts/users/profile-webhook', {
+    method: 'POST',
+    body: JSON.stringify({
+      profile_username: username,
+      webhook_url: normalizedUrl,
+      webhook_events: {
+        upload_completed: true,
+        social_account_connected: true,
+        social_account_disconnected: true,
+        social_account_reauth_required: true,
+      },
+    }),
+  });
+
+  return { configured: true, created: true, webhook: created };
+};
+
 export const createUploadPostConnectUrl = async ({
   username,
   platform,
@@ -167,6 +212,8 @@ export const publishUploadPostVideo = async ({
   const form = new FormData();
   form.append('video', videoUrl);
   form.append('user', username);
+  form.append('request_id', idempotencyKey);
+  form.append('external_id', idempotencyKey);
   form.append('title', title || caption || 'Nayla');
   if (caption) form.append('description', caption);
   for (const platform of platforms) {
@@ -208,6 +255,8 @@ export const publishUploadPostPhoto = async ({
   const form = new FormData();
   form.append('photos[]', blob, 'nayla-photo.jpg');
   form.append('user', username);
+  form.append('request_id', idempotencyKey);
+  form.append('external_id', idempotencyKey);
   form.append('title', title || caption || 'Nayla');
   if (caption) form.append('description', caption);
 

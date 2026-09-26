@@ -1,5 +1,5 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
-import { readRawBody, storeWebhookEvent, verifyUploadPostWebhook } from '../../../../lib/social/webhooks';
+import { bestEffortCacheUploadPostRealtime, readRawBody, storeWebhookEvent, verifyUploadPostWebhook } from '../../../../lib/social/webhooks';
 
 export const config = { api: { bodyParser: false } };
 
@@ -14,6 +14,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const eventType = String(req.headers['x-upload-post-event'] || payload?.event || 'unknown');
     const eventId = String(req.headers['x-upload-post-delivery'] || payload?.delivery_id || '') || null;
     await storeWebhookEvent({ provider: 'upload_post', eventId, eventType, payload });
+    await bestEffortCacheUploadPostRealtime(payload);
     return res.status(200).json({ ok: true });
   } catch (error) {
     return res.status(400).json({ error: error instanceof Error ? error.message : 'Webhook inválido.' });
