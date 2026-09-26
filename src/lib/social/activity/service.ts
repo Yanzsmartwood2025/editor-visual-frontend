@@ -324,18 +324,21 @@ const loadUploadPostComments = async ({
   projectId,
   account,
   username,
+  background = false,
 }: {
   userId: string;
   projectId: string;
   account: any;
   username: string;
+  background?: boolean;
 }) => {
+  const mediaLimit = background ? 8 : 30;
   const mediaPayload = await listUploadPostMedia({
     username,
     platform: account.platform,
-    limit: 30,
+    limit: mediaLimit,
   });
-  const media = extractMedia(mediaPayload).slice(0, 20);
+  const media = extractMedia(mediaPayload).slice(0, background ? 5 : 20);
   let comments = 0;
   const samples: ActivitySample[] = [];
 
@@ -375,10 +378,12 @@ const loadZernioComments = async ({
   userId,
   projectId,
   account,
+  background = false,
 }: {
   userId: string;
   projectId: string;
   account: any;
+  background?: boolean;
 }) => {
   const supabase = getWorkspaceSupabaseAdmin();
   const { data: targets, error } = await supabase
@@ -389,7 +394,7 @@ const loadZernioComments = async ({
     .eq('account_id', account.id)
     .not('provider_post_id', 'is', null)
     .order('updated_at', { ascending: false })
-    .limit(20);
+    .limit(background ? 6 : 20);
 
   if (error) throw error;
 
@@ -407,7 +412,7 @@ const loadZernioComments = async ({
       Array.isArray(external?.data?.posts) ? external.data.posts :
       [];
 
-    for (const post of externalPosts.slice(0, 30)) {
+    for (const post of externalPosts.slice(0, background ? 8 : 30)) {
       const postId = String(
         post?.platformPostId ||
         post?.platform_post_id ||
@@ -428,7 +433,7 @@ const loadZernioComments = async ({
     // External-post discovery is a best-effort fallback. Known Nayla posts still work.
   }
 
-  const posts = Array.from(postMap.values()).slice(0, 12);
+  const posts = Array.from(postMap.values()).slice(0, background ? 5 : 12);
   let comments = 0;
   const samples: ActivitySample[] = [];
 
@@ -467,11 +472,13 @@ const loadUploadPostMessages = async ({
   projectId,
   account,
   username,
+  background = false,
 }: {
   userId: string;
   projectId: string;
   account: any;
   username: string;
+  background?: boolean;
 }) => {
   if (account.platform !== 'instagram') {
     return { conversations: 0, messages: 0, inbound: 0, samples: [] as ActivitySample[], unavailable: true };
@@ -481,7 +488,7 @@ const loadUploadPostMessages = async ({
     username,
     platform: account.platform,
   });
-  const conversations = extractConversations(payload).slice(0, 15);
+  const conversations = extractConversations(payload).slice(0, background ? 5 : 15);
   let totalMessages = 0;
   let inbound = 0;
   const samples: ActivitySample[] = [];
@@ -525,13 +532,15 @@ const loadZernioMessages = async ({
   userId,
   projectId,
   account,
+  background = false,
 }: {
   userId: string;
   projectId: string;
   account: any;
+  background?: boolean;
 }) => {
   const payload = await listZernioConversations(String(account.provider_account_id));
-  const conversations = extractConversations(payload).slice(0, 15);
+  const conversations = extractConversations(payload).slice(0, background ? 5 : 15);
   let totalMessages = 0;
   let inbound = 0;
   const samples: ActivitySample[] = [];
@@ -552,7 +561,7 @@ const loadZernioMessages = async ({
         conversationId,
         String(account.provider_account_id)
       );
-      messages = extractMessages(messagePayload).slice(-100);
+      messages = extractMessages(messagePayload).slice(background ? -30 : -100);
     } catch {
       messages = [];
     }
@@ -647,10 +656,12 @@ export const reviewConnectedSocialActivity = async ({
   userId,
   projectId,
   message,
+  background = false,
 }: {
   userId: string;
   projectId: string;
   message: string;
+  background?: boolean;
 }) => {
   const scope = getSocialActivityReviewScope(message);
   const supabase = getWorkspaceSupabaseAdmin();
@@ -666,7 +677,7 @@ export const reviewConnectedSocialActivity = async ({
 
   if (error) throw error;
 
-  const selected = chooseActivityAccounts(accounts || []).slice(0, 12);
+  const selected = chooseActivityAccounts(accounts || []).slice(0, background ? 6 : 12);
   const activity: AccountActivity[] = [];
 
   for (const routes of selected) {
@@ -699,11 +710,13 @@ export const reviewConnectedSocialActivity = async ({
               projectId,
               account: routes.comments,
               username: profile.upload_post_username,
+              background,
             })
           : await loadZernioComments({
               userId,
               projectId,
               account: routes.comments,
+              background,
             });
 
         item.comments = result.comments;
@@ -721,12 +734,14 @@ export const reviewConnectedSocialActivity = async ({
               userId,
               projectId,
               account: routes.messages,
+              background,
             })
           : await loadUploadPostMessages({
               userId,
               projectId,
               account: routes.messages,
               username: profile.upload_post_username,
+              background,
             });
 
         item.conversations = result.conversations;
@@ -797,5 +812,54 @@ export const reviewConnectedSocialActivity = async ({
     activity,
     peopleCount: peopleCount || 0,
     text: formatActivity(activity, scope),
+  };
+};
+
+export const syncInboundSocialActivity = async (limitWorkspaces = 8) => {
+  const supabase = getWorkspaceSupabaseAdmin();
+  const { data: rows, error } = await supabase
+    .from('social_accounts')
+    .select('user_id,project_id,last_synced_at')
+    .eq('status', 'connected')
+    .order('last_synced_at', { ascending: true, nullsFirst: true })
+    .limit(Math.max(1, Math.min(100, limitWorkspaces * 12)));
+
+  if (error) throw error;
+
+  const workspaces = new Map<string, { userId: string; projectId: string }>();
+  for (const row of rows || []) {
+    const key = `${row.user_id}:${row.project_id}`;
+    if (!workspaces.has(key)) {
+      workspaces.set(key, { userId: String(row.user_id), projectId: String(row.project_id) });
+    }
+    if (workspaces.size >= limitWorkspaces) break;
+  }
+
+  let reviewed = 0;
+  let failed = 0;
+  const errors: string[] = [];
+
+  for (const workspace of workspaces.values()) {
+    try {
+      await reviewConnectedSocialActivity({
+        userId: workspace.userId,
+        projectId: workspace.projectId,
+        message: 'Revisa comentarios y mensajes de todas las redes.',
+        background: true,
+      });
+      reviewed += 1;
+    } catch (error) {
+      failed += 1;
+      if (errors.length < 5) {
+        errors.push(error instanceof Error ? error.message : 'Error revisando actividad.');
+      }
+    }
+  }
+
+  return {
+    workspaces: workspaces.size,
+    reviewed,
+    failed,
+    errors,
   };
 };
