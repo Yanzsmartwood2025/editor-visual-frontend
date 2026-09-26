@@ -4,7 +4,7 @@ import { createNaylaActionPlan, getPendingNaylaActionPlan } from '../../lib/nayl
 import { buildEditorReview } from '../../lib/naylaEditorReview';
 import { NAYLA_EDITOR_CONTRACT, EDITOR_PLANNING_RULES } from '../../lib/naylaEditorContract';
 import { NAYLA_EDITING_GUIDANCE } from '../../lib/naylaEditingLibrary';
-import { NAYLA_DIRECT_TEMPLATE_COMPILER_GUIDE, parseNaylaDirectInstruction } from '../../lib/naylaDirectInstructions';
+import { NAYLA_DIRECT_TEMPLATE_COMPILER_GUIDE, parseNaylaDirectInstruction, type NaylaDirectPlan } from '../../lib/naylaDirectInstructions';
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { z } from 'zod';
 import { GroqProvider, MistralProvider } from '../../utils/llmProvider';
@@ -831,12 +831,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     const effectiveHistory = scope.threadId ? persistedHistory : (history || []);
     const executionConfirmed = hasExplicitPlanConfirmation(message, effectiveHistory);
-    const priorUserPlanInstruction = executionConfirmed
-      ? findLastUserPlanInstruction(effectiveHistory)
-      : '';
-    const priorAssistantPlan = executionConfirmed
-      ? findLastAssistantPlan(effectiveHistory)
-      : '';
     const recentPlanningConversation = effectiveHistory
       .slice(-12)
       .filter((item) => !isBarePlanConfirmation(item.content))
@@ -1587,14 +1581,14 @@ Reglas:
       });
     }
 
-    let compiledDirectPlan: ReturnType<typeof parseNaylaDirectInstruction> extends { ok: true; plan: infer T } ? T : never | null = null;
+    let compiledDirectPlan: NaylaDirectPlan | null = null;
     let directValidationIssues: string[] = [];
     let parsedAction: NaylaAction | null = null;
 
     if (stagedEditorWorkflow && editorMode === 'prepare') {
       const parsedTemplate = parseNaylaDirectInstruction(responseText);
       if (parsedTemplate.ok) {
-        compiledDirectPlan = parsedTemplate.plan as any;
+        compiledDirectPlan = parsedTemplate.plan;
         parsedAction = parsedTemplate.plan.action;
       } else {
         directValidationIssues = parsedTemplate.errors;
@@ -1655,7 +1649,7 @@ Reglas:
         if (stagedEditorWorkflow && editorMode === 'prepare') {
           const repairedTemplate = parseNaylaDirectInstruction(responseText);
           if (repairedTemplate.ok) {
-            compiledDirectPlan = repairedTemplate.plan as any;
+            compiledDirectPlan = repairedTemplate.plan;
             parsedAction = repairedTemplate.plan.action;
             directValidationIssues = [];
           } else {
