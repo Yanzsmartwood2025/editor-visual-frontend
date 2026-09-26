@@ -2,6 +2,44 @@ import { getSocialNetwork, type NormalizedSocialAccount, type SocialPlatform } f
 
 const BASE_URL = 'https://api.upload-post.com';
 
+export type SocialPublishVariant = {
+  title?: string;
+  caption?: string;
+  hashtags?: string[];
+};
+
+const variantText = (variant?: SocialPublishVariant) => {
+  if (!variant) return '';
+  const parts = [
+    String(variant.caption || '').trim(),
+    Array.isArray(variant.hashtags) ? variant.hashtags.filter(Boolean).join(' ') : '',
+  ].filter(Boolean);
+  return parts.join('\n\n').trim();
+};
+
+const appendPlatformCopy = (
+  form: FormData,
+  platform: SocialPlatform,
+  variant?: SocialPublishVariant
+) => {
+  if (!variant) return;
+  const title = String(variant.title || '').trim();
+  const body = variantText(variant);
+  const prefix = platform === 'x' ? 'x' : platform;
+
+  // Upload-Post uses *_title as the platform-specific caption/text override
+  // on networks without a separate title field.
+  if (['instagram','tiktok','x','threads','bluesky','discord','telegram','google_business'].includes(platform)) {
+    if (body || title) form.append(`${prefix}_title`, body || title);
+    return;
+  }
+
+  if (title) form.append(`${prefix}_title`, title);
+  if (body && ['youtube','linkedin','facebook','pinterest','reddit'].includes(platform)) {
+    form.append(`${prefix}_description`, body);
+  }
+};
+
 const apiKey = () => {
   const key = process.env.UPLOAD_POST_API_KEY;
   if (!key) throw new Error('Ruta A todavía no tiene credencial configurada.');
@@ -116,6 +154,7 @@ export const publishUploadPostVideo = async ({
   caption,
   platforms,
   idempotencyKey,
+  variants,
 }: {
   username: string;
   videoUrl: string;
@@ -123,6 +162,7 @@ export const publishUploadPostVideo = async ({
   caption: string;
   platforms: SocialPlatform[];
   idempotencyKey: string;
+  variants?: Partial<Record<SocialPlatform, SocialPublishVariant>>;
 }) => {
   const form = new FormData();
   form.append('video', videoUrl);
@@ -131,7 +171,10 @@ export const publishUploadPostVideo = async ({
   if (caption) form.append('description', caption);
   for (const platform of platforms) {
     const mapped = getSocialNetwork(platform)?.uploadPostPublish;
-    if (mapped) form.append('platform[]', mapped);
+    if (mapped) {
+      form.append('platform[]', mapped);
+      appendPlatformCopy(form, platform, variants?.[platform]);
+    }
   }
   return request('/api/upload', {
     method: 'POST',
@@ -148,6 +191,7 @@ export const publishUploadPostPhoto = async ({
   caption,
   platforms,
   idempotencyKey,
+  variants,
 }: {
   username: string;
   photoUrl: string;
@@ -155,6 +199,7 @@ export const publishUploadPostPhoto = async ({
   caption: string;
   platforms: SocialPlatform[];
   idempotencyKey: string;
+  variants?: Partial<Record<SocialPlatform, SocialPublishVariant>>;
 }) => {
   const source = await fetch(photoUrl);
   if (!source.ok) throw new Error('No se pudo preparar la foto para publicación.');
@@ -168,7 +213,10 @@ export const publishUploadPostPhoto = async ({
 
   for (const platform of platforms) {
     const mapped = getSocialNetwork(platform)?.uploadPostPublish;
-    if (mapped) form.append('platform[]', mapped);
+    if (mapped) {
+      form.append('platform[]', mapped);
+      appendPlatformCopy(form, platform, variants?.[platform]);
+    }
   }
 
   return request('/api/upload_photos', {

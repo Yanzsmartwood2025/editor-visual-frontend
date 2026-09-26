@@ -1,6 +1,7 @@
 import { createHash, timingSafeEqual } from 'node:crypto';
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { processPendingMemoryInteractions } from '../../../../lib/social/memory/service';
+import { syncInboundSocialActivity } from '../../../../lib/social/activity/service';
 import { processDueAutomationJobs } from '../../../../lib/social/automation/worker';
 import { getWorkspaceSupabaseAdmin } from '../../../../lib/workspaceStore';
 
@@ -43,11 +44,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
 
   try {
+    // First collect fresh inbound activity, then compact memory, then execute due replies.
+    // This keeps Nayla listening even when the user does not have REDES open.
+    const inbound = await syncInboundSocialActivity(8);
     const memory = await processPendingMemoryInteractions(20);
     const automation = await processDueAutomationJobs(20);
 
     return res.status(200).json({
       ok: true,
+      inbound,
       memory,
       automation,
       ranAt: new Date().toISOString(),

@@ -106,6 +106,20 @@ export const listZernioAccounts = async (profileId?: string | null): Promise<Nor
     .filter((account: NormalizedSocialAccount) => Boolean(account.providerAccountId));
 };
 
+type ZernioPublishVariant = {
+  title?: string;
+  caption?: string;
+  hashtags?: string[];
+};
+
+const zernioVariantText = (variant?: ZernioPublishVariant) => {
+  if (!variant) return '';
+  return [
+    String(variant.caption || '').trim(),
+    Array.isArray(variant.hashtags) ? variant.hashtags.filter(Boolean).join(' ') : '',
+  ].filter(Boolean).join('\n\n').trim();
+};
+
 export const publishZernioMedia = async ({
   mediaUrl,
   mediaType,
@@ -113,6 +127,7 @@ export const publishZernioMedia = async ({
   title,
   accounts,
   idempotencyKey,
+  variants,
 }: {
   mediaUrl: string;
   mediaType: 'video' | 'image';
@@ -120,6 +135,7 @@ export const publishZernioMedia = async ({
   title: string;
   accounts: { platform: SocialPlatform; accountId: string }[];
   idempotencyKey: string;
+  variants?: Partial<Record<SocialPlatform, ZernioPublishVariant>>;
 }) => {
   return request('/posts', {
     method: 'POST',
@@ -128,13 +144,25 @@ export const publishZernioMedia = async ({
       content: caption || title || '',
       title: title || undefined,
       mediaItems: [{ type: mediaType, url: mediaUrl }],
-      platforms: accounts.map(({ platform, accountId }) => ({
-        platform: getSocialNetwork(platform)?.zernio || platform,
-        accountId,
-        ...(platform === 'youtube' && mediaType === 'video'
-          ? { platformSpecificData: { title: (title || 'Nayla').slice(0, 100), visibility: 'public' } }
-          : {}),
-      })),
+      platforms: accounts.map(({ platform, accountId }) => {
+        const variant = variants?.[platform];
+        const customContent = zernioVariantText(variant);
+        const variantTitle = String(variant?.title || title || '').trim();
+
+        return {
+          platform: getSocialNetwork(platform)?.zernio || platform,
+          accountId,
+          ...(customContent ? { customContent } : {}),
+          ...(platform === 'youtube' && mediaType === 'video'
+            ? {
+                platformSpecificData: {
+                  title: (variantTitle || 'Nayla').slice(0, 100),
+                  visibility: 'public',
+                },
+              }
+            : {}),
+        };
+      }),
       ...(accounts.some((account) => account.platform === 'tiktok')
         ? {
             tiktokSettings: {
@@ -158,12 +186,14 @@ export const publishZernioVideo = async ({
   title,
   accounts,
   idempotencyKey,
+  variants,
 }: {
   videoUrl: string;
   caption: string;
   title: string;
   accounts: { platform: SocialPlatform; accountId: string }[];
   idempotencyKey: string;
+  variants?: Partial<Record<SocialPlatform, ZernioPublishVariant>>;
 }) => publishZernioMedia({
   mediaUrl: videoUrl,
   mediaType: 'video',
@@ -171,6 +201,7 @@ export const publishZernioVideo = async ({
   title,
   accounts,
   idempotencyKey,
+  variants,
 });
 
 export const getZernioAnalytics = async ({

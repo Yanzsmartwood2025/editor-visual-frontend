@@ -140,6 +140,24 @@ export const upsertSocialAccounts = async ({
       updated_at: new Date().toISOString(),
     }));
   if (!rows.length) return [];
+
+  for (const row of rows) {
+    const { data: existing, error: existingError } = await supabase
+      .from('social_accounts')
+      .select('id,user_id,project_id')
+      .eq('provider', row.provider)
+      .eq('provider_account_id', row.provider_account_id)
+      .maybeSingle();
+
+    if (existingError) throw existingError;
+    if (
+      existing &&
+      (String(existing.user_id) !== String(userId) || String(existing.project_id) !== String(projectId))
+    ) {
+      throw new Error('Esta cuenta ya está vinculada a otro espacio de Nayla.');
+    }
+  }
+
   const { data, error } = await supabase
     .from('social_accounts')
     .upsert(rows, { onConflict: 'provider,provider_account_id' })

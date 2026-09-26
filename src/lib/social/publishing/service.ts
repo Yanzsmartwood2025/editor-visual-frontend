@@ -1,4 +1,4 @@
-import { getSocialNetwork } from '../types';
+import { getSocialNetwork, type SocialPlatform } from '../types';
 import { publishUploadPostPhoto, publishUploadPostVideo } from '../providers/uploadPost';
 import { publishZernioMedia } from '../providers/zernio';
 import {
@@ -26,6 +26,8 @@ export const publishSocialVideo = async ({
   title = '',
   caption = '',
   source = 'social_ui',
+  variants,
+  programId,
 }: {
   userId: string;
   projectId: string;
@@ -34,6 +36,13 @@ export const publishSocialVideo = async ({
   title?: string;
   caption?: string;
   source?: string;
+  variants?: Partial<Record<SocialPlatform, {
+    title?: string;
+    caption?: string;
+    hashtags?: string[];
+    language?: string;
+  }>>;
+  programId?: string | null;
 }) => {
   const media = await getOwnedPublishMedia({ userId, projectId, mediaId });
   const profile = await ensureSocialProfile(userId, projectId);
@@ -43,17 +52,48 @@ export const publishSocialVideo = async ({
   const activeAccounts = accounts.filter((account) => account.status === 'connected');
   if (!activeAccounts.length) throw new Error('No hay destinos conectados para publicar.');
 
+  const firstVariant = activeAccounts
+    .map((account) => variants?.[account.platform as SocialPlatform])
+    .find(Boolean);
+  const postTitle = title || firstVariant?.title || '';
+  const postCaption = caption || firstVariant?.caption || '';
+
   const { post, targets } = await createSocialPostWithTargets({
     userId,
     projectId,
     mediaId,
     mediaLabel: media.etiqueta,
-    title,
-    caption,
+    title: postTitle,
+    caption: postCaption,
     accounts: activeAccounts,
   });
 
   const targetByAccount = new Map(targets.map((target: any) => [target.account_id, target]));
+
+  const markPackagePublished = async (platform: string, publishedAt: string) => {
+    if (!programId) return;
+    const { getWorkspaceSupabaseAdmin } = await import('../../workspaceStore');
+    const supabase = getWorkspaceSupabaseAdmin();
+    await supabase
+      .from('social_publication_packages')
+      .update({
+        status: 'published',
+        published_at: publishedAt,
+        updated_at: publishedAt,
+        metadata: {
+          socialPostId: post.id,
+          mediaId,
+          source,
+        },
+      })
+      .eq('user_id', userId)
+      .eq('project_id', projectId)
+      .eq('program_id', programId)
+      .eq('platform', platform)
+      .eq('language', String(variants?.[platform as SocialPlatform]?.language || 'es'))
+      .in('status', ['draft', 'approved', 'published']);
+  };
+
   let published = 0;
   let failed = 0;
   let unresolved = 0;
@@ -73,6 +113,7 @@ export const publishSocialVideo = async ({
             caption,
             platforms: routePlatforms,
             idempotencyKey,
+            variants,
           })
         : await publishUploadPostVideo({
             username: profile.upload_post_username,
@@ -81,6 +122,7 @@ export const publishSocialVideo = async ({
             caption,
             platforms: routePlatforms,
             idempotencyKey,
+            variants,
           });
       const results = result?.results || {};
 
@@ -92,13 +134,15 @@ export const publishSocialVideo = async ({
 
         if (outcome?.success === true) {
           published += 1;
+          const publishedAt = new Date().toISOString();
           await updateSocialTarget(target.id, {
             status: 'published',
             provider_request_id: result?.request_id || idempotencyKey,
             provider_post_id: providerPostId(outcome),
             post_url: providerPostUrl(outcome),
-            published_at: new Date().toISOString(),
+            published_at: publishedAt,
           });
+          await markPackagePublished(account.platform, publishedAt);
         } else if (outcome?.success === false || outcome?.error || outcome?.skipped) {
           failed += 1;
           await updateSocialTarget(target.id, {
@@ -150,6 +194,7 @@ export const publishSocialVideo = async ({
           accountId: String(account.provider_account_id),
         })),
         idempotencyKey,
+        variants,
       });
       const outcomes = Array.isArray(result?.post?.platforms) ? result.post.platforms : [];
 
@@ -168,13 +213,15 @@ export const publishSocialVideo = async ({
 
         if (outcome?.status === 'published') {
           published += 1;
+          const publishedAt = outcome?.publishedAt || new Date().toISOString();
           await updateSocialTarget(target.id, {
             status: 'published',
             provider_request_id: result?.post?._id || idempotencyKey,
             provider_post_id: providerPostId(outcome),
             post_url: providerPostUrl(outcome),
-            published_at: outcome?.publishedAt || new Date().toISOString(),
+            published_at: publishedAt,
           });
+          await markPackagePublished(account.platform, String(publishedAt));
         } else if (outcome?.status === 'failed' || outcome?.error) {
           failed += 1;
           await updateSocialTarget(target.id, {

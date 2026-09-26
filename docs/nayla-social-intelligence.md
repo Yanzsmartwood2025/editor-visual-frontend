@@ -51,3 +51,64 @@ Each automation rule stores its own `due_at`, so an hourly worker can support co
 - Manual replies cancel queued replies.
 - Cross-network identity merging is not automatic.
 - Sensitive information is not intentionally stored in long-term social memory.
+
+
+## Fuentes de Nayla
+
+Google Drive is treated as a live work source, not as long-term conversational memory.
+
+Flow:
+
+1. Each user/project authorizes its own Google account.
+2. Default scope mode is `selected`: OAuth requests `drive.file` and the user chooses documents through Google Picker.
+3. Refresh tokens are encrypted server-side before being stored in Supabase.
+4. Nayla reads only selected compatible documents (Google Docs / text / Markdown / JSON).
+5. Source content is fingerprinted and versioned.
+6. Nayla stores a compact `social_program_summaries` record instead of copying the whole source document into memory.
+7. Platform-specific publication drafts are stored in `social_publication_packages`.
+8. The source document remains the source of truth; a changed source version creates a new summary and supersedes the previous current version.
+
+Optional `GOOGLE_DRIVE_SCOPE_MODE=readonly` enables broad Drive discovery, but `selected` is the recommended multi-user product mode.
+
+Required server environment:
+
+```
+GOOGLE_DRIVE_CLIENT_ID=
+GOOGLE_DRIVE_CLIENT_SECRET=
+NAYLA_CONNECTOR_ENCRYPTION_KEY=
+GOOGLE_DRIVE_PICKER_API_KEY=
+GOOGLE_DRIVE_APP_ID=
+GOOGLE_DRIVE_SCOPE_MODE=selected
+```
+
+The chat recognizes requests such as “revisa qué programa hicimos hoy”. After a source is synced, the latest program summary and per-platform publication packages are part of Nayla Social context.
+
+## Platform-specific publishing copy
+
+A publication is no longer modeled as one universal caption. Nayla stores a variant per platform and language.
+
+The provider-neutral payload can carry:
+
+```json
+{
+  "variants": {
+    "youtube": { "title": "...", "caption": "...", "hashtags": ["#..."] },
+    "tiktok": { "caption": "...", "hashtags": ["#..."] },
+    "facebook": { "caption": "...", "hashtags": ["#..."] }
+  }
+}
+```
+
+Provider adapters translate these variants into each route's per-platform override fields without exposing provider details to the UI.
+
+## Background inbound listener
+
+The existing hourly social scheduler now performs a low-cost inbound review before memory compaction and due reply execution:
+
+provider/webhook or light poll → normalized interaction → identity → memory → automation queue.
+
+Interactive “revisa todo” requests scan more history. The background listener intentionally inspects fewer accounts/posts/conversations to reduce API consumption.
+
+## Multi-tenant ownership
+
+`social_accounts` keeps the provider account identity globally unique. Before an upsert, Nayla checks its current owner. A social account already owned by another user/project is rejected instead of being silently reassigned.

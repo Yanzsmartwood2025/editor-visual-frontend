@@ -8,6 +8,14 @@ import {
   isSocialActivityReviewRequest,
   reviewConnectedSocialActivity,
 } from '../activity/service';
+import {
+  handleProgramKnowledgeRequest,
+  isProgramKnowledgeRequest,
+} from '../knowledge/chat';
+import {
+  getLatestProgramSummary,
+  listPublicationPackages,
+} from '../knowledge/store';
 
 export const getOrCreateSocialChatThread = async ({
   userId,
@@ -70,7 +78,7 @@ export const getSocialChat = async ({
 const buildSocialContext = async (userId: string, projectId: string) => {
   const supabase = getWorkspaceSupabaseAdmin();
 
-  const [accounts, people, memories, pending, recent] = await Promise.all([
+  const [accounts, people, memories, pending, recent, latestProgram] = await Promise.all([
     supabase
       .from('social_accounts')
       .select('id,platform,display_name,handle,status,capabilities')
@@ -108,11 +116,16 @@ const buildSocialContext = async (userId: string, projectId: string) => {
       .eq('project_id', projectId)
       .order('occurred_at', { ascending: false })
       .limit(40),
+    getLatestProgramSummary({ userId, projectId }),
   ]);
 
   for (const result of [accounts, people, memories, pending, recent]) {
     if (result.error) throw result.error;
   }
+
+  const publicationPackages = latestProgram
+    ? await listPublicationPackages({ userId, projectId, programId: latestProgram.id })
+    : [];
 
   const personName = new Map((people.data || []).map((person: any) => [person.id, person.preferred_name || person.display_name || 'Persona']));
 
@@ -133,6 +146,28 @@ const buildSocialContext = async (userId: string, projectId: string) => {
     recent: (recent.data || []).map((item: any) => ({
       ...item,
       person: personName.get(item.person_id) || 'Persona',
+    })),
+    latestProgram: latestProgram
+      ? {
+          id: latestProgram.id,
+          date: latestProgram.program_date,
+          name: latestProgram.program_name,
+          character: latestProgram.character_name,
+          channel: latestProgram.channel_name,
+          theme: latestProgram.theme,
+          song: latestProgram.song,
+          summary: latestProgram.summary,
+          keyPoints: latestProgram.key_points,
+          baseHashtags: latestProgram.base_hashtags,
+        }
+      : null,
+    publicationPackages: publicationPackages.map((item: any) => ({
+      platform: item.platform,
+      language: item.language,
+      title: item.title,
+      caption: item.caption,
+      hashtags: item.hashtags,
+      status: item.status,
     })),
   };
 };
@@ -190,6 +225,39 @@ export const replyInSocialChat = async ({
       .eq('id', thread.id);
 
     return { thread, message: assistantMessage, execution };
+  }
+
+  if (isProgramKnowledgeRequest(message)) {
+    const result = await handleProgramKnowledgeRequest({
+      userId,
+      projectId,
+      message,
+    });
+
+    const { data: assistantMessage, error: assistantError } = await supabase
+      .from('social_nayla_messages')
+      .insert({
+        thread_id: thread.id,
+        user_id: userId,
+        project_id: projectId,
+        role: 'assistant',
+        content: result.text,
+        metadata: {
+          responseType: 'program_knowledge',
+          ...result.metadata,
+        },
+      })
+      .select('*')
+      .single();
+
+    if (assistantError) throw assistantError;
+
+    await supabase
+      .from('social_nayla_threads')
+      .update({ updated_at: new Date().toISOString() })
+      .eq('id', thread.id);
+
+    return { thread, message: assistantMessage, programKnowledge: result };
   }
 
   if (isSocialActivityReviewRequest(message)) {
@@ -280,6 +348,8 @@ export const replyInSocialChat = async ({
   const systemPrompt = [
     'Eres Nayla, inteligencia social y asistente de comunidad del usuario.',
     'No eres únicamente una vendedora. Ayudas a entender personas, comunidad, contenido, relaciones, mensajes, comentarios, oportunidades, riesgos y estrategia.',
+    'También puedes usar la ficha del programa más reciente y sus copies por red cuando aparezcan en el contexto.',
+    'No inventes un programa ni copies de publicación si no aparecen en el contexto; puedes pedir al usuario que sincronice Fuentes de Nayla.',
     'Usa únicamente el contexto suministrado; no inventes recuerdos ni unas identidades de diferentes redes por coincidencia de nombre.',
     'Cuando cites lo que sabes de una persona, diferencia hechos recordados de inferencias.',
     'Si el usuario pide una acción social ejecutable, el planificador la interceptará antes de llegar aquí. Para acciones no disponibles, explica brevemente el siguiente paso.',
