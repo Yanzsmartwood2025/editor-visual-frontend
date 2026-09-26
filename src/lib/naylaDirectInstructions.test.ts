@@ -141,6 +141,49 @@ assets:
     expect(result.errors.join(' ')).toContain('efecto no reconocido');
   });
 
+  it('tolera el molde humano con tipo redundante y transición abreviada', () => {
+    const result = parseNaylaDirectInstruction(`@direct
+accion: BUILD_TIMELINE
+ratio: 9:16
+quality: 720p
+assets:
+- F1 | foto | 7.5s | visualTemplate=fragment-reveal | transition=fade:0.5
+subtitles:
+- 0-7.5 | Prueba | starlight | bottom | 46 | #ffffff | #c4b5fd | rgba(0,0,0,0.35)
+audioMix:
+  musicGain: 1
+  voiceGain: 1
+  sfxGain: 0.8
+  masterGain: 1
+audioMaster:
+  normalize: true
+  limiter: true
+  targetLufs: -14
+render: true
+`);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.plan.exportQuality).toBe('720p');
+    expect(result.plan.action.assets[0]).toMatchObject({
+      label: 'F1',
+      type: 'foto',
+      durationInSeconds: 7.5,
+      visualTemplate: 'fragment-reveal',
+      transitionType: 'fade',
+      transitionDuration: 0.5,
+    });
+    expect(result.plan.action.audioMix).toMatchObject({
+      masterGain: 1,
+      busGains: { music: 1, voice: 1, sfx: 0.8 },
+    });
+    expect(result.plan.action.audioMaster).toMatchObject({
+      normalize: true,
+      limiter: true,
+      targetLufs: -14,
+    });
+  });
+
   it('acepta JSON BUILD_TIMELINE después de @direct', () => {
     const result = parseNaylaDirectInstruction(`@direct
 {"action":"build-timeline","assets":[{"type":"foto","source":"label","label":"F1","durationInSeconds":5}],"render":true}`);
