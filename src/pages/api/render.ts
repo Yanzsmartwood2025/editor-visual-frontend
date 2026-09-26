@@ -1,6 +1,7 @@
 import { decorationsSchema, fontSelectionSchema } from '../../lib/naylaDecorations';
 import { volumeKeyframesSchema } from '../../lib/audioAutomation';
 import type { NextApiRequest, NextApiResponse } from 'next';
+import { waitUntil } from '@vercel/functions';
 import { randomUUID } from 'node:crypto';
 import { requireFirebaseUser } from '../../lib/firebaseAdmin';
 import {
@@ -733,7 +734,6 @@ const refreshDetachedRenderRequest = async ({
   }
 
   const storedObject = await headR2Object(r2Key);
-  const sandboxUsage = await stopVercelSandboxRender(String(detached.sandboxId));
   const timingValues = nextUsage.timings && typeof nextUsage.timings === 'object'
     ? nextUsage.timings as Record<string, unknown>
     : {};
@@ -750,7 +750,6 @@ const refreshDetachedRenderRequest = async ({
     progress: 1,
     framesDone: framesTotal || undefined,
     outputBytes: Number(storedObject.contentLength) || undefined,
-    ...(sandboxUsage ? { sandboxUsage } : {}),
     timings: {
       ...timingValues,
       pipelineMs: sandboxPreparationMs + processMs,
@@ -781,7 +780,7 @@ const refreshDetachedRenderRequest = async ({
       outputBytes: Number(storedObject.contentLength) || null,
       renderTimings: completedUsage.timings,
       remotionMetrics: completedUsage.remotionMetrics,
-      sandboxUsage: sandboxUsage || null,
+      sandboxUsage: null,
     },
   };
 
@@ -808,6 +807,48 @@ const refreshDetachedRenderRequest = async ({
     .eq('id', request.id)
     .eq('user_id', userId)
     .eq('status', 'started');
+
+  const cleanupSandboxId = String(detached.sandboxId);
+  const cleanupPromise = (async () => {
+    const cleanupStartedAt = Date.now();
+    const sandboxUsage = await stopVercelSandboxRender(cleanupSandboxId);
+    const sandboxStopMs = Math.max(0, Date.now() - cleanupStartedAt);
+    const cleanupTimings = {
+      ...(completedUsage.timings as Record<string, unknown>),
+      sandboxStopMs,
+    };
+    const cleanupUsage = {
+      ...completedUsage,
+      ...(sandboxUsage ? { sandboxUsage } : {}),
+      timings: cleanupTimings,
+    };
+
+    await Promise.all([
+      supabase
+        .from('render_requests')
+        .update({ usage: cleanupUsage })
+        .eq('id', request.id)
+        .eq('user_id', userId)
+        .eq('status', 'completed'),
+      supabase
+        .from('galeria_multimedia')
+        .update({
+          metadata: {
+            ...galleryItem.metadata,
+            renderTimings: cleanupTimings,
+            sandboxUsage: sandboxUsage || null,
+          },
+        })
+        .eq('id', insertedGalleryItem.id)
+        .eq('user_id', userId),
+    ]);
+  })().catch((error) => {
+    console.warn('[render] No se pudo guardar la telemetría final del cierre del Sandbox.', error);
+  });
+
+  // The video already exists in R2 and the completed row is committed.
+  // Sandbox teardown is necessary for cost control but must not delay delivery to the user.
+  waitUntil(cleanupPromise);
 
   return {
     ...request,
