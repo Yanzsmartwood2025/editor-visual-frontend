@@ -47,6 +47,7 @@ import type { NaylaEngineMode } from '../lib/naylaSystemCatalog';
 import { NAYLA_EDITOR_FEATURE_CATALOG, NAYLA_FEATURE_CATALOG_VERSION, getNaylaFeatureCatalogTotal } from '../lib/naylaFeatureCatalog';
 import type { NaylaAudioBus, NaylaAudioMixSettings } from '../lib/naylaAudioMix';
 import type { NaylaAudioMasterSettings } from '../lib/naylaAudioMaster';
+import { isNaylaSubtitleStyle, type NaylaSubtitleStyle } from '../lib/naylaSubtitleStyles';
 import {
   NaylaProjectMenu,
   type NaylaProject,
@@ -1944,7 +1945,7 @@ export default function NaylaCore() {
             fontFamily: sub.fontFamily, fontUrl: sub.fontUrl,
             inicioSec: Math.max(0, Number(sub.start)),
             finSec: Math.max(0, Number(sub.end)),
-            style: NAYLA_SUBTITLE_STYLES.includes(sub.style as NaylaSubtitleStyle)
+            style: isNaylaSubtitleStyle(sub.style)
               ? sub.style
               : 'clean',
             position: ['top', 'center', 'bottom'].includes(sub.position)
