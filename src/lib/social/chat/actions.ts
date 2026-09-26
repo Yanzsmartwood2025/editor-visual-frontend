@@ -244,6 +244,7 @@ const planPublishCommand = async ({
     title?: string;
     caption?: string;
     hashtags?: string[];
+    language?: string;
   }>> = {};
 
   for (const accountId of accountIds) {
@@ -255,6 +256,7 @@ const planPublishCommand = async ({
       title: String(socialPackage.title || ''),
       caption: String(socialPackage.caption || ''),
       hashtags: Array.isArray(socialPackage.hashtags) ? socialPackage.hashtags.map(String) : [],
+      language: String(socialPackage.language || 'es'),
     };
   }
 
