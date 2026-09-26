@@ -589,6 +589,7 @@ const executePublishItem = async ({
   const variants = item.payload?.variants && typeof item.payload.variants === 'object'
     ? item.payload.variants
     : undefined;
+  const programId = item.payload?.programId ? String(item.payload.programId) : null;
 
   if (!mediaId || !accountIds.length) {
     throw new Error('La orden de publicación está incompleta.');
@@ -602,6 +603,7 @@ const executePublishItem = async ({
     title,
     caption,
     variants,
+    programId,
     source: 'nayla_universal_dale',
   });
 };
