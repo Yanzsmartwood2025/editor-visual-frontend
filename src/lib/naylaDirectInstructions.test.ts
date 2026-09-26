@@ -162,7 +162,7 @@ audioMaster:
 render: true
 `);
 
-    expect(result.ok).toBe(true);
+    expect(result.ok, result.ok ? '' : result.errors.join('\n')).toBe(true);
     if (!result.ok) return;
     expect(result.plan.exportQuality).toBe('720p');
     expect(result.plan.action.assets[0]).toMatchObject({
