@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { assistantRequestsPlanConfirmation } from '../lib/naylaPlanConfirmation';
+import { assistantRequestsPlanConfirmation, isUniversalNaylaConfirmation } from '../lib/naylaPlanConfirmation';
 
 describe('Nayla natural plan confirmation wording', () => {
   it('recognizes the wording shown to the user before a Dale reply', () => {
@@ -13,6 +13,12 @@ describe('Nayla natural plan confirmation wording', () => {
   it('recognizes other conversational approval invitations', () => {
     expect(assistantRequestsPlanConfirmation('Si te parece bien, responde Adelante y lo ejecuto.')).toBe(true);
     expect(assistantRequestsPlanConfirmation('Confirma con Dale para generar el video.')).toBe(true);
+  });
+
+  it('recognizes natural approvals such as "sí, me parece bien"', () => {
+    expect(isUniversalNaylaConfirmation('Sí, me parece bien')).toBe(true);
+    expect(isUniversalNaylaConfirmation('Así está bien')).toBe(true);
+    expect(isUniversalNaylaConfirmation('Me parece bien')).toBe(true);
   });
 
   it('does not treat an ordinary descriptive reply as a confirmation request', () => {
