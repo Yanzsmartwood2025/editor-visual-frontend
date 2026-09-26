@@ -138,7 +138,8 @@ const clamp01 = (value: unknown, fallback = 0.5) => {
 const getProfessionalEffects = (
   clip: TimelineItem,
   frame: number,
-  durationInFrames: number
+  durationInFrames: number,
+  fastRender = false
 ): any[] => {
   const progress = durationInFrames <= 1
     ? 0.5
@@ -177,7 +178,7 @@ const getProfessionalEffects = (
         return zoomBlur({
           amount: intensity * 70,
           center: [0.5, 0.5],
-          samples: 20,
+          samples: fastRender ? 6 : 20,
         });
       case 'vignette':
         return vignette({
@@ -516,10 +517,10 @@ const AnimatedVisualFrame: React.FC<{
 };
 
 
-const AnimatedPhoto: React.FC<{ clip: TimelineItem, durationInFrames: number }> = ({ clip, durationInFrames }) => {
+const AnimatedPhoto: React.FC<{ clip: TimelineItem, durationInFrames: number; fastRender?: boolean }> = ({ clip, durationInFrames, fastRender = false }) => {
   const frame = useCurrentFrame();
   const { width, height } = useVideoConfig();
-  const effects = getProfessionalEffects(clip, frame, durationInFrames);
+  const effects = getProfessionalEffects(clip, frame, durationInFrames, fastRender);
 
   if (effects.length === 0) {
     return (
@@ -574,7 +575,7 @@ const VisualTemplatePhoto: React.FC<{
   };
 
   if (!clip.visualTemplate) {
-    return <AnimatedPhoto clip={clip} durationInFrames={durationInFrames} />;
+    return <AnimatedPhoto clip={clip} durationInFrames={durationInFrames} fastRender={fastRender} />;
   }
 
   if (clip.visualTemplate === 'fragment-reveal') {
@@ -586,7 +587,7 @@ const VisualTemplatePhoto: React.FC<{
           style={{ width: '100%', height: '100%', objectFit: 'contain', filter: 'brightness(0.78) saturate(0.92)' }}
         />
         <AbsoluteFill style={{ opacity: Math.max(0, 1 - exit * 1.15) }}>
-          <AnimatedPhoto clip={clip} durationInFrames={durationInFrames} />
+          <AnimatedPhoto clip={clip} durationInFrames={durationInFrames} fastRender={fastRender} />
         </AbsoluteFill>
         {Array.from({ length: slices }, (_, index) => {
           const left = (index / slices) * 100;
@@ -749,7 +750,7 @@ const VisualTemplatePhoto: React.FC<{
     );
   }
 
-  return <AnimatedPhoto clip={clip} durationInFrames={durationInFrames} />;
+  return <AnimatedPhoto clip={clip} durationInFrames={durationInFrames} fastRender={fastRender} />;
 };
 
 
@@ -757,7 +758,8 @@ const ProfessionalVideo: React.FC<{
   clip: TimelineItem;
   durationInFrames: number;
   volume: number;
-}> = ({ clip, durationInFrames, volume }) => {
+  fastRender?: boolean;
+}> = ({ clip, durationInFrames, volume, fastRender = false }) => {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
 
@@ -770,7 +772,7 @@ const ProfessionalVideo: React.FC<{
       loop={clip.loop}
       playbackRate={clip.playbackRate || 1}
       toneFrequency={clip.pitch}
-      effects={getProfessionalEffects(clip, frame, durationInFrames)}
+      effects={getProfessionalEffects(clip, frame, durationInFrames, fastRender)}
       style={{ width: '100%', height: '100%', objectFit: 'contain', filter: getFilterStyle(clip) }}
     />
   );
@@ -1296,6 +1298,7 @@ export const MainComposition: React.FC<MainCompositionProps> = ({ timeline, subt
                             clip={clip}
                             durationInFrames={clip.durationInFrames}
                             volume={volume}
+                            fastRender={fastRender}
                           />
                         )} />
                       </AnimatedVisualFrame>
