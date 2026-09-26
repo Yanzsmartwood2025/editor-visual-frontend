@@ -512,7 +512,7 @@ export default function SocialHub({ session, projectId, results, onResultsUpload
     } catch (error) {
       setNotice(error instanceof Error ? error.message : 'No se pudo abrir Google Drive.');
     } finally {
-      if (busy === 'google-picker') setBusy('');
+      setBusy('');
     }
   };
 
@@ -1747,7 +1747,7 @@ export default function SocialHub({ session, projectId, results, onResultsUpload
             >
               {!socialChatMessages.length && busy !== 'nayla-load' && (
                 <div style={{ margin: 'auto', maxWidth: 480, textAlign: 'center', color: '#777', fontSize: 13, lineHeight: 1.6, padding: 22 }}>
-                  Háblame como lo harías con una persona. Puedo revisar la actividad de tus cuentas conectadas, organizar comentarios y mensajes, consultar métricas y preparar acciones para que tú las confirmes.
+                  Háblame como lo harías con una persona. Puedo revisar tus programas de Google, adaptar títulos y descripciones por red, revisar comentarios y mensajes, consultar métricas y preparar acciones para que tú las confirmes.
                 </div>
               )}
 
@@ -1817,6 +1817,18 @@ export default function SocialHub({ session, projectId, results, onResultsUpload
                       style={{ ...tinyButton(false), width: '100%', textAlign: 'left', padding: '10px 11px', fontSize: 10 }}
                     >
                       {busy === 'social-upload' ? `Subiendo… ${socialUploadPercent}%` : 'Subir foto o video para publicar'}
+                    </button>
+                    <button
+                      type="button"
+                      disabled={busy.startsWith('google-')}
+                      onClick={() => {
+                        setNaylaPlusOpen(false);
+                        if (googleKnowledge?.connected) void chooseGoogleSources();
+                        else void connectGoogleKnowledge();
+                      }}
+                      style={{ ...tinyButton(Boolean(googleKnowledge?.connected)), width: '100%', textAlign: 'left', padding: '10px 11px', fontSize: 10, marginTop: 5 }}
+                    >
+                      {googleKnowledge?.connected ? 'Fuentes · revisar Google Drive' : 'Fuentes · conectar Google Drive'}
                     </button>
                     <button
                       type="button"
@@ -1961,6 +1973,71 @@ export default function SocialHub({ session, projectId, results, onResultsUpload
                 </div>
 
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                  <div style={{ ...panel, padding: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10 }}>
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ fontSize: 12, fontWeight: 900 }}>FUENTES DE NAYLA</div>
+                        <div style={{ fontSize: 10, color: '#777', marginTop: 3, lineHeight: 1.45 }}>
+                          Google aporta el material de trabajo; Nayla guarda solo una ficha resumida y versionada del programa.
+                        </div>
+                      </div>
+                      <span style={{
+                        flex: '0 0 auto',
+                        padding: '4px 7px',
+                        borderRadius: 999,
+                        border: '1px solid rgba(255,255,255,.12)',
+                        color: googleKnowledge?.connected ? '#fff' : '#777',
+                        fontSize: 8.5,
+                        fontWeight: 850,
+                      }}>
+                        {googleKnowledge?.connected ? 'CONECTADO' : 'SIN CONECTAR'}
+                      </span>
+                    </div>
+
+                    {googleKnowledge?.connected ? (
+                      <>
+                        <div style={{ padding: 9, borderRadius: 10, background: 'rgba(255,255,255,.025)', fontSize: 10, lineHeight: 1.5, color: '#aaa' }}>
+                          <div style={{ color: '#eee', fontWeight: 800 }}>{googleKnowledge.displayName || googleKnowledge.email || 'Google Drive'}</div>
+                          {googleKnowledge.email && <div>{googleKnowledge.email}</div>}
+                          <div>{Number(googleKnowledge.sources?.length || 0)} documento{Number(googleKnowledge.sources?.length || 0) === 1 ? '' : 's'} autorizado{Number(googleKnowledge.sources?.length || 0) === 1 ? '' : 's'}.</div>
+                          {googleKnowledge.latestProgram?.summary && (
+                            <div style={{ marginTop: 7, color: '#ccc' }}>
+                              Último programa: {googleKnowledge.latestProgram.name || googleKnowledge.latestProgram.character || 'Programa'} · {String(googleKnowledge.latestProgram.summary).slice(0, 240)}
+                              {String(googleKnowledge.latestProgram.summary).length > 240 ? '…' : ''}
+                            </div>
+                          )}
+                        </div>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,minmax(0,1fr))', gap: 7 }}>
+                          <button
+                            type="button"
+                            disabled={busy.startsWith('google-')}
+                            onClick={() => void chooseGoogleSources()}
+                            style={{ ...tinyButton(false), minHeight: 42, fontSize: 9.5 }}
+                          >
+                            ELEGIR DOCUMENTOS
+                          </button>
+                          <button
+                            type="button"
+                            disabled={busy.startsWith('google-')}
+                            onClick={() => void syncGoogleProgram()}
+                            style={{ ...tinyButton(true), minHeight: 42, fontSize: 9.5 }}
+                          >
+                            {busy === 'google-sync' ? 'REVISANDO…' : 'REVISAR AHORA'}
+                          </button>
+                        </div>
+                      </>
+                    ) : (
+                      <button
+                        type="button"
+                        disabled={busy === 'google-connect'}
+                        onClick={() => void connectGoogleKnowledge()}
+                        style={{ ...tinyButton(true), width: '100%', minHeight: 44, fontSize: 10.5 }}
+                      >
+                        {busy === 'google-connect' ? 'CONECTANDO…' : 'CONECTAR GOOGLE DRIVE'}
+                      </button>
+                    )}
+                  </div>
+
                   <div style={{ ...panel, padding: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
                       <div>
