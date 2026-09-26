@@ -77,13 +77,218 @@ export const storeWebhookEvent = async ({
   if (error) throw error;
 };
 
+const zernioTargetAccountId = (value: any) =>
+  String(
+    value?.accountId?._id ||
+    value?.accountId?.id ||
+    value?.accountId ||
+    ''
+  );
+
+const zernioPlatformTarget = (payload: any) => {
+  if (payload?.platform && typeof payload.platform === 'object') return payload.platform;
+  const targets = Array.isArray(payload?.post?.platforms) ? payload.post.platforms : [];
+  if (!targets.length) return null;
+
+  const topLevelAccountId = String(
+    payload?.account?.accountId ||
+    payload?.account?.id ||
+    payload?.account?._id ||
+    payload?.accountId ||
+    ''
+  );
+  const rawPlatform = String(payload?.platformName || payload?.platform?.platform || '');
+  return targets.find((target: any) =>
+    (topLevelAccountId && zernioTargetAccountId(target) === topLevelAccountId) ||
+    (rawPlatform && String(target?.platform || '') === rawPlatform)
+  ) || targets[0] || null;
+};
+
+const cacheZernioPlatformLifecycle = async ({
+  payload,
+  account,
+}: {
+  payload: any;
+  account: any;
+}) => {
+  const event = String(payload?.event || payload?.type || '');
+  if (!['post.platform.published', 'post.platform.failed', 'post.tiktok.url_resolved'].includes(event)) {
+    return false;
+  }
+
+  const supabase = getWorkspaceSupabaseAdmin();
+  const platformTarget = zernioPlatformTarget(payload) || {};
+  const providerRequestId = String(
+    payload?.post?._id ||
+    payload?.post?.id ||
+    payload?.postId ||
+    ''
+  );
+  const providerPostId = String(
+    platformTarget?.platformPostId ||
+    platformTarget?.platform_post_id ||
+    payload?.platformPostId ||
+    ''
+  ) || null;
+  const postUrl = String(
+    platformTarget?.platformPostUrl ||
+    platformTarget?.platform_post_url ||
+    payload?.platformPostUrl ||
+    ''
+  ) || null;
+  const publishedAt = String(
+    platformTarget?.publishedAt ||
+    payload?.post?.publishedAt ||
+    payload?.timestamp ||
+    new Date().toISOString()
+  );
+  const failureMessage = String(
+    platformTarget?.platformError?.message ||
+    platformTarget?.error?.message ||
+    platformTarget?.error ||
+    payload?.error?.message ||
+    payload?.error ||
+    ''
+  ) || null;
+
+  let query = supabase
+    .from('social_post_targets')
+    .select('id,social_post_id,status,provider_request_id,provider_post_id,post_url')
+    .eq('user_id', account.user_id)
+    .eq('project_id', account.project_id)
+    .eq('account_id', account.id)
+    .eq('provider', 'zernio');
+
+  if (providerRequestId) {
+    query = query.eq('provider_request_id', providerRequestId);
+  } else if (providerPostId) {
+    query = query.eq('provider_post_id', providerPostId);
+  } else {
+    return true;
+  }
+
+  const { data: target, error: targetError } = await query
+    .order('updated_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (targetError) throw targetError;
+  if (!target) return true;
+
+  if (event === 'post.tiktok.url_resolved') {
+    if (postUrl) {
+      await supabase
+        .from('social_post_targets')
+        .update({
+          post_url: postUrl,
+          ...(providerPostId ? { provider_post_id: providerPostId } : {}),
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', target.id);
+    }
+    return true;
+  }
+
+  const success = event === 'post.platform.published';
+  const statusPatch = success
+    ? {
+        status: 'published',
+        provider_post_id: providerPostId,
+        post_url: postUrl,
+        published_at: publishedAt,
+        error_message: null,
+        updated_at: new Date().toISOString(),
+      }
+    : {
+        status: 'failed',
+        ...(providerPostId ? { provider_post_id: providerPostId } : {}),
+        ...(postUrl ? { post_url: postUrl } : {}),
+        error_message: failureMessage || 'La red rechazó la publicación.',
+        updated_at: new Date().toISOString(),
+      };
+
+  await supabase
+    .from('social_post_targets')
+    .update(statusPatch)
+    .eq('id', target.id);
+
+  const { data: socialPost, error: socialPostError } = await supabase
+    .from('social_posts')
+    .select('id,metadata')
+    .eq('id', target.social_post_id)
+    .maybeSingle();
+  if (socialPostError) throw socialPostError;
+
+  const programId = socialPost?.metadata?.programId
+    ? String(socialPost.metadata.programId)
+    : '';
+  if (programId) {
+    const language = String(
+      socialPost?.metadata?.variantLanguages?.[account.platform] || 'es'
+    );
+
+    if (success) {
+      await supabase
+        .from('social_publication_packages')
+        .update({
+          status: 'published',
+          published_at: publishedAt,
+          updated_at: new Date().toISOString(),
+          metadata: {
+            socialPostId: socialPost.id,
+            targetId: target.id,
+            providerPostId,
+            postUrl,
+            confirmedBy: 'webhook',
+          },
+        })
+        .eq('user_id', account.user_id)
+        .eq('project_id', account.project_id)
+        .eq('program_id', programId)
+        .eq('platform', account.platform)
+        .eq('language', language);
+    }
+  }
+
+  const { data: allTargets, error: allTargetsError } = await supabase
+    .from('social_post_targets')
+    .select('status')
+    .eq('social_post_id', target.social_post_id);
+  if (allTargetsError) throw allTargetsError;
+
+  const statuses = (allTargets || []).map((item: any) => String(item.status || ''));
+  const terminal = statuses.every((status: string) =>
+    ['published', 'failed', 'skipped'].includes(status)
+  );
+  if (terminal && statuses.length) {
+    const publishedCount = statuses.filter((status: string) => status === 'published').length;
+    const failedCount = statuses.filter((status: string) => ['failed', 'skipped'].includes(status)).length;
+    const postStatus = publishedCount && failedCount
+      ? 'partial'
+      : publishedCount
+        ? 'published'
+        : 'failed';
+
+    await supabase
+      .from('social_posts')
+      .update({
+        status: postStatus,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', target.social_post_id);
+  }
+
+  return true;
+};
+
 export const bestEffortCacheZernioRealtime = async (payload: any) => {
   const supabase = getWorkspaceSupabaseAdmin();
+  const lifecycleTarget = zernioPlatformTarget(payload);
   const accountRemoteId = String(
     payload?.account?.accountId ||
     payload?.account?.id ||
     payload?.account?._id ||
     payload?.accountId ||
+    zernioTargetAccountId(lifecycleTarget) ||
     ''
   );
   if (!accountRemoteId) return;
@@ -98,6 +303,10 @@ export const bestEffortCacheZernioRealtime = async (payload: any) => {
   if (!account) return;
 
   const event = String(payload?.event || payload?.type || '');
+
+  if (await cacheZernioPlatformLifecycle({ payload, account })) {
+    return;
+  }
 
   if ((event === 'post.external.created' || event === 'post.external.updated') && payload?.post?.analytics) {
     const analytics = payload.post.analytics || {};
