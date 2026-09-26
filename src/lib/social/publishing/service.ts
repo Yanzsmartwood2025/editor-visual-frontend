@@ -1,4 +1,4 @@
-import { getSocialNetwork } from '../types';
+import { getSocialNetwork, type SocialPlatform } from '../types';
 import { publishUploadPostPhoto, publishUploadPostVideo } from '../providers/uploadPost';
 import { publishZernioMedia } from '../providers/zernio';
 import {
@@ -26,6 +26,7 @@ export const publishSocialVideo = async ({
   title = '',
   caption = '',
   source = 'social_ui',
+  variants,
 }: {
   userId: string;
   projectId: string;
@@ -34,6 +35,11 @@ export const publishSocialVideo = async ({
   title?: string;
   caption?: string;
   source?: string;
+  variants?: Partial<Record<SocialPlatform, {
+    title?: string;
+    caption?: string;
+    hashtags?: string[];
+  }>>;
 }) => {
   const media = await getOwnedPublishMedia({ userId, projectId, mediaId });
   const profile = await ensureSocialProfile(userId, projectId);
@@ -43,13 +49,19 @@ export const publishSocialVideo = async ({
   const activeAccounts = accounts.filter((account) => account.status === 'connected');
   if (!activeAccounts.length) throw new Error('No hay destinos conectados para publicar.');
 
+  const firstVariant = activeAccounts
+    .map((account) => variants?.[account.platform as SocialPlatform])
+    .find(Boolean);
+  const postTitle = title || firstVariant?.title || '';
+  const postCaption = caption || firstVariant?.caption || '';
+
   const { post, targets } = await createSocialPostWithTargets({
     userId,
     projectId,
     mediaId,
     mediaLabel: media.etiqueta,
-    title,
-    caption,
+    title: postTitle,
+    caption: postCaption,
     accounts: activeAccounts,
   });
 
@@ -73,6 +85,7 @@ export const publishSocialVideo = async ({
             caption,
             platforms: routePlatforms,
             idempotencyKey,
+            variants,
           })
         : await publishUploadPostVideo({
             username: profile.upload_post_username,
@@ -81,6 +94,7 @@ export const publishSocialVideo = async ({
             caption,
             platforms: routePlatforms,
             idempotencyKey,
+            variants,
           });
       const results = result?.results || {};
 
@@ -150,6 +164,7 @@ export const publishSocialVideo = async ({
           accountId: String(account.provider_account_id),
         })),
         idempotencyKey,
+        variants,
       });
       const outcomes = Array.isArray(result?.post?.platforms) ? result.post.platforms : [];
 
