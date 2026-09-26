@@ -182,6 +182,7 @@ const DETACHED_RUNNER_FILE = '/tmp/nayla-render-runner.sh';
 const DETACHED_AUDIO_FILTER_FILE = '/tmp/nayla-audio-master-filter.txt';
 const DETACHED_MASTERED_OUTPUT_FILE = '/tmp/nayla-render-mastered.mp4';
 const DETACHED_METRICS_FILE = '/tmp/nayla-render-metrics.json';
+const DETACHED_REMOTION_PROGRESS_FILE = '/tmp/nayla-remotion-progress.json';
 
 export type NaylaDetachedRenderStart = {
   status: 'started';
@@ -204,6 +205,25 @@ export type NaylaDetachedRenderTimings = {
   audioMasterApplied?: boolean;
 };
 
+export type NaylaRemotionProgressMetrics = {
+  renderedFrames?: number;
+  encodedFrames?: number;
+  renderedDoneInMs?: number;
+  encodedDoneInMs?: number;
+  renderEstimatedTimeMs?: number;
+  stitchStage?: string;
+  progress?: number;
+};
+
+export type NaylaSandboxUsageMetrics = {
+  activeCpuUsageMs?: number;
+  totalDurationMs?: number;
+  totalActiveCpuDurationMs?: number;
+  totalIngressBytes?: number;
+  totalEgressBytes?: number;
+  averageActiveVcpus?: number;
+};
+
 export type NaylaDetachedRenderPoll = {
   state: 'running' | 'completed' | 'failed';
   stage: 'preparing' | 'rendering' | 'saving' | 'completed';
@@ -211,6 +231,7 @@ export type NaylaDetachedRenderPoll = {
   progress: number;
   error?: string;
   timings?: NaylaDetachedRenderTimings;
+  remotionMetrics?: NaylaRemotionProgressMetrics;
 };
 
 const readSandboxTextIfExists = async (sandbox: any, filePath: string) => {
@@ -237,6 +258,36 @@ export const parseNaylaDetachedRenderTimings = (raw: string): NaylaDetachedRende
       uploadMs: numeric('uploadMs'),
       processMs: numeric('processMs'),
       audioMasterApplied: parsed.audioMasterApplied === true,
+    };
+  } catch {
+    return undefined;
+  }
+};
+
+export const parseNaylaRemotionProgressMetrics = (raw: string): NaylaRemotionProgressMetrics | undefined => {
+  if (!raw.trim()) return undefined;
+
+  try {
+    const message = JSON.parse(raw) as Record<string, unknown>;
+    if (message.stage !== 'render-progress' || !message.progress || typeof message.progress !== 'object') {
+      return undefined;
+    }
+    const progress = message.progress as Record<string, unknown>;
+    const numeric = (key: string) => {
+      const value = Number(progress[key]);
+      return Number.isFinite(value) && value >= 0 ? Math.round(value) : undefined;
+    };
+    const normalizedProgress = Number(progress.progress);
+    return {
+      renderedFrames: numeric('renderedFrames'),
+      encodedFrames: numeric('encodedFrames'),
+      renderedDoneInMs: numeric('renderedDoneIn'),
+      encodedDoneInMs: numeric('encodedDoneIn'),
+      renderEstimatedTimeMs: numeric('renderEstimatedTime'),
+      stitchStage: typeof progress.stitchStage === 'string' ? progress.stitchStage : undefined,
+      progress: Number.isFinite(normalizedProgress)
+        ? Math.max(0, Math.min(1, normalizedProgress))
+        : undefined,
     };
   } catch {
     return undefined;
@@ -406,7 +457,7 @@ export async function startVercelSandboxRenderDetached(
     const runner = `#!/usr/bin/env bash
 set +e
 : > "${DETACHED_LOG_FILE}"
-rm -f "${DETACHED_EXIT_FILE}" "${DETACHED_METRICS_FILE}"
+rm -f "${DETACHED_EXIT_FILE}" "${DETACHED_METRICS_FILE}" "${DETACHED_REMOTION_PROGRESS_FILE}"
 printf '{"stage":"opening-browser"}\\n' > "${DETACHED_PROGRESS_FILE}"
 
 runner_started_ms="$(date +%s%3N)"
@@ -426,7 +477,11 @@ write_nayla_metrics() {
 node render-video.mjs "$(cat "${DETACHED_CONFIG_FILE}")" 2>&1 | while IFS= read -r line; do
   printf '%s\\n' "$line" >> "${DETACHED_LOG_FILE}"
   case "$line" in
-    *'"stage"'*'opening-browser'*|*'"stage"'*'selecting-composition'*|*'"stage"'*'render-progress'*)
+    *'"stage"'*'render-progress'*)
+      printf '%s\\n' "$line" > "${DETACHED_PROGRESS_FILE}"
+      printf '%s\\n' "$line" > "${DETACHED_REMOTION_PROGRESS_FILE}"
+      ;;
+    *'"stage"'*'opening-browser'*|*'"stage"'*'selecting-composition'*)
       printf '%s\\n' "$line" > "${DETACHED_PROGRESS_FILE}"
       ;;
   esac
@@ -563,12 +618,14 @@ export async function pollVercelSandboxRenderDetached({
   const { Sandbox } = await import('@vercel/sandbox');
   const sandbox = await Sandbox.get({ sandboxId });
 
-  const [rawProgress, rawExit, rawMetrics] = await Promise.all([
+  const [rawProgress, rawExit, rawMetrics, rawRemotionProgress] = await Promise.all([
     readSandboxTextIfExists(sandbox, DETACHED_PROGRESS_FILE),
     readSandboxTextIfExists(sandbox, exitFile),
     readSandboxTextIfExists(sandbox, metricsFile),
+    readSandboxTextIfExists(sandbox, DETACHED_REMOTION_PROGRESS_FILE),
   ]);
   const timings = parseNaylaDetachedRenderTimings(rawMetrics);
+  const remotionMetrics = parseNaylaRemotionProgressMetrics(rawRemotionProgress);
 
   let legacyRawLog = '';
   let progressSource = rawProgress;
@@ -589,7 +646,7 @@ export async function pollVercelSandboxRenderDetached({
         progress: 0.12,
       };
 
-  if (!rawExit.trim()) return { ...progress, timings };
+  if (!rawExit.trim()) return { ...progress, timings, remotionMetrics };
 
   try {
     const exit = JSON.parse(rawExit) as { phase?: string; exitCode?: number };
@@ -601,6 +658,7 @@ export async function pollVercelSandboxRenderDetached({
         phase: 'Resultado listo',
         progress: 1,
         timings,
+        remotionMetrics,
       };
     }
 
@@ -613,6 +671,7 @@ export async function pollVercelSandboxRenderDetached({
       progress: progress.progress,
       error: tail || (exit.phase === 'audio-master' ? 'No se pudo procesar el audio final.' : `El proceso terminó con código ${exitCode}.`),
       timings,
+      remotionMetrics,
     };
   } catch {
     return {
@@ -622,25 +681,50 @@ export async function pollVercelSandboxRenderDetached({
       progress: progress.progress,
       error: 'El resultado del proceso no pudo verificarse.',
       timings,
+      remotionMetrics,
     };
   }
 }
 
-export async function stopVercelSandboxRender(sandboxId: string) {
-  if (!sandboxId) return;
+export async function stopVercelSandboxRender(sandboxId: string): Promise<NaylaSandboxUsageMetrics | undefined> {
+  if (!sandboxId) return undefined;
   try {
     const { Sandbox } = await import('@vercel/sandbox');
     const sandbox = await Sandbox.get({ sandboxId });
     const stop = (sandbox as any).stop;
     if (typeof stop === 'function') {
       await stop.call(sandbox);
-      return;
+    } else {
+      const dispose = (sandbox as any)[Symbol.asyncDispose];
+      if (typeof dispose === 'function') {
+        await dispose.call(sandbox);
+      }
     }
-    const dispose = (sandbox as any)[Symbol.asyncDispose];
-    if (typeof dispose === 'function') {
-      await dispose.call(sandbox);
-    }
+
+    const numeric = (value: unknown) => {
+      const parsed = Number(value);
+      return Number.isFinite(parsed) && parsed >= 0 ? Math.round(parsed) : undefined;
+    };
+    const activeCpuUsageMs = numeric((sandbox as any).activeCpuUsageMs);
+    const totalDurationMs = numeric((sandbox as any).totalDurationMs);
+    const totalActiveCpuDurationMs = numeric((sandbox as any).totalActiveCpuDurationMs);
+    const totalIngressBytes = numeric((sandbox as any).totalIngressBytes);
+    const totalEgressBytes = numeric((sandbox as any).totalEgressBytes);
+    const cpuDurationMs = activeCpuUsageMs ?? totalActiveCpuDurationMs;
+    const averageActiveVcpus = cpuDurationMs !== undefined && totalDurationMs && totalDurationMs > 0
+      ? Math.round((cpuDurationMs / totalDurationMs) * 100) / 100
+      : undefined;
+
+    return {
+      activeCpuUsageMs,
+      totalDurationMs,
+      totalActiveCpuDurationMs,
+      totalIngressBytes,
+      totalEgressBytes,
+      averageActiveVcpus,
+    };
   } catch {
     // The sandbox may already have stopped or expired.
+    return undefined;
   }
 }
