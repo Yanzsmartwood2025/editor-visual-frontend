@@ -449,8 +449,8 @@ const publicRenderError = (message: string) => {
     const resetMatch = message.match(/reset on\s+([0-9TZ:.-]+)/i);
     const resetDate = resetMatch ? formatResetDate(resetMatch[1]) : null;
     return resetDate
-      ? `La cuota mensual de Vercel Sandbox está agotada. Se restablece el ${resetDate}.`
-      : 'La cuota mensual de Vercel Sandbox está agotada. Se restablecerá al comenzar el próximo ciclo.';
+      ? `La cuota mensual de Nayla Render está agotada. Se restablece el ${resetDate}.`
+      : 'La cuota mensual de Nayla Render está agotada. Se restablecerá al comenzar el próximo ciclo.';
   }
   if (normalized.includes('timeout') || normalized.includes('timed out')) {
     return 'El procesamiento tardó más de lo esperado. Intenta nuevamente.';
