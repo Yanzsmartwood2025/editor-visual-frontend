@@ -160,37 +160,6 @@ const isBarePlanConfirmation = (message: string) => {
   return /^(si|si dale|ok|okay|dale|adelante|listo|perfecto|correcto|hazlo|procede|confirmo|acepto|continua|continua con el plan|sigue|sigue con el plan|adelante con el plan)$/.test(text);
 };
 
-const findLastUserPlanInstruction = (
-  history: Array<{ role: 'user' | 'assistant'; content: string }>
-) =>
-  [...history]
-    .reverse()
-    .find((item) => {
-      if (item.role !== 'user') return false;
-      if (isBarePlanConfirmation(item.content)) return false;
-
-      const labels = getOrderedMediaLabels(item.content);
-      const naturalPhotos = hasNaturalProjectPhotoReference(item.content);
-      if (!labels.length && !naturalPhotos) return false;
-
-      const text = normalizePlanningText(item.content);
-      return /\b(video|timeline|edicion|montaje|foto|imagen|clip|transicion|efecto|movimiento|duracion|segundos)\b/.test(text);
-    })?.content || '';
-
-const findLastAssistantPlan = (
-  history: Array<{ role: 'user' | 'assistant'; content: string }>
-) =>
-  [...history]
-    .reverse()
-    .find((item) => {
-      if (item.role !== 'assistant') return false;
-      const text = normalizePlanningText(item.content);
-      return (
-        /\b(plan|te recomiendo|propongo|quedaria|cuando confirmes|cuando me confirmes|si te parece|generare la timeline|generare el video)\b/.test(text) ||
-        assistantRequestsPlanConfirmation(item.content)
-      );
-    })?.content || '';
-
 const actionNeedsConsultativeApproval = (action: NaylaAction) =>
   action.action !== 'SEARCH_MEDIA' && action.action !== 'BUILD_TIMELINE';
 
