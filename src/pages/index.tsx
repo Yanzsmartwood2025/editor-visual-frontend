@@ -3169,7 +3169,15 @@ export default function NaylaCore() {
       }
 
       if (finalStatus >= 400 || data.error) {
-        throw new Error(data.error || 'Error en la respuesta del servidor');
+        const validationIssues = Array.isArray(data?.debug?.validationIssues)
+          ? data.debug.validationIssues.map(String).filter(Boolean)
+          : [];
+        const publicError = data.error || 'Error en la respuesta del servidor';
+        throw new Error(
+          validationIssues.length
+            ? `${publicError}\n${validationIssues.slice(0, 4).join('\n')}`
+            : publicError
+        );
       }
 
       const aiText = data.action === 'BUILD_TIMELINE'
