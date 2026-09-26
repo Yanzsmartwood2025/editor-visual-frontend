@@ -4,6 +4,7 @@ import { socialProviderStatuses } from '../../../lib/social/serverStatus';
 import { requireSocialUser, requestOrigin } from '../../../lib/social/http';
 import { reviewConnectedSocialActivity } from '../../../lib/social/activity/service';
 import { ensureZernioWebhook } from '../../../lib/social/providers/zernio';
+import { ensureUploadPostProfileWebhook } from '../../../lib/social/providers/uploadPost';
 import { getSocialOverview } from '../../../lib/social/store';
 import { syncSocialAccounts } from '../../../lib/social/sync';
 
@@ -23,12 +24,21 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
       try {
         const origin = requestOrigin(req);
-        const webhook = await ensureZernioWebhook(`${origin}/api/social/webhooks/zernio`);
-        if (!webhook.configured && webhook.reason === 'missing_secret') {
+        const [routeAWebhook, routeBWebhook] = await Promise.all([
+          ensureUploadPostProfileWebhook({
+            username: synced.profile.upload_post_username,
+            url: `${origin}/api/social/webhooks/upload-post`,
+          }),
+          ensureZernioWebhook(`${origin}/api/social/webhooks/zernio`),
+        ]);
+        if (!routeAWebhook.configured) {
+          providerErrors.upload_post_webhook = 'La actualización automática de publicaciones necesita completar su conexión.';
+        }
+        if (!routeBWebhook.configured && routeBWebhook.reason === 'missing_secret') {
           providerErrors.zernio_webhook = 'La actualización en tiempo real necesita completar la configuración segura del webhook.';
         }
       } catch (error) {
-        providerErrors.zernio_webhook = error instanceof Error ? error.message : 'No se pudo verificar la actualización en tiempo real.';
+        providerErrors.webhooks = error instanceof Error ? error.message : 'No se pudieron verificar las actualizaciones en tiempo real.';
       }
 
       try {
