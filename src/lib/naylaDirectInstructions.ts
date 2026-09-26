@@ -64,7 +64,7 @@ Cada medio se referencia SIEMPRE por su etiqueta estable F/V/A:
 
 Controles por medio admitidos:
 duration, effect/efecto, transition, transitionDuration, volume, bus, pitch, fadeIn,
-fadeOut, delay, scale, playbackRate, loop, brightness, contrast, saturation, overlay,
+fadeOut, delay, startFrom, trimBefore, trimAfter, scale, playbackRate, loop, brightness, contrast, saturation, overlay,
 overlayIntensity, preset/template, professionalEffects, motionBlur, gsapEnter, gsapExit,
 gsapEnterDuration, gsapExitDuration, gsapIntensity, procedural, proceduralIntensity,
 proceduralSpeed, proceduralSeed, proceduralColor, proceduralAccentColor.
@@ -238,6 +238,21 @@ const parseAssetLine = (line: string, errors: string[]) => {
         case 'retraso':
           if (seconds === null) errors.push(`${label}: retraso inválido.`);
           else asset.delay = seconds;
+          break;
+        case 'startfrom':
+        case 'iniciodesde':
+          if (seconds === null) errors.push(`${label}: startFrom inválido.`);
+          else asset.startFrom = seconds;
+          break;
+        case 'trimbefore':
+        case 'recorteinicio':
+          if (seconds === null) errors.push(`${label}: trimBefore inválido.`);
+          else asset.trimBefore = seconds;
+          break;
+        case 'trimafter':
+        case 'recortefinal':
+          if (seconds === null) errors.push(`${label}: trimAfter inválido.`);
+          else asset.trimAfter = seconds;
           break;
         case 'scale':
         case 'escala':
