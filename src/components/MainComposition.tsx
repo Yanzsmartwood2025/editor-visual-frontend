@@ -904,7 +904,7 @@ const AnimatedVolume: React.FC<{
   return <>{render(Math.max(0, currentVolume))}</>;
 };
 
-const DynamicSubtitle: React.FC<{ subtitle: SubtitleItem }> = ({ subtitle }) => {
+const DynamicSubtitle: React.FC<{ subtitle: SubtitleItem; fastRender?: boolean }> = ({ subtitle, fastRender = false }) => {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
   const fontFamily = useNaylaFont(subtitle.fontFamily, subtitle.fontUrl);
@@ -994,11 +994,13 @@ const DynamicSubtitle: React.FC<{ subtitle: SubtitleItem }> = ({ subtitle }) => 
           fontWeight: 750,
           padding: '12px 20px',
           borderRadius: 16,
-          background: backgroundColor === 'rgba(0,0,0,0.55)' ? 'rgba(20,20,20,.42)' : backgroundColor,
+          background: backgroundColor === 'rgba(0,0,0,0.55)'
+            ? (fastRender ? 'rgba(12,12,12,.72)' : 'rgba(20,20,20,.42)')
+            : backgroundColor,
           border: '1px solid rgba(255,255,255,.22)',
-          boxShadow: '0 12px 36px rgba(0,0,0,.32)',
-          backdropFilter: 'blur(14px)',
-          WebkitBackdropFilter: 'blur(14px)',
+          boxShadow: fastRender ? '0 6px 18px rgba(0,0,0,.28)' : '0 12px 36px rgba(0,0,0,.32)',
+          backdropFilter: fastRender ? undefined : 'blur(14px)',
+          WebkitBackdropFilter: fastRender ? undefined : 'blur(14px)',
           textShadow: '0 2px 7px rgba(0,0,0,.75)',
         };
       case 'boxed':
@@ -1045,7 +1047,8 @@ const DynamicSubtitle: React.FC<{ subtitle: SubtitleItem }> = ({ subtitle }) => 
           backgroundClip: 'text',
           WebkitBackgroundClip: 'text',
           WebkitTextFillColor: 'transparent',
-          filter: 'drop-shadow(0 3px 8px rgba(0,0,0,.75))',
+          filter: fastRender ? undefined : 'drop-shadow(0 3px 8px rgba(0,0,0,.75))',
+          textShadow: fastRender ? '0 3px 7px rgba(0,0,0,.72)' : undefined,
         };
       case 'retro':
         return {
@@ -1074,7 +1077,12 @@ const DynamicSubtitle: React.FC<{ subtitle: SubtitleItem }> = ({ subtitle }) => 
           backgroundClip: 'text',
           WebkitBackgroundClip: 'text',
           WebkitTextFillColor: 'transparent',
-          filter: `drop-shadow(0 0 7px ${accentColor}) drop-shadow(0 3px 8px rgba(0,0,0,.7))`,
+          filter: fastRender
+            ? undefined
+            : `drop-shadow(0 0 7px ${accentColor}) drop-shadow(0 3px 8px rgba(0,0,0,.7))`,
+          textShadow: fastRender
+            ? `0 0 7px ${accentColor}, 0 3px 8px rgba(0,0,0,.7)`
+            : undefined,
         };
       case 'tiktok':
       case 'karaoke':
@@ -1491,7 +1499,7 @@ export const MainComposition: React.FC<MainCompositionProps> = ({ timeline, subt
 
          return (
             <Sequence key={sub.id} from={fromFrame} durationInFrames={duration}>
-              <DynamicSubtitle subtitle={sub} />
+              <DynamicSubtitle subtitle={sub} fastRender={fastRender} />
             </Sequence>
          );
       })}
