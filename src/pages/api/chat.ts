@@ -1146,17 +1146,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       ? activePlanningContext
       : message;
     const referencedLabels = new Set(getOrderedMediaLabels(labelReferenceText));
-    const recentPlanAttachmentIds = new Set(recentPlanAttachments.map((item: any) => item.id).filter(Boolean));
-    const currentAttachmentIds = new Set(attachments.map((item: any) => item.id).filter(Boolean));
     const promptMediaItems = executionConfirmed
-      ? mergedLibrary.filter((item: any) => {
-          const label = typeof item.etiqueta === 'string' ? item.etiqueta.trim().toUpperCase() : '';
-          return (
-            (label && referencedLabels.has(label)) ||
-            (item.id && recentPlanAttachmentIds.has(item.id)) ||
-            (item.id && currentAttachmentIds.has(item.id))
-          );
-        })
+      // At confirmation time Nayla receives the whole stable media inventory of the active workspace.
+      // This lets the user add F/V/A/D/M files at any point before approving the plan.
+      ? mergedLibrary
+          .filter((item: any) => {
+            const label = typeof item.etiqueta === 'string' ? item.etiqueta.trim().toUpperCase() : '';
+            return /^[FVADM]\d+$/.test(label);
+          })
+          .slice(0, 100)
       : referencedLabels.size
         ? mergedLibrary.filter((item: any) =>
             typeof item.etiqueta === 'string' &&
