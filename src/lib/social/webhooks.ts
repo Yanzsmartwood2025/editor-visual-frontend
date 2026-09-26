@@ -232,7 +232,7 @@ export const bestEffortCacheUploadPostRealtime = async (payload: any) => {
   const programId = socialPost?.metadata?.programId
     ? String(socialPost.metadata.programId)
     : '';
-  if (success && programId) {
+  if (success && programId && socialPost) {
     const language = String(
       socialPost?.metadata?.variantLanguages?.[account.platform] || 'es'
     );
@@ -430,7 +430,7 @@ const cacheZernioPlatformLifecycle = async ({
   const programId = socialPost?.metadata?.programId
     ? String(socialPost.metadata.programId)
     : '';
-  if (programId) {
+  if (programId && socialPost) {
     const language = String(
       socialPost?.metadata?.variantLanguages?.[account.platform] || 'es'
     );
