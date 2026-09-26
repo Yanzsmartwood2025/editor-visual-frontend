@@ -40,6 +40,7 @@ export const publishSocialVideo = async ({
     title?: string;
     caption?: string;
     hashtags?: string[];
+    language?: string;
   }>>;
   programId?: string | null;
 }) => {
@@ -89,6 +90,7 @@ export const publishSocialVideo = async ({
       .eq('project_id', projectId)
       .eq('program_id', programId)
       .eq('platform', platform)
+      .eq('language', String(variants?.[platform as SocialPlatform]?.language || 'es'))
       .in('status', ['draft', 'approved', 'published']);
   };
 
