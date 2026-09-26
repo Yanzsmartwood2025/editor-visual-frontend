@@ -194,11 +194,18 @@ const parseAssetLine = (line: string, errors: string[]) => {
         case 'transition':
         case 'transicion':
         case 'transitiontype': {
-          const transition = normalize(pair.value);
-          if (!TRANSITIONS.has(transition)) errors.push(`${label}: transición no reconocida "${pair.value}".`);
-          else {
+          const shorthand = pair.value.match(/^([^:]+):(.+)$/);
+          const transition = normalize(shorthand ? shorthand[1] : pair.value);
+          const shorthandDuration = shorthand ? parseSeconds(shorthand[2]) : null;
+          if (!TRANSITIONS.has(transition)) {
+            errors.push(`${label}: transición no reconocida "${pair.value}".`);
+          } else {
             asset.transitionType = transition;
             transitionSeen = true;
+            if (shorthand) {
+              if (shorthandDuration === null) errors.push(`${label}: duración de transición inválida en "${pair.value}".`);
+              else asset.transitionDuration = shorthandDuration;
+            }
           }
           break;
         }
@@ -390,6 +397,14 @@ const parseAssetLine = (line: string, errors: string[]) => {
       asset.durationInSeconds = seconds;
       continue;
     }
+    if (
+      normalized === type ||
+      (type === 'foto' && ['foto', 'image', 'imagen'].includes(normalized)) ||
+      (type === 'video' && ['video', 'vídeo'].includes(normalized)) ||
+      (type === 'audio' && ['audio'].includes(normalized))
+    ) {
+      continue;
+    }
     if (EFFECTS.has(normalized)) {
       asset.efecto = normalized;
       continue;
@@ -514,12 +529,21 @@ export const parseNaylaDirectInstruction = (raw: string): NaylaDirectParseResult
   };
   let canvasRatio: string | undefined;
   let exportQuality: string | undefined;
-  let section: 'assets' | 'audio' | 'subtitles' | 'titles' | null = null;
+  let section: 'assets' | 'audio' | 'subtitles' | 'titles' | 'audioMix' | 'audioMaster' | null = null;
 
   const lines = body.split(/\r?\n/);
   for (const rawLine of lines) {
     const line = rawLine.trim();
     if (!line || line.startsWith('#') || line.startsWith('//')) continue;
+
+    if (/^audiomix\s*:\s*$/i.test(line)) {
+      section = 'audioMix';
+      continue;
+    }
+    if (/^audiomaster\s*:\s*$/i.test(line)) {
+      section = 'audioMaster';
+      continue;
+    }
 
     const sectionMatch = line.match(/^(assets?|medios?|fotos?|videos?|audio|subtitles?|subtitulos?|subtítulos?|titles?|titulos?|títulos?)\s*:\s*$/i);
     if (sectionMatch) {
@@ -535,7 +559,21 @@ export const parseNaylaDirectInstruction = (raw: string): NaylaDirectParseResult
     if (rootPair && !line.startsWith('-')) {
       const key = normalize(rootPair[1]).replace(/[\s_-]+/g, '');
       const value = rootPair[2].trim();
-      if (key === 'ratio' || key === 'formato') {
+      if (key === 'action' || key === 'accion') {
+        if (normalize(value).replace(/[-\s]+/g, '_') !== 'build_timeline') {
+          errors.push(`Acción directa no soportada: "${value}". Usa BUILD_TIMELINE.`);
+        }
+      } else if (section === 'audioMix' && ['voicegain', 'musicgain', 'ambiencegain', 'sfxgain'].includes(key)) {
+        const gain = parseNumber(value);
+        if (gain === null || gain < 0 || gain > 1.5) {
+          errors.push(`${rootPair[1]} inválido. Usa 0 a 1.5.`);
+        } else {
+          const bus = key.replace('gain', '') as 'voice' | 'music' | 'ambience' | 'sfx';
+          const currentMix = (action.audioMix as Record<string, unknown>) || {};
+          const currentBuses = (currentMix.busGains as Record<string, number>) || {};
+          action.audioMix = { ...currentMix, busGains: { ...currentBuses, [bus]: gain } };
+        }
+      } else if (key === 'ratio' || key === 'formato') {
         canvasRatio = value.replace(':', '/');
       } else if (key === 'quality' || key === 'calidad') {
         exportQuality = value;
@@ -587,6 +625,10 @@ export const parseNaylaDirectInstruction = (raw: string): NaylaDirectParseResult
         action.audioMaster = { ...((action.audioMaster as object) || {}), compressor: parseBool(value, true) };
       } else if (key === 'limiter') {
         action.audioMaster = { ...((action.audioMaster as object) || {}), limiter: parseBool(value, true) };
+      } else if (key === 'targetlufs') {
+        const lufs = parseNumber(value);
+        if (lufs === null || lufs < -24 || lufs > -8) errors.push('targetLufs inválido. Usa -24 a -8.');
+        else action.audioMaster = { ...((action.audioMaster as object) || {}), targetLufs: lufs };
       } else if (key === 'normalize' || key === 'normalizar') {
         action.audioMaster = { ...((action.audioMaster as object) || {}), normalize: parseBool(value, true) };
       } else if (key === 'noisereduction' || key === 'denoise') {
@@ -615,6 +657,10 @@ export const parseNaylaDirectInstruction = (raw: string): NaylaDirectParseResult
       continue;
     }
 
+    if (section === 'audioMix' || section === 'audioMaster') {
+      errors.push(`No reconozco "${line}" dentro de ${section}:.`);
+      continue;
+    }
     if (section === 'assets' || section === 'audio') {
       const asset = parseAssetLine(line, errors);
       if (asset) (action.assets as unknown[]).push(asset);
