@@ -815,7 +815,7 @@ export default function NaylaCore() {
     };
 
     void refresh();
-    const timer = window.setInterval(refresh, 2500);
+    const timer = window.setInterval(refresh, 5000);
     return () => {
       cancelled = true;
       window.clearInterval(timer);
