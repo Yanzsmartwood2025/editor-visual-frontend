@@ -393,7 +393,7 @@ const parseAssetLine = (line: string, errors: string[]) => {
     const normalized = normalize(token);
     const seconds = parseSeconds(token);
 
-    if (index === 1 && seconds !== null && seconds > 0) {
+    if (seconds !== null && seconds > 0 && asset.durationInSeconds === undefined && !transitionSeen) {
       asset.durationInSeconds = seconds;
       continue;
     }
