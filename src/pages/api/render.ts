@@ -618,6 +618,12 @@ const refreshDetachedRenderRequest = async ({
   const polledTimings = polled.timings && typeof polled.timings === 'object'
     ? polled.timings
     : {};
+  const previousRemotionMetrics = usage.remotionMetrics && typeof usage.remotionMetrics === 'object'
+    ? usage.remotionMetrics as Record<string, unknown>
+    : {};
+  const polledRemotionMetrics = polled.remotionMetrics && typeof polled.remotionMetrics === 'object'
+    ? polled.remotionMetrics
+    : {};
   const nextUsage = {
     ...usage,
     stage: polled.stage,
@@ -627,6 +633,10 @@ const refreshDetachedRenderRequest = async ({
     timings: {
       ...previousTimings,
       ...polledTimings,
+    },
+    remotionMetrics: {
+      ...previousRemotionMetrics,
+      ...polledRemotionMetrics,
     },
   };
 
@@ -687,6 +697,7 @@ const refreshDetachedRenderRequest = async ({
   }
 
   const storedObject = await headR2Object(r2Key);
+  const sandboxUsage = await stopVercelSandboxRender(String(detached.sandboxId));
   const timingValues = nextUsage.timings && typeof nextUsage.timings === 'object'
     ? nextUsage.timings as Record<string, unknown>
     : {};
@@ -703,6 +714,7 @@ const refreshDetachedRenderRequest = async ({
     progress: 1,
     framesDone: framesTotal || undefined,
     outputBytes: Number(storedObject.contentLength) || undefined,
+    ...(sandboxUsage ? { sandboxUsage } : {}),
     timings: {
       ...timingValues,
       pipelineMs: sandboxPreparationMs + processMs,
@@ -732,6 +744,8 @@ const refreshDetachedRenderRequest = async ({
       renderEngine: 'remotion-cpu-sandbox-detached',
       outputBytes: Number(storedObject.contentLength) || null,
       renderTimings: completedUsage.timings,
+      remotionMetrics: completedUsage.remotionMetrics,
+      sandboxUsage: sandboxUsage || null,
     },
   };
 
@@ -758,8 +772,6 @@ const refreshDetachedRenderRequest = async ({
     .eq('id', request.id)
     .eq('user_id', userId)
     .eq('status', 'started');
-
-  await stopVercelSandboxRender(String(detached.sandboxId));
 
   return {
     ...request,
