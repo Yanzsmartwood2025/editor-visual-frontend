@@ -66,6 +66,11 @@ export const publishSocialVideo = async ({
     title: postTitle,
     caption: postCaption,
     accounts: activeAccounts,
+    metadata: {
+      ...(programId ? { programId } : {}),
+      source,
+      variantPlatforms: Object.keys(variants || {}),
+    },
   });
 
   const targetByAccount = new Map(targets.map((target: any) => [target.account_id, target]));
