@@ -4,7 +4,7 @@ import { createNaylaActionPlan, getPendingNaylaActionPlan } from '../../lib/nayl
 import { buildEditorReview } from '../../lib/naylaEditorReview';
 import { NAYLA_EDITOR_CONTRACT, EDITOR_PLANNING_RULES } from '../../lib/naylaEditorContract';
 import { NAYLA_EDITING_GUIDANCE } from '../../lib/naylaEditingLibrary';
-import { parseNaylaDirectInstruction } from '../../lib/naylaDirectInstructions';
+import { NAYLA_DIRECT_TEMPLATE_COMPILER_GUIDE, parseNaylaDirectInstruction, type NaylaDirectPlan } from '../../lib/naylaDirectInstructions';
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { z } from 'zod';
 import { GroqProvider, MistralProvider } from '../../utils/llmProvider';
@@ -159,37 +159,6 @@ const isBarePlanConfirmation = (message: string) => {
   const text = normalizePlanningText(message);
   return /^(si|si dale|ok|okay|dale|adelante|listo|perfecto|correcto|hazlo|procede|confirmo|acepto|continua|continua con el plan|sigue|sigue con el plan|adelante con el plan)$/.test(text);
 };
-
-const findLastUserPlanInstruction = (
-  history: Array<{ role: 'user' | 'assistant'; content: string }>
-) =>
-  [...history]
-    .reverse()
-    .find((item) => {
-      if (item.role !== 'user') return false;
-      if (isBarePlanConfirmation(item.content)) return false;
-
-      const labels = getOrderedMediaLabels(item.content);
-      const naturalPhotos = hasNaturalProjectPhotoReference(item.content);
-      if (!labels.length && !naturalPhotos) return false;
-
-      const text = normalizePlanningText(item.content);
-      return /\b(video|timeline|edicion|montaje|foto|imagen|clip|transicion|efecto|movimiento|duracion|segundos)\b/.test(text);
-    })?.content || '';
-
-const findLastAssistantPlan = (
-  history: Array<{ role: 'user' | 'assistant'; content: string }>
-) =>
-  [...history]
-    .reverse()
-    .find((item) => {
-      if (item.role !== 'assistant') return false;
-      const text = normalizePlanningText(item.content);
-      return (
-        /\b(plan|te recomiendo|propongo|quedaria|cuando confirmes|cuando me confirmes|si te parece|generare la timeline|generare el video)\b/.test(text) ||
-        assistantRequestsPlanConfirmation(item.content)
-      );
-    })?.content || '';
 
 const actionNeedsConsultativeApproval = (action: NaylaAction) =>
   action.action !== 'SEARCH_MEDIA' && action.action !== 'BUILD_TIMELINE';
@@ -831,14 +800,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     const effectiveHistory = scope.threadId ? persistedHistory : (history || []);
     const executionConfirmed = hasExplicitPlanConfirmation(message, effectiveHistory);
-    const priorUserPlanInstruction = executionConfirmed
-      ? findLastUserPlanInstruction(effectiveHistory)
-      : '';
-    const priorAssistantPlan = executionConfirmed
-      ? findLastAssistantPlan(effectiveHistory)
-      : '';
+    const recentPlanningConversation = effectiveHistory
+      .slice(-12)
+      .filter((item) => !isBarePlanConfirmation(item.content))
+      .map((item) => `${item.role}: ${item.content}`)
+      .join('\n\n');
     const activePlanningContext = executionConfirmed
-      ? [priorUserPlanInstruction, priorAssistantPlan, message].filter(Boolean).join('\n\n')
+      ? [recentPlanningConversation, `user: ${message}`].filter(Boolean).join('\n\n')
       : message;
     const intentMatches = findNaylaCapabilityMatches(activePlanningContext);
 
@@ -1175,21 +1143,28 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     const recentPromptHistory = effectiveHistory.slice(-8);
     const labelReferenceText = executionConfirmed
-      ? [priorUserPlanInstruction, message].filter(Boolean).join('\n')
+      ? activePlanningContext
       : message;
     const referencedLabels = new Set(getOrderedMediaLabels(labelReferenceText));
-    const promptMediaItems = referencedLabels.size
-      ? mergedLibrary.filter((item: any) =>
-          typeof item.etiqueta === 'string' &&
-          referencedLabels.has(item.etiqueta.trim().toUpperCase())
-        )
-      : attachments.length
-        ? attachments
-        : recentPlanAttachments.length
-          ? recentPlanAttachments
+    const promptMediaItems = executionConfirmed
+      // At confirmation time Nayla receives the whole stable media inventory of the active workspace.
+      // This lets the user add F/V/A/D/M files at any point before approving the plan.
+      ? mergedLibrary
+          .filter((item: any) => {
+            const label = typeof item.etiqueta === 'string' ? item.etiqueta.trim().toUpperCase() : '';
+            return /^[FVADM]\d+$/.test(label);
+          })
+          .slice(0, 100)
+      : referencedLabels.size
+        ? mergedLibrary.filter((item: any) =>
+            typeof item.etiqueta === 'string' &&
+            referencedLabels.has(item.etiqueta.trim().toUpperCase())
+          )
+        : attachments.length
+          ? attachments
           : mergedLibrary
               .filter((item: any) => typeof item.etiqueta === 'string' && item.etiqueta.trim())
-              .slice(0, 20);
+              .slice(0, 40);
     const availablePromptLabels = new Set(
       promptMediaItems
         .map((item: any) => typeof item.etiqueta === 'string' ? item.etiqueta.trim().toUpperCase() : '')
@@ -1344,9 +1319,9 @@ ${!libraryRoutingSucceeded || !editorSession || editorSession.mode === 'prepare'
 
 MODO CONSULTIVO:
 - EJECUCION_CONFIRMADA=${executionConfirmed ? 'SI' : 'NO'}.
-- Si el usuario pide una edición concreta, prepara el JSON BUILD_TIMELINE para revisión. Si pide el video terminado, usa render:true; el sistema esperará el botón Aceptar antes de ejecutarlo.
-- Si pregunta, compara opciones o pide ideas, conversa y propone un plan breve. Pregunta solo si falta información imprescindible. Las acciones de generación externa y Compute mantienen su confirmación.
-- Si es SI, el usuario está confirmando un plan previo. Responde únicamente con un JSON válido de una acción.
+- Antes de la confirmación explícita, conversa y propone un plan breve; NO emitas BUILD_TIMELINE. El usuario puede seguir añadiendo F/V/A y cambiando el plan libremente.
+- Si pregunta, compara opciones o pide ideas, conversa y recomienda usando los medios actualmente disponibles. Pregunta solo si falta información imprescindible.
+- Si EJECUCION_CONFIRMADA=SI, el usuario está cerrando el plan previo. En este flujo compatible responde únicamente con un JSON válido de una acción; el flujo principal usa la plantilla @direct.
 - No digas que algo está procesando, renderizando o guardándose hasta que el servidor lo confirme.
 - Interpreta el objetivo y el contexto, no solo palabras clave. Resuelve los detalles creativos no especificados con criterio editorial usando las capacidades conectadas. No prometas capacidades inexistentes.
 - Para un montaje creativo, escribe tratamientos concretos por escena: movimiento, transición, duración y acabado. Varía con intención; no devuelvas solo fotos estáticas si se pidió una edición con efectos. Respeta también pedidos de imágenes fijas, cortes secos o ausencia de efectos.
@@ -1417,9 +1392,9 @@ ${getNaylaExecutionPolicyPrompt(engineMode)}
 MODO_MOTOR=${engineMode}
 `;
 
-    const editorMode: 'explore' | 'prepare' = executionConfirmed
-      ? 'prepare'
-      : (editorSession?.mode || 'explore');
+    // Natural conversation never compiles a timeline immediately.
+    // The user can keep adding F/V/A media and refining the idea until an explicit confirmation.
+    const editorMode: 'explore' | 'prepare' = executionConfirmed ? 'prepare' : 'explore';
     const stagedEditorWorkflow =
       libraryRoutingSucceeded &&
       Boolean(editorSession) &&
@@ -1464,17 +1439,21 @@ No uses Markdown visible ni menciones proveedores o APIs.
     ].filter(Boolean).join('\n\n');
 
     const compilerSystemPrompt = `
-Eres el compilador de edición de Nayla. Convierte un blueprint creativo ya decidido en UNA acción BUILD_TIMELINE válida.
-Devuelve SOLO JSON, sin Markdown ni explicación.
+Eres el compilador determinista de edición de Nayla. Convierte el blueprint creativo YA aprobado en una plantilla @direct que el parser del editor pueda validar.
+Devuelve SOLO la plantilla, sin Markdown, explicación ni texto alrededor.
+
+${NAYLA_DIRECT_TEMPLATE_COMPILER_GUIDE}
+
 Reglas:
-- Usa únicamente controles presentes en CONTRATO_RELEVANTE.
-- Para medios del proyecto usa source:"label" y la etiqueta F/V/A exacta; nunca inventes etiquetas o URLs.
-- Conserva exactamente las restricciones del usuario. El blueprint puede resolver lo no especificado, pero nunca contradecir la orden.
+- Prefiere SIEMPRE la plantilla DSL legible. Usa @direct + JSON únicamente si el pedido requiere una capacidad avanzada que la DSL no puede expresar.
+- Usa únicamente controles presentes en CONTRATO_RELEVANTE y en la guía de plantilla.
+- Para medios del proyecto usa exclusivamente su etiqueta F/V/A exacta; nunca inventes etiquetas ni URLs.
+- Conserva exactamente las restricciones del usuario y todos los medios añadidos durante la conversación.
 - Mantén por separado cantidad de medios y cantidad de subtítulos. No fuerces un subtítulo por foto.
-- Solo texto literal destinado a pantalla entra en subtitles/titles/decorations. Encabezados e instrucciones no son subtítulos.
-- Si el objetivo es producir/renderizar/exportar el video, render:true. Si solo pide preparar timeline, render:false.
-- Conserva controles existentes cuando el usuario solo modifica una parte.
-- Incluye listas vacías para subtitles, titles, threeScenes, vectorAnimations y skiaGraphics cuando no se usen, para que la revisión sea inequívoca.
+- Conserva literalmente el texto destinado a pantalla. En la DSL representa saltos internos como \\n.
+- Encabezados como BLOQUE 1/2 y notas técnicas no son subtítulos.
+- Si el objetivo aprobado es producir/renderizar/exportar el video, usa render: yes. Si solo prepara timeline, render: no.
+- No elimines un medio añadido después de la propuesta inicial solo porque no aparecía en el primer mensaje.
 `;
 
     const makeCompilerPrompt = (blueprint: string) => [
@@ -1485,6 +1464,7 @@ Reglas:
       compactEditorState ? `ESTADO DEL EDITOR:\n${JSON.stringify(compactEditorState)}` : '',
       compactPendingPlan ? `PLAN PENDIENTE A CONSERVAR SALVO CAMBIOS:\n${JSON.stringify(compactPendingPlan)}` : '',
       `CONTRATO_RELEVANTE:\n${JSON.stringify(compilerContract)}`,
+      `GUÍA_PLANTILLA_DIRECTA:\n${NAYLA_DIRECT_TEMPLATE_COMPILER_GUIDE}`,
       `RENDER_CONFIRMADO_POR_CONTEXTO=${timelinePlanRequestsRender(activePlanningContext) ? 'SI' : 'NO'}`,
     ].filter(Boolean).join('\n\n');
 
@@ -1511,7 +1491,7 @@ Reglas:
         });
 
         if (editorMode === 'prepare') {
-          emitProgress('compiler', 'Traduciendo el plan a código del editor…', {
+          emitProgress('compiler', 'Traduciendo el plan a plantilla validable…', {
             blueprint: stagedBlueprint,
           });
           stagedCompilerPrompt = makeCompilerPrompt(stagedBlueprint);
@@ -1563,51 +1543,96 @@ Reglas:
 
     // A malformed creative plan must never silently become a plain slideshow.
     if (editorMode === 'prepare' || executionConfirmed) {
-      emitProgress('validate', 'Validando el código antes de enviarlo al editor…', {
+      emitProgress('validate', 'Validando la plantilla antes de enviarla al editor…', {
         blueprint: stagedBlueprint || undefined,
       });
     }
-    let parsedAction = parseNaylaAction(responseText);
-    const expectsAction = executionConfirmed || /["']action["']\s*:/.test(responseText);
+
+    let compiledDirectPlan: NaylaDirectPlan | null = null;
+    let directValidationIssues: string[] = [];
+    let parsedAction: NaylaAction | null = null;
+
+    if (stagedEditorWorkflow && editorMode === 'prepare') {
+      const parsedTemplate = parseNaylaDirectInstruction(responseText);
+      if (parsedTemplate.ok) {
+        compiledDirectPlan = parsedTemplate.plan;
+        parsedAction = parsedTemplate.plan.action;
+      } else {
+        directValidationIssues = parsedTemplate.errors;
+      }
+    } else {
+      parsedAction = parseNaylaAction(responseText);
+    }
+
+    const expectsAction =
+      executionConfirmed ||
+      /^\s*@direct\b/i.test(responseText) ||
+      /["']action["']\s*:/.test(responseText);
+
     if (!parsedAction && expectsAction && responseText.trim()) {
       try {
-        const validationIssues = getNaylaActionValidationIssues(responseText);
-        emitProgress('repair', 'Corrigiendo el código que no pasó la validación…', {
+        const validationIssues = directValidationIssues.length
+          ? directValidationIssues
+          : getNaylaActionValidationIssues(responseText);
+        emitProgress('repair', 'Corrigiendo la plantilla que no pasó la validación…', {
           blueprint: stagedBlueprint || undefined,
           validationIssues,
           failedPayload: responseText.slice(0, 14000),
         });
-        const compactRepairInstruction = [
-          'REPARACIÓN DE JSON BUILD_TIMELINE.',
-          'Devuelve SOLO un objeto JSON completo, sin Markdown ni explicación.',
-          'Conserva los medios, efectos, movimientos, tiempos y texto que ya aparecen en la respuesta fallida.',
-          'Corrige únicamente lo necesario para cumplir el contrato.',
-          'No inventes etiquetas ni URLs.',
-          validationIssues.length ? `ERRORES DEL VALIDADOR:\n${validationIssues.join('\n')}` : '',
-          `RESPUESTA FALLIDA:\n${responseText.slice(0, 14000)}`,
-          stagedEditorWorkflow
-            ? `CONTRATO MÍNIMO RELEVANTE:\n${JSON.stringify(compilerContract)}`
-            : '',
-          stagedEditorWorkflow
-            ? `ORDEN ORIGINAL RESUMIDA PARA NO PERDER RESTRICCIONES:\n${clipRoutingText(activePlanningContext, 3200)}`
-            : `ORDEN ORIGINAL RESUMIDA:\n${clipRoutingText(message, 3200)}`,
-        ].filter(Boolean).join('\n\n');
+        const compactRepairInstruction = stagedEditorWorkflow && editorMode === 'prepare'
+          ? [
+              'REPARACIÓN DE PLANTILLA @direct.',
+              'Devuelve SOLO una plantilla @direct completa, sin Markdown ni explicación.',
+              'Conserva medios, efectos, movimientos, tiempos y texto de la respuesta fallida.',
+              'Corrige únicamente lo necesario para que parseNaylaDirectInstruction la acepte.',
+              'No inventes etiquetas ni URLs.',
+              validationIssues.length ? `ERRORES DEL PARSER:\n${validationIssues.join('\n')}` : '',
+              `GUÍA CANÓNICA:\n${NAYLA_DIRECT_TEMPLATE_COMPILER_GUIDE}`,
+              `RESPUESTA FALLIDA:\n${responseText.slice(0, 14000)}`,
+              `CONTRATO MÍNIMO RELEVANTE:\n${JSON.stringify(compilerContract)}`,
+              `ORDEN APROBADA RESUMIDA:\n${clipRoutingText(activePlanningContext, 4200)}`,
+            ].filter(Boolean).join('\n\n')
+          : [
+              'REPARACIÓN DE JSON BUILD_TIMELINE.',
+              'Devuelve SOLO un objeto JSON completo, sin Markdown ni explicación.',
+              'Conserva los medios, efectos, movimientos, tiempos y texto que ya aparecen en la respuesta fallida.',
+              'Corrige únicamente lo necesario para cumplir el contrato.',
+              'No inventes etiquetas ni URLs.',
+              validationIssues.length ? `ERRORES DEL VALIDADOR:\n${validationIssues.join('\n')}` : '',
+              `RESPUESTA FALLIDA:\n${responseText.slice(0, 14000)}`,
+            ].filter(Boolean).join('\n\n');
 
         responseText = await executeDirectLlm({
           provider,
           task: 'repair',
           prompt: compactRepairInstruction,
-          systemPrompt: 'Eres el validador final de Nayla. Repara el JSON con el menor cambio posible y responde únicamente JSON válido.',
+          systemPrompt: stagedEditorWorkflow && editorMode === 'prepare'
+            ? 'Eres el validador final de Nayla. Repara la plantilla @direct con el menor cambio posible y responde únicamente la plantilla.'
+            : 'Eres el validador final de Nayla. Repara el JSON con el menor cambio posible y responde únicamente JSON válido.',
           maxCompletionTokens: 7000,
           signal: llmSignal,
         });
-        parsedAction = parseNaylaAction(responseText);
+
+        if (stagedEditorWorkflow && editorMode === 'prepare') {
+          const repairedTemplate = parseNaylaDirectInstruction(responseText);
+          if (repairedTemplate.ok) {
+            compiledDirectPlan = repairedTemplate.plan;
+            parsedAction = repairedTemplate.plan.action;
+            directValidationIssues = [];
+          } else {
+            directValidationIssues = repairedTemplate.errors;
+          }
+        } else {
+          parsedAction = parseNaylaAction(responseText);
+        }
       } catch (error) {
-        console.warn('[chat.ts] Action repair failed', error);
+        console.warn('[chat.ts] Action/template repair failed', error);
       }
     }
     if (!parsedAction && expectsAction) {
-      const validationIssues = getNaylaActionValidationIssues(responseText);
+      const validationIssues = directValidationIssues.length
+        ? directValidationIssues
+        : getNaylaActionValidationIssues(responseText);
       console.warn('[chat.ts] El plan final no pasó validación:', validationIssues);
       emitProgress('failed', 'El código no pasó la validación final.', {
         blueprint: stagedBlueprint || undefined,
@@ -1626,7 +1651,7 @@ Reglas:
     }
 
     if (parsedAction && expectsAction) {
-      emitProgress('ready', 'Código validado y listo para revisión.', {
+      emitProgress('ready', 'Plantilla validada y lista para revisión.', {
         blueprint: stagedBlueprint || undefined,
         payload: parsedAction,
       });
@@ -1741,7 +1766,12 @@ Reglas:
         threeScenes: action.threeScenes || [], vectorAnimations: action.vectorAnimations || [], skiaGraphics: action.skiaGraphics || [],
       };
       const review = buildEditorReview(proposed);
-      const renderContext = { logos: currentEditorState?.logos || [], settings: { ...(currentEditorState?.settings || {}), decorations }, canvasRatio: currentEditorState?.canvasRatio || '9/16', exportQuality: currentEditorState?.exportQuality || '1080p' };
+      const renderContext = {
+        logos: currentEditorState?.logos || [],
+        settings: { ...(currentEditorState?.settings || {}), decorations },
+        canvasRatio: (compiledDirectPlan as any)?.canvasRatio || currentEditorState?.canvasRatio || '9/16',
+        exportQuality: (compiledDirectPlan as any)?.exportQuality || currentEditorState?.exportQuality || '1080p',
+      };
       review.execution = { ...proposed, renderContext };
       review.format = `${renderContext.canvasRatio} · ${renderContext.exportQuality}`;
       if (Array.isArray(renderContext.logos)) for (const [index, logo] of renderContext.logos.entries()) {
@@ -1752,7 +1782,15 @@ Reglas:
       const saved = await createNaylaActionPlan({
         userId: firebaseUser.uid, projectId: scope.projectId, module: 'editor', threadKey: scope.threadId,
         summary: 'Plan de edición para revisar', sourceMessage: message,
-        items: [{ actionType: 'BUILD_TIMELINE', payload: proposed }], metadata: { renderContext, catalogVersion: EDITOR_LIBRARY_VERSION, chapters: libraryChapters, editorSession },
+        items: [{ actionType: 'BUILD_TIMELINE', payload: proposed }],
+        metadata: {
+          renderContext,
+          catalogVersion: EDITOR_LIBRARY_VERSION,
+          chapters: libraryChapters,
+          editorSession,
+          templateCompiler: compiledDirectPlan ? 'direct-v1' : 'compat-json',
+          compiledTemplate: compiledDirectPlan ? responseText : null,
+        },
       });
       review.id = saved.plan.id;
       const text = 'Revisa los medios, los tiempos, los efectos y el texto exacto. Puedes pedirme cambios o aceptar este plan.';

@@ -115,6 +115,32 @@ subtitles:
     });
   });
 
+  it('acepta recortes de video en la plantilla DSL', () => {
+    const result = parseNaylaDirectInstruction(`@direct
+assets:
+- V1 | 8s | trimBefore=0.5s | trimAfter=1s | startFrom=2s
+`);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.plan.action.assets[0]).toMatchObject({
+      label: 'V1',
+      trimBefore: 0.5,
+      trimAfter: 1,
+      startFrom: 2,
+    });
+  });
+
+  it('rechaza efectos inventados en lugar de dejarlos pasar silenciosamente', () => {
+    const result = parseNaylaDirectInstruction(`@direct
+assets:
+- F1 | 5s | effect=super-ultra-inventado
+`);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.errors.join(' ')).toContain('efecto no reconocido');
+  });
+
   it('acepta JSON BUILD_TIMELINE después de @direct', () => {
     const result = parseNaylaDirectInstruction(`@direct
 {"action":"build-timeline","assets":[{"type":"foto","source":"label","label":"F1","durationInSeconds":5}],"render":true}`);

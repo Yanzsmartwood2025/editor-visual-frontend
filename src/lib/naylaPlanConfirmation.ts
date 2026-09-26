@@ -44,7 +44,7 @@ export const isUniversalNaylaConfirmation = (value: string) => {
   if (!text) return false;
 
   return (
-    /^(si|si dale|ok|okay|dale|adelante|listo|perfecto|correcto|hazlo|procede|confirmo|acepto|continua|continua con el plan|sigue|sigue con el plan|adelante con el plan)$/.test(text) ||
-    /\b(hazlo|procede|ejecuta|ejecuta el plan|continua con el plan|sigue con el plan|aplica el plan|confirmo|acepto|adelante con el plan|manda adelante|envialo)\b/.test(text)
+    /^(si|si dale|si me parece bien|me parece bien|si esta bien|esta bien|asi esta bien|asi queda bien|queda bien|ok|okay|dale|adelante|listo|perfecto|correcto|hazlo|procede|confirmo|acepto|continua|continua con el plan|sigue|sigue con el plan|adelante con el plan)$/.test(text) ||
+    /\b(hazlo|procede|ejecuta|ejecuta el plan|continua con el plan|sigue con el plan|aplica el plan|confirmo|acepto|adelante con el plan|manda adelante|envialo|me parece bien|asi esta bien|asi queda bien)\b/.test(text)
   );
 };

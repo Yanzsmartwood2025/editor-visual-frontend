@@ -38,6 +38,52 @@ const PROFESSIONAL_EFFECTS = new Set(['chromatic-aberration', 'color-correction'
 const GSAP_MOTIONS = new Set(['fade', 'slide-left', 'slide-right', 'slide-up', 'slide-down', 'zoom-in', 'zoom-out', 'bounce', 'elastic', 'spin', 'swing']);
 const PROCEDURAL_PRESETS = new Set(['particles', 'orbit', 'pulse-grid', 'starfield']);
 
+export const NAYLA_DIRECT_TEMPLATE_COMPILER_GUIDE = `
+FORMATO CANÓNICO DE PLANTILLA NAYLA:
+Empieza literalmente con @direct.
+Después usa líneas simples. No uses Markdown ni fences.
+
+Raíz:
+ratio: 9:16
+quality: 480p | 720p | 1080p | 4K
+render: yes | no
+Opcionales de audio: mix, master, ducking, duckGain, duckAttack, duckRelease, masterFx,
+lowCut, highCut, bass, presence, compressor, limiter, normalize, noiseReduction,
+noiseGate, deEsser, reverb, echo, pan.
+
+Secciones admitidas:
+assets:
+audio:
+subtitles:
+titles:
+
+Cada medio se referencia SIEMPRE por su etiqueta estable F/V/A:
+- F1 | 7s | preset=poster-pop | effect=push-in | transition=fade | transitionDuration=0.6s
+- V1 | 8s | trimBefore=0.5s | volume=0.8
+- A1 | 55s | bus=music | volume=0.72 | fadeIn=0.5s | fadeOut=1s
+
+Controles por medio admitidos:
+duration, effect/efecto, transition, transitionDuration, volume, bus, pitch, fadeIn,
+fadeOut, delay, startFrom, trimBefore, trimAfter, scale, playbackRate, loop, brightness, contrast, saturation, overlay,
+overlayIntensity, preset/template, professionalEffects, motionBlur, gsapEnter, gsapExit,
+gsapEnterDuration, gsapExitDuration, gsapIntensity, procedural, proceduralIntensity,
+proceduralSpeed, proceduralSeed, proceduralColor, proceduralAccentColor.
+
+professionalEffects se escribe como type:intensity separados por coma, por ejemplo:
+professionalEffects=glow:0.25,color-correction:0.2
+motionBlur se escribe shutter/samples, por ejemplo motionBlur=120/2.
+
+Subtítulos:
+- 0-7 | Texto exacto con \\n para saltos | starlight | center | 46 | #ffffff | #c4b5fd | rgba(0,0,0,.55)
+
+Títulos:
+- 0-3 | Texto | cinematic | center | 54 | fade-up
+
+No inventes etiquetas, presets, efectos, transiciones, estilos ni controles.
+Si el pedido necesita una capacidad avanzada que esta plantilla DSL no puede expresar,
+usa @direct seguido inmediatamente por UN JSON BUILD_TIMELINE válido del contrato recibido.
+`;
+
 const normalize = (value: string) => value.trim().toLowerCase();
 
 const parseBool = (value: string, fallback: boolean) => {
@@ -139,15 +185,23 @@ const parseAssetLine = (line: string, errors: string[]) => {
           else asset.durationInSeconds = seconds;
           break;
         case 'effect':
-        case 'efecto':
-          asset.efecto = normalize(pair.value);
+        case 'efecto': {
+          const effect = normalize(pair.value);
+          if (!EFFECTS.has(effect)) errors.push(`${label}: efecto no reconocido "${pair.value}".`);
+          else asset.efecto = effect;
           break;
+        }
         case 'transition':
         case 'transicion':
-        case 'transitiontype':
-          asset.transitionType = normalize(pair.value);
-          transitionSeen = true;
+        case 'transitiontype': {
+          const transition = normalize(pair.value);
+          if (!TRANSITIONS.has(transition)) errors.push(`${label}: transición no reconocida "${pair.value}".`);
+          else {
+            asset.transitionType = transition;
+            transitionSeen = true;
+          }
           break;
+        }
         case 'transitionduration':
         case 'duraciontransicion':
           if (seconds === null) errors.push(`${label}: duración de transición inválida.`);
@@ -185,6 +239,21 @@ const parseAssetLine = (line: string, errors: string[]) => {
           if (seconds === null) errors.push(`${label}: retraso inválido.`);
           else asset.delay = seconds;
           break;
+        case 'startfrom':
+        case 'iniciodesde':
+          if (seconds === null) errors.push(`${label}: startFrom inválido.`);
+          else asset.startFrom = seconds;
+          break;
+        case 'trimbefore':
+        case 'recorteinicio':
+          if (seconds === null) errors.push(`${label}: trimBefore inválido.`);
+          else asset.trimBefore = seconds;
+          break;
+        case 'trimafter':
+        case 'recortefinal':
+          if (seconds === null) errors.push(`${label}: trimAfter inválido.`);
+          else asset.trimAfter = seconds;
+          break;
         case 'scale':
         case 'escala':
           if (numeric === null) errors.push(`${label}: escala inválida.`);
@@ -214,9 +283,12 @@ const parseAssetLine = (line: string, errors: string[]) => {
           else asset.saturation = numeric;
           break;
         case 'overlay':
-        case 'capa':
-          asset.overlay = normalize(pair.value);
+        case 'capa': {
+          const overlay = normalize(pair.value);
+          if (!OVERLAYS.has(overlay)) errors.push(`${label}: overlay no reconocido "${pair.value}".`);
+          else asset.overlay = overlay;
           break;
+        }
         case 'overlayintensity':
         case 'intensidadcapa':
           if (numeric === null || numeric < 0 || numeric > 1) errors.push(`${label}: intensidad de capa inválida.`);
