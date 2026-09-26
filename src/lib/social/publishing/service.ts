@@ -70,6 +70,12 @@ export const publishSocialVideo = async ({
       ...(programId ? { programId } : {}),
       source,
       variantPlatforms: Object.keys(variants || {}),
+      variantLanguages: Object.fromEntries(
+        Object.entries(variants || {}).map(([platform, variant]) => [
+          platform,
+          String((variant as any)?.language || 'es'),
+        ])
+      ),
     },
   });
 
