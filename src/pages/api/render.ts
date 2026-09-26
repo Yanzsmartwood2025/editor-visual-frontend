@@ -50,45 +50,81 @@ const FAST_TRANSITION_FALLBACKS: Record<string, string> = {
 
 const optimizeInputPropsForFastRender = (
   inputProps: ValidatedRenderProps
-): { inputProps: ValidatedRenderProps; optimizedTransitions: number; motionBlurCaps: number } => {
+): {
+  inputProps: ValidatedRenderProps;
+  optimizedTransitions: number;
+  motionBlurCaps: number;
+  motionBlurDisabled: number;
+} => {
   const quality = String(inputProps.exportQuality || '').toLowerCase();
   if (!FAST_RENDER_QUALITIES.has(quality)) {
-    return { inputProps, optimizedTransitions: 0, motionBlurCaps: 0 };
+    return { inputProps, optimizedTransitions: 0, motionBlurCaps: 0, motionBlurDisabled: 0 };
   }
 
   let optimizedTransitions = 0;
   let motionBlurCaps = 0;
+  let motionBlurDisabled = 0;
   const timeline = (inputProps.timeline || []).map((clip: any) => {
     const transitionType = String(clip?.transitionType || '');
     const fallback = FAST_TRANSITION_FALLBACKS[transitionType];
-    const nextMotionBlur = clip?.motionBlur && typeof clip.motionBlur === 'object'
-      ? {
-          ...clip.motionBlur,
-          samples: Math.min(2, Math.max(1, Number(clip.motionBlur.samples) || 2)),
-        }
+    const hasVisualTemplate = typeof clip?.visualTemplate === 'string' && clip.visualTemplate.length > 0;
+    const hasMotionBlur = clip?.motionBlur && typeof clip.motionBlur === 'object';
+
+    // Visual templates already animate multiple layers. Rendering them again through
+    // CameraMotionBlur multiplies the whole scene by the number of samples.
+    // In the 480p/720p iteration profile we preserve the template motion itself and
+    // avoid duplicating the complete frame graph.
+    const nextMotionBlur = hasMotionBlur
+      ? (hasVisualTemplate
+          ? undefined
+          : {
+              ...clip.motionBlur,
+              samples: Math.min(2, Math.max(1, Number(clip.motionBlur.samples) || 2)),
+            })
       : clip?.motionBlur;
 
     if (fallback) optimizedTransitions += 1;
-    if (
-      clip?.motionBlur &&
+    if (hasMotionBlur && hasVisualTemplate) {
+      motionBlurDisabled += 1;
+    } else if (
+      hasMotionBlur &&
       Number.isFinite(Number(clip.motionBlur.samples)) &&
       Number(clip.motionBlur.samples) > 2
     ) {
       motionBlurCaps += 1;
     }
 
-    if (!fallback && nextMotionBlur === clip?.motionBlur) return clip;
-    return {
+    const nextClip = {
       ...clip,
       ...(fallback ? { transitionType: fallback } : {}),
-      ...(nextMotionBlur !== undefined ? { motionBlur: nextMotionBlur } : {}),
     };
+
+    if (hasMotionBlur && hasVisualTemplate) {
+      delete nextClip.motionBlur;
+    } else if (nextMotionBlur !== undefined) {
+      nextClip.motionBlur = nextMotionBlur;
+    }
+
+    return nextClip;
   });
 
+  const settings =
+    inputProps.settings && typeof inputProps.settings === 'object'
+      ? inputProps.settings as Record<string, unknown>
+      : {};
+
   return {
-    inputProps: { ...inputProps, timeline },
+    inputProps: {
+      ...inputProps,
+      timeline,
+      settings: {
+        ...settings,
+        renderPerformance: 'fast',
+      },
+    },
     optimizedTransitions,
     motionBlurCaps,
+    motionBlurDisabled,
   };
 };
 
@@ -969,6 +1005,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       fastRenderOptimizations: {
         optimizedTransitions: fastOptimization.optimizedTransitions,
         motionBlurCaps: fastOptimization.motionBlurCaps,
+        motionBlurDisabled: fastOptimization.motionBlurDisabled,
       },
       timings: {
         sandboxPreparationMs: detached.sandboxPreparationMs,
