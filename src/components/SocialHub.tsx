@@ -350,6 +350,7 @@ export default function SocialHub({ session, projectId, results, onResultsUpload
   const [socialChatDraft, setSocialChatDraft] = useState('');
   const [socialIntelligenceLoaded, setSocialIntelligenceLoaded] = useState(false);
   const [knownPeopleCount, setKnownPeopleCount] = useState(0);
+  const [googleKnowledge, setGoogleKnowledge] = useState<any>(null);
   const [automationRule, setAutomationRule] = useState({
     enabled: false,
     channel: 'comments',
@@ -381,6 +382,140 @@ export default function SocialHub({ session, projectId, results, onResultsUpload
     return payload;
   };
 
+  const loadGoogleKnowledge = async () => {
+    if (!projectId || !session) return null;
+    try {
+      const payload = await api(`/api/social/knowledge/google/status?projectId=${encodeURIComponent(projectId)}`);
+      setGoogleKnowledge(payload);
+      return payload;
+    } catch {
+      setGoogleKnowledge(null);
+      return null;
+    }
+  };
+
+  const connectGoogleKnowledge = async () => {
+    if (!projectId) return;
+    setBusy('google-connect');
+    setNotice('');
+    try {
+      const payload = await api('/api/social/knowledge/google/connect', {
+        method: 'POST',
+        body: JSON.stringify({ projectId }),
+      });
+      if (!payload.authUrl) throw new Error('Google no devolvió una conexión válida.');
+      window.location.href = payload.authUrl;
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : 'No se pudo conectar Google.');
+      setBusy('');
+    }
+  };
+
+  const syncGoogleProgram = async () => {
+    if (!projectId) return;
+    setBusy('google-sync');
+    setNotice('');
+    try {
+      const payload = await api('/api/social/knowledge/google/sync', {
+        method: 'POST',
+        body: JSON.stringify({ projectId, generateCopies: true }),
+      });
+      await loadGoogleKnowledge();
+      const program = payload?.program;
+      setNotice(
+        program?.program_name
+          ? `Programa actualizado: ${program.program_name}.`
+          : 'Programa actualizado desde Google.'
+      );
+      return payload;
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : 'No se pudo actualizar el programa.');
+      return null;
+    } finally {
+      setBusy('');
+    }
+  };
+
+  const loadGooglePicker = async () => {
+    const existing = (window as any).gapi;
+    if (existing?.load && (window as any).google?.picker) return;
+
+    await new Promise<void>((resolve, reject) => {
+      const current = document.querySelector('script[data-nayla-google-picker="1"]') as HTMLScriptElement | null;
+      if (current) {
+        current.addEventListener('load', () => resolve(), { once: true });
+        current.addEventListener('error', () => reject(new Error('No se pudo abrir el selector de Google.')), { once: true });
+        if ((window as any).gapi) resolve();
+        return;
+      }
+      const script = document.createElement('script');
+      script.src = 'https://apis.google.com/js/api.js';
+      script.async = true;
+      script.defer = true;
+      script.dataset.naylaGooglePicker = '1';
+      script.onload = () => resolve();
+      script.onerror = () => reject(new Error('No se pudo abrir el selector de Google.'));
+      document.head.appendChild(script);
+    });
+
+    await new Promise<void>((resolve) => {
+      (window as any).gapi.load('picker', { callback: resolve });
+    });
+  };
+
+  const chooseGoogleSources = async () => {
+    if (!projectId) return;
+    setBusy('google-picker');
+    setNotice('');
+    try {
+      const token = await api(`/api/social/knowledge/google/token?projectId=${encodeURIComponent(projectId)}`);
+      if (token.scopeMode === 'readonly') {
+        await syncGoogleProgram();
+        return;
+      }
+      if (!token.pickerApiKey) {
+        throw new Error('El selector de documentos de Google todavía no está configurado.');
+      }
+
+      await loadGooglePicker();
+      const googleAny = (window as any).google;
+      const view = new googleAny.picker.DocsView(googleAny.picker.ViewId.DOCS)
+        .setMimeTypes('application/vnd.google-apps.document,text/plain,text/markdown,application/json')
+        .setIncludeFolders(false);
+
+      let builder = new googleAny.picker.PickerBuilder()
+        .addView(view)
+        .enableFeature(googleAny.picker.Feature.MULTISELECT_ENABLED)
+        .setOAuthToken(token.accessToken)
+        .setDeveloperKey(token.pickerApiKey)
+        .setCallback(async (pickerData: any) => {
+          if (pickerData.action !== googleAny.picker.Action.PICKED) return;
+          const fileIds = (pickerData.docs || []).map((doc: any) => String(doc.id || '')).filter(Boolean);
+          if (!fileIds.length) return;
+
+          setBusy('google-sources');
+          try {
+            await api('/api/social/knowledge/google/sources', {
+              method: 'POST',
+              body: JSON.stringify({ projectId, fileIds }),
+            });
+            await syncGoogleProgram();
+          } catch (error) {
+            setNotice(error instanceof Error ? error.message : 'No se pudieron guardar los documentos.');
+          } finally {
+            setBusy('');
+          }
+        });
+
+      if (token.pickerAppId) builder = builder.setAppId(String(token.pickerAppId));
+      builder.build().setVisible(true);
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : 'No se pudo abrir Google Drive.');
+    } finally {
+      if (busy === 'google-picker') setBusy('');
+    }
+  };
+
   const load = async (refresh = false) => {
     if (!projectId || !session) return;
     setBusy(refresh ? 'sync' : 'load');
@@ -409,6 +544,10 @@ export default function SocialHub({ session, projectId, results, onResultsUpload
   }, [projectId, session?.user?.id]);
 
   useEffect(() => {
+    void loadGoogleKnowledge();
+  }, [projectId, session?.user?.id]);
+
+  useEffect(() => {
     if (!projectId || !session) return;
     const timer = window.setInterval(() => {
       if (document.visibilityState === 'visible') void load(false);
@@ -423,6 +562,27 @@ export default function SocialHub({ session, projectId, results, onResultsUpload
     });
     return () => window.cancelAnimationFrame(frame);
   }, [tab, socialChatMessages.length, busy]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !projectId || !session) return;
+    const params = new URLSearchParams(window.location.search);
+    const googleState = params.get('social_google');
+    if (!googleState) return;
+
+    void (async () => {
+      await loadGoogleKnowledge();
+      if (googleState === 'connected') {
+        setNotice('Google Drive conectado. Ya puedes elegir o revisar tus programas.');
+      } else {
+        setNotice('No se pudo completar la conexión con Google Drive.');
+      }
+      params.delete('social_google');
+      params.delete('reason');
+      params.delete('projectId');
+      const query = params.toString();
+      window.history.replaceState({}, '', window.location.pathname + (query ? '?' + query : '') + window.location.hash);
+    })();
+  }, [projectId, session?.user?.id]);
 
   useEffect(() => {
     if (typeof window === 'undefined' || !projectId || !session) return;
