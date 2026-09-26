@@ -70,6 +70,7 @@ interface MainCompositionProps {
     decorations?: NaylaDecoration[];
     audioMix?: NaylaAudioMixSettings;
     audioMaster?: NaylaAudioMasterSettings;
+    renderPerformance?: 'fast' | 'full';
   };
 }
 
@@ -408,7 +409,7 @@ const GsapClipMotionFrame: React.FC<{
 };
 
 
-const ProceduralClipOverlay: React.FC<{ clip: TimelineItem }> = ({ clip }) => {
+const ProceduralClipOverlay: React.FC<{ clip: TimelineItem; fastRender?: boolean }> = ({ clip, fastRender = false }) => {
   const motion = clip.proceduralMotion;
   const frame = useCurrentFrame();
   const { fps, width, height } = useVideoConfig();
@@ -421,9 +422,10 @@ const ProceduralClipOverlay: React.FC<{ clip: TimelineItem }> = ({ clip }) => {
   const color = motion.color || '#ffffff';
   const accentColor = motion.accentColor || color;
   const t = (frame / Math.max(1, fps)) * speed;
-  const count = preset === 'pulse-grid'
+  const requestedCount = preset === 'pulse-grid'
     ? 24
     : Math.max(10, Math.round(12 + intensity * 28));
+  const count = fastRender ? Math.min(14, requestedCount) : requestedCount;
 
   return (
     <AbsoluteFill style={{ pointerEvents: 'none', overflow: 'hidden' }}>
@@ -551,7 +553,8 @@ const VisualTemplatePhoto: React.FC<{
   clip: TimelineItem;
   durationInFrames: number;
   revealUrl?: string;
-}> = ({ clip, durationInFrames, revealUrl }) => {
+  fastRender?: boolean;
+}> = ({ clip, durationInFrames, revealUrl, fastRender = false }) => {
   const frame = useCurrentFrame();
   const end = Math.max(1, durationInFrames - 1);
   const enter = interpolate(frame, [0, Math.max(1, Math.round(durationInFrames * 0.22))], [0, 1], {
@@ -575,7 +578,7 @@ const VisualTemplatePhoto: React.FC<{
   }
 
   if (clip.visualTemplate === 'fragment-reveal') {
-    const slices = 7;
+    const slices = fastRender ? 4 : 7;
     return (
       <AbsoluteFill style={{ overflow: 'hidden', backgroundColor: '#000' }}>
         <PreloadedImage
@@ -599,7 +602,7 @@ const VisualTemplatePhoto: React.FC<{
                 clipPath: `inset(0 ${right}% 0 ${left}%)`,
                 transform: `translate(${x}%, ${y}%) rotate(${rotation}deg) scale(${1 + 0.015 * exit})`,
                 transformOrigin: 'center center',
-                filter: 'drop-shadow(0 0 18px rgba(0,0,0,0.35))',
+                filter: fastRender ? undefined : 'drop-shadow(0 0 18px rgba(0,0,0,0.35))',
               }}
             >
               <PreloadedImage src={clip.url} style={commonImageStyle} />
@@ -622,7 +625,7 @@ const VisualTemplatePhoto: React.FC<{
           style={{
             clipPath: 'inset(0 50% 0 0)',
             transform: `translateX(${-spread}%)`,
-            filter: 'drop-shadow(16px 0 22px rgba(0,0,0,.4))',
+            filter: fastRender ? undefined : 'drop-shadow(16px 0 22px rgba(0,0,0,.4))',
           }}
         >
           <PreloadedImage src={clip.url} style={commonImageStyle} />
@@ -631,7 +634,7 @@ const VisualTemplatePhoto: React.FC<{
           style={{
             clipPath: 'inset(0 0 0 50%)',
             transform: `translateX(${spread}%)`,
-            filter: 'drop-shadow(-16px 0 22px rgba(0,0,0,.4))',
+            filter: fastRender ? undefined : 'drop-shadow(-16px 0 22px rgba(0,0,0,.4))',
           }}
         >
           <PreloadedImage src={clip.url} style={commonImageStyle} />
@@ -654,7 +657,7 @@ const VisualTemplatePhoto: React.FC<{
       <AbsoluteFill style={{ overflow: 'hidden', backgroundColor: '#000' }}>
         <PreloadedImage
           src={nextUrl}
-          style={{ width: '100%', height: '100%', objectFit: 'cover', filter: 'blur(20px) brightness(0.42) saturate(0.8)', transform: 'scale(1.08)' }}
+          style={{ width: '100%', height: '100%', objectFit: 'cover', filter: fastRender ? 'brightness(0.32) saturate(0.72)' : 'blur(20px) brightness(0.42) saturate(0.8)', transform: 'scale(1.08)' }}
         />
         <div style={{
           position: 'absolute',
@@ -682,9 +685,9 @@ const VisualTemplatePhoto: React.FC<{
       <AbsoluteFill style={{ overflow: 'hidden', backgroundColor: '#000' }}>
         <PreloadedImage
           src={nextUrl}
-          style={{ width: '100%', height: '100%', objectFit: 'cover', filter: 'blur(22px) brightness(.28)', transform: 'scale(1.1)' }}
+          style={{ width: '100%', height: '100%', objectFit: 'cover', filter: fastRender ? 'brightness(.22) saturate(.78)' : 'blur(22px) brightness(.28)', transform: 'scale(1.1)' }}
         />
-        {[2, 1].map((layer) => (
+        {(fastRender ? [1] : [2, 1]).map((layer) => (
           <div key={layer} style={{
             position: 'absolute',
             left: `${7 + layer * 2}%`,
@@ -725,7 +728,7 @@ const VisualTemplatePhoto: React.FC<{
       <AbsoluteFill style={{ overflow: 'hidden', backgroundColor: '#000' }}>
         <PreloadedImage
           src={clip.url}
-          style={{ width: '100%', height: '100%', objectFit: 'cover', filter: 'blur(26px) brightness(.3) saturate(.8)', transform: 'scale(1.12)' }}
+          style={{ width: '100%', height: '100%', objectFit: 'cover', filter: fastRender ? 'brightness(.24) saturate(.72)' : 'blur(26px) brightness(.3) saturate(.8)', transform: 'scale(1.12)' }}
         />
         <div style={{
           position: 'absolute',
@@ -1265,6 +1268,7 @@ export const MainComposition: React.FC<MainCompositionProps> = ({ timeline, subt
   });
 
   const globalFadeOutFrames = settings?.fadeOutFinal ? Math.round(settings.fadeOutFinal * fps) : 0;
+  const fastRender = settings?.renderPerformance === 'fast';
 
   return (
     <AbsoluteFill style={{ backgroundColor: 'black' }}>
@@ -1303,12 +1307,13 @@ export const MainComposition: React.FC<MainCompositionProps> = ({ timeline, subt
                           clip={clip}
                           durationInFrames={clip.durationInFrames}
                           revealUrl={visualSequences[index + 1]?.url}
+                          fastRender={fastRender}
                         />
                       </AnimatedVisualFrame>
                     </GsapClipMotionFrame>
                   )}
                 </MaybeMotionBlur>
-                <ProceduralClipOverlay clip={clip} />
+                <ProceduralClipOverlay clip={clip} fastRender={fastRender} />
                 {clip.overlay === 'vignette' && (
                     <AbsoluteFill style={{
                         pointerEvents: 'none',
@@ -1320,7 +1325,10 @@ export const MainComposition: React.FC<MainCompositionProps> = ({ timeline, subt
                         pointerEvents: 'none',
                         opacity: clip.overlayIntensity !== undefined ? clip.overlayIntensity : 0.5,
                         mixBlendMode: 'overlay',
-                        backgroundImage: `url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E")`,
+                        backgroundImage: fastRender
+                          ? 'radial-gradient(circle, rgba(255,255,255,.18) 0.7px, transparent 0.9px)'
+                          : `url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E")`,
+                        backgroundSize: fastRender ? '3px 3px' : undefined,
                     }} />
                 )}
                 {clip.overlay === 'light-leak' && (
