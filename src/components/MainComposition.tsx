@@ -658,7 +658,7 @@ const VisualTemplatePhoto: React.FC<{
       <AbsoluteFill style={{ overflow: 'hidden', backgroundColor: '#000' }}>
         <PreloadedImage
           src={nextUrl}
-          style={{ width: '100%', height: '100%', objectFit: 'cover', filter: fastRender ? 'brightness(0.32) saturate(0.72)' : 'blur(20px) brightness(0.42) saturate(0.8)', transform: 'scale(1.08)' }}
+          style={{ width: '100%', height: '100%', objectFit: 'cover', filter: fastRender ? 'blur(8px) brightness(0.34) saturate(0.74)' : 'blur(20px) brightness(0.42) saturate(0.8)', transform: 'scale(1.08)' }}
         />
         <div style={{
           position: 'absolute',
@@ -686,7 +686,7 @@ const VisualTemplatePhoto: React.FC<{
       <AbsoluteFill style={{ overflow: 'hidden', backgroundColor: '#000' }}>
         <PreloadedImage
           src={nextUrl}
-          style={{ width: '100%', height: '100%', objectFit: 'cover', filter: fastRender ? 'brightness(.22) saturate(.78)' : 'blur(22px) brightness(.28)', transform: 'scale(1.1)' }}
+          style={{ width: '100%', height: '100%', objectFit: 'cover', filter: fastRender ? 'blur(10px) brightness(.24) saturate(.8)' : 'blur(22px) brightness(.28)', transform: 'scale(1.1)' }}
         />
         {(fastRender ? [1] : [2, 1]).map((layer) => (
           <div key={layer} style={{
@@ -729,7 +729,7 @@ const VisualTemplatePhoto: React.FC<{
       <AbsoluteFill style={{ overflow: 'hidden', backgroundColor: '#000' }}>
         <PreloadedImage
           src={clip.url}
-          style={{ width: '100%', height: '100%', objectFit: 'cover', filter: fastRender ? 'brightness(.24) saturate(.72)' : 'blur(26px) brightness(.3) saturate(.8)', transform: 'scale(1.12)' }}
+          style={{ width: '100%', height: '100%', objectFit: 'cover', filter: fastRender ? 'blur(10px) brightness(.26) saturate(.74)' : 'blur(26px) brightness(.3) saturate(.8)', transform: 'scale(1.12)' }}
         />
         <div style={{
           position: 'absolute',
