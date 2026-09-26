@@ -431,8 +431,27 @@ const safeProjectFileBase = (value: unknown) => {
   return normalized || 'Nayla';
 };
 
+const formatResetDate = (value: string) => {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  const months = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+  return `${date.getUTCDate()} de ${months[date.getUTCMonth()]} de ${date.getUTCFullYear()}`;
+};
+
 const publicRenderError = (message: string) => {
   const normalized = message.toLowerCase();
+  if (
+    normalized.includes('hobby plan usage limit exceeded') ||
+    normalized.includes('payment_required') ||
+    normalized.includes('payment required') ||
+    normalized.includes('vercel sandbox quota')
+  ) {
+    const resetMatch = message.match(/reset on\s+([0-9TZ:.-]+)/i);
+    const resetDate = resetMatch ? formatResetDate(resetMatch[1]) : null;
+    return resetDate
+      ? `La cuota mensual de Nayla Render está agotada. Se restablece el ${resetDate}.`
+      : 'La cuota mensual de Nayla Render está agotada. Se restablecerá al comenzar el próximo ciclo.';
+  }
   if (normalized.includes('timeout') || normalized.includes('timed out')) {
     return 'El procesamiento tardó más de lo esperado. Intenta nuevamente.';
   }
@@ -1098,7 +1117,18 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       },
     });
   } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : 'Error iniciando el renderizado.';
+    const rawMessage = error instanceof Error ? error.message : 'Error iniciando el renderizado.';
+    const providerMessage =
+      typeof (error as any)?.json?.error?.message === 'string'
+        ? String((error as any).json.error.message)
+        : typeof (error as any)?.text === 'string'
+          ? String((error as any).text)
+          : rawMessage;
+    const providerStatus = Number((error as any)?.response?.status);
+    const quotaExceeded =
+      providerStatus === 402 ||
+      /hobby plan usage limit exceeded|payment_required|payment required/i.test(providerMessage);
+    const message = quotaExceeded ? providerMessage : rawMessage;
     const cancelled = message === 'NAYLA_RENDER_CANCELLED';
 
     if (renderLedger && renderRequestId) {
@@ -1135,11 +1165,18 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       return res.status(400).json({ error: message });
     }
 
-    const status = message.includes('token') || message.includes('Bearer') || message.includes('Firebase') ? 401 : 500;
-    if (status === 500) console.error('Nayla Render falló:', error);
+    const status = quotaExceeded
+      ? 402
+      : message.includes('token') || message.includes('Bearer') || message.includes('Firebase')
+        ? 401
+        : 500;
+    if (status >= 500) console.error('Nayla Render falló:', error);
+    const resetMatch = quotaExceeded ? message.match(/reset on\s+([0-9TZ:.-]+)/i) : null;
     return res.status(status).json({
       error: status === 401 ? 'Sesión no válida.' : publicRenderError(message),
       requestId: renderRequestId,
+      ...(resetMatch ? { retryAt: resetMatch[1] } : {}),
+      ...(quotaExceeded ? { code: 'sandbox_quota_exceeded' } : {}),
     });
   }
 }

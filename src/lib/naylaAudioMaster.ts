@@ -36,6 +36,7 @@ export const audioMasterSettingsSchema = z.object({
   compressor: z.boolean().optional(),
   limiter: z.boolean().optional(),
   normalize: z.boolean().optional(),
+  targetLufs: z.number().min(-24).max(-8).optional(),
   noiseReduction: z.boolean().optional(),
   noiseGate: z.boolean().optional(),
   deEsser: z.number().min(0).max(1).optional(),
@@ -182,7 +183,7 @@ export const buildNaylaAudioMasterFilter = (
   if (settings.reverb && settings.reverb > 0) filters.push(reverb(settings.reverb));
   if (settings.echo && settings.echo > 0) filters.push(echo(settings.echo));
   if (settings.pan !== undefined && Math.abs(settings.pan) > 0.001) filters.push(pan(settings.pan));
-  if (settings.normalize) filters.push('loudnorm=I=-16:TP=-1.5:LRA=11');
+  if (settings.normalize) filters.push(`loudnorm=I=${trimNumber(settings.targetLufs ?? -16)}:TP=-1.5:LRA=11`);
   if (settings.limiter) filters.push(limiter());
 
   return filters.length ? filters.join(',') : null;
