@@ -578,6 +578,7 @@ const refreshDetachedRenderRequest = async ({
       sandboxId: String(detached.sandboxId),
       logFile: typeof detached.logFile === 'string' ? detached.logFile : undefined,
       exitFile: typeof detached.exitFile === 'string' ? detached.exitFile : undefined,
+      metricsFile: typeof detached.metricsFile === 'string' ? detached.metricsFile : undefined,
     });
   } catch (error) {
     const ageMs = Date.now() - new Date(request.created_at || Date.now()).getTime();
@@ -611,12 +612,22 @@ const refreshDetachedRenderRequest = async ({
 
   const framesTotal = Number(usage.framesTotal) || 0;
   const progress = Math.max(0, Math.min(1, Number(polled.progress) || 0));
+  const previousTimings = usage.timings && typeof usage.timings === 'object'
+    ? usage.timings as Record<string, unknown>
+    : {};
+  const polledTimings = polled.timings && typeof polled.timings === 'object'
+    ? polled.timings
+    : {};
   const nextUsage = {
     ...usage,
     stage: polled.stage,
     phase: polled.phase,
     progress,
     framesDone: framesTotal ? Math.min(framesTotal, Math.round(framesTotal * progress)) : undefined,
+    timings: {
+      ...previousTimings,
+      ...polledTimings,
+    },
   };
 
   if (polled.state === 'running') {
@@ -676,6 +687,15 @@ const refreshDetachedRenderRequest = async ({
   }
 
   const storedObject = await headR2Object(r2Key);
+  const timingValues = nextUsage.timings && typeof nextUsage.timings === 'object'
+    ? nextUsage.timings as Record<string, unknown>
+    : {};
+  const sandboxPreparationMs = Number(timingValues.sandboxPreparationMs) || 0;
+  const processMs = Number(timingValues.processMs) || 0;
+  const requestWallClockMs = Math.max(
+    0,
+    Date.now() - new Date(request.created_at || Date.now()).getTime()
+  );
   const completedUsage = {
     ...nextUsage,
     stage: 'completed',
@@ -683,6 +703,11 @@ const refreshDetachedRenderRequest = async ({
     progress: 1,
     framesDone: framesTotal || undefined,
     outputBytes: Number(storedObject.contentLength) || undefined,
+    timings: {
+      ...timingValues,
+      pipelineMs: sandboxPreparationMs + processMs,
+      requestWallClockMs,
+    },
   };
 
   const galleryItem = {
@@ -706,6 +731,7 @@ const refreshDetachedRenderRequest = async ({
       fps: 30,
       renderEngine: 'remotion-cpu-sandbox-detached',
       outputBytes: Number(storedObject.contentLength) || null,
+      renderTimings: completedUsage.timings,
     },
   };
 
@@ -932,12 +958,16 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         optimizedTransitions: fastOptimization.optimizedTransitions,
         motionBlurCaps: fastOptimization.motionBlurCaps,
       },
+      timings: {
+        sandboxPreparationMs: detached.sandboxPreparationMs,
+      },
       detached: {
         sandboxId: detached.sandboxId,
         cmdId: detached.cmdId,
         outputFile: detached.outputFile,
         logFile: detached.logFile,
         exitFile: detached.exitFile,
+        metricsFile: detached.metricsFile,
         r2Key,
         storageUrl: r2Upload.url,
         galleryItemId,

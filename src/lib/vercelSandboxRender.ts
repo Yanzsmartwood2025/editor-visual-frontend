@@ -181,6 +181,7 @@ const DETACHED_CONFIG_FILE = '/tmp/nayla-render-config.json';
 const DETACHED_RUNNER_FILE = '/tmp/nayla-render-runner.sh';
 const DETACHED_AUDIO_FILTER_FILE = '/tmp/nayla-audio-master-filter.txt';
 const DETACHED_MASTERED_OUTPUT_FILE = '/tmp/nayla-render-mastered.mp4';
+const DETACHED_METRICS_FILE = '/tmp/nayla-render-metrics.json';
 
 export type NaylaDetachedRenderStart = {
   status: 'started';
@@ -190,6 +191,17 @@ export type NaylaDetachedRenderStart = {
   outputFile: string;
   logFile: string;
   exitFile: string;
+  metricsFile: string;
+  sandboxPreparationMs: number;
+};
+
+export type NaylaDetachedRenderTimings = {
+  sandboxPreparationMs?: number;
+  renderMs?: number;
+  audioMasterMs?: number;
+  uploadMs?: number;
+  processMs?: number;
+  audioMasterApplied?: boolean;
 };
 
 export type NaylaDetachedRenderPoll = {
@@ -198,6 +210,7 @@ export type NaylaDetachedRenderPoll = {
   phase: string;
   progress: number;
   error?: string;
+  timings?: NaylaDetachedRenderTimings;
 };
 
 const readSandboxTextIfExists = async (sandbox: any, filePath: string) => {
@@ -206,6 +219,27 @@ const readSandboxTextIfExists = async (sandbox: any, filePath: string) => {
     return value ? value.toString('utf8') : '';
   } catch {
     return '';
+  }
+};
+
+export const parseNaylaDetachedRenderTimings = (raw: string): NaylaDetachedRenderTimings | undefined => {
+  if (!raw.trim()) return undefined;
+
+  try {
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    const numeric = (key: string) => {
+      const value = Number(parsed[key]);
+      return Number.isFinite(value) && value >= 0 ? Math.round(value) : undefined;
+    };
+    return {
+      renderMs: numeric('renderMs'),
+      audioMasterMs: numeric('audioMasterMs'),
+      uploadMs: numeric('uploadMs'),
+      processMs: numeric('processMs'),
+      audioMasterApplied: parsed.audioMasterApplied === true,
+    };
+  } catch {
+    return undefined;
   }
 };
 
@@ -311,6 +345,7 @@ export async function startVercelSandboxRenderDetached(
     throw new Error('El adaptador de render no está disponible en este entorno.');
   });
 
+  const preparationStartedAt = Date.now();
   const sandbox = await createSandbox({
     resources: { vcpus: 4 },
     timeoutInMilliseconds: DETACHED_SANDBOX_TIMEOUT_MS,
@@ -371,8 +406,22 @@ export async function startVercelSandboxRenderDetached(
     const runner = `#!/usr/bin/env bash
 set +e
 : > "${DETACHED_LOG_FILE}"
-rm -f "${DETACHED_EXIT_FILE}"
+rm -f "${DETACHED_EXIT_FILE}" "${DETACHED_METRICS_FILE}"
 printf '{"stage":"opening-browser"}\\n' > "${DETACHED_PROGRESS_FILE}"
+
+runner_started_ms="$(date +%s%3N)"
+render_started_ms="$runner_started_ms"
+render_ms=0
+audio_master_ms=0
+upload_ms=0
+audio_master_applied=false
+
+write_nayla_metrics() {
+  now_ms="$(date +%s%3N)"
+  process_ms=$((now_ms - runner_started_ms))
+  printf '{"renderMs":%s,"audioMasterMs":%s,"uploadMs":%s,"processMs":%s,"audioMasterApplied":%s}\\n' \
+    "$render_ms" "$audio_master_ms" "$upload_ms" "$process_ms" "$audio_master_applied" > "${DETACHED_METRICS_FILE}"
+}
 
 node render-video.mjs "$(cat "${DETACHED_CONFIG_FILE}")" 2>&1 | while IFS= read -r line; do
   printf '%s\\n' "$line" >> "${DETACHED_LOG_FILE}"
@@ -383,12 +432,17 @@ node render-video.mjs "$(cat "${DETACHED_CONFIG_FILE}")" 2>&1 | while IFS= read 
   esac
 done
 render_status=\${PIPESTATUS[0]}
+render_finished_ms="$(date +%s%3N)"
+render_ms=$((render_finished_ms - render_started_ms))
+write_nayla_metrics
 if [ "$render_status" -ne 0 ]; then
   printf '{"phase":"render","exitCode":%s}\\n' "$render_status" > "${DETACHED_EXIT_FILE}"
   exit "$render_status"
 fi
 
 if [ -s "${DETACHED_AUDIO_FILTER_FILE}" ]; then
+  audio_master_applied=true
+  audio_started_ms="$(date +%s%3N)"
   printf '{"naylaStage":"mastering-audio"}\\n' >> "${DETACHED_LOG_FILE}"
   printf '{"naylaStage":"mastering-audio"}\\n' > "${DETACHED_PROGRESS_FILE}"
   audio_filter="$(cat "${DETACHED_AUDIO_FILTER_FILE}")"
@@ -418,6 +472,9 @@ if [ -s "${DETACHED_AUDIO_FILTER_FILE}" ]; then
     -movflags +faststart \
     "${DETACHED_MASTERED_OUTPUT_FILE}" >> "${DETACHED_LOG_FILE}" 2>&1
   audio_status=$?
+  audio_finished_ms="$(date +%s%3N)"
+  audio_master_ms=$((audio_finished_ms - audio_started_ms))
+  write_nayla_metrics
   if [ "$audio_status" -ne 0 ]; then
     printf '{"phase":"audio-master","exitCode":%s}\\n' "$audio_status" > "${DETACHED_EXIT_FILE}"
     exit "$audio_status"
@@ -427,12 +484,16 @@ fi
 
 printf '{"naylaStage":"uploading"}\\n' >> "${DETACHED_LOG_FILE}"
 printf '{"naylaStage":"uploading"}\\n' > "${DETACHED_PROGRESS_FILE}"
+upload_started_ms="$(date +%s%3N)"
 curl --fail --silent --show-error --retry 3 --retry-delay 2 \
   --request PUT \
   --header "Content-Type: video/mp4" \
   --upload-file "${DETACHED_OUTPUT_FILE}" \
   "$R2_UPLOAD_URL" >> "${DETACHED_LOG_FILE}" 2>&1
 upload_status=$?
+upload_finished_ms="$(date +%s%3N)"
+upload_ms=$((upload_finished_ms - upload_started_ms))
+write_nayla_metrics
 if [ "$upload_status" -ne 0 ]; then
   printf '{"phase":"upload","exitCode":%s}\\n' "$upload_status" > "${DETACHED_EXIT_FILE}"
   exit "$upload_status"
@@ -457,6 +518,7 @@ exit 0
       },
     ]);
 
+    const sandboxPreparationMs = Date.now() - preparationStartedAt;
     const command = await sandbox.runCommand({
       cmd: 'bash',
       args: [DETACHED_RUNNER_FILE],
@@ -474,6 +536,8 @@ exit 0
       outputFile: DETACHED_OUTPUT_FILE,
       logFile: DETACHED_LOG_FILE,
       exitFile: DETACHED_EXIT_FILE,
+      metricsFile: DETACHED_METRICS_FILE,
+      sandboxPreparationMs,
     };
   } catch (error) {
     try {
@@ -489,18 +553,22 @@ export async function pollVercelSandboxRenderDetached({
   sandboxId,
   logFile = DETACHED_LOG_FILE,
   exitFile = DETACHED_EXIT_FILE,
+  metricsFile = DETACHED_METRICS_FILE,
 }: {
   sandboxId: string;
   logFile?: string;
   exitFile?: string;
+  metricsFile?: string;
 }): Promise<NaylaDetachedRenderPoll> {
   const { Sandbox } = await import('@vercel/sandbox');
   const sandbox = await Sandbox.get({ sandboxId });
 
-  const [rawProgress, rawExit] = await Promise.all([
+  const [rawProgress, rawExit, rawMetrics] = await Promise.all([
     readSandboxTextIfExists(sandbox, DETACHED_PROGRESS_FILE),
     readSandboxTextIfExists(sandbox, exitFile),
+    readSandboxTextIfExists(sandbox, metricsFile),
   ]);
+  const timings = parseNaylaDetachedRenderTimings(rawMetrics);
 
   let legacyRawLog = '';
   let progressSource = rawProgress;
@@ -521,7 +589,7 @@ export async function pollVercelSandboxRenderDetached({
         progress: 0.12,
       };
 
-  if (!rawExit.trim()) return progress;
+  if (!rawExit.trim()) return { ...progress, timings };
 
   try {
     const exit = JSON.parse(rawExit) as { phase?: string; exitCode?: number };
@@ -532,6 +600,7 @@ export async function pollVercelSandboxRenderDetached({
         stage: 'completed',
         phase: 'Resultado listo',
         progress: 1,
+        timings,
       };
     }
 
@@ -543,6 +612,7 @@ export async function pollVercelSandboxRenderDetached({
       phase: exit.phase === 'upload' ? 'No se pudo guardar el resultado' : exit.phase === 'audio-master' ? 'No se pudo masterizar el audio' : 'El render se interrumpió',
       progress: progress.progress,
       error: tail || (exit.phase === 'audio-master' ? 'No se pudo procesar el audio final.' : `El proceso terminó con código ${exitCode}.`),
+      timings,
     };
   } catch {
     return {
@@ -551,6 +621,7 @@ export async function pollVercelSandboxRenderDetached({
       phase: 'El render se interrumpió',
       progress: progress.progress,
       error: 'El resultado del proceso no pudo verificarse.',
+      timings,
     };
   }
 }
