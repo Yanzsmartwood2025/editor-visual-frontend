@@ -24,6 +24,8 @@ export default function GlobalSocialInbox({ session, projectId, onAskNayla }: Pr
   const [filter, setFilter] = useState<'all' | 'pending' | 'responded'>('all');
   const [busy, setBusy] = useState('');
   const [notice, setNotice] = useState('');
+  const [hasMore, setHasMore] = useState(false);
+  const [query, setQuery] = useState('');
 
   const api = useCallback(async (path: string, init: RequestInit = {}) => {
     const response = await fetch(path, {
@@ -40,20 +42,25 @@ export default function GlobalSocialInbox({ session, projectId, onAskNayla }: Pr
 
   const load = useCallback(async (
     nextFilter: 'all' | 'pending' | 'responded' = filter,
-    refreshExternal = false
+    refreshExternal = false,
+    append = false
   ) => {
     if (!projectId || !session) return;
-    setBusy('load');
-    setNotice('');
+    setBusy(append ? 'more' : 'load');
+    if (!append) setNotice('');
     try {
+      const offset = append ? items.length : 0;
       const payload = await api(
         '/api/social/feed?projectId=' + encodeURIComponent(projectId) +
         '&filter=' + encodeURIComponent(nextFilter) +
         '&limit=120' +
-        (refreshExternal ? '&refresh=1' : '')
+        '&offset=' + String(offset) +
+        (refreshExternal ? '&refresh=all' : '')
       );
-      setItems(payload.items || []);
+      const nextItems = payload.items || [];
+      setItems((current) => append ? [...current, ...nextItems] : nextItems);
       setSummary(payload.summary || null);
+      setHasMore(Boolean(payload.hasMore));
       setFilter(nextFilter);
       if (payload.refreshError) setNotice(String(payload.refreshError));
     } catch (error) {
@@ -61,7 +68,7 @@ export default function GlobalSocialInbox({ session, projectId, onAskNayla }: Pr
     } finally {
       setBusy('');
     }
-  }, [api, filter, projectId, session]);
+  }, [api, filter, items.length, projectId, session]);
 
   useEffect(() => {
     void load('all');
@@ -107,8 +114,14 @@ export default function GlobalSocialInbox({ session, projectId, onAskNayla }: Pr
             Red · cuenta · persona · interacción
           </div>
         </div>
-        <button type="button" disabled={busy === 'load'} onClick={() => void load(filter, true)} style={buttonStyle(false)}>
-          {busy === 'load' ? '…' : '↻'}
+        <button
+          type="button"
+          disabled={busy === 'load'}
+          onClick={() => void load(filter, true, false)}
+          style={buttonStyle(false)}
+          title="Traer todas las notificaciones disponibles"
+        >
+          {busy === 'load' ? '…' : '↻ TODO'}
         </button>
       </div>
 
@@ -135,6 +148,24 @@ export default function GlobalSocialInbox({ session, projectId, onAskNayla }: Pr
         </div>
       )}
 
+      <input
+        value={query}
+        onChange={(event) => setQuery(event.target.value)}
+        placeholder="Buscar persona, cuenta o palabra clave"
+        style={{
+          width: '100%',
+          boxSizing: 'border-box',
+          marginTop: 8,
+          background: '#070707',
+          color: '#eee',
+          border: '1px solid rgba(255,255,255,.10)',
+          borderRadius: 9,
+          padding: '7px 9px',
+          fontSize: 9,
+          outline: 'none',
+        }}
+      />
+
       {notice && (
         <div style={{ marginTop: 8, padding: 8, borderRadius: 9, background: 'rgba(255,255,255,.035)', color: '#aaa', fontSize: 9 }}>
           {notice}
@@ -142,7 +173,20 @@ export default function GlobalSocialInbox({ session, projectId, onAskNayla }: Pr
       )}
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 7, marginTop: 9 }}>
-        {items.map((item) => (
+        {items
+          .filter((item) => {
+            const needle = query.trim().toLowerCase();
+            if (!needle) return true;
+            return [
+              item.personName,
+              item.username,
+              item.accountName,
+              item.platform,
+              item.message,
+              item.responseText,
+            ].some((value) => String(value || '').toLowerCase().includes(needle));
+          })
+          .map((item) => (
           <div key={item.id} style={{ padding: 9, borderRadius: 11, background: 'rgba(255,255,255,.025)', border: '1px solid rgba(255,255,255,.045)' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               {item.avatarUrl ? (
@@ -157,7 +201,7 @@ export default function GlobalSocialInbox({ session, projectId, onAskNayla }: Pr
                   {item.personName || item.username || 'Persona'}
                 </div>
                 <div style={{ fontSize: 8, color: '#777', marginTop: 2 }}>
-                  {String(item.platform || '').toUpperCase()} · {item.accountName || 'Cuenta'} · {item.channel === 'dm' ? 'mensaje' : 'comentario'}
+                  {String(item.platform || '').toUpperCase()} · {item.accountName || 'Cuenta'} · {item.channel === 'dm' ? 'CHAT PRIVADO / DM' : 'COMENTARIO PÚBLICO'}
                   {item.occurredAt ? ' · ' + new Date(item.occurredAt).toLocaleString('es', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : ''}
                 </div>
               </div>
@@ -182,12 +226,17 @@ export default function GlobalSocialInbox({ session, projectId, onAskNayla }: Pr
                   NAYLA
                 </button>
               )}
-              {item.canLike && (
+              {item.channel === 'comment' && (
                 <button
                   type="button"
-                  disabled={busy === 'like-' + item.id}
-                  onClick={() => void toggleLike(item)}
-                  style={buttonStyle(Boolean(item.isLiked))}
+                  disabled={!item.canLike || busy === 'like-' + item.id}
+                  onClick={() => item.canLike ? void toggleLike(item) : undefined}
+                  title={item.canLike ? (item.isLiked ? 'Quitar Me gusta' : 'Dar Me gusta') : 'Esta red no permite dar Me gusta a comentarios desde la API'}
+                  style={{
+                    ...buttonStyle(Boolean(item.isLiked)),
+                    opacity: item.canLike ? 1 : .35,
+                    cursor: item.canLike ? 'pointer' : 'not-allowed',
+                  }}
                 >
                   {item.isLiked ? '♥ ME GUSTA' : '♡ ME GUSTA'}
                 </button>
@@ -200,6 +249,17 @@ export default function GlobalSocialInbox({ session, projectId, onAskNayla }: Pr
           <div style={{ color: '#666', fontSize: 9, lineHeight: 1.45 }}>
             Todavía no hay actividad guardada con este filtro.
           </div>
+        )}
+
+        {hasMore && (
+          <button
+            type="button"
+            disabled={busy === 'more'}
+            onClick={() => void load(filter, false, true)}
+            style={{ ...buttonStyle(false), width: '100%', marginTop: 2 }}
+          >
+            {busy === 'more' ? 'CARGANDO…' : 'CARGAR MÁS'}
+          </button>
         )}
       </div>
     </div>
