@@ -11,6 +11,7 @@ import {
 import {
   getZernioAnalytics,
   getZernioComments,
+  listZernioCommentThreads,
   listZernioConversations,
   listZernioMessages,
   syncZernioExternalPosts,
@@ -71,6 +72,16 @@ export const isSocialActivityReviewRequest = (message: string) => {
   return asksToInspect || directSocialRequest;
 };
 
+export const isExhaustiveSocialActivityRequest = (message: string) => {
+  const text = normalize(message);
+  const asksAll =
+    /\b(todo|todos|toda|todas|completo|completa|completos|completas)\b/.test(text) ||
+    /\b(todos los videos|todas las publicaciones|todo el inbox|toda la bandeja)\b/.test(text);
+  const socialObject =
+    /\b(notificaciones?|comentarios?|mensajes?|inbox|actividad|redes?)\b/.test(text);
+  return asksAll && socialObject;
+};
+
 export const getSocialActivityReviewScope = (message: string): ReviewScope => {
   const text = normalize(message);
 
@@ -98,6 +109,48 @@ export const getSocialActivityReviewScope = (message: string): ReviewScope => {
     messages: mentionsMessages || mentionsNotifications || genericActivity || asksEverything,
     metrics: mentionsMetrics || asksEverything,
   };
+};
+
+const nextCursorFrom = (payload: any) =>
+  String(
+    payload?.pagination?.nextCursor ||
+    payload?.pagination?.next_cursor ||
+    payload?.pagination?.cursor ||
+    payload?.nextCursor ||
+    payload?.next_cursor ||
+    ''
+  ) || null;
+
+const hasMoreFrom = (payload: any) =>
+  payload?.pagination?.hasMore === true ||
+  payload?.pagination?.has_next === true ||
+  payload?.pagination?.hasNext === true ||
+  Boolean(nextCursorFrom(payload));
+
+const collectUploadPostMedia = async ({
+  username,
+  platform,
+}: {
+  username: string;
+  platform: any;
+}) => {
+  const seen = new Map<string, { id: string; url: string | null }>();
+  let cursor: string | null = null;
+  let pages = 0;
+
+  do {
+    const payload = await listUploadPostMedia({
+      username,
+      platform,
+      limit: 100,
+      cursor,
+    });
+    for (const item of extractMedia(payload)) seen.set(item.id, item);
+    cursor = nextCursorFrom(payload);
+    pages += 1;
+  } while (cursor && pages < 100);
+
+  return Array.from(seen.values());
 };
 
 const extractMedia = (payload: any) => {
@@ -325,47 +378,58 @@ const loadUploadPostComments = async ({
   account,
   username,
   background = false,
+  exhaustive = false,
 }: {
   userId: string;
   projectId: string;
   account: any;
   username: string;
   background?: boolean;
+  exhaustive?: boolean;
 }) => {
-  const mediaLimit = background ? 8 : 30;
-  const mediaPayload = await listUploadPostMedia({
-    username,
-    platform: account.platform,
-    limit: mediaLimit,
-  });
-  const media = extractMedia(mediaPayload).slice(0, background ? 5 : 20);
+  const media = exhaustive
+    ? await collectUploadPostMedia({ username, platform: account.platform })
+    : extractMedia(await listUploadPostMedia({
+        username,
+        platform: account.platform,
+        limit: background ? 8 : 30,
+      })).slice(0, background ? 5 : 20);
   let comments = 0;
   const samples: ActivitySample[] = [];
 
   for (const post of media) {
     try {
-      const payload = await getUploadPostComments({
-        username,
-        platform: account.platform,
-        postId: post.id,
-        postUrl: post.url,
-      });
-      const cached = await cacheSocialComments({
-        userId,
-        projectId,
-        provider: account.provider,
-        platform: account.platform,
-        account,
-        postId: post.id,
-        targetId: null,
-        payload,
-      });
-      comments += cached.length;
+      let after: string | null = null;
+      let page = 0;
+      do {
+        const payload = await getUploadPostComments({
+          username,
+          platform: account.platform,
+          postId: post.id,
+          postUrl: post.url,
+          after,
+          limit: 50,
+        });
+        const cached = await cacheSocialComments({
+          userId,
+          projectId,
+          provider: account.provider,
+          platform: account.platform,
+          account,
+          postId: post.id,
+          targetId: null,
+          payload,
+        });
+        comments += cached.length;
 
-      for (const comment of extractSocialComments(payload)) {
-        const sample = commentSample(comment);
-        if (sample && samples.length < 20) samples.push(sample);
-      }
+        for (const comment of extractSocialComments(payload)) {
+          const sample = commentSample(comment);
+          if (sample && samples.length < 20) samples.push(sample);
+        }
+
+        after = exhaustive && hasMoreFrom(payload) ? nextCursorFrom(payload) : null;
+        page += 1;
+      } while (after && page < 100);
     } catch {
       // A single post should not abort the rest of the account scan.
     }
@@ -379,11 +443,13 @@ const loadZernioComments = async ({
   projectId,
   account,
   background = false,
+  exhaustive = false,
 }: {
   userId: string;
   projectId: string;
   account: any;
   background?: boolean;
+  exhaustive?: boolean;
 }) => {
   const supabase = getWorkspaceSupabaseAdmin();
   const { data: targets, error } = await supabase
@@ -402,6 +468,42 @@ const loadZernioComments = async ({
   for (const target of targets || []) {
     const postId = String(target.provider_post_id || '');
     if (postId) postMap.set(postId, { postId, targetId: String(target.id) });
+  }
+
+  if (exhaustive) {
+    try {
+      let cursor: string | null = null;
+      let pages = 0;
+      do {
+        const inbox = await listZernioCommentThreads({
+          accountId: String(account.provider_account_id),
+          cursor,
+          limit: 100,
+        });
+        const rows =
+          Array.isArray(inbox?.data) ? inbox.data :
+          Array.isArray(inbox?.items) ? inbox.items :
+          Array.isArray(inbox?.posts) ? inbox.posts :
+          Array.isArray(inbox?.comments) ? inbox.comments :
+          [];
+        for (const row of rows) {
+          const postId = String(
+            row?.postId ||
+            row?.platformPostId ||
+            row?.platform_post_id ||
+            row?.post?.id ||
+            row?.post?._id ||
+            row?.id ||
+            ''
+          );
+          if (postId) postMap.set(postId, { postId, targetId: null });
+        }
+        cursor = hasMoreFrom(inbox) ? nextCursorFrom(inbox) : null;
+        pages += 1;
+      } while (cursor && pages < 100);
+    } catch {
+      // Fall back to known targets + recent external discovery below.
+    }
   }
 
   try {
@@ -433,32 +535,43 @@ const loadZernioComments = async ({
     // External-post discovery is a best-effort fallback. Known Nayla posts still work.
   }
 
-  const posts = Array.from(postMap.values()).slice(0, background ? 5 : 12);
+  const posts = exhaustive
+    ? Array.from(postMap.values())
+    : Array.from(postMap.values()).slice(0, background ? 5 : 12);
   let comments = 0;
   const samples: ActivitySample[] = [];
 
   for (const post of posts) {
     try {
-      const payload = await getZernioComments({
-        accountId: String(account.provider_account_id),
-        postId: post.postId,
-      });
-      const cached = await cacheSocialComments({
-        userId,
-        projectId,
-        provider: account.provider,
-        platform: account.platform,
-        account,
-        postId: post.postId,
-        targetId: post.targetId,
-        payload,
-      });
-      comments += cached.length;
+      let cursor: string | null = null;
+      let page = 0;
+      do {
+        const payload = await getZernioComments({
+          accountId: String(account.provider_account_id),
+          postId: post.postId,
+          cursor,
+          limit: 100,
+        });
+        const cached = await cacheSocialComments({
+          userId,
+          projectId,
+          provider: account.provider,
+          platform: account.platform,
+          account,
+          postId: post.postId,
+          targetId: post.targetId,
+          payload,
+        });
+        comments += cached.length;
 
-      for (const comment of extractSocialComments(payload)) {
-        const sample = commentSample(comment);
-        if (sample && samples.length < 20) samples.push(sample);
-      }
+        for (const comment of extractSocialComments(payload)) {
+          const sample = commentSample(comment);
+          if (sample && samples.length < 20) samples.push(sample);
+        }
+
+        cursor = exhaustive && hasMoreFrom(payload) ? nextCursorFrom(payload) : null;
+        page += 1;
+      } while (cursor && page < 100);
     } catch {
       // A single inaccessible post should not abort the rest of the scan.
     }
@@ -473,12 +586,14 @@ const loadUploadPostMessages = async ({
   account,
   username,
   background = false,
+  exhaustive = false,
 }: {
   userId: string;
   projectId: string;
   account: any;
   username: string;
   background?: boolean;
+  exhaustive?: boolean;
 }) => {
   if (account.platform !== 'instagram') {
     return { conversations: 0, messages: 0, inbound: 0, samples: [] as ActivitySample[], unavailable: true };
@@ -488,12 +603,14 @@ const loadUploadPostMessages = async ({
     username,
     platform: account.platform,
   });
-  const conversations = extractConversations(payload).slice(0, background ? 5 : 15);
+  const conversations = exhaustive
+    ? extractConversations(payload)
+    : extractConversations(payload).slice(0, background ? 5 : 15);
   let totalMessages = 0;
   let inbound = 0;
   const samples: ActivitySample[] = [];
 
-  for (const conversation of conversations) {
+  for (const conversation of selectedConversations) {
     const cached = await cacheSocialConversation({
       userId,
       projectId,
@@ -520,7 +637,7 @@ const loadUploadPostMessages = async ({
   }
 
   return {
-    conversations: conversations.length,
+    conversations: selectedConversations.length,
     messages: totalMessages,
     inbound,
     samples,
@@ -533,14 +650,32 @@ const loadZernioMessages = async ({
   projectId,
   account,
   background = false,
+  exhaustive = false,
 }: {
   userId: string;
   projectId: string;
   account: any;
   background?: boolean;
+  exhaustive?: boolean;
 }) => {
-  const payload = await listZernioConversations(String(account.provider_account_id));
-  const conversations = extractConversations(payload).slice(0, background ? 5 : 15);
+  const conversations: any[] = [];
+  let conversationCursor: string | null = null;
+  let conversationPages = 0;
+
+  do {
+    const payload = await listZernioConversations({
+      accountId: String(account.provider_account_id),
+      cursor: conversationCursor,
+      limit: exhaustive ? 100 : (background ? 5 : 15),
+    });
+    conversations.push(...extractConversations(payload));
+    conversationCursor = exhaustive && hasMoreFrom(payload) ? nextCursorFrom(payload) : null;
+    conversationPages += 1;
+  } while (conversationCursor && conversationPages < 100);
+
+  const selectedConversations = exhaustive
+    ? conversations
+    : conversations.slice(0, background ? 5 : 15);
   let totalMessages = 0;
   let inbound = 0;
   const samples: ActivitySample[] = [];
@@ -557,11 +692,21 @@ const loadZernioMessages = async ({
 
     let messages: any[] = [];
     try {
-      const messagePayload = await listZernioMessages(
-        conversationId,
-        String(account.provider_account_id)
-      );
-      messages = extractMessages(messagePayload).slice(background ? -30 : -100);
+      let messageCursor: string | null = null;
+      let messagePages = 0;
+      do {
+        const messagePayload = await listZernioMessages({
+          conversationId,
+          accountId: String(account.provider_account_id),
+          cursor: messageCursor,
+          limit: 100,
+          sortOrder: 'asc',
+        });
+        messages.push(...extractMessages(messagePayload));
+        messageCursor = exhaustive && hasMoreFrom(messagePayload) ? nextCursorFrom(messagePayload) : null;
+        messagePages += 1;
+      } while (messageCursor && messagePages < 100);
+      if (!exhaustive) messages = messages.slice(background ? -30 : -100);
     } catch {
       messages = [];
     }
@@ -664,6 +809,7 @@ export const reviewConnectedSocialActivity = async ({
   background?: boolean;
 }) => {
   const scope = getSocialActivityReviewScope(message);
+  const exhaustive = !background && isExhaustiveSocialActivityRequest(message);
   const supabase = getWorkspaceSupabaseAdmin();
   const profile = await ensureSocialProfile(userId, projectId);
 
@@ -677,7 +823,8 @@ export const reviewConnectedSocialActivity = async ({
 
   if (error) throw error;
 
-  const selected = chooseActivityAccounts(accounts || []).slice(0, background ? 6 : 12);
+  const grouped = chooseActivityAccounts(accounts || []);
+  const selected = exhaustive ? grouped : grouped.slice(0, background ? 6 : 12);
   const activity: AccountActivity[] = [];
 
   for (const routes of selected) {
@@ -711,12 +858,14 @@ export const reviewConnectedSocialActivity = async ({
               account: routes.comments,
               username: profile.upload_post_username,
               background,
+              exhaustive,
             })
           : await loadZernioComments({
               userId,
               projectId,
               account: routes.comments,
               background,
+              exhaustive,
             });
 
         item.comments = result.comments;
@@ -735,6 +884,7 @@ export const reviewConnectedSocialActivity = async ({
               projectId,
               account: routes.messages,
               background,
+              exhaustive,
             })
           : await loadUploadPostMessages({
               userId,
@@ -742,6 +892,7 @@ export const reviewConnectedSocialActivity = async ({
               account: routes.messages,
               username: profile.upload_post_username,
               background,
+              exhaustive,
             });
 
         item.conversations = result.conversations;
@@ -809,6 +960,7 @@ export const reviewConnectedSocialActivity = async ({
 
   return {
     scope,
+    exhaustive,
     activity,
     peopleCount: peopleCount || 0,
     text: formatActivity(activity, scope),
