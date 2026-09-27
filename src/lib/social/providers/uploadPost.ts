@@ -314,10 +314,12 @@ export const listUploadPostMedia = async ({
   username,
   platform,
   limit = 25,
+  cursor,
 }: {
   username: string;
   platform: SocialPlatform;
   limit?: number;
+  cursor?: string | null;
 }) => {
   const mapped = getSocialNetwork(platform)?.uploadPostPublish || platform;
   const params = new URLSearchParams({
@@ -325,6 +327,7 @@ export const listUploadPostMedia = async ({
     user: username,
     limit: String(Math.max(1, Math.min(100, limit))),
   });
+  if (cursor) params.set('cursor', cursor);
   return request(`/api/uploadposts/media?${params.toString()}`);
 };
 
@@ -333,17 +336,26 @@ export const getUploadPostComments = async ({
   platform,
   postId,
   postUrl,
+  after,
+  limit = 50,
 }: {
   username: string;
   platform: SocialPlatform;
   postId?: string | null;
   postUrl?: string | null;
+  after?: string | null;
+  limit?: number;
 }) => {
   const mapped = getSocialNetwork(platform)?.uploadPostPublish || platform;
-  const params = new URLSearchParams({ platform: mapped, user: username, limit: '50' });
+  const params = new URLSearchParams({
+    platform: mapped,
+    user: username,
+    limit: String(Math.max(1, Math.min(50, limit))),
+  });
   if (postId) params.set('post_id', postId);
   else if (postUrl) params.set('post_url', postUrl);
   else throw new Error('Falta el identificador de la publicación.');
+  if (after) params.set('after', after);
   return request(`/api/uploadposts/comments?${params.toString()}`);
 };
 

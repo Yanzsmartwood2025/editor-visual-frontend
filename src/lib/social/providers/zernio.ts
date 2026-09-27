@@ -261,10 +261,43 @@ export const getZernioAnalytics = async ({
 export const getZernioComments = async ({
   accountId,
   postId,
+  cursor,
+  limit = 100,
+  commentId,
 }: {
   accountId: string;
   postId: string;
-}) => request(`/inbox/comments/${encodeURIComponent(postId)}?accountId=${encodeURIComponent(accountId)}`);
+  cursor?: string | null;
+  limit?: number;
+  commentId?: string | null;
+}) => {
+  const params = new URLSearchParams({
+    accountId,
+    limit: String(Math.max(1, Math.min(100, limit))),
+  });
+  if (cursor) params.set('cursor', cursor);
+  if (commentId) params.set('commentId', commentId);
+  return request(`/inbox/comments/${encodeURIComponent(postId)}?${params.toString()}`);
+};
+
+export const listZernioCommentThreads = async ({
+  accountId,
+  cursor,
+  limit = 100,
+}: {
+  accountId: string;
+  cursor?: string | null;
+  limit?: number;
+}) => {
+  const params = new URLSearchParams({
+    accountId,
+    limit: String(Math.max(1, Math.min(100, limit))),
+    sortBy: 'date',
+    sortOrder: 'desc',
+  });
+  if (cursor) params.set('cursor', cursor);
+  return request(`/inbox/comments?${params.toString()}`);
+};
 
 export const replyZernioComment = async ({
   accountId,
@@ -310,14 +343,40 @@ export const unlikeZernioComment = async ({
   );
 };
 
-export const listZernioConversations = async (accountId?: string | null) => {
-  const params = new URLSearchParams();
+export const listZernioConversations = async ({
+  accountId,
+  cursor,
+  limit = 100,
+}: {
+  accountId?: string | null;
+  cursor?: string | null;
+  limit?: number;
+} = {}) => {
+  const params = new URLSearchParams({ limit: String(Math.max(1, Math.min(100, limit))) });
   if (accountId) params.set('accountId', accountId);
+  if (cursor) params.set('cursor', cursor);
   return request('/inbox/conversations?' + params.toString());
 };
 
-export const listZernioMessages = async (conversationId: string, accountId: string) => {
-  const params = new URLSearchParams({ accountId, limit: '100', sortOrder: 'asc' });
+export const listZernioMessages = async ({
+  conversationId,
+  accountId,
+  cursor,
+  limit = 100,
+  sortOrder = 'asc',
+}: {
+  conversationId: string;
+  accountId: string;
+  cursor?: string | null;
+  limit?: number;
+  sortOrder?: 'asc' | 'desc';
+}) => {
+  const params = new URLSearchParams({
+    accountId,
+    limit: String(Math.max(1, Math.min(100, limit))),
+    sortOrder,
+  });
+  if (cursor) params.set('cursor', cursor);
   return request(`/inbox/conversations/${encodeURIComponent(conversationId)}/messages?${params.toString()}`);
 };
 

@@ -88,11 +88,16 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
       const remoteAccountId = String(account.provider_account_id);
       if (conversationId) {
-        const payload = await listZernioMessages(conversationId, remoteAccountId);
+        const payload = await listZernioMessages({
+          conversationId,
+          accountId: remoteAccountId,
+        });
         return res.status(200).json({ messages: payload?.messages || payload?.data || [], raw: payload });
       }
 
-      const payload = await listZernioConversations(remoteAccountId);
+      const payload = await listZernioConversations({
+        accountId: remoteAccountId,
+      });
       return res.status(200).json({
         conversations: payload?.conversations || payload?.data || [],
         messages: [],

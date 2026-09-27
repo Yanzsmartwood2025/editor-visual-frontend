@@ -20,7 +20,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   const filter = typeof req.query.filter === 'string' ? req.query.filter : 'all';
   const platform = typeof req.query.platform === 'string' ? req.query.platform : '';
   const limit = toInt(req.query.limit, 80, 1, 200);
-  const refresh = req.query.refresh === '1';
+  const offset = toInt(req.query.offset, 0, 0, 100000);
+  const refresh = req.query.refresh === '1' || req.query.refresh === 'all';
+  const exhaustiveRefresh = req.query.refresh === 'all';
 
   try {
     let refreshError: string | null = null;
@@ -29,7 +31,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         await reviewConnectedSocialActivity({
           userId: user.uid,
           projectId,
-          message: 'Revisa comentarios y mensajes de todas las redes.',
+          message: exhaustiveRefresh
+            ? 'Tráeme todas las notificaciones: todos los comentarios y todos los mensajes de todas las redes.'
+            : 'Revisa comentarios y mensajes de todas las redes.',
         });
       } catch (error) {
         refreshError = error instanceof Error ? error.message : 'No se pudo actualizar la actividad externa.';
@@ -39,12 +43,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const supabase = getWorkspaceSupabaseAdmin();
     let query = supabase
       .from('social_interactions')
-      .select('id,person_id,identity_id,account_id,provider,platform,channel,direction,source_id,provider_post_id,provider_conversation_id,provider_parent_id,body,occurred_at,response_state,responded_at,response_text,response_source,raw,social_people(display_name,preferred_name,relationship_stage),social_identities(username,display_name,avatar_url,profile_url),social_accounts(display_name,username,handle,status)')
+      .select('id,person_id,identity_id,account_id,provider,platform,channel,direction,source_id,provider_post_id,provider_conversation_id,provider_parent_id,body,occurred_at,response_state,responded_at,response_text,response_source,raw,social_people(display_name,preferred_name,relationship_stage),social_identities(username,display_name,avatar_url,profile_url),social_accounts(display_name,username,handle,status)', { count: 'exact' })
       .eq('user_id', user.uid)
       .eq('project_id', projectId)
       .eq('direction', 'inbound')
       .order('occurred_at', { ascending: false })
-      .limit(limit);
+      .range(offset, offset + limit - 1);
 
     if (filter === 'pending') {
       query = query.in('response_state', ['unanswered', 'planned']);
@@ -54,7 +58,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     if (platform) query = query.eq('platform', platform);
 
-    const { data, error } = await query;
+    const { data, error, count } = await query;
     if (error) throw error;
 
     const items = (data || []).map((item: any) => {
@@ -97,14 +101,21 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     });
 
     const summary = {
-      total: items.length,
+      total: count ?? items.length,
       pending: items.filter((item: any) => item.responseState !== 'responded').length,
       responded: items.filter((item: any) => item.responseState === 'responded').length,
       likeable: items.filter((item: any) => item.canLike).length,
     };
 
     res.setHeader('Cache-Control', 'no-store, max-age=0');
-    return res.status(200).json({ items, summary, refreshError });
+    return res.status(200).json({
+      items,
+      summary,
+      refreshError,
+      offset,
+      limit,
+      hasMore: offset + items.length < (count ?? items.length),
+    });
   } catch (error) {
     return res.status(500).json({
       error: error instanceof Error ? error.message : 'No se pudo abrir la bandeja global.',

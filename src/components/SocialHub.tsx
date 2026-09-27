@@ -1626,7 +1626,7 @@ export default function SocialHub({ session, projectId, results, onResultsUpload
       {tab === 'inbox' && (
         <>
           <div style={{ ...panel, padding: 10 }}>
-            <div style={{ fontSize: 10, fontWeight: 900, marginBottom: 8 }}>COMENTARIOS</div>
+            <div style={{ fontSize: 10, fontWeight: 900, marginBottom: 8 }}>COMENTARIOS PÚBLICOS</div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
               <NaylaSelect
                 value={commentAccount}
@@ -1688,7 +1688,7 @@ export default function SocialHub({ session, projectId, results, onResultsUpload
           </div>
 
           <div style={{ ...panel, padding: 10 }}>
-            <div style={{ fontSize: 10, fontWeight: 900, marginBottom: 8 }}>MENSAJES</div>
+            <div style={{ fontSize: 10, fontWeight: 900, marginBottom: 8 }}>CHAT PRIVADO / DM</div>
             <NaylaSelect
               value={inboxAccount}
               placeholder="Seleccionar cuenta"
