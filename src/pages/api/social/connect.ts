@@ -1,9 +1,10 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { z } from 'zod';
-import { createUploadPostConnectUrl, ensureUploadPostProfile } from '../../../lib/social/providers/uploadPost';
-import { createZernioConnectUrl, createZernioProfile, createZernioTelegramCode } from '../../../lib/social/providers/zernio';
+import { createUploadPostConnectUrl } from '../../../lib/social/providers/uploadPost';
+import { createZernioConnectUrl, createZernioTelegramCode } from '../../../lib/social/providers/zernio';
 import { requireSocialUser, requestOrigin } from '../../../lib/social/http';
-import { ensureSocialProfile, updateSocialProviderProfileId } from '../../../lib/social/store';
+import { ensureSocialProfile } from '../../../lib/social/store';
+import { ensureZernioProfileBinding } from '../../../lib/social/sync';
 import { SOCIAL_NETWORKS, getSocialNetwork } from '../../../lib/social/types';
 
 const schema = z.object({
@@ -11,6 +12,80 @@ const schema = z.object({
   provider: z.enum(['upload_post', 'zernio']),
   platform: z.string().min(1),
 });
+
+const publicConnectFailure = (error: any, platformLabel: string) => {
+  const status = Number(error?.status) || 500;
+  const payload = error?.payload && typeof error.payload === 'object' ? error.payload : {};
+  const code = String(
+    payload?.error_code ||
+    payload?.code ||
+    payload?.reason ||
+    ''
+  );
+  const rawMessage = String(
+    payload?.message ||
+    payload?.error ||
+    error?.message ||
+    ''
+  );
+
+  if (status === 401) {
+    return {
+      status: 503,
+      code: 'social_route_auth',
+      error: `La conexión interna de Nayla Social necesita renovar su credencial antes de conectar ${platformLabel}.`,
+    };
+  }
+
+  if (
+    status === 402 ||
+    ['PAYMENT_REQUIRED', 'payment_required', 'free_tier_exceeded'].includes(code)
+  ) {
+    return {
+      status: 402,
+      code: 'social_free_limit',
+      error: `Nayla Social alcanzó el límite gratuito disponible en esta ruta para conectar ${platformLabel}.`,
+    };
+  }
+
+  if (
+    status === 403 &&
+    /PROFILE_LIMIT_REACHED|PROFILE_BLOCKED|limit|over.?limit/i.test(code + ' ' + rawMessage)
+  ) {
+    return {
+      status: 409,
+      code: 'social_profile_limit',
+      error: 'Nayla Social ya tiene ocupados los espacios gratuitos de perfiles en esta ruta. Voy a intentar reutilizar los perfiles existentes.',
+    };
+  }
+
+  if (
+    status === 409 &&
+    /ACCOUNT_ALREADY_LINKED|already.?linked|already.?connected/i.test(code + ' ' + rawMessage)
+  ) {
+    return {
+      status: 409,
+      code: 'social_account_already_linked',
+      error: `Esta cuenta de ${platformLabel} ya está conectada a otro espacio social.`,
+    };
+  }
+
+  if (status === 429) {
+    return {
+      status: 429,
+      code: 'social_rate_limit',
+      error: 'Nayla Social recibió demasiadas solicitudes de conexión. Inténtalo nuevamente en unos minutos.',
+    };
+  }
+
+  return {
+    status: status >= 400 && status < 500 ? status : 500,
+    code: code || 'social_connect_failed',
+    error: rawMessage
+      ? `No se pudo iniciar ${platformLabel}: ${rawMessage.slice(0, 220)}`
+      : `No se pudo iniciar la conexión de ${platformLabel}.`,
+  };
+};
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Usa POST.' });
@@ -31,7 +106,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     if (parsed.data.provider === 'upload_post') {
       if (!process.env.UPLOAD_POST_API_KEY) return res.status(503).json({ error: 'Ruta A está lista en código, pero falta UPLOAD_POST_API_KEY.' });
-      await ensureUploadPostProfile(profile.upload_post_username);
       const authUrl = await createUploadPostConnectUrl({
         username: profile.upload_post_username,
         platform,
@@ -40,15 +114,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       return res.status(200).json({ authUrl });
     }
 
-    if (!process.env.ZERNIO_API_KEY) return res.status(503).json({ error: 'Ruta B está lista en código, pero falta ZERNIO_API_KEY.' });
-    if (!profile.zernio_profile_id) {
-      const remote = await createZernioProfile(`Nayla · ${String(profile.id).slice(0, 8)}`);
-      profile = await updateSocialProviderProfileId({
-        profileId: profile.id,
-        provider: 'zernio',
-        providerProfileId: String(remote._id),
-      });
-    }
+    if (!process.env.ZERNIO_API_KEY) return res.status(503).json({ error: 'Esta ruta de Nayla Social todavía no tiene credencial configurada.' });
+    profile = await ensureZernioProfileBinding({
+      profile,
+      userId: user.uid,
+      projectId: parsed.data.projectId,
+    });
     const network = getSocialNetwork(platform);
     if (network?.zernioConnectMode === 'telegram_code') {
       const details = await createZernioTelegramCode(profile.zernio_profile_id);
@@ -69,7 +140,21 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       redirectUrl,
     });
     return res.status(200).json({ connectionMode: 'oauth', authUrl });
-  } catch (error) {
-    return res.status(500).json({ error: error instanceof Error ? error.message : 'No se pudo iniciar la conexión social.' });
+  } catch (error: any) {
+    const network = getSocialNetwork(platform);
+    const publicFailure = publicConnectFailure(error, network?.label || String(platform));
+
+    console.error('[social-connect]', {
+      provider: parsed.data.provider,
+      platform,
+      status: Number(error?.status) || 500,
+      code: String(error?.payload?.error_code || error?.payload?.code || error?.payload?.reason || ''),
+      message: String(error?.payload?.message || error?.payload?.error || error?.message || '').slice(0, 500),
+    });
+
+    return res.status(publicFailure.status).json({
+      error: publicFailure.error,
+      code: publicFailure.code,
+    });
   }
 }
