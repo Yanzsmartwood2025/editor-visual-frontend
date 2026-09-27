@@ -1226,12 +1226,15 @@ export default function SocialHub({ session, projectId, results, onResultsUpload
     setTab(nextTab);
     setNotice('');
 
-    if (nextTab === 'inbox' && !commentAccount) {
-      const account = accounts.find((item: any) =>
-        item.status === 'connected' &&
-        (!Array.isArray(item.capabilities) || item.capabilities.includes('comments'))
-      );
-      if (account) void fetchCommentMedia(account.id);
+    if (nextTab === 'inbox') {
+      void loadGlobalFeed(globalFeedFilter);
+      if (!commentAccount) {
+        const account = accounts.find((item: any) =>
+          item.status === 'connected' &&
+          (!Array.isArray(item.capabilities) || item.capabilities.includes('comments'))
+        );
+        if (account) void fetchCommentMedia(account.id);
+      }
     }
 
     if (nextTab === 'metricas' && !analyticsAccount) {
