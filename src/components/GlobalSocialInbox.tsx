@@ -1,7 +1,9 @@
 import React, { useCallback, useEffect, useState } from 'react';
+import type { FirebaseSession } from '../lib/firebaseClient';
+import { firebaseHeaders } from '../lib/apiClient';
 
 type Props = {
-  session: any;
+  session: FirebaseSession | null;
   projectId: string;
   onAskNayla?: (item: any) => void;
 };
@@ -24,14 +26,12 @@ export default function GlobalSocialInbox({ session, projectId, onAskNayla }: Pr
   const [notice, setNotice] = useState('');
 
   const api = useCallback(async (path: string, init: RequestInit = {}) => {
-    const token = await session?.getIdToken?.();
     const response = await fetch(path, {
       ...init,
-      headers: {
-        ...(token ? { Authorization: 'Bearer ' + token } : {}),
+      headers: firebaseHeaders(session, {
         ...(init.body ? { 'Content-Type': 'application/json' } : {}),
         ...(init.headers || {}),
-      },
+      }),
     });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(String(payload?.error || 'No se pudo completar la solicitud.'));
