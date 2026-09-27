@@ -345,6 +345,9 @@ export default function SocialHub({ session, projectId, results, onResultsUpload
   const [inboxConversation, setInboxConversation] = useState<any>(null);
   const [inboxMessages, setInboxMessages] = useState<any[]>([]);
   const [messageDraft, setMessageDraft] = useState('');
+  const [globalFeed, setGlobalFeed] = useState<any[]>([]);
+  const [globalFeedSummary, setGlobalFeedSummary] = useState<any>(null);
+  const [globalFeedFilter, setGlobalFeedFilter] = useState<'all' | 'pending' | 'responded'>('all');
   const [policy, setPolicy] = useState({ mode: 'suggest', tone: 'amable, cercano y profesional', language: 'auto', instructions: '' });
   const [socialChatMessages, setSocialChatMessages] = useState<any[]>([]);
   const [socialChatDraft, setSocialChatDraft] = useState('');
