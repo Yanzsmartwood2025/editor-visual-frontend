@@ -8,6 +8,26 @@ import { ensureUploadPostProfileWebhook } from '../../../lib/social/providers/up
 import { getSocialOverview } from '../../../lib/social/store';
 import { syncSocialAccounts } from '../../../lib/social/sync';
 
+const publicProviderError = (value: unknown) => {
+  const raw = String(value || '').trim();
+  const lower = raw.toLowerCase();
+
+  if (/limit of 2 profiles|profile_limit_reached|profile limit/.test(lower)) {
+    return 'Nayla Social ya tiene ocupados los 2 perfiles incluidos en el plan actual. Las cuentas existentes pueden seguir usándose.';
+  }
+  if (/payment_required|payment required|free tier|plan limit/.test(lower)) {
+    return 'Nayla Social alcanzó el límite gratuito disponible en una de sus rutas.';
+  }
+  if (/reauth|reconnect|required.*permission|token.*expired/.test(lower)) {
+    return 'Una conexión social necesita volver a autorizarse.';
+  }
+
+  return raw
+    .replace(/upload-post/gi, 'Ruta A')
+    .replace(/zernio/gi, 'Ruta B')
+    .slice(0, 320);
+};
+
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== 'GET') return res.status(405).json({ error: 'Usa GET.' });
   const user = await requireSocialUser(req, res);
@@ -51,6 +71,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         providerErrors.activity = error instanceof Error ? error.message : 'No se pudo actualizar toda la actividad social.';
       }
     }
+    providerErrors = Object.fromEntries(
+      Object.entries(providerErrors)
+        .map(([key, value]) => [key, publicProviderError(value)])
+        .filter(([, value]) => Boolean(value))
+    );
+
     const overview = await getSocialOverview(user.uid, projectId);
     return res.status(200).json({
       ...overview,
