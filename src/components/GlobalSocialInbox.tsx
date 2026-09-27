@@ -102,9 +102,9 @@ export default function GlobalSocialInbox({ session, projectId, onAskNayla }: Pr
     <div style={{ padding: 10, border: '1px solid rgba(255,255,255,.08)', borderRadius: 14, background: '#0a0a0a' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'center' }}>
         <div>
-          <div style={{ fontSize: 10, fontWeight: 900 }}>BANDEJA GLOBAL</div>
+          <div style={{ fontSize: 10, fontWeight: 900 }}>ACTIVIDAD UNIVERSAL</div>
           <div style={{ fontSize: 8.5, color: '#707070', marginTop: 2 }}>
-            Todo lo que Nayla ha recogido de tus cuentas
+            Red · cuenta · persona · interacción
           </div>
         </div>
         <button type="button" disabled={busy === 'load'} onClick={() => void load(filter, true)} style={buttonStyle(false)}>
@@ -157,7 +157,8 @@ export default function GlobalSocialInbox({ session, projectId, onAskNayla }: Pr
                   {item.personName || item.username || 'Persona'}
                 </div>
                 <div style={{ fontSize: 8, color: '#777', marginTop: 2 }}>
-                  {String(item.platform || '').toUpperCase()} · {item.channel === 'dm' ? 'mensaje' : 'comentario'}
+                  {String(item.platform || '').toUpperCase()} · {item.accountName || 'Cuenta'} · {item.channel === 'dm' ? 'mensaje' : 'comentario'}
+                  {item.occurredAt ? ' · ' + new Date(item.occurredAt).toLocaleString('es', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : ''}
                 </div>
               </div>
               <span style={{ fontSize: 7.5, color: '#777' }}>
