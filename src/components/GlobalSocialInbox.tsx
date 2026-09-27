@@ -38,7 +38,10 @@ export default function GlobalSocialInbox({ session, projectId, onAskNayla }: Pr
     return payload;
   }, [session]);
 
-  const load = useCallback(async (nextFilter: 'all' | 'pending' | 'responded' = filter) => {
+  const load = useCallback(async (
+    nextFilter: 'all' | 'pending' | 'responded' = filter,
+    refreshExternal = false
+  ) => {
     if (!projectId || !session) return;
     setBusy('load');
     setNotice('');
@@ -46,11 +49,13 @@ export default function GlobalSocialInbox({ session, projectId, onAskNayla }: Pr
       const payload = await api(
         '/api/social/feed?projectId=' + encodeURIComponent(projectId) +
         '&filter=' + encodeURIComponent(nextFilter) +
-        '&limit=120'
+        '&limit=120' +
+        (refreshExternal ? '&refresh=1' : '')
       );
       setItems(payload.items || []);
       setSummary(payload.summary || null);
       setFilter(nextFilter);
+      if (payload.refreshError) setNotice(String(payload.refreshError));
     } catch (error) {
       setNotice(error instanceof Error ? error.message : 'No se pudo abrir la bandeja global.');
     } finally {
@@ -102,7 +107,7 @@ export default function GlobalSocialInbox({ session, projectId, onAskNayla }: Pr
             Todo lo que Nayla ha recogido de tus cuentas
           </div>
         </div>
-        <button type="button" disabled={busy === 'load'} onClick={() => void load(filter)} style={buttonStyle(false)}>
+        <button type="button" disabled={busy === 'load'} onClick={() => void load(filter, true)} style={buttonStyle(false)}>
           {busy === 'load' ? '…' : '↻'}
         </button>
       </div>
