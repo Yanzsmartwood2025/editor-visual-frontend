@@ -352,6 +352,8 @@ export default function SocialHub({ session, projectId, results, onResultsUpload
   const [socialIntelligenceLoaded, setSocialIntelligenceLoaded] = useState(false);
   const [knownPeopleCount, setKnownPeopleCount] = useState(0);
   const [googleKnowledge, setGoogleKnowledge] = useState<any>(null);
+  const [socialNotificationsOpen, setSocialNotificationsOpen] = useState(false);
+  const [socialPendingCount, setSocialPendingCount] = useState(0);
   const [automationRule, setAutomationRule] = useState({
     enabled: false,
     channel: 'comments',
@@ -381,6 +383,18 @@ export default function SocialHub({ session, projectId, results, onResultsUpload
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(payload?.error || 'No se pudo completar la acción.');
     return payload;
+  };
+
+  const loadSocialPendingCount = async () => {
+    if (!projectId || !session) return;
+    try {
+      const payload = await api(
+        '/api/social/feed?projectId=' + encodeURIComponent(projectId) + '&filter=pending&limit=200'
+      );
+      setSocialPendingCount(Number(payload?.summary?.pending || 0));
+    } catch {
+      // The notification badge is best-effort and must not block REDES.
+    }
   };
 
   const loadGoogleKnowledge = async () => {
@@ -542,6 +556,7 @@ export default function SocialHub({ session, projectId, results, onResultsUpload
 
   useEffect(() => {
     void load(true);
+    void loadSocialPendingCount();
   }, [projectId, session?.user?.id]);
 
   useEffect(() => {
@@ -551,7 +566,10 @@ export default function SocialHub({ session, projectId, results, onResultsUpload
   useEffect(() => {
     if (!projectId || !session) return;
     const timer = window.setInterval(() => {
-      if (document.visibilityState === 'visible') void load(false);
+      if (document.visibilityState === 'visible') {
+        void load(false);
+        void loadSocialPendingCount();
+      }
     }, 30000);
     return () => window.clearInterval(timer);
   }, [projectId, session?.user?.id]);
@@ -1233,8 +1251,58 @@ export default function SocialHub({ session, projectId, results, onResultsUpload
         <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
           <button
             type="button"
+            aria-label="Notificaciones"
+            title={socialPendingCount ? socialPendingCount + ' pendientes' : 'Notificaciones'}
+            onClick={() => {
+              setSocialNotificationsOpen(true);
+              void loadSocialPendingCount();
+            }}
+            style={{
+              ...tinyButton(false),
+              width: 34,
+              height: 34,
+              padding: 0,
+              position: 'relative',
+              display: 'grid',
+              placeItems: 'center',
+            }}
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M18 8a6 6 0 10-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" />
+              <path d="M10 21h4" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" />
+            </svg>
+            {socialPendingCount > 0 && (
+              <span
+                style={{
+                  position: 'absolute',
+                  top: -4,
+                  right: -4,
+                  minWidth: 16,
+                  height: 16,
+                  padding: '0 4px',
+                  borderRadius: 999,
+                  background: '#fff',
+                  color: '#050505',
+                  border: '2px solid #050505',
+                  display: 'grid',
+                  placeItems: 'center',
+                  fontSize: 7.5,
+                  fontWeight: 950,
+                  lineHeight: 1,
+                  boxSizing: 'border-box',
+                }}
+              >
+                {socialPendingCount > 99 ? '99+' : socialPendingCount}
+              </span>
+            )}
+          </button>
+          <button
+            type="button"
             aria-label="Actualizar redes"
-            onClick={() => void load(true)}
+            onClick={() => {
+              void load(true);
+              void loadSocialPendingCount();
+            }}
             disabled={busy === 'sync'}
             style={{ ...tinyButton(false), width: 34, height: 34, padding: 0, fontSize: 15 }}
           >
@@ -1508,17 +1576,6 @@ export default function SocialHub({ session, projectId, results, onResultsUpload
 
       {tab === 'inbox' && (
         <>
-          <GlobalSocialInbox
-            session={session}
-            projectId={projectId}
-            onAskNayla={(item) => {
-              const who = item.personName || item.username || 'esta persona';
-              const text = String(item.message || '').trim();
-              setSocialChatDraft('Ayúdame a responder a ' + who + ' en ' + item.platform + ': "' + text + '"');
-              setTab('ajustes');
-              void loadSocialIntelligence();
-            }}
-          />
           <div style={{ ...panel, padding: 10 }}>
             <div style={{ fontSize: 10, fontWeight: 900, marginBottom: 8 }}>COMENTARIOS</div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
@@ -1704,6 +1761,81 @@ export default function SocialHub({ session, projectId, results, onResultsUpload
               La cuenta está conectada, pero esta red todavía no devolvió métricas resumidas compatibles.
             </div>
           )}
+        </div>
+      )}
+
+      {socialNotificationsOpen && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 9990,
+            background: '#050505',
+            color: '#fff',
+            display: 'flex',
+            flexDirection: 'column',
+          }}
+        >
+          <div
+            style={{
+              flex: '0 0 auto',
+              minHeight: 62,
+              padding: '12px 14px',
+              boxSizing: 'border-box',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: 10,
+              borderBottom: '1px solid rgba(255,255,255,.08)',
+              background: 'rgba(5,5,5,.98)',
+            }}
+          >
+            <div>
+              <div style={{ fontSize: 17, fontWeight: 950, letterSpacing: '1px' }}>NOTIFICACIONES</div>
+              <div style={{ fontSize: 9.5, color: '#777', marginTop: 3 }}>
+                Todas tus redes · orden cronológico
+              </div>
+            </div>
+            <button
+              type="button"
+              aria-label="Cerrar notificaciones"
+              onClick={() => {
+                setSocialNotificationsOpen(false);
+                void loadSocialPendingCount();
+              }}
+              style={{
+                background: 'transparent',
+                border: 'none',
+                color: '#fff',
+                width: 34,
+                height: 34,
+                cursor: 'pointer',
+                display: 'grid',
+                placeItems: 'center',
+                fontSize: 29,
+                fontWeight: 300,
+                lineHeight: 1,
+                padding: 0,
+              }}
+            >
+              ×
+            </button>
+          </div>
+
+          <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: 14 }}>
+            <GlobalSocialInbox
+              session={session}
+              projectId={projectId}
+              onAskNayla={(item) => {
+                const who = item.personName || item.username || 'esta persona';
+                const text = String(item.message || '').trim();
+                setSocialChatDraft('Ayúdame a responder a ' + who + ' en ' + item.platform + ': "' + text + '"');
+                setSocialNotificationsOpen(false);
+                setTab('ajustes');
+                void loadSocialIntelligence();
+              }}
+            />
+          </div>
         </div>
       )}
 
