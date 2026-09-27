@@ -59,9 +59,11 @@ const hasPublishCommandIntent = (message: string) =>
 const loadCandidates = async ({
   userId,
   projectId,
+  includeResponded = false,
 }: {
   userId: string;
   projectId: string;
+  includeResponded?: boolean;
 }) => {
   const supabase = getWorkspaceSupabaseAdmin();
   const { data, error } = await supabase
@@ -70,7 +72,7 @@ const loadCandidates = async ({
     .eq('user_id', userId)
     .eq('project_id', projectId)
     .eq('direction', 'inbound')
-    .in('response_state', ['unanswered', 'planned'])
+    .in('response_state', includeResponded ? ['unanswered', 'planned', 'responded'] : ['unanswered', 'planned'])
     .order('occurred_at', { ascending: false })
     .limit(40);
 
@@ -487,7 +489,11 @@ export const planSocialCommand = async ({
   if (!wantsReply && !wantsLike) return null;
 
   const supabase = getWorkspaceSupabaseAdmin();
-  const candidates = await loadCandidates({ userId, projectId });
+  const candidates = await loadCandidates({
+    userId,
+    projectId,
+    includeResponded: wantsLike && !wantsReply,
+  });
   if (!candidates.length) {
     return {
       kind: 'no_candidates' as const,
