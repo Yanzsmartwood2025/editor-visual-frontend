@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   getSocialActivityReviewScope,
+  isExhaustiveSocialActivityRequest,
   isSocialActivityReviewRequest,
 } from '../lib/social/activity/service';
 
@@ -32,6 +33,13 @@ describe('Nayla Social activity review intent', () => {
       messages: true,
       metrics: false,
     });
+  });
+
+  it('uses exhaustive mode only when the user explicitly asks for everything', () => {
+    expect(isExhaustiveSocialActivityRequest('Nayla, tráeme todas las notificaciones')).toBe(true);
+    expect(isExhaustiveSocialActivityRequest('Tráeme todos los comentarios de todos los videos')).toBe(true);
+    expect(isExhaustiveSocialActivityRequest('Revisa todos los mensajes del inbox')).toBe(true);
+    expect(isExhaustiveSocialActivityRequest('Revisa las notificaciones recientes')).toBe(false);
   });
 
   it('does not intercept publishing or reply commands', () => {
