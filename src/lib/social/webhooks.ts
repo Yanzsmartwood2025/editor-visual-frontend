@@ -553,11 +553,24 @@ export const bestEffortCacheZernioRealtime = async (payload: any) => {
     const commentId = String(comment.id || comment._id || comment.commentId || '');
     if (!commentId) return;
 
+    // Some platforms can echo the connected account's own replies through
+    // comment.received. Those are outbound actions, not new notifications.
+    if (comment?.author?.isOwnAccount === true || comment?.user?.isOwnAccount === true) {
+      return;
+    }
+
     const authorId = String(comment.author?.id || comment.user?.id || '') || null;
     const authorName = comment.author?.name || comment.user?.name || comment.username || null;
     const authorUsername = comment.author?.username || comment.user?.username || comment.username || null;
     const message = String(comment.message || comment.text || comment.content || '');
-    const postId = String(comment.postId || payload?.post?.id || payload?.postId || '') || null;
+    const postId = String(
+      comment.postId ||
+      comment.platformPostId ||
+      payload?.post?.platformPostId ||
+      payload?.post?.id ||
+      payload?.postId ||
+      ''
+    ) || null;
     const createdAt = comment.createdAt || payload?.timestamp || new Date().toISOString();
 
     const normalized = await recordSocialInteraction({
