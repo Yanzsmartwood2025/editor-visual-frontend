@@ -51,6 +51,7 @@ export const getUploadPostRecoveryCandidates = async ({
       candidates: [] as UploadPostRecoveryCandidate[],
       plan: remote.plan,
       limit: remote.limit,
+      allowInteractiveChoice: false,
     };
   }
 
@@ -59,7 +60,11 @@ export const getUploadPostRecoveryCandidates = async ({
     .map((item: any) => String(item?.username || '').trim())
     .filter(Boolean);
 
-  const [{ data: bindings, error: bindingsError }, { data: localAccounts, error: accountsError }] = await Promise.all([
+  const [
+    { data: bindings, error: bindingsError },
+    { data: localAccounts, error: accountsError },
+    { count: localProfileCount, error: profileCountError },
+  ] = await Promise.all([
     supabase
       .from('social_profiles')
       .select('id,user_id,project_id,upload_post_username')
@@ -70,10 +75,14 @@ export const getUploadPostRecoveryCandidates = async ({
       .eq('user_id', userId)
       .eq('project_id', projectId)
       .eq('status', 'connected'),
+    supabase
+      .from('social_profiles')
+      .select('id', { count: 'exact', head: true }),
   ]);
 
   if (bindingsError) throw bindingsError;
   if (accountsError) throw accountsError;
+  if (profileCountError) throw profileCountError;
 
   const candidates: UploadPostRecoveryCandidate[] = profiles
     .map((remoteProfile: any) => {
@@ -130,6 +139,7 @@ export const getUploadPostRecoveryCandidates = async ({
     candidates,
     plan: remote.plan,
     limit: remote.limit,
+    allowInteractiveChoice: Number(localProfileCount || 0) <= 1,
   };
 };
 
@@ -170,10 +180,11 @@ export const recoverUploadPostProfileBinding = async ({
   }
 
   if (!selected) {
+    const requiresChoice = available.length > 1 && recovery.allowInteractiveChoice;
     return {
       recovered: false as const,
-      requiresChoice: available.length > 1,
-      candidates: available,
+      requiresChoice,
+      candidates: requiresChoice ? available : [],
       plan: recovery.plan,
       limit: recovery.limit,
       profile,
