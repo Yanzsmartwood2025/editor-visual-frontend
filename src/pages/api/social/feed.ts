@@ -1,6 +1,7 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { requireSocialUser } from '../../../lib/social/http';
 import { getWorkspaceSupabaseAdmin } from '../../../lib/workspaceStore';
+import { reviewConnectedSocialActivity } from '../../../lib/social/activity/service';
 
 const toInt = (value: unknown, fallback: number, min: number, max: number) => {
   const n = Number(value);
@@ -19,8 +20,22 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   const filter = typeof req.query.filter === 'string' ? req.query.filter : 'all';
   const platform = typeof req.query.platform === 'string' ? req.query.platform : '';
   const limit = toInt(req.query.limit, 80, 1, 200);
+  const refresh = req.query.refresh === '1';
 
   try {
+    let refreshError: string | null = null;
+    if (refresh) {
+      try {
+        await reviewConnectedSocialActivity({
+          userId: user.uid,
+          projectId,
+          message: 'Revisa comentarios y mensajes de todas las redes.',
+        });
+      } catch (error) {
+        refreshError = error instanceof Error ? error.message : 'No se pudo actualizar la actividad externa.';
+      }
+    }
+
     const supabase = getWorkspaceSupabaseAdmin();
     let query = supabase
       .from('social_interactions')
@@ -89,7 +104,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     };
 
     res.setHeader('Cache-Control', 'no-store, max-age=0');
-    return res.status(200).json({ items, summary });
+    return res.status(200).json({ items, summary, refreshError });
   } catch (error) {
     return res.status(500).json({
       error: error instanceof Error ? error.message : 'No se pudo abrir la bandeja global.',
