@@ -27,13 +27,51 @@ const request = async (path: string, init: RequestInit = {}) => {
   return payload;
 };
 
-export const createZernioProfile = async (name: string) => {
+export const listZernioProfiles = async (name?: string) => {
+  const params = new URLSearchParams();
+  if (name?.trim()) params.set('name', name.trim());
+  params.set('limit', '100');
+  const payload = await request('/profiles?' + params.toString());
+  return Array.isArray(payload?.profiles)
+    ? payload.profiles
+    : Array.isArray(payload?.data)
+      ? payload.data
+      : [];
+};
+
+export const createZernioProfile = async (name: string, idempotencyKey?: string) => {
   const payload = await request('/profiles', {
     method: 'POST',
+    headers: idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : undefined,
     body: JSON.stringify({ name }),
   });
   if (!payload?.profile?._id) throw new Error('Ruta B no devolvió el identificador del perfil.');
   return payload.profile;
+};
+
+export const ensureZernioProfile = async ({
+  name,
+  idempotencyKey,
+}: {
+  name: string;
+  idempotencyKey: string;
+}) => {
+  const existing = await listZernioProfiles(name);
+  const exact = existing.find((profile: any) => String(profile?.name || '') === name);
+  if (exact?._id || exact?.id) return exact;
+
+  try {
+    return await createZernioProfile(name, idempotencyKey);
+  } catch (error: any) {
+    const status = Number(error?.status);
+    const code = String(error?.payload?.code || error?.payload?.error_code || '');
+    if (status === 409 || code === 'profilenameconflict') {
+      const retry = await listZernioProfiles(name);
+      const recovered = retry.find((profile: any) => String(profile?.name || '') === name);
+      if (recovered?._id || recovered?.id) return recovered;
+    }
+    throw error;
+  }
 };
 
 export const createZernioTelegramCode = async (profileId: string) => {
