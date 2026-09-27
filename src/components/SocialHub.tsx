@@ -352,6 +352,7 @@ export default function SocialHub({ session, projectId, results, onResultsUpload
   const [socialIntelligenceLoaded, setSocialIntelligenceLoaded] = useState(false);
   const [knownPeopleCount, setKnownPeopleCount] = useState(0);
   const [googleKnowledge, setGoogleKnowledge] = useState<any>(null);
+  const [socialProfileRecovery, setSocialProfileRecovery] = useState<any>(null);
   const [socialNotificationsOpen, setSocialNotificationsOpen] = useState(false);
   const [socialPendingCount, setSocialPendingCount] = useState(0);
   const [automationRule, setAutomationRule] = useState({
@@ -381,7 +382,12 @@ export default function SocialHub({ session, projectId, results, onResultsUpload
       }),
     });
     const payload = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(payload?.error || 'No se pudo completar la acción.');
+    if (!response.ok) {
+      const error = new Error(payload?.error || 'No se pudo completar la acción.');
+      (error as any).status = response.status;
+      (error as any).payload = payload;
+      throw error;
+    }
     return payload;
   };
 
@@ -735,13 +741,56 @@ export default function SocialHub({ session, projectId, results, onResultsUpload
           setBusy('');
           return;
         }
-      } catch (error) {
+      } catch (error: any) {
+        if (
+          error?.payload?.code === 'social_profile_recovery_required' &&
+          Array.isArray(error?.payload?.profiles) &&
+          error.payload.profiles.length
+        ) {
+          setSocialProfileRecovery({
+            network,
+            profiles: error.payload.profiles,
+          });
+          setNotice('Encontré perfiles sociales anteriores. Elige cuál quieres recuperar.');
+          setBusy('');
+          return;
+        }
         lastError = error instanceof Error ? error.message : 'No se pudo conectar.';
       }
     }
 
     setNotice(lastError || 'No se pudo iniciar la conexión de esta red.');
     setBusy('');
+  };
+
+  const connectRecoveredSocialProfile = async (profileUsername: string) => {
+    const network = socialProfileRecovery?.network;
+    if (!projectId || !network || !profileUsername) return;
+
+    setBusy('recover-social-profile');
+    setNotice('');
+
+    try {
+      const payload = await api('/api/social/connect', {
+        method: 'POST',
+        body: JSON.stringify({
+          projectId,
+          provider: 'upload_post',
+          platform: network.id,
+          profileUsername,
+        }),
+      });
+
+      if (!payload?.authUrl) {
+        throw new Error('La red social no devolvió una autorización válida.');
+      }
+
+      setSocialProfileRecovery(null);
+      window.location.href = payload.authUrl;
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : 'No se pudo recuperar el perfil social.');
+      setBusy('');
+    }
   };
   const uploadSocialResults = async (files: File[]) => {
     if (!session || !projectId || !files.length) return;
@@ -1761,6 +1810,90 @@ export default function SocialHub({ session, projectId, results, onResultsUpload
               La cuenta está conectada, pero esta red todavía no devolvió métricas resumidas compatibles.
             </div>
           )}
+        </div>
+      )}
+
+      {socialProfileRecovery && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 9995,
+            background: 'rgba(0,0,0,.78)',
+            display: 'flex',
+            alignItems: 'flex-end',
+            justifyContent: 'center',
+            padding: 14,
+            boxSizing: 'border-box',
+          }}
+        >
+          <div
+            style={{
+              width: '100%',
+              maxWidth: 540,
+              maxHeight: '76dvh',
+              overflowY: 'auto',
+              borderRadius: 18,
+              border: '1px solid rgba(255,255,255,.16)',
+              background: '#0b0b0b',
+              boxShadow: '0 24px 70px rgba(0,0,0,.72)',
+              padding: 12,
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'flex-start' }}>
+              <div>
+                <div style={{ fontSize: 12, fontWeight: 950 }}>RECUPERAR PERFIL SOCIAL</div>
+                <div style={{ color: '#777', fontSize: 9.5, lineHeight: 1.45, marginTop: 4 }}>
+                  Encontré perfiles anteriores. Elige el que contiene tus cuentas para conectar {socialProfileRecovery.network?.label || 'la red'} sin crear otro perfil.
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSocialProfileRecovery(null)}
+                style={{ background: 'transparent', border: 0, color: '#fff', fontSize: 24, cursor: 'pointer' }}
+              >
+                ×
+              </button>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 12 }}>
+              {socialProfileRecovery.profiles.map((profile: any, index: number) => {
+                const connected = Array.isArray(profile.connected) ? profile.connected : [];
+                return (
+                  <button
+                    key={profile.username}
+                    type="button"
+                    disabled={busy === 'recover-social-profile'}
+                    onClick={() => void connectRecoveredSocialProfile(String(profile.username))}
+                    style={{
+                      width: '100%',
+                      textAlign: 'left',
+                      padding: 11,
+                      borderRadius: 12,
+                      border: '1px solid rgba(255,255,255,.1)',
+                      background: 'rgba(255,255,255,.035)',
+                      color: '#eee',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    <div style={{ fontSize: 10.5, fontWeight: 900 }}>Perfil {index + 1}</div>
+                    <div style={{ fontSize: 9, color: '#888', marginTop: 5, lineHeight: 1.5 }}>
+                      {connected.length
+                        ? connected.map((account: any) => {
+                            const label = account.handle || account.displayName || 'cuenta conectada';
+                            return String(account.platform || '').toUpperCase() + ' · ' + label;
+                          }).join('  ·  ')
+                        : 'Sin cuentas visibles todavía'}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+
+            <div style={{ marginTop: 10, color: '#666', fontSize: 8.5, lineHeight: 1.4 }}>
+              Nayla no borrará ninguno de los perfiles. Solo volverá a enlazar el que elijas con este proyecto.
+            </div>
+          </div>
         </div>
       )}
 
