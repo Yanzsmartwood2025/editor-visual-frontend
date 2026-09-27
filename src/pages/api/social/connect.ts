@@ -4,13 +4,14 @@ import { createUploadPostConnectUrl } from '../../../lib/social/providers/upload
 import { createZernioConnectUrl, createZernioTelegramCode } from '../../../lib/social/providers/zernio';
 import { requireSocialUser, requestOrigin } from '../../../lib/social/http';
 import { ensureSocialProfile } from '../../../lib/social/store';
-import { ensureZernioProfileBinding } from '../../../lib/social/sync';
+import { ensureZernioProfileBinding, recoverUploadPostProfileBinding } from '../../../lib/social/sync';
 import { SOCIAL_NETWORKS, getSocialNetwork } from '../../../lib/social/types';
 
 const schema = z.object({
   projectId: z.string().uuid(),
   provider: z.enum(['upload_post', 'zernio']),
   platform: z.string().min(1),
+  profileUsername: z.string().min(1).max(200).optional(),
 });
 
 const publicConnectFailure = (error: any, platformLabel: string) => {
@@ -105,13 +106,74 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const redirectUrl = `${origin}/?social_callback=1&provider=${encodeURIComponent(parsed.data.provider)}&projectId=${encodeURIComponent(parsed.data.projectId)}`;
 
     if (parsed.data.provider === 'upload_post') {
-      if (!process.env.UPLOAD_POST_API_KEY) return res.status(503).json({ error: 'Ruta A está lista en código, pero falta UPLOAD_POST_API_KEY.' });
-      const authUrl = await createUploadPostConnectUrl({
-        username: profile.upload_post_username,
-        platform,
-        redirectUrl,
-      });
-      return res.status(200).json({ authUrl });
+      if (!process.env.UPLOAD_POST_API_KEY) {
+        return res.status(503).json({ error: 'Esta ruta de Nayla Social todavía no tiene credencial configurada.' });
+      }
+
+      if (parsed.data.profileUsername) {
+        const recovered = await recoverUploadPostProfileBinding({
+          profile,
+          userId: user.uid,
+          projectId: parsed.data.projectId,
+          preferredUsername: parsed.data.profileUsername,
+        });
+        profile = recovered.profile;
+      }
+
+      try {
+        const authUrl = await createUploadPostConnectUrl({
+          username: profile.upload_post_username,
+          platform,
+          redirectUrl,
+        });
+        return res.status(200).json({ authUrl });
+      } catch (error: any) {
+        const status = Number(error?.status);
+        const code = String(error?.payload?.error_code || error?.payload?.code || '');
+
+        if (
+          status === 403 &&
+          /PROFILE_LIMIT_REACHED|PROFILE_BLOCKED/i.test(code)
+        ) {
+          const recovered = await recoverUploadPostProfileBinding({
+            profile,
+            userId: user.uid,
+            projectId: parsed.data.projectId,
+          });
+
+          if (recovered.recovered) {
+            const authUrl = await createUploadPostConnectUrl({
+              username: recovered.profile.upload_post_username,
+              platform,
+              redirectUrl,
+            });
+            return res.status(200).json({
+              authUrl,
+              recoveredProfile: true,
+            });
+          }
+
+          if (recovered.requiresChoice) {
+            return res.status(409).json({
+              error: 'Encontré más de un perfil social anterior. Elige cuál pertenece a este espacio de Nayla.',
+              code: 'social_profile_recovery_required',
+              profiles: recovered.candidates.map((candidate) => ({
+                username: candidate.username,
+                createdAt: candidate.createdAt,
+                matchScore: candidate.matchScore,
+                connected: candidate.connected,
+              })),
+            });
+          }
+
+          return res.status(409).json({
+            error: 'Los perfiles disponibles de esta ruta ya están ocupados por otros espacios de Nayla.',
+            code: 'social_profile_limit',
+          });
+        }
+
+        throw error;
+      }
     }
 
     if (!process.env.ZERNIO_API_KEY) return res.status(503).json({ error: 'Esta ruta de Nayla Social todavía no tiene credencial configurada.' });
