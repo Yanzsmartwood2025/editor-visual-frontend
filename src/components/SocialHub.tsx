@@ -385,6 +385,64 @@ export default function SocialHub({ session, projectId, results, onResultsUpload
     return payload;
   };
 
+  const loadGlobalFeed = async (filter: 'all' | 'pending' | 'responded' = globalFeedFilter) => {
+    if (!projectId || !session) return;
+    setBusy('global-feed');
+    try {
+      const payload = await api(
+        '/api/social/feed?projectId=' + encodeURIComponent(projectId) +
+        '&filter=' + encodeURIComponent(filter) +
+        '&limit=120'
+      );
+      setGlobalFeed(payload.items || []);
+      setGlobalFeedSummary(payload.summary || null);
+      setGlobalFeedFilter(filter);
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : 'No se pudo abrir la bandeja global.');
+    } finally {
+      setBusy('');
+    }
+  };
+
+  const toggleGlobalLike = async (item: any) => {
+    if (!projectId || !item?.id) return;
+    const nextAction = item.isLiked ? 'unlike' : 'like';
+    setBusy('engagement-' + item.id);
+    setNotice('');
+    try {
+      await api('/api/social/engagement', {
+        method: 'POST',
+        body: JSON.stringify({
+          projectId,
+          interactionId: item.id,
+          action: nextAction,
+        }),
+      });
+      setGlobalFeed((prev) => prev.map((entry: any) =>
+        entry.id === item.id
+          ? {
+              ...entry,
+              isLiked: nextAction === 'like',
+              likeCount: typeof entry.likeCount === 'number'
+                ? Math.max(0, entry.likeCount + (nextAction === 'like' ? 1 : -1))
+                : entry.likeCount,
+            }
+          : entry
+      ));
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : 'No se pudo actualizar el Me gusta.');
+    } finally {
+      setBusy('');
+    }
+  };
+
+  const askNaylaAboutInteraction = (item: any) => {
+    const who = item.personName || item.username || 'esta persona';
+    const text = String(item.message || '').trim();
+    setSocialChatDraft('Ayúdame a responder a ' + who + ' en ' + item.platform + ': "' + text + '"');
+    setTab('ajustes');
+  };
+
   const loadGoogleKnowledge = async () => {
     if (!projectId || !session) return null;
     try {
