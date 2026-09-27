@@ -744,18 +744,22 @@ const loadZernioMessages = async ({
   };
 };
 
-const formatActivity = (activity: AccountActivity[], scope: ReviewScope) => {
+const formatActivity = (activity: AccountActivity[], scope: ReviewScope, exhaustive = false) => {
   if (!activity.length) {
     return 'No encontré cuentas conectadas para revisar.';
   }
 
   const totalComments = activity.reduce((sum, item) => sum + item.comments, 0);
   const totalInbound = activity.reduce((sum, item) => sum + item.inboundMessages, 0);
-  const lines: string[] = ['Revisé tus cuentas conectadas.'];
+  const lines: string[] = [exhaustive
+    ? 'Hice un barrido completo de la actividad accesible en tus cuentas conectadas.'
+    : 'Revisé tus cuentas conectadas.'];
 
   for (const item of activity) {
     const details: string[] = [];
-    if (scope.comments) details.push(`${item.comments} comentario${item.comments === 1 ? '' : 's'} reciente${item.comments === 1 ? '' : 's'}`);
+    if (scope.comments) details.push(exhaustive
+      ? `${item.comments} comentario${item.comments === 1 ? '' : 's'} encontrado${item.comments === 1 ? '' : 's'}`
+      : `${item.comments} comentario${item.comments === 1 ? '' : 's'} reciente${item.comments === 1 ? '' : 's'}`);
     if (scope.messages) details.push(`${item.inboundMessages} mensaje${item.inboundMessages === 1 ? '' : 's'} entrante${item.inboundMessages === 1 ? '' : 's'}`);
     if (scope.metrics && item.metrics.length) {
       details.push(item.metrics.slice(0, 4).map((metric) => `${metric.label}: ${metric.value}`).join(' · '));
@@ -766,7 +770,7 @@ const formatActivity = (activity: AccountActivity[], scope: ReviewScope) => {
     lines.push(details.length ? details.join(' · ') : 'Sin actividad compatible visible en esta conexión.');
 
     if (scope.comments && item.commentSamples.length) {
-      lines.push('Comentarios recientes:');
+      lines.push(exhaustive ? 'Comentarios encontrados:' : 'Comentarios recientes:');
       for (const sample of item.commentSamples.slice(0, 12)) {
         lines.push(`${sample.author}: ${sample.text}`);
       }
@@ -774,7 +778,7 @@ const formatActivity = (activity: AccountActivity[], scope: ReviewScope) => {
     }
 
     if (scope.messages && item.messageSamples.length) {
-      lines.push('Mensajes recientes:');
+      lines.push(exhaustive ? 'Mensajes encontrados:' : 'Mensajes recientes:');
       for (const sample of item.messageSamples.slice(0, 10)) {
         lines.push(`${sample.author}: ${sample.text}`);
       }
@@ -788,7 +792,9 @@ const formatActivity = (activity: AccountActivity[], scope: ReviewScope) => {
   if (scope.comments && scope.messages) {
     lines.push(`Total encontrado: ${totalComments} comentarios y ${totalInbound} mensajes entrantes.`);
   } else if (scope.comments) {
-    lines.push(`Total encontrado: ${totalComments} comentarios recientes disponibles.`);
+    lines.push(exhaustive
+      ? `Total encontrado: ${totalComments} comentarios accesibles.`
+      : `Total encontrado: ${totalComments} comentarios recientes disponibles.`);
   } else if (scope.messages) {
     lines.push(`Total encontrado: ${totalInbound} mensajes entrantes disponibles.`);
   }
@@ -964,7 +970,7 @@ export const reviewConnectedSocialActivity = async ({
     exhaustive,
     activity,
     peopleCount: peopleCount || 0,
-    text: formatActivity(activity, scope),
+    text: formatActivity(activity, scope, exhaustive),
   };
 };
 
