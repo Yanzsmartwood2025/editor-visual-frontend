@@ -65,6 +65,15 @@ const request = async (path: string, init: RequestInit = {}) => {
   return payload;
 };
 
+export const listUploadPostProfiles = async () => {
+  const payload = await request('/api/uploadposts/users');
+  return {
+    profiles: Array.isArray(payload?.profiles) ? payload.profiles : [],
+    limit: Number.isFinite(Number(payload?.limit)) ? Number(payload.limit) : null,
+    plan: payload?.plan ? String(payload.plan) : null,
+  };
+};
+
 export const ensureUploadPostProfile = async (username: string) => {
   try {
     const existing = await request(`/api/uploadposts/users/${encodeURIComponent(username)}`);
@@ -72,11 +81,28 @@ export const ensureUploadPostProfile = async (username: string) => {
   } catch (error: any) {
     if (error?.status !== 404) throw error;
   }
-  const created = await request('/api/uploadposts/users', {
-    method: 'POST',
-    body: JSON.stringify({ username }),
-  });
-  return created?.profile || created;
+
+  try {
+    const created = await request('/api/uploadposts/users', {
+      method: 'POST',
+      body: JSON.stringify({ username }),
+    });
+    return created?.profile || created;
+  } catch (error: any) {
+    const status = Number(error?.status);
+    const code = String(error?.payload?.error_code || error?.payload?.code || '');
+    if (
+      status === 409 ||
+      (status === 403 && /PROFILE_LIMIT_REACHED|PROFILE_BLOCKED/i.test(code))
+    ) {
+      const existing = await listUploadPostProfiles();
+      const exact = existing.profiles.find(
+        (profile: any) => String(profile?.username || '') === username
+      );
+      if (exact) return exact;
+    }
+    throw error;
+  }
 };
 
 export const getUploadPostProfile = async (username: string) => {
