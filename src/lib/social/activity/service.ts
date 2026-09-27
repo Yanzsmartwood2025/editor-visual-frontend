@@ -606,6 +606,7 @@ const loadUploadPostMessages = async ({
   const conversations = exhaustive
     ? extractConversations(payload)
     : extractConversations(payload).slice(0, background ? 5 : 15);
+  const selectedConversations = conversations;
   let totalMessages = 0;
   let inbound = 0;
   const samples: ActivitySample[] = [];
@@ -680,7 +681,7 @@ const loadZernioMessages = async ({
   let inbound = 0;
   const samples: ActivitySample[] = [];
 
-  for (const conversation of conversations) {
+  for (const conversation of selectedConversations) {
     const conversationId = String(
       conversation?.id ||
       conversation?._id ||
@@ -735,7 +736,7 @@ const loadZernioMessages = async ({
   }
 
   return {
-    conversations: conversations.length,
+    conversations: selectedConversations.length,
     messages: totalMessages,
     inbound,
     samples,
