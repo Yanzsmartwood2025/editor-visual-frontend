@@ -4,6 +4,7 @@ import { firebaseHeaders } from '../lib/apiClient';
 import { SOCIAL_NETWORKS } from '../lib/social/types';
 import { cleanNaylaChatText } from '../lib/naylaText';
 import { uploadMediaFilesToBodega } from '../lib/mediaUpload';
+import GlobalSocialInbox from './GlobalSocialInbox';
 
 type ResultMedia = {
   id: string;
@@ -345,9 +346,6 @@ export default function SocialHub({ session, projectId, results, onResultsUpload
   const [inboxConversation, setInboxConversation] = useState<any>(null);
   const [inboxMessages, setInboxMessages] = useState<any[]>([]);
   const [messageDraft, setMessageDraft] = useState('');
-  const [globalFeed, setGlobalFeed] = useState<any[]>([]);
-  const [globalFeedSummary, setGlobalFeedSummary] = useState<any>(null);
-  const [globalFeedFilter, setGlobalFeedFilter] = useState<'all' | 'pending' | 'responded'>('all');
   const [policy, setPolicy] = useState({ mode: 'suggest', tone: 'amable, cercano y profesional', language: 'auto', instructions: '' });
   const [socialChatMessages, setSocialChatMessages] = useState<any[]>([]);
   const [socialChatDraft, setSocialChatDraft] = useState('');
@@ -383,64 +381,6 @@ export default function SocialHub({ session, projectId, results, onResultsUpload
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(payload?.error || 'No se pudo completar la acción.');
     return payload;
-  };
-
-  const loadGlobalFeed = async (filter: 'all' | 'pending' | 'responded' = globalFeedFilter) => {
-    if (!projectId || !session) return;
-    setBusy('global-feed');
-    try {
-      const payload = await api(
-        '/api/social/feed?projectId=' + encodeURIComponent(projectId) +
-        '&filter=' + encodeURIComponent(filter) +
-        '&limit=120'
-      );
-      setGlobalFeed(payload.items || []);
-      setGlobalFeedSummary(payload.summary || null);
-      setGlobalFeedFilter(filter);
-    } catch (error) {
-      setNotice(error instanceof Error ? error.message : 'No se pudo abrir la bandeja global.');
-    } finally {
-      setBusy('');
-    }
-  };
-
-  const toggleGlobalLike = async (item: any) => {
-    if (!projectId || !item?.id) return;
-    const nextAction = item.isLiked ? 'unlike' : 'like';
-    setBusy('engagement-' + item.id);
-    setNotice('');
-    try {
-      await api('/api/social/engagement', {
-        method: 'POST',
-        body: JSON.stringify({
-          projectId,
-          interactionId: item.id,
-          action: nextAction,
-        }),
-      });
-      setGlobalFeed((prev) => prev.map((entry: any) =>
-        entry.id === item.id
-          ? {
-              ...entry,
-              isLiked: nextAction === 'like',
-              likeCount: typeof entry.likeCount === 'number'
-                ? Math.max(0, entry.likeCount + (nextAction === 'like' ? 1 : -1))
-                : entry.likeCount,
-            }
-          : entry
-      ));
-    } catch (error) {
-      setNotice(error instanceof Error ? error.message : 'No se pudo actualizar el Me gusta.');
-    } finally {
-      setBusy('');
-    }
-  };
-
-  const askNaylaAboutInteraction = (item: any) => {
-    const who = item.personName || item.username || 'esta persona';
-    const text = String(item.message || '').trim();
-    setSocialChatDraft('Ayúdame a responder a ' + who + ' en ' + item.platform + ': "' + text + '"');
-    setTab('ajustes');
   };
 
   const loadGoogleKnowledge = async () => {
@@ -1226,15 +1166,12 @@ export default function SocialHub({ session, projectId, results, onResultsUpload
     setTab(nextTab);
     setNotice('');
 
-    if (nextTab === 'inbox') {
-      void loadGlobalFeed(globalFeedFilter);
-      if (!commentAccount) {
-        const account = accounts.find((item: any) =>
-          item.status === 'connected' &&
-          (!Array.isArray(item.capabilities) || item.capabilities.includes('comments'))
-        );
-        if (account) void fetchCommentMedia(account.id);
-      }
+    if (nextTab === 'inbox' && !commentAccount) {
+      const account = accounts.find((item: any) =>
+        item.status === 'connected' &&
+        (!Array.isArray(item.capabilities) || item.capabilities.includes('comments'))
+      );
+      if (account) void fetchCommentMedia(account.id);
     }
 
     if (nextTab === 'metricas' && !analyticsAccount) {
@@ -1571,6 +1508,17 @@ export default function SocialHub({ session, projectId, results, onResultsUpload
 
       {tab === 'inbox' && (
         <>
+          <GlobalSocialInbox
+            session={session}
+            projectId={projectId}
+            onAskNayla={(item) => {
+              const who = item.personName || item.username || 'esta persona';
+              const text = String(item.message || '').trim();
+              setSocialChatDraft('Ayúdame a responder a ' + who + ' en ' + item.platform + ': "' + text + '"');
+              setTab('ajustes');
+              void loadSocialIntelligence();
+            }}
+          />
           <div style={{ ...panel, padding: 10 }}>
             <div style={{ fontSize: 10, fontWeight: 900, marginBottom: 8 }}>COMENTARIOS</div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
