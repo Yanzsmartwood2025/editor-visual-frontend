@@ -15,6 +15,8 @@ describe('Nayla universal Dale contract', () => {
     expect(isUniversalNaylaConfirmation('ejecuta el plan')).toBe(true);
     expect(isUniversalNaylaConfirmation('manda adelante')).toBe(true);
     expect(isUniversalNaylaConfirmation('continúa con el plan')).toBe(true);
+    expect(isUniversalNaylaConfirmation('Sí envía')).toBe(true);
+    expect(isUniversalNaylaConfirmation('Envíalos')).toBe(true);
   });
 
   it('does not turn ordinary conversation into execution', () => {

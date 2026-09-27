@@ -4,6 +4,7 @@ import { firebaseHeaders } from '../lib/apiClient';
 import { SOCIAL_NETWORKS } from '../lib/social/types';
 import { cleanNaylaChatText } from '../lib/naylaText';
 import { uploadMediaFilesToBodega } from '../lib/mediaUpload';
+import GlobalSocialInbox from './GlobalSocialInbox';
 
 type ResultMedia = {
   id: string;
@@ -1507,6 +1508,17 @@ export default function SocialHub({ session, projectId, results, onResultsUpload
 
       {tab === 'inbox' && (
         <>
+          <GlobalSocialInbox
+            session={session}
+            projectId={projectId}
+            onAskNayla={(item) => {
+              const who = item.personName || item.username || 'esta persona';
+              const text = String(item.message || '').trim();
+              setSocialChatDraft('Ayúdame a responder a ' + who + ' en ' + item.platform + ': "' + text + '"');
+              setTab('ajustes');
+              void loadSocialIntelligence();
+            }}
+          />
           <div style={{ ...panel, padding: 10 }}>
             <div style={{ fontSize: 10, fontWeight: 900, marginBottom: 8 }}>COMENTARIOS</div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>

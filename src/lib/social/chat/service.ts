@@ -2,7 +2,12 @@ import { getWorkspaceSupabaseAdmin } from '../../workspaceStore';
 import { generateSocialText } from '../ai/generate';
 import { ensureSocialProfile } from '../store';
 import { isUniversalNaylaConfirmation } from '../../naylaPlanConfirmation';
-import { executePendingSocialPlan, planSocialCommand } from './actions';
+import {
+  executePendingSocialPlan,
+  getSocialExecutionStatus,
+  isSocialExecutionStatusQuestion,
+  planSocialCommand,
+} from './actions';
 import { cleanNaylaChatText } from '../../naylaText';
 import {
   isSocialActivityReviewRequest,
@@ -192,7 +197,40 @@ export const replyInSocialChat = async ({
     content: message,
   });
 
-  if (isUniversalNaylaConfirmation(message)) {
+  if (isSocialExecutionStatusQuestion(message)) {
+    const statusText = await getSocialExecutionStatus({
+      userId,
+      projectId,
+      threadId: thread.id,
+    });
+
+    const { data: assistantMessage, error: assistantError } = await supabase
+      .from('social_nayla_messages')
+      .insert({
+        thread_id: thread.id,
+        user_id: userId,
+        project_id: projectId,
+        role: 'assistant',
+        content: statusText,
+        metadata: {
+          responseType: 'execution_status',
+          verified: true,
+        },
+      })
+      .select('*')
+      .single();
+
+    if (assistantError) throw assistantError;
+
+    await supabase
+      .from('social_nayla_threads')
+      .update({ updated_at: new Date().toISOString() })
+      .eq('id', thread.id);
+
+    return { thread, message: assistantMessage, executionStatus: statusText };
+  }
+
+    if (isUniversalNaylaConfirmation(message)) {
     const execution = await executePendingSocialPlan({
       userId,
       projectId,
@@ -353,6 +391,7 @@ export const replyInSocialChat = async ({
     'Usa únicamente el contexto suministrado; no inventes recuerdos ni unas identidades de diferentes redes por coincidencia de nombre.',
     'Cuando cites lo que sabes de una persona, diferencia hechos recordados de inferencias.',
     'Si el usuario pide una acción social ejecutable, el planificador la interceptará antes de llegar aquí. Para acciones no disponibles, explica brevemente el siguiente paso.',
+    'Nunca afirmes que respondiste, publicaste, enviaste, diste Me gusta o ejecutaste una acción si el contexto no contiene una confirmación técnica explícita. Si dudas, di que no puedes confirmar la ejecución.',
     'Si las cuentas ya están conectadas, nunca pidas al usuario URLs, IDs de videos, IDs de publicaciones ni enlaces para revisar su propia actividad. Nayla debe usar los datos conectados cuando esa capacidad exista.',
     'No uses Markdown visible: nada de **, asteriscos, backticks, encabezados con # ni tablas.',
     'Evita cuestionarios largos y listas rígidas. Habla de forma natural, limpia y directa.',

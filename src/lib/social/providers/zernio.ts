@@ -281,6 +281,35 @@ export const replyZernioComment = async ({
   body: JSON.stringify({ accountId, commentId, message }),
 });
 
+export const likeZernioComment = async ({
+  accountId,
+  postId,
+  commentId,
+}: {
+  accountId: string;
+  postId: string;
+  commentId: string;
+}) => request(`/inbox/comments/${encodeURIComponent(postId)}/${encodeURIComponent(commentId)}/like`, {
+  method: 'POST',
+  body: JSON.stringify({ accountId }),
+});
+
+export const unlikeZernioComment = async ({
+  accountId,
+  postId,
+  commentId,
+}: {
+  accountId: string;
+  postId: string;
+  commentId: string;
+}) => {
+  const params = new URLSearchParams({ accountId });
+  return request(
+    `/inbox/comments/${encodeURIComponent(postId)}/${encodeURIComponent(commentId)}/like?${params.toString()}`,
+    { method: 'DELETE' }
+  );
+};
+
 export const listZernioConversations = async (accountId?: string | null) => {
   const params = new URLSearchParams();
   if (accountId) params.set('accountId', accountId);

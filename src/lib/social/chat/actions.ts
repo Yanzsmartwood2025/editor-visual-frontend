@@ -11,7 +11,7 @@ import { generateSocialText, parseJsonObject } from '../ai/generate';
 import { getPersonMemoryContext } from '../identity/service';
 import { ensureSocialProfile, recordSocialUsage } from '../store';
 import { replyUploadPostComment, sendUploadPostDm } from '../providers/uploadPost';
-import { replyZernioComment, sendZernioMessage } from '../providers/zernio';
+import { likeZernioComment, replyZernioComment, sendZernioMessage } from '../providers/zernio';
 import { publishSocialVideo } from '../publishing/service';
 import {
   getLatestProgramSummary,
@@ -27,15 +27,31 @@ type Candidate = {
   channel: 'comment' | 'dm';
   message: string;
   occurredAt: string;
+  canLike: boolean;
+  isLiked: boolean;
 };
 
 type PlannedReply = {
   interactionId?: string;
   reply?: string;
+  like?: boolean;
 };
 
 const hasReplyCommandIntent = (message: string) =>
   /\b(responde|respondeles|respóndeles|responder|contesta|contéstale|contestale|contesten|dile|diles|escríbele|escribele)\b/i.test(message);
+
+const hasLikeCommandIntent = (message: string) =>
+  /\b(like|likes|me gusta|dale corazon|dales corazon|corazon a|reacciona|reaccionar)\b/i.test(message.normalize('NFD').replace(/[\u0300-\u036f]/g, ''));
+
+const hasPlanAdjustmentIntent = (message: string) =>
+  /\b(mas elaborad|mas corto|mas largo|cambia|cambial|modifica|ajusta|ponle|agrega|anade|quita|al final|sticker|emoji|tono|mas amable|mas serio|mas fuerte|mas frio)\b/i.test(
+    message.normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+  );
+
+export const isSocialExecutionStatusQuestion = (message: string) =>
+  /\b(enviaste|se envio|ya envio|ya se envio|lo enviaste|los enviaste|mandaste|ya mandaste|publicaste|ya publicaste|se publico)\b/i.test(
+    message.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
+  );
 
 const hasPublishCommandIntent = (message: string) =>
   /\b(publica|publicalo|publícalo|publicar|sube|subelo|súbelo|postea|postear|comparte|compartelo|compártelo)\b/i.test(message);
@@ -43,18 +59,20 @@ const hasPublishCommandIntent = (message: string) =>
 const loadCandidates = async ({
   userId,
   projectId,
+  includeResponded = false,
 }: {
   userId: string;
   projectId: string;
+  includeResponded?: boolean;
 }) => {
   const supabase = getWorkspaceSupabaseAdmin();
   const { data, error } = await supabase
     .from('social_interactions')
-    .select('id,person_id,platform,channel,body,occurred_at,response_state,social_people(display_name,preferred_name)')
+    .select('id,person_id,platform,channel,body,occurred_at,response_state,raw,social_people(display_name,preferred_name)')
     .eq('user_id', userId)
     .eq('project_id', projectId)
     .eq('direction', 'inbound')
-    .in('response_state', ['unanswered', 'planned'])
+    .in('response_state', includeResponded ? ['unanswered', 'planned', 'responded'] : ['unanswered', 'planned'])
     .order('occurred_at', { ascending: false })
     .limit(40);
 
@@ -72,6 +90,8 @@ const loadCandidates = async ({
       channel: item.channel === 'dm' ? 'dm' : 'comment',
       message: String(item.body || ''),
       occurredAt: String(item.occurred_at || ''),
+      canLike: item.channel === 'comment' && item.raw?.canLike === true,
+      isLiked: item.channel === 'comment' && item.raw?.isLiked === true,
     };
   });
 };
@@ -102,18 +122,137 @@ const memoryForCandidates = async (candidates: Candidate[]) => {
   return entries.filter(Boolean);
 };
 
-const buildPlanText = (items: Array<{ candidate: Candidate; reply: string }>) => {
-  const lines = items.map(({ candidate, reply }, index) =>
-    `${index + 1}. ${candidate.personName} · ${candidate.platform} · ${candidate.channel === 'dm' ? 'mensaje' : 'comentario'}\n   “${reply}”`
-  );
+const buildPlanText = (items: Array<{ candidate: Candidate; reply?: string; like?: boolean }>) => {
+  const lines = items.map(({ candidate, reply, like }, index) => {
+    const actions = [
+      reply ? `“${reply}”` : '',
+      like ? '♥ Dar Me gusta' : '',
+    ].filter(Boolean).join(' · ');
+    return `${index + 1}. ${candidate.personName} · ${candidate.platform} · ${candidate.channel === 'dm' ? 'mensaje' : 'comentario'}\n   ${actions}`;
+  });
 
   return [
-    `Preparé ${items.length} respuesta${items.length === 1 ? '' : 's'}:`,
+    `Preparé ${items.length} interacción${items.length === 1 ? '' : 'es'}:`,
     '',
     ...lines,
     '',
-    'No he enviado nada todavía. Si está bien, dime “Dale” y lo ejecuto.',
+    'No he ejecutado nada todavía. Si está bien, dime “Dale” o “Sí envía” y lo ejecuto.',
   ].join('\n');
+};
+
+const revisePendingReplyPlan = async ({
+  userId,
+  projectId,
+  threadId,
+  message,
+}: {
+  userId: string;
+  projectId: string;
+  threadId: string;
+  message: string;
+}) => {
+  if (!hasPlanAdjustmentIntent(message)) return null;
+
+  const pending = await getPendingNaylaActionPlan({
+    userId,
+    projectId,
+    module: 'social',
+    threadKey: threadId,
+  });
+  if (!pending) return null;
+
+  const replyItems = pending.items.filter((item: any) =>
+    item.action_type === 'SOCIAL_REPLY_INTERACTION' && item.status === 'planned'
+  );
+  if (!replyItems.length) return null;
+
+  const systemPrompt = [
+    'Editas un plan social ya existente. Devuelve SOLO JSON válido.',
+    'Mantén exactamente los mismos itemId. No agregues ni elimines personas.',
+    'Aplica la modificación del usuario a cada respuesta cuando corresponda.',
+    'No afirmes que se envió nada.',
+    'Formato: {"items":[{"itemId":"uuid","reply":"texto"}]}',
+  ].join('\n');
+
+  const prompt = [
+    `CAMBIO PEDIDO:\n${message}`,
+    '',
+    'RESPUESTAS ACTUALES:',
+    JSON.stringify(replyItems.map((item: any) => ({
+      itemId: item.id,
+      personName: item.payload?.personName,
+      platform: item.payload?.platform,
+      reply: item.payload?.reply,
+    }))),
+  ].join('\n');
+
+  const raw = await generateSocialText({ systemPrompt, prompt });
+  const parsed = parseJsonObject<{ items?: Array<{ itemId?: string; reply?: string }> }>(raw);
+  if (!Array.isArray(parsed?.items) || !parsed!.items!.length) return null;
+
+  const supabase = getWorkspaceSupabaseAdmin();
+  const byId = new Map(replyItems.map((item: any) => [String(item.id), item]));
+  const updated: any[] = [];
+
+  for (const proposed of parsed!.items!) {
+    const item = byId.get(String(proposed.itemId || ''));
+    const reply = String(proposed.reply || '').trim().slice(0, 1800);
+    if (!item || !reply) continue;
+    const payload = { ...(item.payload || {}), reply };
+    const { error } = await supabase
+      .from('nayla_action_items')
+      .update({ payload })
+      .eq('id', item.id)
+      .eq('status', 'planned');
+    if (error) throw error;
+    updated.push({ ...item, payload });
+  }
+
+  if (!updated.length) return null;
+
+  const rows = pending.items.map((item: any) =>
+    updated.find((candidate) => candidate.id === item.id) || item
+  );
+  const summaryItems = rows
+    .filter((item: any) => ['SOCIAL_REPLY_INTERACTION', 'SOCIAL_LIKE_INTERACTION'].includes(item.action_type))
+    .map((item: any) => ({
+      candidate: {
+        interactionId: String(item.payload?.interactionId || ''),
+        personId: String(item.payload?.personId || ''),
+        personName: String(item.payload?.personName || 'Persona'),
+        platform: String(item.payload?.platform || 'social'),
+        channel: item.payload?.channel === 'dm' ? 'dm' : 'comment',
+        message: '',
+        occurredAt: '',
+        canLike: item.action_type === 'SOCIAL_LIKE_INTERACTION',
+        isLiked: false,
+      } as Candidate,
+      reply: item.action_type === 'SOCIAL_REPLY_INTERACTION' ? String(item.payload?.reply || '') : undefined,
+      like: item.action_type === 'SOCIAL_LIKE_INTERACTION',
+    }));
+
+  const summary = buildPlanText(summaryItems);
+  const { error: planError } = await supabase
+    .from('nayla_action_plans')
+    .update({
+      summary,
+      updated_at: new Date().toISOString(),
+      metadata: {
+        ...(pending.plan.metadata || {}),
+        revised: true,
+        revision_message: message,
+      },
+    })
+    .eq('id', pending.plan.id)
+    .eq('status', 'pending');
+  if (planError) throw planError;
+
+  return {
+    kind: 'plan' as const,
+    text: summary,
+    planId: pending.plan.id,
+    count: summaryItems.length,
+  };
 };
 
 const planPublishCommand = async ({
@@ -338,14 +477,23 @@ export const planSocialCommand = async ({
   threadId: string;
   message: string;
 }) => {
+  const revised = await revisePendingReplyPlan({ userId, projectId, threadId, message });
+  if (revised) return revised;
+
   if (hasPublishCommandIntent(message)) {
     return planPublishCommand({ userId, projectId, threadId, message });
   }
 
-  if (!hasReplyCommandIntent(message)) return null;
+  const wantsReply = hasReplyCommandIntent(message);
+  const wantsLike = hasLikeCommandIntent(message);
+  if (!wantsReply && !wantsLike) return null;
 
   const supabase = getWorkspaceSupabaseAdmin();
-  const candidates = await loadCandidates({ userId, projectId });
+  const candidates = await loadCandidates({
+    userId,
+    projectId,
+    includeResponded: wantsLike && !wantsReply,
+  });
   if (!candidates.length) {
     return {
       kind: 'no_candidates' as const,
@@ -360,12 +508,14 @@ export const planSocialCommand = async ({
     'Devuelve SOLO JSON válido. No ejecutes nada.',
     'Selecciona únicamente interactionId que aparezcan en CANDIDATOS.',
     'La orden del usuario manda: si nombra personas, selecciona solo coincidencias claras; si dice todos/estos mensajes, selecciona únicamente los pendientes razonablemente cubiertos por la orden.',
-    'Máximo 10 respuestas por plan.',
+    'Máximo 10 interacciones por plan.',
+    wantsReply ? 'El usuario pidió responder: redacta reply cuando corresponda.' : 'El usuario NO pidió responder: deja reply vacío.',
+    wantsLike ? 'El usuario pidió Me gusta: marca like=true solo si canLike=true e isLiked=false.' : 'El usuario NO pidió Me gusta: marca like=false.',
     'Cada reply debe ser breve, natural, listo para publicar y coherente con el mensaje recibido.',
     'Usa la memoria no sensible solo para continuidad. Nunca menciones que guardas memoria.',
     'No inventes precios, promesas, disponibilidad ni hechos.',
     'Si una interacción es queja, reembolso, legal, médica, política, sexual, amenaza o delicada, no la incluyas automáticamente salvo que el usuario la haya señalado de forma inequívoca; aun así redacta de manera prudente y neutral.',
-    'Formato exacto: {"intent":"reply|none","items":[{"interactionId":"uuid","reply":"texto"}],"note":"texto breve opcional"}',
+    'Formato exacto: {"intent":"engage|none","items":[{"interactionId":"uuid","reply":"texto opcional","like":true}],"note":"texto breve opcional"}',
   ].join('\n');
 
   const prompt = [
@@ -381,7 +531,7 @@ export const planSocialCommand = async ({
   const raw = await generateSocialText({ systemPrompt, prompt });
   const parsed = parseJsonObject<{ intent?: string; items?: PlannedReply[]; note?: string }>(raw);
 
-  if (!parsed || parsed.intent !== 'reply' || !Array.isArray(parsed.items) || !parsed.items.length) {
+  if (!parsed || parsed.intent !== 'engage' || !Array.isArray(parsed.items) || !parsed.items.length) {
     return null;
   }
 
@@ -392,16 +542,47 @@ export const planSocialCommand = async ({
     .map((item) => {
       const id = String(item.interactionId || '');
       const candidate = byId.get(id);
-      const reply = String(item.reply || '').trim().slice(0, 1800);
-      if (!candidate || !reply || seen.has(id)) return null;
+      const reply = wantsReply ? String(item.reply || '').trim().slice(0, 1800) : '';
+      const like = wantsLike && item.like === true && candidate?.canLike === true && candidate?.isLiked !== true;
+      if (!candidate || (!reply && !like) || seen.has(id)) return null;
       seen.add(id);
-      return { candidate, reply };
+      return { candidate, reply: reply || undefined, like };
     })
-    .filter(Boolean) as Array<{ candidate: Candidate; reply: string }>;
+    .filter(Boolean) as Array<{ candidate: Candidate; reply?: string; like?: boolean }>;
 
   if (!valid.length) return null;
 
   const summary = buildPlanText(valid);
+  const actionItems = valid.flatMap(({ candidate, reply, like }) => {
+    const items: Array<{ actionType: string; payload: Record<string, unknown> }> = [];
+    if (reply) {
+      items.push({
+        actionType: 'SOCIAL_REPLY_INTERACTION',
+        payload: {
+          interactionId: candidate.interactionId,
+          personId: candidate.personId,
+          personName: candidate.personName,
+          platform: candidate.platform,
+          channel: candidate.channel,
+          reply,
+        },
+      });
+    }
+    if (like) {
+      items.push({
+        actionType: 'SOCIAL_LIKE_INTERACTION',
+        payload: {
+          interactionId: candidate.interactionId,
+          personId: candidate.personId,
+          personName: candidate.personName,
+          platform: candidate.platform,
+          channel: candidate.channel,
+        },
+      });
+    }
+    return items;
+  });
+
   const stored = await createNaylaActionPlan({
     userId,
     projectId,
@@ -409,20 +590,10 @@ export const planSocialCommand = async ({
     threadKey: threadId,
     summary,
     sourceMessage: message,
-    items: valid.map(({ candidate, reply }) => ({
-      actionType: 'SOCIAL_REPLY_INTERACTION',
-      payload: {
-        interactionId: candidate.interactionId,
-        personId: candidate.personId,
-        personName: candidate.personName,
-        platform: candidate.platform,
-        channel: candidate.channel,
-        reply,
-      },
-    })),
+    items: actionItems,
     metadata: {
       planner: 'nayla-social',
-      count: valid.length,
+      count: actionItems.length,
     },
   });
 
@@ -433,17 +604,23 @@ export const planSocialCommand = async ({
     .eq('project_id', projectId)
     .eq('response_state', 'planned');
 
-  await supabase
-    .from('social_interactions')
-    .update({ response_state: 'planned' })
-    .in('id', valid.map(({ candidate }) => candidate.interactionId))
-    .eq('response_state', 'unanswered');
+  const replyInteractionIds = valid
+    .filter((item) => Boolean(item.reply))
+    .map(({ candidate }) => candidate.interactionId);
+
+  if (replyInteractionIds.length) {
+    await supabase
+      .from('social_interactions')
+      .update({ response_state: 'planned' })
+      .in('id', replyInteractionIds)
+      .eq('response_state', 'unanswered');
+  }
 
   return {
     kind: 'plan' as const,
     text: summary,
     planId: stored.plan.id,
-    count: valid.length,
+    count: actionItems.length,
   };
 };
 
@@ -573,6 +750,101 @@ const executeReplyItem = async ({
   };
 };
 
+const executeLikeItem = async ({
+  userId,
+  projectId,
+  item,
+}: {
+  userId: string;
+  projectId: string;
+  item: any;
+}) => {
+  const supabase = getWorkspaceSupabaseAdmin();
+  const interactionId = String(item.payload?.interactionId || '');
+  if (!interactionId) throw new Error('La acción de Me gusta está incompleta.');
+
+  const { data: interaction, error: interactionError } = await supabase
+    .from('social_interactions')
+    .select('*')
+    .eq('id', interactionId)
+    .eq('user_id', userId)
+    .eq('project_id', projectId)
+    .maybeSingle();
+  if (interactionError) throw interactionError;
+  if (!interaction) throw new Error('La interacción ya no existe.');
+  if (interaction.channel !== 'comment' || interaction.direction !== 'inbound') {
+    throw new Error('Esta interacción no admite Me gusta.');
+  }
+  if (interaction.raw?.isLiked === true) {
+    return { skipped: true, reason: 'Ya tenía Me gusta.' };
+  }
+  if (interaction.raw?.canLike !== true) {
+    throw new Error('La red no permite dar Me gusta a este comentario.');
+  }
+  if (!interaction.provider_post_id || !interaction.source_id) {
+    throw new Error('Falta el identificador del comentario.');
+  }
+
+  const { data: account, error: accountError } = await supabase
+    .from('social_accounts')
+    .select('*')
+    .eq('id', interaction.account_id)
+    .eq('user_id', userId)
+    .eq('project_id', projectId)
+    .maybeSingle();
+  if (accountError) throw accountError;
+  if (!account || account.status !== 'connected') throw new Error('La cuenta social ya no está conectada.');
+  if (account.provider !== 'zernio') throw new Error('Me gusta todavía no está disponible por esta ruta social.');
+
+  const providerResult = await likeZernioComment({
+    accountId: String(account.provider_account_id),
+    postId: String(interaction.provider_post_id),
+    commentId: String(interaction.source_id),
+  });
+
+  const raw = interaction.raw && typeof interaction.raw === 'object' ? interaction.raw : {};
+  const nextRaw = {
+    ...raw,
+    isLiked: true,
+    ...(Number.isFinite(Number(raw?.likeCount))
+      ? { likeCount: Number(raw.likeCount) + 1 }
+      : {}),
+  };
+
+  await Promise.all([
+    supabase.from('social_interactions').update({ raw: nextRaw }).eq('id', interaction.id),
+    supabase
+      .from('social_comments')
+      .update({ raw: nextRaw })
+      .eq('user_id', userId)
+      .eq('project_id', projectId)
+      .eq('account_id', interaction.account_id)
+      .eq('provider_comment_id', String(interaction.source_id)),
+  ]);
+
+  await recordSocialUsage({
+    userId,
+    projectId,
+    action: 'comment_like',
+    provider: account.provider,
+    platform: interaction.platform,
+    metadata: {
+      source: 'nayla_universal_dale',
+      interactionId: interaction.id,
+      personId: interaction.person_id,
+    },
+  });
+
+  return {
+    skipped: false,
+    interactionId: interaction.id,
+    personId: interaction.person_id,
+    platform: interaction.platform,
+    channel: interaction.channel,
+    providerResult,
+  };
+};
+
 const executePublishItem = async ({
   userId,
   projectId,
@@ -655,7 +927,7 @@ export const executePendingSocialPlan = async ({
   const details: string[] = [];
 
   for (const item of pending.items) {
-    if (!['SOCIAL_REPLY_INTERACTION', 'SOCIAL_PUBLISH_VIDEO'].includes(item.action_type)) {
+    if (!['SOCIAL_REPLY_INTERACTION', 'SOCIAL_LIKE_INTERACTION', 'SOCIAL_PUBLISH_VIDEO'].includes(item.action_type)) {
       await updateNaylaActionItem({
         itemId: item.id,
         status: 'skipped',
@@ -695,7 +967,34 @@ export const executePendingSocialPlan = async ({
         continue;
       }
 
-      const result = await executeReplyItem({ userId, projectId, item });
+      if (item.action_type === 'SOCIAL_LIKE_INTERACTION') {
+        const result = await executeLikeItem({ userId, projectId, item });
+        if (result.skipped) {
+          await updateNaylaActionItem({
+            itemId: item.id,
+            status: 'skipped',
+            result: { reason: result.reason },
+          });
+          skipped += 1;
+          details.push(`• ${item.payload?.personName || 'Persona'}: ya tenía Me gusta.`);
+        } else {
+          await updateNaylaActionItem({
+            itemId: item.id,
+            status: 'completed',
+            result: {
+              interactionId: result.interactionId,
+              personId: result.personId,
+              platform: result.platform,
+              action: 'like',
+            },
+          });
+          completed += 1;
+          details.push(`• ${item.payload?.personName || 'Persona'}: Me gusta enviado.`);
+        }
+        continue;
+      }
+
+            const result = await executeReplyItem({ userId, projectId, item });
       if (result.skipped) {
         await updateNaylaActionItem({
           itemId: item.id,
@@ -753,11 +1052,67 @@ export const executePendingSocialPlan = async ({
     failed,
     text: [
       completed
-        ? `Listo. Ejecuté ${completed} respuesta${completed === 1 ? '' : 's'}.`
-        : 'No se envió ninguna respuesta.',
+        ? `Listo. Ejecuté ${completed} acción${completed === 1 ? '' : 'es'} y quedaron confirmadas.`
+        : 'No se ejecutó ninguna acción.',
       skipped ? `${skipped} se omitieron porque ya no correspondía ejecutarlas.` : '',
       failed ? `${failed} fallaron y no se reintentaron automáticamente.` : '',
       ...details,
     ].filter(Boolean).join('\n'),
   };
+};
+
+export const getSocialExecutionStatus = async ({
+  userId,
+  projectId,
+  threadId,
+}: {
+  userId: string;
+  projectId: string;
+  threadId: string;
+}) => {
+  const supabase = getWorkspaceSupabaseAdmin();
+  const { data: plan, error } = await supabase
+    .from('nayla_action_plans')
+    .select('*')
+    .eq('user_id', userId)
+    .eq('project_id', projectId)
+    .eq('module', 'social')
+    .eq('thread_key', threadId)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) throw error;
+
+  if (!plan) {
+    return 'No encuentro una acción social reciente que pueda confirmar como enviada.';
+  }
+
+  const { data: items, error: itemError } = await supabase
+    .from('nayla_action_items')
+    .select('status,action_type,error,result')
+    .eq('plan_id', plan.id)
+    .order('ordinal');
+  if (itemError) throw itemError;
+
+  const statuses = items || [];
+  const completed = statuses.filter((item: any) => item.status === 'completed').length;
+  const failed = statuses.filter((item: any) => item.status === 'failed').length;
+  const planned = statuses.filter((item: any) => item.status === 'planned').length;
+
+  if (plan.status === 'pending' || planned > 0) {
+    return 'No. El plan todavía está pendiente y no hay confirmación técnica de envío.';
+  }
+  if (plan.status === 'cancelled') {
+    return 'No. Ese plan fue cancelado y no se ejecutó.';
+  }
+  if (plan.status === 'failed' || (failed > 0 && completed === 0)) {
+    return `No. La ejecución falló (${failed || statuses.length} acción${(failed || statuses.length) === 1 ? '' : 'es'}).`;
+  }
+  if (completed > 0) {
+    return failed
+      ? `Sí, pero parcialmente: ${completed} acción${completed === 1 ? '' : 'es'} confirmada${completed === 1 ? '' : 's'} y ${failed} fallida${failed === 1 ? '' : 's'}.`
+      : `Sí. Hay confirmación técnica de ${completed} acción${completed === 1 ? '' : 'es'} completada${completed === 1 ? '' : 's'}.`;
+  }
+
+  return 'No hay confirmación técnica de que esa acción se haya ejecutado.';
 };
