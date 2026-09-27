@@ -1,10 +1,62 @@
 import { ensureUploadPostProfile, listUploadPostAccounts } from './providers/uploadPost';
-import { createZernioProfile, listZernioAccounts } from './providers/zernio';
+import { ensureZernioProfile, listZernioAccounts } from './providers/zernio';
 import {
   ensureSocialProfile,
   updateSocialProviderProfileId,
   upsertSocialAccounts,
 } from './store';
+
+const zernioProfileIdFromAccount = (account: any) =>
+  String(
+    account?.raw?.profileId?._id ||
+    account?.raw?.profileId?.id ||
+    account?.raw?.profileId ||
+    ''
+  );
+
+const zernioProfileName = (profile: any) =>
+  `Nayla · ${String(profile.upload_post_username || profile.id).slice(-12)}`;
+
+export const ensureZernioProfileBinding = async ({
+  profile,
+  userId,
+  projectId,
+}: {
+  profile: any;
+  userId: string;
+  projectId: string;
+}) => {
+  if (profile.zernio_profile_id) return profile;
+
+  // Recovery path for an app/database reset: if every visible connected account
+  // belongs to one provider profile, it is safe to re-bind that profile locally.
+  const existingAccounts = await listZernioAccounts();
+  const visibleProfileIds = Array.from(new Set(
+    existingAccounts
+      .map(zernioProfileIdFromAccount)
+      .filter(Boolean)
+  ));
+
+  if (visibleProfileIds.length === 1) {
+    return updateSocialProviderProfileId({
+      profileId: profile.id,
+      provider: 'zernio',
+      providerProfileId: visibleProfileIds[0],
+    });
+  }
+
+  const stableName = zernioProfileName(profile);
+  const remote = await ensureZernioProfile({
+    name: stableName,
+    idempotencyKey: `nayla-social-profile-${projectId}`,
+  });
+
+  return updateSocialProviderProfileId({
+    profileId: profile.id,
+    provider: 'zernio',
+    providerProfileId: String(remote._id || remote.id),
+  });
+};
 
 export const syncSocialAccounts = async (userId: string, projectId: string) => {
   let profile = await ensureSocialProfile(userId, projectId);
@@ -27,14 +79,7 @@ export const syncSocialAccounts = async (userId: string, projectId: string) => {
 
   if (process.env.ZERNIO_API_KEY) {
     try {
-      if (!profile.zernio_profile_id) {
-        const remote = await createZernioProfile(`Nayla · ${String(profile.id).slice(0, 8)}`);
-        profile = await updateSocialProviderProfileId({
-          profileId: profile.id,
-          provider: 'zernio',
-          providerProfileId: String(remote._id),
-        });
-      }
+      profile = await ensureZernioProfileBinding({ profile, userId, projectId });
       const accounts = await listZernioAccounts(profile.zernio_profile_id);
       await upsertSocialAccounts({
         socialProfileId: profile.id,
