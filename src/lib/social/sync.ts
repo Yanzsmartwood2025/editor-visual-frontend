@@ -255,7 +255,32 @@ export const syncSocialAccounts = async (userId: string, projectId: string) => {
 
   if (process.env.UPLOAD_POST_API_KEY) {
     try {
-      await ensureUploadPostProfile(profile.upload_post_username);
+      try {
+        await ensureUploadPostProfile(profile.upload_post_username);
+      } catch (error: any) {
+        const status = Number(error?.status);
+        const code = String(error?.payload?.error_code || error?.payload?.code || '');
+        if (
+          status === 403 &&
+          /PROFILE_LIMIT_REACHED|PROFILE_BLOCKED/i.test(code)
+        ) {
+          const recovered = await recoverUploadPostProfileBinding({
+            profile,
+            userId,
+            projectId,
+          });
+          if (recovered.recovered) {
+            profile = recovered.profile;
+          } else if (recovered.requiresChoice) {
+            throw new Error('Nayla encontró más de un perfil social anterior. Pulsa Conectar en una red para elegir cuál recuperar.');
+          } else {
+            throw error;
+          }
+        } else {
+          throw error;
+        }
+      }
+
       const accounts = await listUploadPostAccounts(profile.upload_post_username);
       await upsertSocialAccounts({
         socialProfileId: profile.id,
