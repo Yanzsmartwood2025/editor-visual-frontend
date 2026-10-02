@@ -246,15 +246,30 @@ export const getZernioAnalytics = async ({
   profileId,
   accountId,
   platform,
+  fromDate,
+  toDate,
+  page,
+  limit,
+  source,
 }: {
   profileId?: string | null;
   accountId?: string | null;
   platform?: SocialPlatform | null;
+  fromDate?: string | null;
+  toDate?: string | null;
+  page?: number | null;
+  limit?: number | null;
+  source?: 'all' | 'late' | 'external' | null;
 }) => {
   const params = new URLSearchParams();
   if (profileId) params.set('profileId', profileId);
   if (accountId) params.set('accountId', accountId);
   if (platform) params.set('platform', getSocialNetwork(platform)?.zernio || platform);
+  if (fromDate) params.set('fromDate', fromDate);
+  if (toDate) params.set('toDate', toDate);
+  if (page) params.set('page', String(Math.max(1, Math.floor(page))));
+  if (limit) params.set('limit', String(Math.max(1, Math.min(100, Math.floor(limit)))));
+  if (source) params.set('source', source);
   return request('/analytics?' + params.toString());
 };
 

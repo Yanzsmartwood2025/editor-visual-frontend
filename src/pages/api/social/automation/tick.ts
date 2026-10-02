@@ -4,6 +4,7 @@ import { processPendingMemoryInteractions } from '../../../../lib/social/memory/
 import { syncInboundSocialActivity } from '../../../../lib/social/activity/service';
 import { processDueAutomationJobs } from '../../../../lib/social/automation/worker';
 import { getWorkspaceSupabaseAdmin } from '../../../../lib/workspaceStore';
+import { syncSyntheticSoulLiveLibrary } from '../../../../lib/social/liveBackgroundSync';
 
 const safeEqualHex = (a: string, b: string) => {
   if (!/^[0-9a-f]+$/i.test(a) || !/^[0-9a-f]+$/i.test(b) || a.length !== b.length) return false;
@@ -47,12 +48,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     // First collect fresh inbound activity, then compact memory, then execute due replies.
     // This keeps Nayla listening even when the user does not have REDES open.
     const inbound = await syncInboundSocialActivity(8);
+    const syntheticSoul = await syncSyntheticSoulLiveLibrary();
     const memory = await processPendingMemoryInteractions(20);
     const automation = await processDueAutomationJobs(20);
 
     return res.status(200).json({
       ok: true,
       inbound,
+      syntheticSoul,
       memory,
       automation,
       ranAt: new Date().toISOString(),
