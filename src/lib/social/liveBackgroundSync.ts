@@ -62,6 +62,31 @@ const syntheticSoulContent = (post: AnalyticsPost) => {
   return candidates.join('\n').trim();
 };
 
+const originalMediaUrl = (post: AnalyticsPost) => {
+  const candidates = [
+    ...(Array.isArray(post?.mediaItems) ? post.mediaItems : []),
+    ...(Array.isArray(post?.media) ? post.media : []),
+  ];
+
+  for (const item of candidates) {
+    const url = String(item?.url || item?.sourceUrl || item?.mediaUrl || '').trim();
+    const type = String(item?.type || item?.mediaType || '').toLowerCase();
+    if (url && (!type || type === 'video' || type === 'audio')) return url;
+  }
+
+  for (const value of [
+    post?.mediaUrl,
+    post?.videoUrl,
+    post?.sourceMediaUrl,
+    post?.assetUrl,
+  ]) {
+    const url = String(value || '').trim();
+    if (url) return url;
+  }
+
+  return null;
+};
+
 const cleanTitle = (post: AnalyticsPost, content: string) => {
   const explicit = String(post?.title || '').trim();
   if (explicit) return explicit.slice(0, 150);
@@ -169,6 +194,7 @@ export async function syncSyntheticSoulLiveLibrary() {
       provider_post_id: videoId,
       video_id: videoId,
       source_url: postUrl(post, videoId),
+      media_url: originalMediaUrl(post),
       title: cleanTitle(post, content),
       caption: content.slice(0, 5000),
       published_at: publishedAt || null,
