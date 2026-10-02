@@ -242,6 +242,29 @@ export const publishZernioVideo = async ({
   variants,
 });
 
+export const listZernioPosts = async ({
+  accountId,
+  fromDate,
+  toDate,
+  offset = 0,
+  limit = 100,
+}: {
+  accountId: string;
+  fromDate?: string | null;
+  toDate?: string | null;
+  offset?: number;
+  limit?: number;
+}) => {
+  const params = new URLSearchParams({
+    accountId,
+    offset: String(Math.max(0, Math.floor(offset))),
+    limit: String(Math.max(1, Math.min(100, Math.floor(limit)))),
+  });
+  if (fromDate) params.set('fromDate', fromDate);
+  if (toDate) params.set('toDate', toDate);
+  return request('/posts?' + params.toString());
+};
+
 export const getZernioAnalytics = async ({
   profileId,
   accountId,
