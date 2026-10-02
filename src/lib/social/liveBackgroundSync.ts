@@ -1,5 +1,5 @@
-import { getWorkspaceSupabaseAdmin } from '../../workspaceStore';
-import { getZernioAnalytics } from '../providers/zernio';
+import { getWorkspaceSupabaseAdmin } from '../workspaceStore';
+import { getZernioAnalytics } from './providers/zernio';
 
 const PROGRAM_KEY = 'synthetic_soul';
 const YOUTUBE_HANDLE = 'aria38000';
