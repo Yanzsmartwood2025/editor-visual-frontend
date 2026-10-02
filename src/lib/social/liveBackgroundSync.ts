@@ -1,5 +1,5 @@
 import { getWorkspaceSupabaseAdmin } from '../workspaceStore';
-import { getZernioAnalytics } from './providers/zernio';
+import { getZernioAnalytics, listZernioPosts } from './providers/zernio';
 
 const PROGRAM_KEY = 'synthetic_soul';
 const YOUTUBE_HANDLE = 'aria38000';
@@ -17,7 +17,9 @@ const youtubeIdFromUrl = (value: unknown) => {
 };
 
 const youtubePlatformRow = (post: AnalyticsPost) => {
-  const rows = Array.isArray(post?.platformAnalytics) ? post.platformAnalytics : [];
+  const analyticsRows = Array.isArray(post?.platformAnalytics) ? post.platformAnalytics : [];
+  const publishRows = Array.isArray(post?.platforms) ? post.platforms : [];
+  const rows = [...analyticsRows, ...publishRows];
   return rows.find((item: any) => String(item?.platform || '').toLowerCase() === 'youtube') || null;
 };
 
@@ -143,6 +145,46 @@ async function loadWindow({
   return posts;
 }
 
+async function loadPublishedWindow({
+  accountId,
+  fromDate,
+  toDate,
+}: {
+  accountId: string;
+  fromDate: string;
+  toDate: string;
+}) {
+  const posts: AnalyticsPost[] = [];
+
+  for (let offset = 0; offset < 2000; offset += PAGE_SIZE) {
+    const payload = await listZernioPosts({
+      accountId,
+      fromDate,
+      toDate,
+      offset,
+      limit: PAGE_SIZE,
+    });
+
+    const pagePosts = Array.isArray(payload?.posts)
+      ? payload.posts
+      : Array.isArray(payload?.data?.posts)
+        ? payload.data.posts
+        : [];
+
+    posts.push(...pagePosts);
+
+    const pagination = payload?.pagination || payload?.data?.pagination || {};
+    const total = Number(pagination?.total || 0);
+    const hasMore = total > 0
+      ? offset + pagePosts.length < total
+      : pagePosts.length >= PAGE_SIZE;
+
+    if (!hasMore || pagePosts.length === 0) break;
+  }
+
+  return posts;
+}
+
 export async function syncSyntheticSoulLiveLibrary() {
   const supabase = getWorkspaceSupabaseAdmin();
 
@@ -167,11 +209,23 @@ export async function syncSyntheticSoulLiveLibrary() {
   ];
 
   const allPosts: AnalyticsPost[] = [];
+  const publishedPosts: AnalyticsPost[] = [];
   for (const window of windows) {
     allPosts.push(...await loadWindow({
       accountId: String(account.provider_account_id),
       ...window,
     }));
+    publishedPosts.push(...await loadPublishedWindow({
+      accountId: String(account.provider_account_id),
+      ...window,
+    }));
+  }
+
+  const assetByVideoId = new Map<string, string>();
+  for (const post of publishedPosts) {
+    const videoId = youtubePostId(post);
+    const mediaUrl = originalMediaUrl(post);
+    if (videoId && mediaUrl) assetByVideoId.set(videoId, mediaUrl);
   }
 
   const unique = new Map<string, AnalyticsPost>();
@@ -194,7 +248,7 @@ export async function syncSyntheticSoulLiveLibrary() {
       provider_post_id: videoId,
       video_id: videoId,
       source_url: postUrl(post, videoId),
-      media_url: originalMediaUrl(post),
+      media_url: assetByVideoId.get(videoId) || originalMediaUrl(post),
       title: cleanTitle(post, content),
       caption: content.slice(0, 5000),
       published_at: publishedAt || null,
@@ -219,7 +273,9 @@ export async function syncSyntheticSoulLiveLibrary() {
 
   return {
     scanned: allPosts.length,
+    scannedPublished: publishedPosts.length,
     matched: rows.length,
+    mediaMatched: rows.filter((row) => Boolean(row.media_url)).length,
     upserted: rows.length,
     windows,
   };
