@@ -188,7 +188,47 @@ const publicJob = async (job: GpuJobRow) => {
     startedAt: job.started_at,
     completedAt: job.completed_at,
     destroyedAt: job.destroyed_at,
+    progress: job.metadata?.progress || null,
   };
+};
+
+export const reportGpuJobProgress = async ({
+  jobId,
+  token,
+  percent,
+  stage,
+}: {
+  jobId: string;
+  token: string;
+  percent: number;
+  stage: string;
+}) => {
+  const job = await getGpuJob(jobId);
+  if (!job || !job.callback_token_hash) throw new Error('Trabajo GPU no encontrado.');
+  const actual = Buffer.from(tokenHash(token), 'hex');
+  const expected = Buffer.from(job.callback_token_hash, 'hex');
+  if (actual.length !== expected.length || !timingSafeEqual(actual, expected)) {
+    throw new Error('Token GPU inválido.');
+  }
+  if (['completed', 'failed', 'expired', 'cancelled'].includes(job.status)) {
+    return publicJob(job);
+  }
+
+  const previous = job.metadata?.progress as { percent?: number } | null | undefined;
+  const boundedPercent = Math.min(99, Math.max(0, Math.round(percent)));
+  const nextPercent = Math.max(Number(previous?.percent) || 0, boundedPercent);
+  const safeStage = sanitizeNaylaPublicText(stage).slice(0, 120) || 'Procesando modelo 3D';
+  const updated = await updateGpuJob(job.id, {
+    metadata: {
+      ...job.metadata,
+      progress: {
+        percent: nextPercent,
+        stage: safeStage,
+        updatedAt: new Date().toISOString(),
+      },
+    },
+  });
+  return publicJob(updated);
 };
 
 const buildProbeOnstart = () => [
@@ -1223,6 +1263,9 @@ export const finishGpuJob = async ({
     metadata: {
       ...job.metadata,
       callbackMetadata: metadata || {},
+      progress: finalStatus === 'completed'
+        ? { percent: 100, stage: 'Modelo guardado en Cloudflare R2', updatedAt: now.toISOString() }
+        : job.metadata?.progress,
     },
   });
 
