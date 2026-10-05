@@ -1049,6 +1049,113 @@ export default function GenerarStyles() {
           0 0 calc(var(--glow-spread) * .48) rgba(var(--glow-color-rgb), calc(var(--glow-intensity) * .17));
       }
 
+      .generar-gpu-legend {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px 10px;
+        margin: 0 0 8px;
+        color: #93939b;
+        font-size: 9px;
+      }
+
+      .generar-gpu-legend span {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+      }
+
+      .generar-gpu-legend i {
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: #85858d;
+      }
+
+      .generar-gpu-legend .recommended i { background: #3be18d; }
+      .generar-gpu-legend .alternative i { background: #ffc260; }
+      .generar-gpu-legend .unavailable i { background: #85858d; }
+
+      .generar-gpu-card-heading {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        flex-wrap: wrap;
+        gap: 5px 8px;
+      }
+
+      .generar-gpu-card-badges {
+        display: inline-flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 5px;
+      }
+
+      .generar-gpu-status,
+      .generar-gpu-provider {
+        display: inline-flex;
+        align-items: center;
+        min-height: 17px;
+        padding: 2px 6px;
+        border: 1px solid rgba(255,255,255,.12);
+        border-radius: 999px;
+        color: #c7c7ce;
+        background: rgba(255,255,255,.045);
+        font-size: 8px;
+        font-weight: 800;
+        letter-spacing: .04em;
+        line-height: 1;
+        white-space: nowrap;
+      }
+
+      .generar-gpu-status.is-recommended {
+        border-color: rgba(59,225,141,.32);
+        color: #75f2b0;
+        background: rgba(59,225,141,.08);
+      }
+
+      .generar-gpu-status.is-alternative {
+        border-color: rgba(255,194,96,.28);
+        color: #ffd48a;
+        background: rgba(255,194,96,.07);
+      }
+
+      .generar-gpu-status.is-unavailable {
+        border-color: rgba(160,160,168,.18);
+        color: #94949b;
+        background: rgba(160,160,168,.06);
+      }
+
+      .generar-gpu-card.is-recommended {
+        border-color: rgba(59,225,141,.25);
+        background: linear-gradient(145deg, rgba(59,225,141,.055), rgba(255,255,255,.018));
+      }
+
+      .generar-gpu-card.is-recommended.active {
+        border-color: rgba(59,225,141,.65);
+        box-shadow: inset 0 1px 0 rgba(255,255,255,.10), 0 0 20px rgba(59,225,141,.10);
+      }
+
+      .generar-gpu-card.is-alternative {
+        border-color: rgba(255,194,96,.20);
+      }
+
+      .generar-gpu-card.is-alternative.active {
+        border-color: rgba(255,194,96,.60);
+        box-shadow: inset 0 1px 0 rgba(255,255,255,.09), 0 0 18px rgba(255,194,96,.08);
+      }
+
+      .generar-gpu-card.is-unavailable {
+        border-color: rgba(145,145,153,.14);
+        background: rgba(145,145,153,.035);
+        color: #92929a;
+        cursor: not-allowed;
+        opacity: .68;
+      }
+
+      .generar-gpu-card.is-unavailable em {
+        color: #9999a1;
+      }
+
       .generar-gpu-card > span:first-child,
       .generar-gpu-price {
         display: flex;

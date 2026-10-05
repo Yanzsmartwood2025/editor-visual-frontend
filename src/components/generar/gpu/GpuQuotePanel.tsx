@@ -1,5 +1,12 @@
+import { useRef } from 'react';
+import {
+  getComputeCardTone,
+  getComputeOfferChangedMessage,
+} from '../../../lib/gpu/presentation';
+
 export type GenerarGpuQuoteCard = {
   selectionId: string;
+  providerName: string;
   gpuName: string;
   gpuRamGb?: number;
   hourlyPrice: number;
@@ -49,6 +56,14 @@ export default function GpuQuotePanel({
     quote.cards?.find((card) => card.selectionId === selectedId) ||
     quote.cards?.find((card) => card.selected) ||
     null;
+  const previousProviderName = useRef<string | undefined>(undefined);
+  const staleSelectionReason = 'La tarjeta seleccionada ya no está disponible. Elige otra de la lista actualizada.';
+  const displayedMessage =
+    quote.reason === staleSelectionReason
+      ? getComputeOfferChangedMessage(previousProviderName.current)
+      : message;
+  if (!confirming) previousProviderName.current = selected?.providerName;
+
   const canConfirm = Boolean(selectedId && (selected ? selected.available : quote.available));
 
   return (
@@ -62,22 +77,37 @@ export default function GpuQuotePanel({
       </div>
 
       {quote.cards?.length ? (
-        <div className="generar-gpu-card-list">
+        <>
+          <div className="generar-gpu-legend" aria-label="Significado de los colores">
+            <span className="recommended"><i /> Verde · recomendada</span>
+            <span className="alternative"><i /> Ámbar · alternativa</span>
+            <span className="unavailable"><i /> Gris · no elegible</span>
+          </div>
+          <div className="generar-gpu-card-list">
           {quote.cards.map((card) => {
             const active = card.selectionId === selectedId;
+            const tone = getComputeCardTone(card);
+            const toneLabel =
+              tone === 'recommended' ? 'RECOMENDADA' :
+              tone === 'alternative' ? 'ALTERNATIVA' : 'NO ELEGIBLE';
             return (
               <button
                 type="button"
                 key={card.selectionId}
-                className={`generar-gpu-card glass-glow-button ${active ? 'active' : ''}`}
+                className={`generar-gpu-card glass-glow-button is-${tone} ${active ? 'active' : ''}`}
                 onClick={() => onSelect(card.selectionId)}
-                disabled={confirming}
+                disabled={!card.available || confirming}
               >
                 <span>
-                  <strong>{card.gpuName}</strong>
+                  <span className="generar-gpu-card-heading">
+                    <strong>{card.gpuName}</strong>
+                    <span className="generar-gpu-card-badges">
+                      <span className={`generar-gpu-status is-${tone}`}>{toneLabel}</span>
+                      <span className="generar-gpu-provider" title="Proveedor">{card.providerName}</span>
+                    </span>
+                  </span>
                   <small>
                     {card.gpuRamGb ? `${card.gpuRamGb} GB VRAM` : 'VRAM según disponibilidad'}
-                    {card.recommended ? ' · RECOMENDADA' : ''}
                   </small>
                   {!card.available && card.unavailableReason && <em>{card.unavailableReason}</em>}
                 </span>
@@ -88,7 +118,8 @@ export default function GpuQuotePanel({
               </button>
             );
           })}
-        </div>
+          </div>
+        </>
       ) : (
         <div className="generar-status-card error">
           <strong>GPU NO DISPONIBLE</strong>
@@ -106,9 +137,9 @@ export default function GpuQuotePanel({
           <progress aria-label="Verificando disponibilidad de la GPU" />
         </div>
       )}
-      {message && (
+      {displayedMessage && (
         <div role="alert" className="generar-gpu-verification-message">
-          {message}
+          {displayedMessage}
         </div>
       )}
 

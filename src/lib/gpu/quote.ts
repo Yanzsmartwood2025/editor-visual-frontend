@@ -8,6 +8,7 @@ import {
   getComputeCatalog,
   type ComputeCandidate,
 } from './computeCatalog';
+import { getComputeProviderLabel } from './presentation';
 import {
   createComputeTargetSelectionId,
   findComputeTargetBySelectionId,
@@ -20,6 +21,7 @@ import {
 
 export type NaylaComputeCard = {
   selectionId: string;
+  providerName: string;
   gpuName: string;
   gpuRamGb?: number;
   region?: string;
@@ -156,6 +158,7 @@ export const quoteComputeGpuJob = async (
       ...base,
       cards: evaluated.map((candidate) => ({
         selectionId: candidate.selectionId,
+        providerName: getComputeProviderLabel(candidate.backend),
         gpuName: candidate.gpuName,
         gpuRamGb: candidate.gpuRamGb,
         region: candidate.regionLabel,
@@ -174,6 +177,7 @@ export const quoteComputeGpuJob = async (
 
   const cards: NaylaComputeCard[] = evaluated.map((candidate) => ({
     selectionId: candidate.selectionId,
+    providerName: getComputeProviderLabel(candidate.backend),
     gpuName: candidate.gpuName,
     gpuRamGb: candidate.gpuRamGb,
     hourlyPrice: candidate.publicHourlyPrice,
