@@ -132,7 +132,7 @@ if [ -z "$MODEL_PATH" ] || [ ! -s "$MODEL_PATH" ]; then
   exit 20
 fi
 
-POSTPROCESS_URL="https://raw.githubusercontent.com/Yanzsmartwood2025/editor-visual-frontend/b09178fcb6830ec7c67e9d8f7e035d4b320cdcae/gpu-workers/triposr/postprocess_glb.py"
+POSTPROCESS_URL="https://raw.githubusercontent.com/Yanzsmartwood2025/editor-visual-frontend/4ca563e044cc562fc0dc344b8b8fa8fae354f66e/gpu-workers/triposr/postprocess_glb.py"
 curl --fail --location --silent --show-error "$POSTPROCESS_URL" --output "$WORKDIR/postprocess_glb.py"
 python "$WORKDIR/postprocess_glb.py" "$MODEL_PATH" "$WORKDIR/output/final.glb" --color "$BASE_COLOR" --motion "$MOTION_PRESET"
 MODEL_PATH="$WORKDIR/output/final.glb"
