@@ -27,6 +27,16 @@ type View = 'convert' | 'studio';
 
 const terminal = new Set(['completed', 'failed', 'expired', 'cancelled']);
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+const activeJobKey = (userId: string) => 'nayla:gpu:3d:active-job:' + userId;
+const readActiveJobId = (userId: string) => {
+  try { return window.localStorage.getItem(activeJobKey(userId)); } catch { return null; }
+};
+const writeActiveJobId = (userId: string, jobId: string) => {
+  try { window.localStorage.setItem(activeJobKey(userId), jobId); } catch { /* server lookup remains available */ }
+};
+const clearActiveJobId = (userId: string) => {
+  try { window.localStorage.removeItem(activeJobKey(userId)); } catch { /* ignore storage restrictions */ }
+};
 
 export default function GpuThreeDModule({ context }: GenerarModuleProps) {
   const {
@@ -72,6 +82,7 @@ export default function GpuThreeDModule({ context }: GenerarModuleProps) {
   }, [sourceId, preferred]);
 
   useEffect(() => {
+    mountedRef.current = true;
     return () => {
       mountedRef.current = false;
       abortRef.current?.abort();
@@ -200,18 +211,17 @@ export default function GpuThreeDModule({ context }: GenerarModuleProps) {
     if (!mountedRef.current) return;
     setJob(next);
 
-    if (next.status === 'completed') {
-      setPhase('completed');
-      setMessage('El modelo quedó guardado en la Bóveda y la GPU temporal se retiró. Ya puedes revisarlo en el Estudio 3D.');
-      if (next.galleryItem && threeDStudio) {
-        threeDStudio.onGenerated(next.galleryItem);
+    if (terminal.has(next.status)) {
+      if (session?.uid) clearActiveJobId(session.uid);
+      if (next.status === 'completed') {
+        setPhase('completed');
+        setMessage('El modelo quedó guardado en la Bóveda. La GPU temporal se retiró automáticamente para detener el cobro. Abriendo el Estudio 3D…');
+        if (next.galleryItem && threeDStudio) threeDStudio.onGenerated(next.galleryItem);
+        setView('studio');
+      } else {
+        setPhase('failed');
+        setMessage(next.error || 'El trabajo GPU 3D no pudo completarse.');
       }
-      return;
-    }
-
-    if (next.status === 'failed' || next.status === 'expired' || next.status === 'cancelled') {
-      setPhase('failed');
-      setMessage(next.error || 'El trabajo GPU 3D no pudo completarse.');
       return;
     }
 
@@ -285,9 +295,10 @@ export default function GpuThreeDModule({ context }: GenerarModuleProps) {
       setMessage('Tarjeta verificada. Solicitando la reserva…');
       reservationStarted = true;
 
+      // Let the reservation response finish even if the user leaves this module. The server job
+      // keeps running independently; its id is persisted before UI state is touched.
       const controller = new AbortController();
       abortRef.current?.abort();
-      abortRef.current = controller;
 
       const response = await fetch('/api/gpu/jobs', {
         method: 'POST',
@@ -298,7 +309,6 @@ export default function GpuThreeDModule({ context }: GenerarModuleProps) {
           ...requestBody,
           computeSelectionId: selectedId,
         }),
-        signal: controller.signal,
       });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok || !payload?.job) {
@@ -306,16 +316,68 @@ export default function GpuThreeDModule({ context }: GenerarModuleProps) {
       }
 
       const next = payload.job as GpuJobState;
-      applyJob(next);
-      if (!terminal.has(next.status)) {
-        await poll(next.id, controller);
+      if (session?.uid && !terminal.has(next.status)) writeActiveJobId(session.uid, next.id);
+      if (mountedRef.current) {
+        abortRef.current = controller;
+        applyJob(next);
+        if (!terminal.has(next.status)) await poll(next.id, controller);
       }
     } catch (error: any) {
-      if (abortRef.current?.signal.aborted) return;
+      if (!mountedRef.current || abortRef.current?.signal.aborted) return;
       setPhase(reservationStarted ? 'failed' : 'quote');
       setMessage(error?.message || (reservationStarted ? 'No se pudo iniciar Nayla Compute.' : 'No se pudo verificar la tarjeta. Puedes intentarlo otra vez.'));
     }
   };
+
+  useEffect(() => {
+    if (!session?.uid) return;
+    let disposed = false;
+    const controller = new AbortController();
+    abortRef.current?.abort();
+    abortRef.current = controller;
+
+    const restoreJob = async () => {
+      try {
+        const savedId = readActiveJobId(session.uid);
+        let response = await fetch(
+          savedId ? '/api/gpu/jobs?id=' + encodeURIComponent(savedId) : '/api/gpu/jobs?workload=3d',
+          { headers: firebaseHeaders(session), cache: 'no-store', signal: controller.signal }
+        );
+        if (response.status === 404 && savedId) {
+          clearActiveJobId(session.uid);
+          response = await fetch('/api/gpu/jobs?workload=3d', {
+            headers: firebaseHeaders(session), cache: 'no-store', signal: controller.signal,
+          });
+        }
+        if (response.status === 204) {
+          clearActiveJobId(session.uid);
+          return;
+        }
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok || !payload?.job) {
+          throw new Error(payload?.error || 'No se pudo recuperar el trabajo GPU 3D.');
+        }
+        if (disposed || controller.signal.aborted) return;
+        const next = payload.job as GpuJobState;
+        if (!terminal.has(next.status)) writeActiveJobId(session.uid, next.id);
+        applyJob(next);
+        if (!terminal.has(next.status)) await poll(next.id, controller);
+      } catch (error: any) {
+        if (!disposed && !controller.signal.aborted) {
+          setPhase('failed');
+          setMessage(error?.message || 'No se pudo reconectar con el trabajo GPU 3D.');
+        }
+      }
+    };
+
+    void restoreJob();
+    return () => {
+      disposed = true;
+      controller.abort();
+    };
+  // Reconnect once for the signed-in user; the GPU job is owned by the server.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session?.uid]);
 
   const result = job?.galleryItem || null;
   const canOpenStudio = canOpen3DStudio(job?.status || '', Boolean(result), Boolean(threeDStudio));
@@ -351,6 +413,15 @@ export default function GpuThreeDModule({ context }: GenerarModuleProps) {
 
       {view === 'studio' ? (
         <div className="generar-3d-studio-shell">
+          {phase === 'completed' && result && (
+            <div className="generar-status-card">
+              <strong>TRABAJO TERMINADO · GPU RETIRADA</strong>
+              <p>{result.nombre || 'El modelo 3D'} ya está en la Bóveda. La máquina temporal se cerró automáticamente para detener el cobro.</p>
+              <button type="button" className="generar-secondary-action glass-glow-button" onClick={() => { reset(); setView('convert'); }}>
+                HACER OTRO MODELO
+              </button>
+            </div>
+          )}
           {threeDStudio ? (
             <Model3DWorkspace
               assets={threeDStudio.assets}
