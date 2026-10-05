@@ -188,7 +188,47 @@ const publicJob = async (job: GpuJobRow) => {
     startedAt: job.started_at,
     completedAt: job.completed_at,
     destroyedAt: job.destroyed_at,
+    progress: job.metadata?.progress || null,
   };
+};
+
+export const reportGpuJobProgress = async ({
+  jobId,
+  token,
+  percent,
+  stage,
+}: {
+  jobId: string;
+  token: string;
+  percent: number;
+  stage: string;
+}) => {
+  const job = await getGpuJob(jobId);
+  if (!job || !job.callback_token_hash) throw new Error('Trabajo GPU no encontrado.');
+  const actual = Buffer.from(tokenHash(token), 'hex');
+  const expected = Buffer.from(job.callback_token_hash, 'hex');
+  if (actual.length !== expected.length || !timingSafeEqual(actual, expected)) {
+    throw new Error('Token GPU inválido.');
+  }
+  if (['completed', 'failed', 'expired', 'cancelled'].includes(job.status)) {
+    return publicJob(job);
+  }
+
+  const previous = job.metadata?.progress as { percent?: number } | null | undefined;
+  const boundedPercent = Math.min(99, Math.max(0, Math.round(percent)));
+  const nextPercent = Math.max(Number(previous?.percent) || 0, boundedPercent);
+  const safeStage = sanitizeNaylaPublicText(stage).slice(0, 120) || 'Procesando modelo 3D';
+  const updated = await updateGpuJob(job.id, {
+    metadata: {
+      ...job.metadata,
+      progress: {
+        percent: nextPercent,
+        stage: safeStage,
+        updatedAt: new Date().toISOString(),
+      },
+    },
+  });
+  return publicJob(updated);
 };
 
 const buildProbeOnstart = () => [
@@ -1153,6 +1193,13 @@ export const finishGpuJob = async ({
       const { count, error: countError } = await countQuery;
       if (countError) throw countError;
 
+      const requestedModelName = (
+        job.metadata?.request?.options as Record<string, unknown> | undefined
+      )?.modelName;
+      const cleanModelName =
+        typeof requestedModelName === 'string'
+          ? requestedModelName.trim().replace(/[\\/\\\\]/g, '').slice(0, 80)
+          : '';
       const galleryItem = {
         id: randomUUID(),
         user_id: job.user_id,
@@ -1163,8 +1210,10 @@ export const finishGpuJob = async ({
         privacy: 'private',
         tipo: galleryType,
         nombre:
-          'Nayla GPU ' + workload + ' ' + job.id.slice(0, 8) + '.' +
-          (getGpuProfile(workload).outputExtension || 'bin'),
+          workload === '3d' && cleanModelName
+            ? cleanModelName.replace(/\\.glb$/i, '') + '.glb'
+            : 'Nayla GPU ' + workload + ' ' + job.id.slice(0, 8) + '.' +
+              (getGpuProfile(workload).outputExtension || 'bin'),
         creado_en: now.toISOString(),
         esOverlay: false,
         etiqueta: prefix + ((count || 0) + 1),
@@ -1223,6 +1272,9 @@ export const finishGpuJob = async ({
     metadata: {
       ...job.metadata,
       callbackMetadata: metadata || {},
+      progress: finalStatus === 'completed'
+        ? { percent: 100, stage: 'Modelo guardado en Cloudflare R2', updatedAt: now.toISOString() }
+        : job.metadata?.progress,
     },
   });
 
