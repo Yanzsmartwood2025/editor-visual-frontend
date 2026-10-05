@@ -5,6 +5,8 @@ import type { Model3DAsset } from '../../../../lib/model3d';
 import { uploadMediaFilesToBodega } from '../../../../lib/mediaUpload';
 import type { GenerarMediaItem, GenerarModuleProps } from '../../types';
 import GpuQuotePanel, { type GenerarGpuQuote } from '../GpuQuotePanel';
+import GpuAssemblyPanel from './GpuAssemblyPanel';
+import { shouldOpen3DStudioOnCompletion } from '../../../../lib/gpu/gpu3dPresentation';
 
 type GpuJobState = {
   id: string;
@@ -200,8 +202,11 @@ export default function GpuThreeDModule({ context }: GenerarModuleProps) {
 
     if (next.status === 'completed') {
       setPhase('completed');
-      setMessage('El GLB quedó en la Bóveda. La GPU y su disco temporal fueron destruidos. ¿Crear otro modelo o terminar?');
-      if (next.galleryItem && threeDStudio) threeDStudio.onGenerated(next.galleryItem);
+      setMessage('El modelo quedó guardado en la Bóveda y la GPU temporal se retiró. Ya puedes revisarlo en el Estudio 3D.');
+      if (next.galleryItem && threeDStudio) {
+        threeDStudio.onGenerated(next.galleryItem);
+        if (shouldOpen3DStudioOnCompletion(next.status, true, true)) setView('studio');
+      }
       return;
     }
 
@@ -321,8 +326,6 @@ export default function GpuThreeDModule({ context }: GenerarModuleProps) {
   const elapsedLabel =
     String(Math.floor(elapsedSeconds / 60)).padStart(2, '0') + ':' +
     String(elapsedSeconds % 60).padStart(2, '0');
-  const stagePercent = job?.progress?.percent ??
-    (job?.status === 'renting' ? 3 : job?.status === 'booting' ? 6 : 8);
 
   return (
     <section data-generar-module="3d" className="generar-module-stage generar-3d-stage">
@@ -538,57 +541,19 @@ export default function GpuThreeDModule({ context }: GenerarModuleProps) {
               />
             )}
 
-            {message && phase !== 'quote' && (
+            {job && phase === 'running' ? (
+              <GpuAssemblyPanel job={job} message={message} elapsedLabel={elapsedLabel} />
+            ) : message && phase !== 'quote' ? (
               <div className={'generar-status-card ' + (phase === 'failed' ? 'error' : '')}>
                 <strong>
-                  {phase === 'running'
-                    ? 'NAYLA COMPUTE'
-                    : phase === 'completed'
-                      ? 'LISTO'
-                      : phase === 'failed'
-                        ? 'ESTADO'
-                        : 'GPU'}
+                  {phase === 'completed' ? 'LISTO' : phase === 'failed' ? 'ESTADO' : 'GPU'}
                 </strong>
                 <p>{message}</p>
                 {phase === 'starting' && (
                   <progress aria-label="Verificando y reservando la GPU" style={{ width: '100%', height: 7, marginTop: 10 }} />
                 )}
               </div>
-            )}
-
-            {job && phase === 'running' && (
-              <div className="generar-gpu-runtime" style={{ display: 'grid', gap: 10 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
-                  <span>{job.gpuName || 'GPU temporal'}</span>
-                  <span>{job.progress?.stage || job.status.toUpperCase()}</span>
-                  <span>TIEMPO {elapsedLabel}</span>
-                  {Number.isFinite(Number(job.hourlyPrice)) && (
-                    <span>{'~$' + Number(job.hourlyPrice).toFixed(3) + '/h'}</span>
-                  )}
-                </div>
-                <div
-                  role="progressbar"
-                  aria-label="Avance del trabajo 3D"
-                  aria-valuemin={0}
-                  aria-valuemax={100}
-                  aria-valuenow={stagePercent}
-                  style={{ height: 7, borderRadius: 99, overflow: 'hidden', background: 'rgba(255,255,255,.12)' }}
-                >
-                  <div style={{ width: stagePercent + '%', height: '100%', borderRadius: 99, background: 'linear-gradient(90deg,#45f3c0,#a1ffe5)', transition: 'width .5s ease' }} />
-                </div>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5,minmax(0,1fr))', gap: 5, color: '#999', fontSize: '.58rem', textAlign: 'center' }}>
-                  {[
-                    ['GPU', 3],
-                    ['MALLA', 36],
-                    ['COLOR + MOVIMIENTO', 78],
-                    ['CLOUDFLARE', 90],
-                    ['LIMPIEZA', 96],
-                  ].map(([label, threshold]) => (
-                    <span key={label} style={{ color: stagePercent >= Number(threshold) ? '#52f3c1' : '#777' }}>{label}</span>
-                  ))}
-                </div>
-              </div>
-            )}
+            ) : null}
 
             {result && (
               <div className="generar-3d-result">
@@ -607,10 +572,7 @@ export default function GpuThreeDModule({ context }: GenerarModuleProps) {
                   <button
                     type="button"
                     className="generar-primary-action glass-glow-button"
-                    onClick={() => {
-                      threeDStudio.onGenerated(result);
-                      setView('studio');
-                    }}
+                    onClick={() => setView('studio')}
                   >
                     ABRIR EN ESTUDIO
                   </button>
