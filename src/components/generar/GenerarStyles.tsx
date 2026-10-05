@@ -902,7 +902,11 @@ export default function GenerarStyles() {
       .generar-3d-stage {
         display: flex;
         flex-direction: column;
-        overflow: hidden;
+        overflow-x: hidden;
+        overflow-y: auto;
+        overscroll-behavior-y: contain;
+        -webkit-overflow-scrolling: touch;
+        touch-action: pan-y;
       }
 
       .generar-3d-modebar {
