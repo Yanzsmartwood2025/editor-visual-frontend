@@ -120,8 +120,18 @@ git checkout -q --detach FETCH_HEAD
 
 report_progress 18 "Preparando entorno 3D · preparando herramientas Python"
 python -m pip install --no-cache-dir --upgrade "setuptools>=69" wheel
-report_progress 18 "Preparando entorno 3D · instalando dependencias 3D y CUDA"
-python -m pip install --no-cache-dir -r requirements.txt
+
+# TripoSR's requirements file installs torchmcubes from GitHub. Build it
+# separately, against the PyTorch/CUDA already present in the worker image.
+grep -F -v "git+https://github.com/tatsy/torchmcubes.git" requirements.txt > "$WORKDIR/requirements-base.txt"
+report_progress 18 "Preparando entorno 3D · instalando dependencias Python de TripoSR"
+python -m pip install --no-cache-dir -r "$WORKDIR/requirements-base.txt"
+
+report_progress 18 "Preparando entorno 3D · preparando compilación CUDA de torchmcubes"
+python -m pip install --no-cache-dir scikit-build-core pybind11 cmake ninja
+report_progress 18 "Preparando entorno 3D · compilando torchmcubes con PyTorch y CUDA"
+MAX_JOBS=2 python -m pip install --no-cache-dir --no-build-isolation "git+https://github.com/tatsy/torchmcubes.git@879926d0ef58e6ce0ac2630fdecb5e53af7ed3ff"
+python -c "import torch, torchmcubes; print('torch', torch.__version__, 'torchmcubes ready')"
 report_progress 36 "Cargando el modelo de reconstrucción"
 
 curl --fail --location --silent --show-error   "$INPUT_URL"   --output "$WORKDIR/input"
