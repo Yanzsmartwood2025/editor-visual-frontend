@@ -1171,6 +1171,122 @@ export default function GenerarStyles() {
         letter-spacing: .05em;
       }
 
+      .generar-source-preview-button {
+        position: relative;
+        width: 82px;
+        height: 82px;
+        padding: 0;
+        border: 0;
+        border-radius: 12px;
+        background: transparent;
+        cursor: zoom-in;
+      }
+
+      .generar-source-preview-button img {
+        display: block;
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        border-radius: inherit;
+      }
+
+      .generar-source-preview-button span {
+        position: absolute;
+        right: 4px;
+        bottom: 4px;
+        display: grid;
+        place-items: center;
+        width: 22px;
+        height: 22px;
+        border-radius: 50%;
+        color: #fff;
+        background: rgba(0,0,0,.75);
+        font-size: 16px;
+      }
+
+      .generar-source-preview-backdrop {
+        position: fixed;
+        inset: 0;
+        z-index: 10050;
+        display: grid;
+        place-items: center;
+        padding: 18px;
+        background: rgba(0,0,0,.88);
+        backdrop-filter: blur(8px);
+      }
+
+      .generar-source-preview-dialog {
+        width: min(920px, 100%);
+        max-height: 94dvh;
+        display: grid;
+        grid-template-rows: auto minmax(0, 1fr);
+        gap: 12px;
+        padding: 12px;
+        border: 1px solid rgba(255,255,255,.15);
+        border-radius: 18px;
+        background: #101014;
+        box-shadow: 0 24px 80px rgba(0,0,0,.65);
+      }
+
+      .generar-source-preview-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        color: #fff;
+      }
+
+      .generar-source-preview-head strong {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .generar-source-preview-head button {
+        flex: 0 0 auto;
+        width: 40px;
+        height: 40px;
+        border: 1px solid rgba(255,255,255,.15);
+        border-radius: 12px;
+        color: #fff;
+        background: rgba(255,255,255,.06);
+        font-size: 18px;
+      }
+
+      .generar-source-preview-image {
+        display: block;
+        width: 100%;
+        height: min(78dvh, 760px);
+        object-fit: contain;
+        border-radius: 12px;
+        background: #050506;
+      }
+
+      .generar-gpu-verification {
+        display: grid;
+        gap: 8px;
+        margin-top: 12px;
+        color: #e5e5e8;
+        font-size: 12px;
+      }
+
+      .generar-gpu-verification progress {
+        width: 100%;
+        height: 7px;
+        accent-color: #45f3c0;
+      }
+
+      .generar-gpu-verification-message {
+        margin-top: 10px;
+        padding: 10px 12px;
+        border: 1px solid rgba(255,194,102,.22);
+        border-radius: 12px;
+        color: #ffd48a;
+        background: rgba(255,194,102,.06);
+        font-size: 11px;
+        line-height: 1.45;
+      }
+
       .generar-gpu-runtime span {
         padding: 5px 8px;
         border-radius: 999px;
@@ -2470,6 +2586,11 @@ export default function GenerarStyles() {
         }
 
         .generar-selected-source img {
+          width: 66px;
+          height: 66px;
+        }
+
+        .generar-source-preview-button {
           width: 66px;
           height: 66px;
         }
