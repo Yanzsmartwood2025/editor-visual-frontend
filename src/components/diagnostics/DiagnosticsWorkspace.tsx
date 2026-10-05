@@ -188,6 +188,7 @@ export default function DiagnosticsWorkspace({
         body: JSON.stringify({
           title: 'Prueba controlada de Sentry',
           message: 'Evento de prueba enviado desde el panel Diagnóstico.',
+          test: true,
           details: { component: 'diagnostics-panel' },
         }),
       });
