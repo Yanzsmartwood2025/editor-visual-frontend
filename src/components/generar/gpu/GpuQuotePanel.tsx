@@ -35,6 +35,7 @@ export default function GpuQuotePanel({
   onCancel,
   onConfirm,
   confirming,
+  message,
 }: {
   quote: GenerarGpuQuote;
   selectedId: string;
@@ -42,6 +43,7 @@ export default function GpuQuotePanel({
   onCancel: () => void;
   onConfirm: () => void;
   confirming?: boolean;
+  message?: string;
 }) {
   const selected =
     quote.cards?.find((card) => card.selectionId === selectedId) ||
@@ -95,8 +97,20 @@ export default function GpuQuotePanel({
       )}
 
       <div className="generar-gpu-quote-note">
-        La tarjeta se vuelve a verificar justo antes de reservar. Si el precio o la disponibilidad cambian, Nayla no la alquila silenciosamente.
+        La tarjeta se vuelve a verificar justo antes de reservar. Si cambia el precio o deja de estar disponible, podrás elegir otra.
       </div>
+
+      {confirming && (
+        <div role="status" aria-live="polite" className="generar-gpu-verification">
+          <strong>Verificando esta tarjeta y el precio…</strong>
+          <progress aria-label="Verificando disponibilidad de la GPU" />
+        </div>
+      )}
+      {message && (
+        <div role="alert" className="generar-gpu-verification-message">
+          {message}
+        </div>
+      )}
 
       <div className="generar-action-row">
         <button type="button" className="generar-secondary-action glass-glow-button" onClick={onCancel} disabled={confirming}>
