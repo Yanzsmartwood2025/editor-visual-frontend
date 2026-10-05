@@ -8,10 +8,12 @@ describe('GPU 3D workflow presentation', () => {
     expect(workflow.activeStepIndex).toBe(0);
     expect(workflow.steps[0].state).toBe('active');
     expect(workflow.percent).toBe(6);
+    expect(workflow.hasReportedProgress).toBe(false);
   });
 
   it('maps worker progress to the real mesh, appearance, and vault stages', () => {
     expect(getGpu3DWorkflow('running', 48).steps[2].state).toBe('active');
+    expect(getGpu3DWorkflow('running', 48).hasReportedProgress).toBe(true);
     expect(getGpu3DWorkflow('running', 78).steps[3].state).toBe('active');
     expect(getGpu3DWorkflow('running', 90).steps[4].state).toBe('active');
   });
