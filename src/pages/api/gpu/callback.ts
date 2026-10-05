@@ -1,12 +1,18 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { z } from 'zod';
-import { finishGpuJob } from '../../../lib/gpu/orchestrator';
+import { finishGpuJob, reportGpuJobProgress } from '../../../lib/gpu/orchestrator';
 
 const schema = z.object({
   jobId: z.string().uuid(),
-  status: z.enum(['completed', 'failed']),
+  status: z.enum(['completed', 'failed']).optional(),
   error: z.string().max(2000).nullable().optional(),
   metadata: z.record(z.string(), z.unknown()).optional(),
+  progress: z.object({
+    percent: z.number().int().min(0).max(99),
+    stage: z.string().trim().min(1).max(120),
+  }).optional(),
+}).refine((value) => Boolean(value.progress) || Boolean(value.status), {
+  message: 'El callback debe incluir progreso o un estado final.',
 });
 
 const bearerToken = (req: NextApiRequest) => {
@@ -26,6 +32,16 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
 
   try {
+    if (parsed.data.progress) {
+      const job = await reportGpuJobProgress({
+        jobId: parsed.data.jobId,
+        token,
+        percent: parsed.data.progress.percent,
+        stage: parsed.data.progress.stage,
+      });
+      return res.status(200).json({ ok: true, job });
+    }
+    if (!parsed.data.status) return res.status(400).json({ error: 'Falta el estado final del trabajo.' });
     const job = await finishGpuJob({
       jobId: parsed.data.jobId,
       token,
