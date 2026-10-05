@@ -19,6 +19,7 @@ export function getGpu3DWorkflow(status: string, progressPercent?: number | null
     status === 'running' ? 8 :
     status === 'cleanup_pending' ? 96 :
     status === 'completed' ? 100 : 0;
+  const hasReportedProgress = Number.isFinite(progressPercent) || status === 'completed';
   const percent = Math.min(100, Math.max(0, Math.round(progressPercent ?? fallbackPercent)));
   const completed = status === 'completed';
   const activeStepIndex = completed
@@ -37,6 +38,7 @@ export function getGpu3DWorkflow(status: string, progressPercent?: number | null
 
   return {
     percent,
+    hasReportedProgress,
     completed,
     activeStepIndex,
     steps: GPU_3D_WORKFLOW_STEPS.map((label, index): Gpu3DWorkflowStep => ({

@@ -122,6 +122,25 @@ export const getGpuJob = async (jobId: string): Promise<GpuJobRow | null> => {
   return (data as GpuJobRow | null) || null;
 };
 
+export const getLatestActiveGpuJobForUser = async (
+  userId: string,
+  workload: string
+): Promise<GpuJobRow | null> => {
+  const supabase = getGpuSupabaseAdmin();
+  const { data, error } = await supabase
+    .from('gpu_jobs')
+    .select('*')
+    .eq('user_id', userId)
+    .eq('workload', workload)
+    .in('status', [...ACTIVE_GPU_STATUSES])
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) throw error;
+  return (data as GpuJobRow | null) || null;
+};
+
 export const getGpuJobForUser = async (
   jobId: string,
   userId: string

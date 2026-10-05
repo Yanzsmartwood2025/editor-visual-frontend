@@ -6,6 +6,7 @@ import {
   getGpuJobStatusForUser,
   startComputeGpuJob,
 } from '../../../lib/gpu/orchestrator';
+import { getLatestActiveGpuJobForUser } from '../../../lib/gpu/jobStore';
 import { resolveRequestPublicBaseUrl } from '../../../lib/gpu/requestUrl';
 import { resolveOwnedWorkspaceScope } from '../../../lib/workspaceStore';
 
@@ -48,7 +49,8 @@ const createSchema = z.object({
 });
 
 const querySchema = z.object({
-  id: z.string().uuid(),
+  id: z.string().uuid().optional(),
+  workload: z.enum(['probe', 'image', 'video', 'audio', '3d']).optional(),
 });
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
@@ -60,17 +62,26 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
 
   if (req.method === 'GET') {
-    const parsed = querySchema.safeParse({ id: Array.isArray(req.query.id) ? req.query.id[0] : req.query.id });
+    const parsed = querySchema.safeParse({
+      id: Array.isArray(req.query.id) ? req.query.id[0] : req.query.id,
+      workload: Array.isArray(req.query.workload) ? req.query.workload[0] : req.query.workload,
+    });
     if (!parsed.success) {
-      return res.status(400).json({ error: 'Falta un id de trabajo GPU válido.' });
+      return res.status(400).json({ error: 'El identificador del trabajo GPU no es válido.' });
     }
 
     try {
-      const job = await getGpuJobStatusForUser({
-        jobId: parsed.data.id,
-        userId: user.uid,
-      });
-      if (!job) return res.status(404).json({ error: 'Trabajo GPU no encontrado.' });
+      const activeJob = parsed.data.id
+        ? null
+        : await getLatestActiveGpuJobForUser(user.uid, parsed.data.workload || '3d');
+      const jobId = parsed.data.id || activeJob?.id;
+      if (!jobId) return res.status(204).end();
+
+      const job = await getGpuJobStatusForUser({ jobId, userId: user.uid });
+      if (!job) {
+        if (parsed.data.id) return res.status(404).json({ error: 'Trabajo GPU no encontrado.' });
+        return res.status(204).end();
+      }
       return res.status(200).json({ job });
     } catch (error) {
       const message = error instanceof Error ? error.message : 'No se pudo leer el trabajo GPU.';
