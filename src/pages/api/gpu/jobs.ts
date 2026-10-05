@@ -4,9 +4,9 @@ import { requireFirebaseUser } from '../../../lib/firebaseAdmin';
 import { sanitizeNaylaPublicText } from '../../../lib/naylaSystemCatalog';
 import {
   getGpuJobStatusForUser,
-  getLatestActiveGpuJobForUser,
   startComputeGpuJob,
 } from '../../../lib/gpu/orchestrator';
+import { getLatestActiveGpuJobForUser } from '../../../lib/gpu/jobStore';
 import { resolveRequestPublicBaseUrl } from '../../../lib/gpu/requestUrl';
 import { resolveOwnedWorkspaceScope } from '../../../lib/workspaceStore';
 
@@ -78,9 +78,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       if (!jobId) return res.status(204).end();
 
       const job = await getGpuJobStatusForUser({ jobId, userId: user.uid });
-      if (!job) return res.status(parsed.data.id ? 404 : 204).json(
-        parsed.data.id ? { error: 'Trabajo GPU no encontrado.' } : undefined
-      );
+      if (!job) {
+        if (parsed.data.id) return res.status(404).json({ error: 'Trabajo GPU no encontrado.' });
+        return res.status(204).end();
+      }
       return res.status(200).json({ job });
     } catch (error) {
       const message = error instanceof Error ? error.message : 'No se pudo leer el trabajo GPU.';
