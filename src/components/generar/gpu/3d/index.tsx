@@ -220,7 +220,11 @@ export default function GpuThreeDModule({ context }: GenerarModuleProps) {
         setView('studio');
       } else {
         setPhase('failed');
-        setMessage(next.error || 'El trabajo GPU 3D no pudo completarse.');
+        const lastStage = next.progress?.stage;
+        setMessage(
+          (next.error || 'El trabajo GPU 3D no pudo completarse.') +
+          (lastStage ? ' Último paso reportado: ' + lastStage + '.' : '')
+        );
       }
       return;
     }
