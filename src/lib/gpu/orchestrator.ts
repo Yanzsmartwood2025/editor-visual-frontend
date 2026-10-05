@@ -1193,6 +1193,13 @@ export const finishGpuJob = async ({
       const { count, error: countError } = await countQuery;
       if (countError) throw countError;
 
+      const requestedModelName = (
+        job.metadata?.request?.options as Record<string, unknown> | undefined
+      )?.modelName;
+      const cleanModelName =
+        typeof requestedModelName === 'string'
+          ? requestedModelName.trim().replace(/[\\/\\\\]/g, '').slice(0, 80)
+          : '';
       const galleryItem = {
         id: randomUUID(),
         user_id: job.user_id,
@@ -1203,8 +1210,10 @@ export const finishGpuJob = async ({
         privacy: 'private',
         tipo: galleryType,
         nombre:
-          'Nayla GPU ' + workload + ' ' + job.id.slice(0, 8) + '.' +
-          (getGpuProfile(workload).outputExtension || 'bin'),
+          workload === '3d' && cleanModelName
+            ? cleanModelName.replace(/\\.glb$/i, '') + '.glb'
+            : 'Nayla GPU ' + workload + ' ' + job.id.slice(0, 8) + '.' +
+              (getGpuProfile(workload).outputExtension || 'bin'),
         creado_en: now.toISOString(),
         esOverlay: false,
         etiqueta: prefix + ((count || 0) + 1),
