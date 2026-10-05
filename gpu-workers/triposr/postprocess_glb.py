@@ -124,9 +124,27 @@ def main():
     args = parser.parse_args()
     doc, chunks, bin_chunk = parse_glb(Path(args.source).read_bytes())
     tint = color_rgba(args.color)
-    for material in doc.get("materials", []):
+    materials = doc.setdefault("materials", [])
+    primitives = [
+        primitive
+        for mesh in doc.get("meshes", [])
+        for primitive in mesh.get("primitives", [])
+    ]
+    if primitives and not materials:
+        materials.append({
+            "name": "Editor base color",
+            "pbrMetallicRoughness": {
+                "baseColorFactor": tint,
+                "metallicFactor": 0.0,
+                "roughnessFactor": 1.0,
+            },
+        })
+    for material in materials:
         pbr = material.setdefault("pbrMetallicRoughness", {})
         pbr["baseColorFactor"] = tint
+    if materials:
+        for primitive in primitives:
+            primitive.setdefault("material", 0)
     bake_motion(doc, bin_chunk[1], args.motion)
     pack_glb(doc, chunks, bin_chunk, args.destination)
 
