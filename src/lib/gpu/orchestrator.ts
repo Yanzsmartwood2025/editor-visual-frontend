@@ -1121,6 +1121,14 @@ export const getGpuManifest = async ({
     }
   }
 
+  const latest = await getGpuJob(job.id);
+  if (!latest || shouldStopGpuManifest({
+    status: latest.status,
+    destroyedAt: latest.destroyed_at,
+    cancelRequested: Boolean(latest.metadata?.cancelRequested),
+  })) return { action: 'stop' };
+  job = latest;
+
   return {
     action: 'generate',
     generationId: session?.generationId,
