@@ -46,6 +46,6 @@ export function getGpu3DWorkflow(status: string, progressPercent?: number | null
   };
 }
 
-export function shouldOpen3DStudioOnCompletion(status: string, hasResult: boolean, hasStudio: boolean) {
+export function canOpen3DStudio(status: string, hasResult: boolean, hasStudio: boolean) {
   return status === 'completed' && hasResult && hasStudio;
 }
