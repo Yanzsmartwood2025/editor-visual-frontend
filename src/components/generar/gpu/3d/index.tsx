@@ -20,7 +20,7 @@ type GpuJobState = {
   progress?: { percent?: number; stage?: string } | null;
 };
 
-type Phase = 'idle' | 'quoting' | 'quote' | 'starting' | 'running' | 'completed' | 'failed';
+type Phase = 'idle' | 'quoting' | 'quote' | 'verifying' | 'starting' | 'running' | 'completed' | 'failed';
 type View = 'convert' | 'studio';
 
 const terminal = new Set(['completed', 'failed', 'expired', 'cancelled']);
@@ -38,6 +38,7 @@ export default function GpuThreeDModule({ context }: GenerarModuleProps) {
 
   const [uploadedPhoto, setUploadedPhoto] = useState<GenerarMediaItem | null>(null);
   const [uploadingImage, setUploadingImage] = useState(false);
+  const [previewOpen, setPreviewOpen] = useState(false);
   const [modelName, setModelName] = useState('Mi personaje 3D');
   const [baseColor, setBaseColor] = useState('#ffffff');
   const [motionPreset, setMotionPreset] = useState<'none' | 'idle_sway' | 'turntable'>('idle_sway');
@@ -74,6 +75,15 @@ export default function GpuThreeDModule({ context }: GenerarModuleProps) {
       abortRef.current?.abort();
     };
   }, []);
+
+  useEffect(() => {
+    if (!previewOpen) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setPreviewOpen(false);
+    };
+    window.addEventListener('keydown', closeOnEscape);
+    return () => window.removeEventListener('keydown', closeOnEscape);
+  }, [previewOpen]);
 
   useEffect(() => {
     if (!['starting', 'running'].includes(phase)) return;
@@ -239,8 +249,9 @@ export default function GpuThreeDModule({ context }: GenerarModuleProps) {
 
   const confirmGpu = async () => {
     if (!session || !selectedId || !requestBody) return;
-    setPhase('starting');
-    setMessage('Verificando la misma tarjeta antes de reservar…');
+    setPhase('verifying');
+    setMessage('Verificando la tarjeta elegida y su precio actual…');
+    let reservationStarted = false;
 
     try {
       const verifyResponse = await fetch('/api/gpu/quote', {
@@ -265,6 +276,10 @@ export default function GpuThreeDModule({ context }: GenerarModuleProps) {
         setMessage(verified.reason || 'La tarjeta cambió. Elige otra disponible.');
         return;
       }
+
+      setPhase('starting');
+      setMessage('Tarjeta verificada. Solicitando la reserva…');
+      reservationStarted = true;
 
       const controller = new AbortController();
       abortRef.current?.abort();
@@ -293,8 +308,8 @@ export default function GpuThreeDModule({ context }: GenerarModuleProps) {
       }
     } catch (error: any) {
       if (abortRef.current?.signal.aborted) return;
-      setPhase('failed');
-      setMessage(error?.message || 'Nayla Compute se interrumpió.');
+      setPhase(reservationStarted ? 'failed' : 'quote');
+      setMessage(error?.message || (reservationStarted ? 'No se pudo iniciar Nayla Compute.' : 'No se pudo verificar la tarjeta. Puedes intentarlo otra vez.'));
     }
   };
 
@@ -357,7 +372,7 @@ export default function GpuThreeDModule({ context }: GenerarModuleProps) {
           <div className="generar-stage-heading">
             <span className="generar-eyebrow">GPU · 3D</span>
             <h2>Imagen a 3D</h2>
-            <p>Sube tu referencia, define nombre, color y movimiento; revisa el precio antes de arrancar la GPU.</p>
+            <p>Sube tu referencia, define nombre, color y animación; revisa el precio antes de arrancar la GPU.</p>
           </div>
 
           <div className="generar-glass-panel">
@@ -389,7 +404,7 @@ export default function GpuThreeDModule({ context }: GenerarModuleProps) {
                 </span>
               </label>
               <label style={{ display: 'grid', gap: 7, color: '#aaa', fontSize: '0.68rem', letterSpacing: '.08em' }}>
-                MOVIMIENTO INCLUIDO EN EL GLB
+                ANIMACIÓN GLOBAL (SIN ESQUELETO)
                 <select
                   value={motionPreset}
                   onChange={(event) => setMotionPreset(event.target.value as typeof motionPreset)}
@@ -397,9 +412,12 @@ export default function GpuThreeDModule({ context }: GenerarModuleProps) {
                   style={{ minWidth: 0, background: '#0d0d0d', border: '1px solid #292929', color: '#fff', borderRadius: 10, padding: '11px 12px', fontSize: '.82rem' }}
                 >
                   <option value="none">Sin animación</option>
-                  <option value="idle_sway">Balanceo suave</option>
-                  <option value="turntable">Giro continuo</option>
+                  <option value="idle_sway">Balanceo del modelo completo</option>
+                  <option value="turntable">Giro del modelo completo</option>
                 </select>
+                <small style={{ color: '#81818a', lineHeight: 1.45 }}>
+                  Estos presets mueven el personaje completo; no articulan brazos ni piernas. El autorigging con huesos todavía no está conectado.
+                </small>
               </label>
             </div>
 
@@ -444,11 +462,41 @@ export default function GpuThreeDModule({ context }: GenerarModuleProps) {
 
                 {source && (
                   <div className="generar-selected-source">
-                    <img src={source.url} alt={source.nombre || 'Imagen seleccionada'} />
+                    <button
+                      type="button"
+                      className="generar-source-preview-button"
+                      onClick={() => setPreviewOpen(true)}
+                      aria-label="Ampliar imagen seleccionada"
+                    >
+                      <img src={source.url} alt={source.nombre || 'Imagen seleccionada'} />
+                      <span aria-hidden="true">⤢</span>
+                    </button>
                     <div>
                       <span className="generar-eyebrow">SELECCIONADA</span>
                       <strong>{source.nombre}</strong>
                       <small>{source.etiqueta || 'FOTO'} · BÓVEDA PRIVADA</small>
+                    </div>
+                  </div>
+                )}
+
+                {previewOpen && source && (
+                  <div
+                    className="generar-source-preview-backdrop"
+                    role="presentation"
+                    onClick={() => setPreviewOpen(false)}
+                  >
+                    <div
+                      className="generar-source-preview-dialog"
+                      role="dialog"
+                      aria-modal="true"
+                      aria-label={'Vista previa: ' + (source.nombre || 'imagen seleccionada')}
+                      onClick={(event) => event.stopPropagation()}
+                    >
+                      <div className="generar-source-preview-head">
+                        <strong>{source.nombre || 'Imagen de referencia'}</strong>
+                        <button type="button" onClick={() => setPreviewOpen(false)} aria-label="Cerrar vista previa">✕</button>
+                      </div>
+                      <img className="generar-source-preview-image" src={source.url} alt={source.nombre || 'Imagen de referencia ampliada'} />
                     </div>
                   </div>
                 )}
@@ -478,14 +526,15 @@ export default function GpuThreeDModule({ context }: GenerarModuleProps) {
               </div>
             )}
 
-            {quote && phase === 'quote' && (
+            {quote && ['quote', 'verifying'].includes(phase) && (
               <GpuQuotePanel
                 quote={quote}
                 selectedId={selectedId}
                 onSelect={setSelectedId}
                 onCancel={reset}
                 onConfirm={() => void confirmGpu()}
-                confirming={false}
+                confirming={phase === 'verifying'}
+                message={phase === 'quote' ? message : ''}
               />
             )}
 
@@ -501,6 +550,9 @@ export default function GpuThreeDModule({ context }: GenerarModuleProps) {
                         : 'GPU'}
                 </strong>
                 <p>{message}</p>
+                {phase === 'starting' && (
+                  <progress aria-label="Verificando y reservando la GPU" style={{ width: '100%', height: 7, marginTop: 10 }} />
+                )}
               </div>
             )}
 
