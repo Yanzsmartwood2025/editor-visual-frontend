@@ -6,7 +6,7 @@ import { uploadMediaFilesToBodega } from '../../../../lib/mediaUpload';
 import type { GenerarMediaItem, GenerarModuleProps } from '../../types';
 import GpuQuotePanel, { type GenerarGpuQuote } from '../GpuQuotePanel';
 import GpuAssemblyPanel from './GpuAssemblyPanel';
-import { shouldOpen3DStudioOnCompletion } from '../../../../lib/gpu/gpu3dPresentation';
+import { canOpen3DStudio } from '../../../../lib/gpu/gpu3dPresentation';
 
 type GpuJobState = {
   id: string;
@@ -205,7 +205,6 @@ export default function GpuThreeDModule({ context }: GenerarModuleProps) {
       setMessage('El modelo quedó guardado en la Bóveda y la GPU temporal se retiró. Ya puedes revisarlo en el Estudio 3D.');
       if (next.galleryItem && threeDStudio) {
         threeDStudio.onGenerated(next.galleryItem);
-        if (shouldOpen3DStudioOnCompletion(next.status, true, true)) setView('studio');
       }
       return;
     }
@@ -319,6 +318,7 @@ export default function GpuThreeDModule({ context }: GenerarModuleProps) {
   };
 
   const result = job?.galleryItem || null;
+  const canOpenStudio = canOpen3DStudio(job?.status || '', Boolean(result), Boolean(threeDStudio));
   const busy = uploadingImage || phase === 'quoting' || phase === 'starting' || phase === 'running';
   const elapsedSeconds = job?.startedAt
     ? Math.max(0, Math.floor((now - Date.parse(job.startedAt)) / 1000))
@@ -568,13 +568,13 @@ export default function GpuThreeDModule({ context }: GenerarModuleProps) {
                   <strong>{result.nombre || 'Modelo 3D GPU'}</strong>
                   <span>{result.etiqueta || '3D'} · BÓVEDA PRIVADA</span>
                 </div>
-                {threeDStudio && (
+                {threeDStudio && canOpenStudio && (
                   <button
                     type="button"
                     className="generar-primary-action glass-glow-button"
                     onClick={() => setView('studio')}
                   >
-                    ABRIR EN ESTUDIO
+                    TERMINADO · ABRIR EN ESTUDIO
                   </button>
                 )}
                 <button
