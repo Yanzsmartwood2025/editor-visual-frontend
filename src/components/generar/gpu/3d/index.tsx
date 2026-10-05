@@ -2,7 +2,8 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Model3DWorkspace } from '../../../Model3DWorkspace';
 import { firebaseHeaders } from '../../../../lib/apiClient';
 import type { Model3DAsset } from '../../../../lib/model3d';
-import type { GenerarModuleProps } from '../../types';
+import { uploadMediaFilesToBodega } from '../../../../lib/mediaUpload';
+import type { GenerarMediaItem, GenerarModuleProps } from '../../types';
 import GpuQuotePanel, { type GenerarGpuQuote } from '../GpuQuotePanel';
 
 type GpuJobState = {
@@ -15,6 +16,8 @@ type GpuJobState = {
   hourlyPrice?: number | null;
   estimatedMaxCost?: number | null;
   runtimeCostEstimate?: number | null;
+  startedAt?: string | null;
+  progress?: { percent?: number; stage?: string } | null;
 };
 
 type Phase = 'idle' | 'quoting' | 'quote' | 'starting' | 'running' | 'completed' | 'failed';
@@ -33,15 +36,12 @@ export default function GpuThreeDModule({ context }: GenerarModuleProps) {
     threeDStudio,
   } = context;
 
-  const photos = useMemo(
-    () => mediaLibrary.filter((item) => item.tipo === 'foto').slice().reverse(),
-    [mediaLibrary]
-  );
-  const preferred = useMemo(
-    () => photos.find((item) => selectedMediaIds.includes(item.id)) || photos[0] || null,
-    [photos, selectedMediaIds]
-  );
-
+  const [uploadedPhoto, setUploadedPhoto] = useState<GenerarMediaItem | null>(null);
+  const [uploadingImage, setUploadingImage] = useState(false);
+  const [modelName, setModelName] = useState('Mi personaje 3D');
+  const [baseColor, setBaseColor] = useState('#ffffff');
+  const [motionPreset, setMotionPreset] = useState<'none' | 'idle_sway' | 'turntable'>('idle_sway');
+  const [now, setNow] = useState(Date.now());
   const [sourceId, setSourceId] = useState('');
   const [view, setView] = useState<View>('convert');
   const [phase, setPhase] = useState<Phase>('idle');
@@ -51,6 +51,18 @@ export default function GpuThreeDModule({ context }: GenerarModuleProps) {
   const [message, setMessage] = useState('');
   const abortRef = useRef<AbortController | null>(null);
   const mountedRef = useRef(true);
+
+  const photos = useMemo(
+    () => [
+      ...mediaLibrary.filter((item) => item.tipo === 'foto').slice().reverse(),
+      ...(uploadedPhoto ? [uploadedPhoto] : []),
+    ],
+    [mediaLibrary, uploadedPhoto]
+  );
+  const preferred = useMemo(
+    () => photos.find((item) => selectedMediaIds.includes(item.id)) || photos[0] || null,
+    [photos, selectedMediaIds]
+  );
 
   useEffect(() => {
     if (!sourceId && preferred) setSourceId(preferred.id);
@@ -63,6 +75,12 @@ export default function GpuThreeDModule({ context }: GenerarModuleProps) {
     };
   }, []);
 
+  useEffect(() => {
+    if (!['starting', 'running'].includes(phase)) return;
+    const timer = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [phase]);
+
   const source = photos.find((item) => item.id === sourceId) || preferred;
 
   const requestBody = source
@@ -70,8 +88,47 @@ export default function GpuThreeDModule({ context }: GenerarModuleProps) {
         workload: '3d' as const,
         recipe: 'triposr-image-to-3d',
         inputUrls: [source.url],
+        options: {
+          modelName: modelName.trim(),
+          baseColor,
+          motionPreset,
+        },
       }
     : null;
+
+  const uploadReferenceImage = async (file?: File) => {
+    if (!file || !session) return;
+    if (!file.type.startsWith('image/')) {
+      setMessage('Elige un archivo de imagen JPG, PNG o WebP.');
+      return;
+    }
+    if (file.size > 20 * 1024 * 1024) {
+      setMessage('La imagen supera 20 MB. Elige una versión más ligera.');
+      return;
+    }
+
+    setUploadingImage(true);
+    setMessage('');
+    try {
+      const [uploaded] = await uploadMediaFilesToBodega({
+        session,
+        files: [file],
+        existingItems: mediaLibrary.filter((item) => item.tipo !== 'audio') as any,
+        forcedTipo: 'foto',
+        fuente: 'gpu-3d-input',
+        projectId: projectId || undefined,
+        threadId: threadId || undefined,
+      });
+      const photo: GenerarMediaItem = { ...uploaded, tipo: 'foto' };
+      setUploadedPhoto(photo);
+      setSourceId(photo.id);
+      reset();
+    } catch (error: any) {
+      setMessage(error?.message || 'No se pudo guardar la imagen en Cloudflare.');
+    } finally {
+      setUploadingImage(false);
+    }
+  };
 
   const reset = () => {
     abortRef.current?.abort();
@@ -90,6 +147,10 @@ export default function GpuThreeDModule({ context }: GenerarModuleProps) {
 
   const quoteGpu = async () => {
     if (!session || !requestBody) return;
+    if (!modelName.trim()) {
+      setMessage('Escribe el nombre del personaje.');
+      return;
+    }
     setPhase('quoting');
     setMessage('');
     setJob(null);
@@ -141,10 +202,10 @@ export default function GpuThreeDModule({ context }: GenerarModuleProps) {
     }
 
     setPhase('running');
-    if (next.status === 'renting') setMessage('Reservando GPU…');
-    else if (next.status === 'booting') setMessage('Encendiendo Nayla Compute…');
-    else if (next.status === 'cleanup_pending' && next.galleryItem) setMessage('Modelo listo. Cerrando la GPU…');
-    else setMessage('TripoSR está reconstruyendo el modelo 3D…');
+    if (next.status === 'renting') setMessage('Buscando y reservando GPU disponible…');
+    else if (next.status === 'booting') setMessage('GPU reservada; preparando el equipo temporal…');
+    else if (next.status === 'cleanup_pending' && next.galleryItem) setMessage('GLB guardado. Eliminando la GPU y su disco temporal…');
+    else setMessage(next.progress?.stage || 'TripoSR está reconstruyendo el modelo 3D…');
   };
 
   const poll = async (id: string, controller: AbortController) => {
