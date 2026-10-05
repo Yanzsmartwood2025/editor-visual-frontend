@@ -60,7 +60,7 @@ export default function GpuAssemblyPanel({
         @keyframes nayla-active-step{50%{box-shadow:0 0 12px rgba(255,255,255,.55)}}
         @keyframes nayla-scan{0%{transform:translateX(-100%)}100%{transform:translateX(100%)}}
         @media(max-width:420px){.nayla-gpu-build__machine{min-height:145px}.nayla-gpu-build__steps{gap:6px}.nayla-gpu-build__steps li{font-size:.59rem;padding:6px 7px}.nayla-gpu-build__badge{font-size:.53rem;padding:6px 8px}}
-        @media(prefers-reduced-motion:reduce){.nayla-gpu-build:before,.nayla-gpu-build__pc,.nayla-gpu-build__circuit.is-live,.nayla-gpu-build__steps li[data-state="active"] .nayla-gpu-build__step-dot{animation:none}.nayla-gpu-build__bar i.is-indeterminate{animation:none};display:none.nayla-gpu-build__electric{display:none}}
+        @media(prefers-reduced-motion:reduce){.nayla-gpu-build:before,.nayla-gpu-build__pc,.nayla-gpu-build__circuit.is-live,.nayla-gpu-build__steps li[data-state="active"] .nayla-gpu-build__step-dot{animation:none}.nayla-gpu-build__bar i.is-indeterminate,.nayla-gpu-build__electric{display:none}}
       `}</style>
       <div className="nayla-gpu-build__head">
         <div>
