@@ -212,7 +212,7 @@ export default function GpuThreeDModule({ context }: GenerarModuleProps) {
     setJob(next);
 
     if (terminal.has(next.status)) {
-      if (session?.uid) clearActiveJobId(session.uid);
+      if (session?.user.id) clearActiveJobId(session.user.id);
       if (next.status === 'completed') {
         setPhase('completed');
         setMessage('El modelo quedó guardado en la Bóveda. La GPU temporal se retiró automáticamente para detener el cobro. Abriendo el Estudio 3D…');
@@ -316,7 +316,7 @@ export default function GpuThreeDModule({ context }: GenerarModuleProps) {
       }
 
       const next = payload.job as GpuJobState;
-      if (session?.uid && !terminal.has(next.status)) writeActiveJobId(session.uid, next.id);
+      if (session?.user.id && !terminal.has(next.status)) writeActiveJobId(session.user.id, next.id);
       if (mountedRef.current) {
         abortRef.current = controller;
         applyJob(next);
@@ -330,7 +330,7 @@ export default function GpuThreeDModule({ context }: GenerarModuleProps) {
   };
 
   useEffect(() => {
-    if (!session?.uid) return;
+    if (!session?.user.id) return;
     let disposed = false;
     const controller = new AbortController();
     abortRef.current?.abort();
@@ -338,19 +338,19 @@ export default function GpuThreeDModule({ context }: GenerarModuleProps) {
 
     const restoreJob = async () => {
       try {
-        const savedId = readActiveJobId(session.uid);
+        const savedId = readActiveJobId(session.user.id);
         let response = await fetch(
           savedId ? '/api/gpu/jobs?id=' + encodeURIComponent(savedId) : '/api/gpu/jobs?workload=3d',
           { headers: firebaseHeaders(session), cache: 'no-store', signal: controller.signal }
         );
         if (response.status === 404 && savedId) {
-          clearActiveJobId(session.uid);
+          clearActiveJobId(session.user.id);
           response = await fetch('/api/gpu/jobs?workload=3d', {
             headers: firebaseHeaders(session), cache: 'no-store', signal: controller.signal,
           });
         }
         if (response.status === 204) {
-          clearActiveJobId(session.uid);
+          clearActiveJobId(session.user.id);
           return;
         }
         const payload = await response.json().catch(() => ({}));
@@ -359,7 +359,7 @@ export default function GpuThreeDModule({ context }: GenerarModuleProps) {
         }
         if (disposed || controller.signal.aborted) return;
         const next = payload.job as GpuJobState;
-        if (!terminal.has(next.status)) writeActiveJobId(session.uid, next.id);
+        if (!terminal.has(next.status)) writeActiveJobId(session.user.id, next.id);
         applyJob(next);
         if (!terminal.has(next.status)) await poll(next.id, controller);
       } catch (error: any) {
@@ -377,7 +377,7 @@ export default function GpuThreeDModule({ context }: GenerarModuleProps) {
     };
   // Reconnect once for the signed-in user; the GPU job is owned by the server.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [session?.uid]);
+  }, [session?.user.id]);
 
   const result = job?.galleryItem || null;
   const canOpenStudio = canOpen3DStudio(job?.status || '', Boolean(result), Boolean(threeDStudio));
