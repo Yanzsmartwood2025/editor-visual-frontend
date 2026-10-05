@@ -76,7 +76,7 @@ export default function GpuAssemblyPanel({
           <svg className="nayla-gpu-build__svg" viewBox="0 0 400 220" fill="none">
             <path d="M55 31Q55 20 68 20H332Q345 20 345 33V159Q345 171 332 171H68Q55 171 55 159V31Z" fill="url(#screen)" stroke="rgba(255,255,255,.58)" strokeWidth="2"/>
             <path d="M43 184Q43 176 54 174H346Q357 176 357 184L342 197H58L43 184Z" fill="url(#base)" stroke="rgba(255,255,255,.48)" strokeWidth="2"/>
-            <path d="M78 46H322V146H78V46Z" fill="#101918" stroke="rgba(255,255,255,.18)"/>
+            <path d="M78 46H322V146H78V46Z" fill="#15181b" stroke="rgba(255,255,255,.18)"/>
             <path d="M95 62H180V84H222V112H301" className={"nayla-gpu-build__circuit " + (isBooting ? 'is-live' : '')}/>
             <path d="M97 127H148V105H186V93H267V132H301" className={"nayla-gpu-build__circuit " + (isBooting ? 'is-live' : '')}/>
             <circle r="5" className="nayla-gpu-build__electric">
