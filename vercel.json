@@ -4,6 +4,7 @@
   "git": {
     "deploymentEnabled": {
       "**": false,
+      "codex/3d-character-creator-meshy-flow": true,
       "main": true
     }
   },
