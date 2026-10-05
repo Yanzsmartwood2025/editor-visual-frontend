@@ -104,8 +104,9 @@ PY
 
 report_progress 8 "GPU lista; leyendo la imagen"
 
-report_progress 18 "Preparando el entorno 3D"
+report_progress 18 "Preparando entorno 3D · actualizando paquetes del sistema"
 apt-get update -qq
+report_progress 18 "Preparando entorno 3D · instalando bibliotecas del sistema"
 DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends   git curl build-essential libgl1 libglib2.0-0
 rm -rf /var/lib/apt/lists/*
 
@@ -113,10 +114,13 @@ mkdir -p "$WORKDIR/TripoSR"
 cd "$WORKDIR/TripoSR"
 git init -q
 git remote add origin https://github.com/VAST-AI-Research/TripoSR.git
+report_progress 18 "Preparando entorno 3D · descargando TripoSR"
 git fetch -q --depth 1 origin 107cefdc244c39106fa830359024f6a2f1c78871
 git checkout -q --detach FETCH_HEAD
 
+report_progress 18 "Preparando entorno 3D · preparando herramientas Python"
 python -m pip install --no-cache-dir --upgrade "setuptools>=69" wheel
+report_progress 18 "Preparando entorno 3D · instalando dependencias 3D y CUDA"
 python -m pip install --no-cache-dir -r requirements.txt
 report_progress 36 "Cargando el modelo de reconstrucción"
 

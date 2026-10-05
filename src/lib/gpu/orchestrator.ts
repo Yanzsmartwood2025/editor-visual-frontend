@@ -3,6 +3,7 @@ import { newVideoSession, getVideoSession, updateVideoSession, VIDEO_IDLE_MS, ca
 
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import { createR2PresignedGetUrl, createR2PresignedPutUrl, createR2StorageUrl, headR2Object } from '../r2';
+import { shouldStopGpuManifest } from './gpuJobLifecycle';
 import {
   countActiveGpuJobs,
   getGalleryItemById,
@@ -1070,6 +1071,12 @@ export const getGpuManifest = async ({
     throw new Error('Token GPU inválido.');
   }
 
+  if (shouldStopGpuManifest({
+    status: job.status,
+    destroyedAt: job.destroyed_at,
+    cancelRequested: Boolean(job.metadata?.cancelRequested),
+  })) return { action: 'stop' };
+
   const session = getVideoSession(job);
   if (session) {
     if (!job.destroyed_at && Date.parse(job.lease_expires_at || '') <= Date.now()) { await cleanupExpiredComputeJobs(); return { action: 'stop' }; }
@@ -1100,7 +1107,27 @@ export const getGpuManifest = async ({
         })
       : null;
 
-  if (!session) await updateGpuJob(job.id, { status: 'processing' }).catch(() => undefined);
+  if (!session && ['renting', 'booting', 'running'].includes(job.status)) {
+    const claimed = await updateGpuJobIfStatus(job.id, job.status, { status: 'processing' });
+    if (!claimed) {
+      const latest = await getGpuJob(job.id);
+      if (!latest || shouldStopGpuManifest({
+        status: latest.status,
+        destroyedAt: latest.destroyed_at,
+        cancelRequested: Boolean(latest.metadata?.cancelRequested),
+      })) return { action: 'stop' };
+    } else {
+      job = claimed;
+    }
+  }
+
+  const latest = await getGpuJob(job.id);
+  if (!latest || shouldStopGpuManifest({
+    status: latest.status,
+    destroyedAt: latest.destroyed_at,
+    cancelRequested: Boolean(latest.metadata?.cancelRequested),
+  })) return { action: 'stop' };
+  job = latest;
 
   return {
     action: 'generate',
