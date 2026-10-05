@@ -25,8 +25,8 @@ describe('GPU 3D workflow presentation', () => {
 
   it('allows the final action only after a completed result is available', () => {
     expect(canOpen3DStudio('completed', true, true)).toBe(true);
-    expect(shouldOpen3DStudioOnCompletion('running', true, true)).toBe(false);
-    expect(shouldOpen3DStudioOnCompletion('completed', false, true)).toBe(false);
-    expect(shouldOpen3DStudioOnCompletion('completed', true, false)).toBe(false);
+    expect(canOpen3DStudio('running', true, true)).toBe(false);
+    expect(canOpen3DStudio('completed', false, true)).toBe(false);
+    expect(canOpen3DStudio('completed', true, false)).toBe(false);
   });
 });
