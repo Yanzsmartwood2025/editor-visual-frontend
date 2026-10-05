@@ -510,56 +510,9 @@ export default function GpuThreeDModule({ context }: GenerarModuleProps) {
                   <span>{job.gpuName || 'GPU temporal'}</span>
                   <span>{job.progress?.stage || job.status.toUpperCase()}</span>
                   <span>TIEMPO {elapsedLabel}</span>
-                  {Number.isFinite(Number(job.hourlyPrice)) && <span>{'~
-
-            {result && (
-              <div className="generar-3d-result">
-                <div className="generar-3d-result-icon" aria-hidden="true">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.4">
-                    <path d="M12 2 21 7 12 12 3 7 12 2Z" />
-                    <path d="M3 7v10l9 5 9-5V7" />
-                    <path d="M12 12v10" />
-                  </svg>
-                </div>
-                <div className="generar-3d-result-copy">
-                  <strong>{result.nombre || 'Modelo 3D GPU'}</strong>
-                  <span>{result.etiqueta || '3D'} · BÓVEDA PRIVADA</span>
-                </div>
-                {threeDStudio && (
-                  <button
-                    type="button"
-                    className="generar-primary-action glass-glow-button"
-                    onClick={() => {
-                      threeDStudio.onGenerated(result);
-                      setView('studio');
-                    }}
-                  >
-                    ABRIR EN ESTUDIO
-                  </button>
-                )}
-                <button
-                  type="button"
-                  className="generar-secondary-action glass-glow-button"
-                  onClick={reset}
-                >
-                  CREAR OTRO MODELO
-                </button>
-                <button
-                  type="button"
-                  className="generar-secondary-action glass-glow-button"
-                  onClick={() => context.onReturnToNayla?.()}
-                >
-                  TERMINAR
-                </button>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-    </section>
-  );
-}
- + Number(job.hourlyPrice).toFixed(3) + '/h'}</span>}
+                  {Number.isFinite(Number(job.hourlyPrice)) && (
+                    <span>{'~$' + Number(job.hourlyPrice).toFixed(3) + '/h'}</span>
+                  )}
                 </div>
                 <div
                   role="progressbar"
@@ -610,6 +563,20 @@ export default function GpuThreeDModule({ context }: GenerarModuleProps) {
                     ABRIR EN ESTUDIO
                   </button>
                 )}
+                <button
+                  type="button"
+                  className="generar-secondary-action glass-glow-button"
+                  onClick={reset}
+                >
+                  CREAR OTRO MODELO
+                </button>
+                <button
+                  type="button"
+                  className="generar-secondary-action glass-glow-button"
+                  onClick={() => context.onReturnToNayla?.()}
+                >
+                  TERMINAR
+                </button>
               </div>
             )}
           </div>
