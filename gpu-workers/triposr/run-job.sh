@@ -127,7 +127,7 @@ grep -F -v "git+https://github.com/tatsy/torchmcubes.git" requirements.txt > "$W
 report_progress 18 "Preparando entorno 3D · instalando dependencias Python de TripoSR"
 python -m pip install --no-cache-dir -r "$WORKDIR/requirements-base.txt"
 
-report_progress 18 "Preparando entorno 3D · preparando compilación CUDA de torchmcubes"
+report_progress 18 "Preparando entorno 3D · preparando extractor de malla torchmcubes"
 python -m pip install --no-cache-dir scikit-build-core pybind11 cmake ninja
 
 TORCHMCUBES_COMMIT="879926d0ef58e6ce0ac2630fdecb5e53af7ed3ff"
@@ -142,17 +142,18 @@ curl --fail --location --silent --show-error "$PATCHER_URL" --output "$WORKDIR/p
 # use torchmcubes' upstream CPU fallback, avoiding fragile nvcc compilation.
 python - "$TORCHMCUBES_DIR" <<'CPU_BUILD'
 from pathlib import Path
+import re
 import sys
 
 root = Path(sys.argv[1])
 for relative in ("CMakeLists.txt", "cxx/CMakeLists.txt"):
     path = root / relative
     source = path.read_text(encoding="utf-8")
-    marker = "if (CMAKE_CUDA_COMPILER)"
-    if source.count(marker) != 1:
+    patched, count = re.subn(r"(?m)^([ \t]*)if\s*\(\s*CMAKE_CUDA_COMPILER\s*\)", r"\1if (FALSE) # Nayla CPU mesh extension", source)
+    if count != 1:
         raise SystemExit("Unrecognized pinned torchmcubes CMake layout: " + relative)
     path.write_text(
-        source.replace(marker, "if (FALSE) # Nayla CPU mesh extension"),
+        patched,
         encoding="utf-8",
     )
 CPU_BUILD
@@ -197,3 +198,4 @@ MODEL_PATH="$WORKDIR/output/final.glb"
 report_progress 90 "Subiendo el GLB final a Cloudflare"
 curl --fail --silent --show-error   --request PUT   --header "Content-Type: $OUTPUT_TYPE"   --upload-file "$MODEL_PATH"   "$OUTPUT_URL"
 report_progress 96 "Cloudflare recibió el modelo; verificando entrega"
+

@@ -91,7 +91,7 @@ class TorchmcubesCxx20PatchTests(unittest.TestCase):
             root = Path(temporary)
             (root / "cxx").mkdir()
             fixture = "if (CMAKE_CUDA_COMPILER)\n  cuda_sources()\nendif()\n"
-            (root / "CMakeLists.txt").write_text(fixture)
+            (root / "CMakeLists.txt").write_text(fixture.replace("if (", "if("))
             (root / "cxx" / "CMakeLists.txt").write_text(fixture)
             subprocess.run([sys.executable, "-c", match.group(1), str(root)], check=True)
             for path in (root / "CMakeLists.txt", root / "cxx" / "CMakeLists.txt"):
@@ -107,3 +107,4 @@ class TorchmcubesCxx20PatchTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
