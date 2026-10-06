@@ -124,6 +124,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     });
   } catch (error) {
     const rawMessage = error instanceof Error ? error.message : 'No se pudo iniciar Nayla Compute.';
+    console.error('[gpu] POST /api/gpu/jobs failed', {
+      workload: parsed.data.workload,
+      error: sanitizeNaylaPublicText(rawMessage).slice(0, 500),
+    });
     const message = sanitizeNaylaPublicText(rawMessage);
     const status =
       message.includes('no está configurada') ||
