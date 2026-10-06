@@ -2,6 +2,9 @@ import importlib.util
 from pathlib import Path
 import re
 import unittest
+import subprocess
+import sys
+import tempfile
 
 
 PATCHER_PATH = Path(__file__).with_name("patch_torchmcubes_cxx20.py")
@@ -79,5 +82,29 @@ class TorchmcubesCxx20PatchTests(unittest.TestCase):
         self.assertIn("grid_interp_cuda.cu:37:4: error: exact compiler failure", diagnostic)
         self.assertLessEqual(len(diagnostic), 1800)
 
+
+    def test_worker_builds_cpu_mesh_extension_without_cuda_sources(self):
+        worker = PATCHER_PATH.with_name("run-job.sh").read_text(encoding="utf-8")
+        match = re.search(r"<<'CPU_BUILD'\n(.*?)\nCPU_BUILD", worker, re.DOTALL)
+        self.assertIsNotNone(match, "Worker must configure the CPU mesh backend.")
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "cxx").mkdir()
+            fixture = "if (CMAKE_CUDA_COMPILER)\n  cuda_sources()\nendif()\n"
+            (root / "CMakeLists.txt").write_text(fixture.replace("if (", "if("))
+            (root / "cxx" / "CMakeLists.txt").write_text(fixture)
+            subprocess.run([sys.executable, "-c", match.group(1), str(root)], check=True)
+            for path in (root / "CMakeLists.txt", root / "cxx" / "CMakeLists.txt"):
+                self.assertIn("if (FALSE)", path.read_text())
+                self.assertNotIn("if (CMAKE_CUDA_COMPILER)", path.read_text())
+        self.assertIn("assert not torchmcubes.HAS_CUDA", worker)
+        self.assertIn("torchmcubes.marching_cubes", worker)
+        self.assertIn("CMAKE_BUILD_PARALLEL_LEVEL=2", worker)
+
+    def test_worker_fetches_the_current_diagnostic_patcher(self):
+        worker = PATCHER_PATH.with_name("run-job.sh").read_text(encoding="utf-8")
+        self.assertIn("/96239830bf4a545e645c4f2b709e0094a0e83792/gpu-workers/triposr/patch_torchmcubes_cxx20.py", worker)
+
 if __name__ == "__main__":
     unittest.main()
+
