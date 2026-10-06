@@ -4,7 +4,6 @@ import { describe, expect, it } from 'vitest';
 
 const root = process.cwd();
 const worker = fs.readFileSync(path.join(root, 'gpu-workers/triposr/run-job.sh'), 'utf8');
-const orchestrator = fs.readFileSync(path.join(root, 'src/lib/gpu/orchestrator.ts'), 'utf8');
 
 describe('TripoSR worker runtime', () => {
   it('installs an ONNX Runtime backend before importing rembg', () => {
@@ -14,10 +13,10 @@ describe('TripoSR worker runtime', () => {
     );
   });
 
-  it('persists TripoSR inference diagnostics and forwards them in the final callback', () => {
+  it('captures a TripoSR failure and reports a short diagnostic in progress', () => {
     expect(worker).toContain('triposr-run.log');
     expect(worker).toContain('triposr-run-diagnostic.txt');
-    expect(orchestrator).toContain('/tmp/nayla-triposr/triposr-run-diagnostic.txt');
-    expect(orchestrator).toContain('workerDiagnostic');
+    expect(worker).toContain('TRIPOSR_SHORT_ERROR=');
+    expect(worker).toContain('report_progress 48 "Fallo TripoSR · $TRIPOSR_SHORT_ERROR"');
   });
 });
