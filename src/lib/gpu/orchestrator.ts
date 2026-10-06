@@ -211,7 +211,7 @@ export const reportGpuJobProgress = async ({
   if (actual.length !== expected.length || !timingSafeEqual(actual, expected)) {
     throw new Error('Token GPU inválido.');
   }
-  if (['completed', 'failed', 'expired', 'cancelled'].includes(job.status)) {
+  if (job.metadata?.cancelRequested || ['completed', 'failed', 'expired', 'cancelled', 'cleanup_pending'].includes(job.status)) {
     return publicJob(job);
   }
 
@@ -316,11 +316,14 @@ export const cleanupExpiredComputeJobs = async () => {
     try {
       await destroyComputeInstance(job);
       const now = new Date();
+      const requestedTerminal = job.metadata?.terminalStatus;
       const terminalStatus =
-        (job.status === 'cleanup_pending' || getVideoSession(job)?.phase === 'idle') &&
-        (job.metadata?.terminalStatus === 'completed' || job.metadata?.terminalStatus === 'failed')
-          ? job.metadata.terminalStatus
-          : 'expired';
+        requestedTerminal === 'cancelled'
+          ? 'cancelled'
+          : (job.status === 'cleanup_pending' || getVideoSession(job)?.phase === 'idle') &&
+            (requestedTerminal === 'completed' || requestedTerminal === 'failed')
+            ? requestedTerminal
+            : 'expired';
 
       await updateGpuJob(job.id, {
         status: terminalStatus,
@@ -1163,6 +1166,70 @@ export const getGpuManifest = async ({
   };
 };
 
+export const cancelGpuJobForUser = async ({
+  jobId,
+  userId,
+}: {
+  jobId: string;
+  userId: string;
+}) => {
+  const job = await getGpuJobForUser(jobId, userId);
+  if (!job) throw new Error('Trabajo GPU no encontrado.');
+  if (['completed', 'failed', 'expired', 'cancelled'].includes(job.status)) return publicJob(job);
+  if (job.status === 'cleanup_pending' && job.metadata?.cancelRequested) return publicJob(job);
+
+  const claimed = await updateGpuJobIfStatus(job.id, job.status, {
+    status: 'cleanup_pending',
+    error_message: 'Cancelación solicitada. Nayla está destruyendo la GPU temporal…',
+    lease_expires_at: new Date(Date.now() - 1000).toISOString(),
+    metadata: {
+      ...job.metadata,
+      cancelRequested: true,
+      terminalStatus: 'cancelled',
+      progress: {
+        ...(job.metadata?.progress || {}),
+        stage: 'Cancelando y destruyendo la GPU',
+        updatedAt: new Date().toISOString(),
+      },
+    },
+  });
+  if (!claimed) {
+    const latest = await getGpuJobForUser(jobId, userId);
+    if (!latest) throw new Error('Trabajo GPU no encontrado.');
+    return publicJob(latest);
+  }
+
+  const markCancelled = async (row: GpuJobRow) => {
+    const now = new Date();
+    const cancelled = await updateGpuJobIfStatus(row.id, 'cleanup_pending', {
+      status: 'cancelled',
+      error_message: null,
+      completed_at: now.toISOString(),
+      destroyed_at: now.toISOString(),
+      runtime_cost_estimate: computeRuntimeCost(row, now),
+    });
+    return publicJob(cancelled || (await getGpuJobForUser(jobId, userId)) || row);
+  };
+
+  if (!hasComputeInstance(claimed)) return markCancelled(claimed);
+  try {
+    await destroyComputeInstance(claimed);
+    return markCancelled(claimed);
+  } catch (error) {
+    const pending = await updateGpuJob(claimed.id, {
+      status: 'cleanup_pending',
+      error_message: (
+        error instanceof Error
+          ? 'No se pudo confirmar la destrucción. Se reintentará automáticamente: ' + error.message
+          : 'No se pudo confirmar la destrucción. Se reintentará automáticamente.'
+      ).slice(0, 2000),
+      lease_expires_at: new Date(Date.now() - 1000).toISOString(),
+      metadata: { ...claimed.metadata, cancelRequested: true, terminalStatus: 'cancelled' },
+    });
+    return publicJob(pending);
+  }
+};
+
 export const finishGpuJob = async ({
   jobId,
   token,
@@ -1187,7 +1254,7 @@ export const finishGpuJob = async ({
     throw new Error('Token GPU inválido.');
   }
 
-  if (job.metadata?.cancelRequested || ['completed', 'failed', 'expired'].includes(job.status)) {
+  if (job.metadata?.cancelRequested || ['completed', 'failed', 'expired', 'cancelled', 'cleanup_pending'].includes(job.status)) {
     return publicJob(job);
   }
 
@@ -1299,7 +1366,7 @@ export const finishGpuJob = async ({
     return publicJob(saved);
   }
 
-  job = await updateGpuJob(job.id, {
+  const finalized = await updateGpuJobIfStatus(job.id, job.status, {
     status: finalStatus,
     error_message:
       finalStatus === 'failed' ? finalError || 'El worker GPU falló.' : null,
@@ -1314,6 +1381,8 @@ export const finishGpuJob = async ({
         : job.metadata?.progress,
     },
   });
+  if (!finalized) return publicJob((await getGpuJob(job.id)) || job);
+  job = finalized;
 
   if (hasComputeInstance(job)) {
     try {

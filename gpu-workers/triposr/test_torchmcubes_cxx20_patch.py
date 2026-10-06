@@ -68,7 +68,7 @@ class TorchmcubesCxx20PatchTests(unittest.TestCase):
         sanitizer = getattr(patcher, "sanitize_diagnostic", None)
         self.assertTrue(callable(sanitizer), "The patcher must safely trim worker diagnostics.")
 
-        raw = "\\n".join(
+        raw = "\n".join(
             ["compiler output"] * 12
             + ["grid_interp_cuda.cu:37:4: error: exact compiler failure"]
             + ["ninja: build stopped: subcommand failed"] * 20

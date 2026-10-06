@@ -11,10 +11,14 @@ export default function GpuAssemblyPanel({
   job,
   message,
   elapsedLabel,
+  onCancel,
+  canceling,
 }: {
   job: GpuAssemblyJob;
   message: string;
   elapsedLabel: string;
+  onCancel: () => void;
+  canceling: boolean;
 }) {
   const workflow = getGpu3DWorkflow(job.status, job.progress?.percent);
   const isBooting = job.status === 'renting' || job.status === 'booting';
@@ -124,6 +128,17 @@ export default function GpuAssemblyPanel({
           </li>
         ))}
       </ol>
+      {job.status !== 'cleanup_pending' && (
+        <button
+          type="button"
+          className="nayla-gpu-build__cancel"
+          onClick={onCancel}
+          disabled={canceling}
+        >
+          {canceling ? 'CANCELANDO Y DESTRUYENDO…' : 'CANCELAR Y DESTRUIR GPU'}
+        </button>
+      )}
+      <style>{`.nayla-gpu-build__cancel{justify-self:start;border:1px solid rgba(255,255,255,.26);border-radius:12px;background:#17191c;color:#f1f2f4;padding:12px 16px;font-weight:800;letter-spacing:.04em;cursor:pointer}.nayla-gpu-build__cancel:disabled{opacity:.55;cursor:wait}`}</style>
     </section>
   );
 }
