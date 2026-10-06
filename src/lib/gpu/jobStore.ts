@@ -157,6 +157,34 @@ export const getGpuJobForUser = async (
   return (data as GpuJobRow | null) || null;
 };
 
+export const listGpuJobsForUser = async ({
+  userId,
+  activeOnly = false,
+  workload,
+  limit = 60,
+}: {
+  userId: string;
+  activeOnly?: boolean;
+  workload?: string;
+  limit?: number;
+}): Promise<GpuJobRow[]> => {
+  const supabase = getGpuSupabaseAdmin();
+  const safeLimit = Math.max(1, Math.min(100, Math.floor(limit)));
+  let query = supabase
+    .from('gpu_jobs')
+    .select('*')
+    .eq('user_id', userId)
+    .order('created_at', { ascending: false })
+    .limit(safeLimit);
+
+  if (activeOnly) query = query.in('status', [...ACTIVE_GPU_STATUSES]);
+  if (workload) query = query.eq('workload', workload);
+
+  const { data, error } = await query;
+  if (error) throw error;
+  return (data || []) as GpuJobRow[];
+};
+
 export const listExpiredGpuJobs = async (limit = 20): Promise<GpuJobRow[]> => {
   const supabase = getGpuSupabaseAdmin();
   const { data, error } = await supabase
