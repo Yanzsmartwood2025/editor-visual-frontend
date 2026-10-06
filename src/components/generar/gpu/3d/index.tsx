@@ -327,7 +327,7 @@ export default function GpuThreeDModule({ context }: GenerarModuleProps) {
         if (!terminal.has(next.status)) await poll(next.id, controller);
       }
     } catch (error: any) {
-      if (!mountedRef.current || abortRef.current?.signal.aborted) return;
+      if (!mountedRef.current) return;
       setPhase(reservationStarted ? 'failed' : 'quote');
       setMessage(error?.message || (reservationStarted ? 'No se pudo iniciar Nayla Compute.' : 'No se pudo verificar la tarjeta. Puedes intentarlo otra vez.'));
     }
