@@ -75,6 +75,25 @@ value = str((json.load(open(sys.argv[1])).get("options") or {}).get("motionPrese
 print(value if value in ("none", "idle_sway", "turntable") else "none")
 PY
 )"
+QUALITY_MODE="$(python - "$WORKDIR/manifest.json" <<'PY'
+import json, sys
+value = str((json.load(open(sys.argv[1])).get("options") or {}).get("qualityMode") or "quality").lower()
+print(value if value in ("fast", "quality") else "quality")
+PY
+)"
+
+if [ "$QUALITY_MODE" = "fast" ]; then
+  FOREGROUND_RATIO="0.85"
+  MC_RESOLUTION="256"
+  CHUNK_SIZE="8192"
+else
+  # Full-body references benefit from extra breathing room after background removal.
+  # This avoids clipping hair, hands and feet into the reconstruction canvas. 384 is
+  # deliberately below 512 because mesh extraction currently uses the CPU fallback.
+  FOREGROUND_RATIO="0.72"
+  MC_RESOLUTION="384"
+  CHUNK_SIZE="4096"
+fi
 
 report_progress() {
   NAYLA_GPU_PROGRESS_PERCENT="$1" NAYLA_GPU_PROGRESS_STAGE="$2" python - <<'PY'
@@ -183,9 +202,17 @@ report_progress 36 "Cargando el modelo de reconstrucción"
 
 curl --fail --location --silent --show-error "$INPUT_URL" --output "$WORKDIR/input"
 
+if [ "$QUALITY_MODE" = "quality" ]; then
+  report_progress 42 "Preparando cuerpo completo · fondo, margen y encuadre"
+fi
 report_progress 48 "Reconstruyendo el muñeco en 3D"
 TRIPOSR_RUN_LOG="$WORKDIR/triposr-run.log"
-if ! python run.py "$WORKDIR/input" --output-dir "$WORKDIR/output" --model-save-format glb --mc-resolution 256 >"$TRIPOSR_RUN_LOG" 2>&1; then
+if ! python run.py "$WORKDIR/input" \
+  --output-dir "$WORKDIR/output" \
+  --model-save-format glb \
+  --foreground-ratio "$FOREGROUND_RATIO" \
+  --mc-resolution "$MC_RESOLUTION" \
+  --chunk-size "$CHUNK_SIZE" >"$TRIPOSR_RUN_LOG" 2>&1; then
   python - "$TRIPOSR_RUN_LOG" "$WORKDIR/triposr-run-diagnostic.txt" <<'RUN_DIAGNOSTIC'
 from pathlib import Path
 import re
