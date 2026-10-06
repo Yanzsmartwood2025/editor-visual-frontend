@@ -20,7 +20,7 @@ def patch_header(source: str) -> str:
     patched, replacements = DECLARATION.subn(r"\1 mc_lerp(", source)
     if replacements == 4:
         return patched
-    if replacements == 0 and PATCHED_DECLARATION.search(source):
+    if replacements == 0 and len(PATCHED_DECLARATION.findall(source)) == 4:
         return source
     raise ValueError("unrecognized torchmcubes helper_math.h")
 
