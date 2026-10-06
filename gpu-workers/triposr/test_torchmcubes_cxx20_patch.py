@@ -24,6 +24,13 @@ class TorchmcubesCxx20PatchTests(unittest.TestCase):
 
         self.assertEqual(patched.count(" mc_lerp("), 4)
         self.assertNotIn(" lerp(", patched)
+        self.assertEqual(patcher.patch_header(patched), patched)
+
+    def test_refuses_a_partially_patched_header(self):
+        with self.assertRaisesRegex(ValueError, "unrecognized torchmcubes helper_math.h"):
+            patcher.patch_header(
+                "inline __device__ __host__ float mc_lerp(float a, float b, float t) {}"
+            )
 
     def test_refuses_an_unrecognized_upstream_header(self):
         with self.assertRaisesRegex(ValueError, "unrecognized torchmcubes helper_math.h"):
