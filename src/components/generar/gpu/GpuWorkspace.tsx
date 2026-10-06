@@ -1,4 +1,6 @@
 import React, { lazy, Suspense } from 'react';
+import { firebaseHeaders } from '../../../lib/apiClient';
+import { getGpuResumePresentation } from '../../../lib/gpu/gpuResumePresentation';
 import GenerarIcon from '../GenerarIcon';
 import type { GenerarModule, GenerarModuleContext, GenerarModuleProps } from '../types';
 
@@ -9,6 +11,98 @@ const modules: Record<GenerarModule, React.LazyExoticComponent<React.ComponentTy
   musica: lazy(() => import('./musica')),
   '3d': lazy(() => import('./3d')),
 };
+
+function GpuResumeCard({
+  session,
+  onReturn,
+}: {
+  session: GenerarModuleContext['session'];
+  onReturn: () => void;
+}) {
+  const [job, setJob] = React.useState<any>(null);
+  const [loading, setLoading] = React.useState(true);
+  const [canceling, setCanceling] = React.useState(false);
+  const [cancelError, setCancelError] = React.useState('');
+  const presentation = job ? getGpuResumePresentation(job) : null;
+
+  React.useEffect(() => {
+    if (!session?.user.id || !session.accessToken) { setLoading(false); return; }
+    let disposed = false;
+    const key = 'nayla:gpu:3d:active-job:' + session.user.id;
+    const refresh = async () => {
+      try {
+        let savedId: string | null = null;
+        try { savedId = window.localStorage.getItem(key); } catch { /* optional storage */ }
+        let response = await fetch('/api/gpu/jobs?workload=3d', {
+          headers: firebaseHeaders(session), cache: 'no-store',
+        });
+        if (response.status === 204 && savedId) {
+          response = await fetch('/api/gpu/jobs?id=' + encodeURIComponent(savedId), {
+            headers: firebaseHeaders(session), cache: 'no-store',
+          });
+        }
+        if (response.status === 404 && savedId) {
+          try { window.localStorage.removeItem(key); } catch { /* optional storage */ }
+          response = await fetch('/api/gpu/jobs?workload=3d', { headers: firebaseHeaders(session), cache: 'no-store' });
+        }
+        if (response.status === 204) { if (!disposed) setJob(null); return; }
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok || !payload?.job) return;
+        const next = payload.job;
+        if (!disposed) setJob(next);
+        if (!['completed', 'failed', 'expired', 'cancelled'].includes(next.status)) {
+          try { window.localStorage.setItem(key, next.id); } catch { /* server lookup remains available */ }
+        }
+      } catch {
+        // Keep the last known state through transient network failures.
+      } finally {
+        if (!disposed) setLoading(false);
+      }
+    };
+    void refresh();
+    const timer = window.setInterval(() => void refresh(), 5000);
+    return () => { disposed = true; window.clearInterval(timer); };
+  }, [session]);
+
+  const cancel = async () => {
+    if (!job || !session || canceling) return;
+    if (!window.confirm('¿Cancelar el trabajo y destruir la GPU ahora? Se perderá el progreso que no se haya guardado.')) return;
+    setCanceling(true);
+    setCancelError('');
+    try {
+      const response = await fetch('/api/gpu/jobs/cancel', {
+        method: 'POST',
+        headers: firebaseHeaders(session, { 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ jobId: job.id, confirmDestroy: true }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload?.job) throw new Error(payload?.error || 'No se pudo cancelar el trabajo GPU.');
+      setJob(payload.job);
+    } catch (error: any) {
+      setCancelError(error?.message || 'No se pudo cancelar el trabajo GPU.');
+    } finally { setCanceling(false); }
+  };
+
+  return (
+    <section style={{ display: 'grid', gap: 10, marginBottom: 14, padding: 16, gridColumn: '1 / -1', border: '1px solid rgba(255,255,255,.2)', borderRadius: 18, background: 'linear-gradient(145deg,rgba(28,30,33,.96),rgba(12,13,15,.96))', color: '#f5f6f7' }}>
+      <strong>{loading ? 'REVISANDO GPU…' : presentation?.badge || 'GPU 3D DISPONIBLE'}</strong>
+      {presentation && job ? (
+        <>
+          <div>{(job.gpuName || 'GPU 3D') + ' · ' + (job.progress?.percent ?? 0) + '% · ' + (job.status === 'cleanup_pending' ? 'Retirando la máquina' : (job.progress?.stage || job.status))}</div>
+          {job.hourlyPrice != null && <small>{'Tarifa horaria: ' + Number(job.hourlyPrice).toFixed(3) + ' USD por hora'}</small>}
+          {job.error && <small>{job.error}</small>}
+          {cancelError && <small role="alert">{cancelError}</small>}
+          <div style={{ display: 'flex', gap: 9, flexWrap: 'wrap' }}>
+            <button type="button" className="generar-secondary-action glass-glow-button" onClick={onReturn}>{presentation.action}</button>
+            {presentation.canCancel && <button type="button" className="generar-secondary-action glass-glow-button" disabled={canceling} onClick={() => void cancel()}>{canceling ? 'CANCELANDO…' : 'CANCELAR Y DESTRUIR'}</button>}
+          </div>
+        </>
+      ) : (
+        <span style={{ color: '#aeb0b5' }}>{loading ? 'Comprobando si hay un trabajo 3D en curso…' : 'No hay un trabajo 3D activo ni una GPU 3D alquilada.'}</span>
+      )}
+    </section>
+  );
+}
 
 const moduleMeta: Array<{
   id: GenerarModule;
@@ -35,6 +129,7 @@ export default function GpuWorkspace({
   if (!activeModule) {
     return (
       <div className="generar-module-grid">
+        {context.session?.accessToken && <GpuResumeCard session={context.session} onReturn={() => onModule('3d')} />}
         {moduleMeta.map((item) => (
           <button
             key={item.id}

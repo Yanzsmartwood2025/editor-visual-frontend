@@ -62,6 +62,7 @@ export default function GpuThreeDModule({ context }: GenerarModuleProps) {
   const [selectedId, setSelectedId] = useState('');
   const [job, setJob] = useState<GpuJobState | null>(null);
   const [message, setMessage] = useState('');
+  const [canceling, setCanceling] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
   const mountedRef = useRef(true);
 
@@ -222,8 +223,10 @@ export default function GpuThreeDModule({ context }: GenerarModuleProps) {
         setPhase('failed');
         const lastStage = next.progress?.stage;
         setMessage(
-          (next.error || 'El trabajo GPU 3D no pudo completarse.') +
-          (lastStage ? ' Último paso reportado: ' + lastStage + '.' : '')
+          next.status === 'cancelled'
+            ? 'GPU cancelada y destruida. No queda una máquina activa.'
+            : (next.error || 'El trabajo GPU 3D no pudo completarse.') +
+              (lastStage ? ' Último paso reportado: ' + lastStage + '.' : '')
         );
       }
       return;
@@ -234,6 +237,30 @@ export default function GpuThreeDModule({ context }: GenerarModuleProps) {
     else if (next.status === 'booting') setMessage('GPU reservada; preparando el equipo temporal…');
     else if (next.status === 'cleanup_pending' && next.galleryItem) setMessage('GLB guardado. Eliminando la GPU y su disco temporal…');
     else setMessage(next.progress?.stage || 'TripoSR está reconstruyendo el modelo 3D…');
+  };
+
+  const cancelAndDestroy = async () => {
+    if (!job || !session || canceling) return;
+    if (!window.confirm('¿Cancelar el trabajo y destruir la GPU ahora? Se perderá el progreso que no se haya guardado.')) return;
+    setCanceling(true);
+    setMessage('Solicitando cancelación y destrucción de la GPU…');
+    try {
+      const response = await fetch('/api/gpu/jobs/cancel', {
+        method: 'POST',
+        headers: firebaseHeaders(session, { 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ jobId: job.id, confirmDestroy: true }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload?.job) throw new Error(payload?.error || 'No se pudo cancelar el trabajo GPU.');
+      applyJob(payload.job as GpuJobState);
+      if (payload.job.status === 'cleanup_pending') {
+        setMessage(payload.job.error || 'La destrucción sigue pendiente. Nayla continuará reintentando y mostrará aquí el estado.');
+      }
+    } catch (error: any) {
+      setMessage(error?.message || 'No se pudo cancelar el trabajo GPU.');
+    } finally {
+      setCanceling(false);
+    }
   };
 
   const poll = async (id: string, controller: AbortController) => {
@@ -617,7 +644,7 @@ export default function GpuThreeDModule({ context }: GenerarModuleProps) {
             )}
 
             {job && phase === 'running' ? (
-              <GpuAssemblyPanel job={job} message={message} elapsedLabel={elapsedLabel} />
+              <GpuAssemblyPanel job={job} message={message} elapsedLabel={elapsedLabel} onCancel={() => void cancelAndDestroy()} canceling={canceling} />
             ) : message && phase !== 'quote' ? (
               <div className={'generar-status-card ' + (phase === 'failed' ? 'error' : '')}>
                 <strong>

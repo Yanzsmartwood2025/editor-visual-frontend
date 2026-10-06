@@ -37,7 +37,24 @@ def patch_file(path: Path) -> bool:
 def sanitize_diagnostic(text: str) -> str:
     text = BEARER_TOKEN.sub(r"\1[redacted]", text)
     text = SIGNED_URL.sub(r"\1?[redacted]", text)
-    return "\n".join(text.splitlines()[-18:])[-1600:]
+    lines = text.splitlines()
+    compiler_error = re.compile(
+        r"(?:\berror:|fatal error|nvcc fatal|undefined reference|FAILED:)", re.IGNORECASE
+    )
+    error_indexes = [index for index, line in enumerate(lines) if compiler_error.search(line)]
+    if not error_indexes:
+        selected = lines[-18:]
+    else:
+        indexes = set()
+        for index in error_indexes[:5]:
+            indexes.update(range(max(0, index - 1), min(len(lines), index + 3)))
+        selected = [lines[index] for index in sorted(indexes)]
+        for index in range(max(0, len(lines) - 3), len(lines)):
+            if len(selected) >= 18:
+                break
+            if lines[index] not in selected:
+                selected.append(lines[index])
+    return "\n".join(selected[:18])[-1600:]
 
 
 if __name__ == "__main__":
