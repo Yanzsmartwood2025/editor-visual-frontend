@@ -1,5 +1,6 @@
 import importlib.util
 from pathlib import Path
+import re
 import unittest
 
 
@@ -14,6 +15,16 @@ spec.loader.exec_module(patcher)
 
 
 class TorchmcubesCxx20PatchTests(unittest.TestCase):
+    def test_worker_fetches_the_patcher_from_an_immutable_commit(self):
+        worker = PATCHER_PATH.with_name("run-job.sh").read_text(encoding="utf-8")
+        match = re.search(r'^PATCHER_URL="([^"]+)"$', worker, re.MULTILINE)
+
+        self.assertIsNotNone(match)
+        self.assertRegex(
+            match.group(1),
+            r"^https://raw\.githubusercontent\.com/Yanzsmartwood2025/editor-visual-frontend/[0-9a-f]{40}/gpu-workers/triposr/patch_torchmcubes_cxx20\.py$",
+        )
+
     def test_renames_the_four_conflicting_lerp_overloads(self):
         source = "\n".join(
             f"inline __device__ __host__ {kind} lerp({kind} a, {kind} b, float t) {{ return a; }}"
