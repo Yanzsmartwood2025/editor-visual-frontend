@@ -28,6 +28,8 @@ jobs:
 
       - name: Unit tests
         run: npm test
+      - name: TripoSR worker patch tests
+        run: python3 gpu-workers/triposr/test_torchmcubes_cxx20_patch.py
 
       - name: Next.js build
         run: npm run build

@@ -129,8 +129,24 @@ python -m pip install --no-cache-dir -r "$WORKDIR/requirements-base.txt"
 
 report_progress 18 "Preparando entorno 3D · preparando compilación CUDA de torchmcubes"
 python -m pip install --no-cache-dir scikit-build-core pybind11 cmake ninja
+
+TORCHMCUBES_COMMIT="879926d0ef58e6ce0ac2630fdecb5e53af7ed3ff"
+TORCHMCUBES_DIR="$WORKDIR/torchmcubes"
+report_progress 18 "Preparando entorno 3D · descargando torchmcubes fijado"
+git clone -q --no-checkout https://github.com/tatsy/torchmcubes.git "$TORCHMCUBES_DIR"
+git -C "$TORCHMCUBES_DIR" checkout -q --detach "$TORCHMCUBES_COMMIT"
+
+PATCHER_URL="https://raw.githubusercontent.com/Yanzsmartwood2025/editor-visual-frontend/aff81e0b5423065e23d33b7fce76b20740a902b8/gpu-workers/triposr/patch_torchmcubes_cxx20.py"
+curl --fail --location --silent --show-error "$PATCHER_URL" --output "$WORKDIR/patch_torchmcubes_cxx20.py"
+python "$WORKDIR/patch_torchmcubes_cxx20.py" "$TORCHMCUBES_DIR/cxx/helper_math.h"
+
 report_progress 18 "Preparando entorno 3D · compilando torchmcubes con PyTorch y CUDA"
-MAX_JOBS=2 python -m pip install --no-cache-dir --no-build-isolation "git+https://github.com/tatsy/torchmcubes.git@879926d0ef58e6ce0ac2630fdecb5e53af7ed3ff"
+TORCHMCUBES_BUILD_LOG="$WORKDIR/torchmcubes-build.log"
+if ! MAX_JOBS=2 python -m pip install --no-cache-dir --no-build-isolation "$TORCHMCUBES_DIR" >"$TORCHMCUBES_BUILD_LOG" 2>&1; then
+  python "$WORKDIR/patch_torchmcubes_cxx20.py" --diagnostic "$TORCHMCUBES_BUILD_LOG" >"$WORKDIR/torchmcubes-build-diagnostic.txt"
+  echo "torchmcubes CUDA build failed; sanitized diagnostic saved" >&2
+  exit 31
+fi
 python -c "import torch, torchmcubes; print('torch', torch.__version__, 'torchmcubes ready')"
 report_progress 36 "Cargando el modelo de reconstrucción"
 
