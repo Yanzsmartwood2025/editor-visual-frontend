@@ -63,5 +63,21 @@ class TorchmcubesCxx20PatchTests(unittest.TestCase):
         self.assertLessEqual(len(diagnostic.splitlines()), 18)
 
 
+
+    def test_diagnostic_keeps_compiler_errors_before_the_generic_ninja_tail(self):
+        sanitizer = getattr(patcher, "sanitize_diagnostic", None)
+        self.assertTrue(callable(sanitizer), "The patcher must safely trim worker diagnostics.")
+
+        raw = "\\n".join(
+            ["compiler output"] * 12
+            + ["grid_interp_cuda.cu:37:4: error: exact compiler failure"]
+            + ["ninja: build stopped: subcommand failed"] * 20
+        )
+
+        diagnostic = sanitizer(raw)
+
+        self.assertIn("grid_interp_cuda.cu:37:4: error: exact compiler failure", diagnostic)
+        self.assertLessEqual(len(diagnostic), 1800)
+
 if __name__ == "__main__":
     unittest.main()
