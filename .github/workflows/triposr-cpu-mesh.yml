@@ -12,6 +12,12 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
+      - name: Validate TripoSR runtime backend contract
+        run: |
+          grep -F 'python -m pip install --no-cache-dir onnxruntime' gpu-workers/triposr/run-job.sh
+          grep -F 'triposr-run.log' gpu-workers/triposr/run-job.sh
+          grep -F 'triposr-run-diagnostic.txt' gpu-workers/triposr/run-job.sh
+          grep -F '/tmp/nayla-triposr/triposr-run-diagnostic.txt' src/lib/gpu/orchestrator.ts
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
