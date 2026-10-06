@@ -32,10 +32,14 @@ function GpuResumeCard({
       try {
         let savedId: string | null = null;
         try { savedId = window.localStorage.getItem(key); } catch { /* optional storage */ }
-        let response = await fetch(
-          savedId ? '/api/gpu/jobs?id=' + encodeURIComponent(savedId) : '/api/gpu/jobs?workload=3d',
-          { headers: firebaseHeaders(session), cache: 'no-store' }
-        );
+        let response = await fetch('/api/gpu/jobs?workload=3d', {
+          headers: firebaseHeaders(session), cache: 'no-store',
+        });
+        if (response.status === 204 && savedId) {
+          response = await fetch('/api/gpu/jobs?id=' + encodeURIComponent(savedId), {
+            headers: firebaseHeaders(session), cache: 'no-store',
+          });
+        }
         if (response.status === 404 && savedId) {
           try { window.localStorage.removeItem(key); } catch { /* optional storage */ }
           response = await fetch('/api/gpu/jobs?workload=3d', { headers: firebaseHeaders(session), cache: 'no-store' });
@@ -75,8 +79,8 @@ function GpuResumeCard({
   };
 
   return (
-    <section style={{ display: 'grid', gap: 10, marginBottom: 14, padding: 16, border: '1px solid rgba(255,255,255,.2)', borderRadius: 18, background: 'linear-gradient(145deg,rgba(28,30,33,.96),rgba(12,13,15,.96))', color: '#f5f6f7' }}>
-      <strong>{loading ? 'REVISANDO GPU…' : presentation?.badge || 'GPU DISPONIBLE'}</strong>
+    <section style={{ display: 'grid', gap: 10, marginBottom: 14, padding: 16, gridColumn: '1 / -1', border: '1px solid rgba(255,255,255,.2)', borderRadius: 18, background: 'linear-gradient(145deg,rgba(28,30,33,.96),rgba(12,13,15,.96))', color: '#f5f6f7' }}>
+      <strong>{loading ? 'REVISANDO GPU…' : presentation?.badge || 'GPU 3D DISPONIBLE'}</strong>
       {presentation && job ? (
         <>
           <div>{(job.gpuName || 'GPU 3D') + ' · ' + (job.progress?.percent ?? 0) + '% · ' + (job.status === 'cleanup_pending' ? 'Retirando la máquina' : (job.progress?.stage || job.status))}</div>
@@ -153,7 +157,7 @@ export default function GpuWorkspace({
           </div>
         </>
       ) : (
-        <span style={{ color: '#aeb0b5' }}>{loading ? 'Comprobando si hay un trabajo 3D en curso…' : 'No hay un trabajo 3D activo ni una GPU alquilada.'}</span>
+        <span style={{ color: '#aeb0b5' }}>{loading ? 'Comprobando si hay un trabajo 3D en curso…' : 'No hay un trabajo 3D activo ni una GPU 3D alquilada.'}</span>
       )}
     </section>
   );

@@ -3,7 +3,6 @@ import { z } from 'zod';
 import { requireFirebaseUser } from '../../../lib/firebaseAdmin';
 import { sanitizeNaylaPublicText } from '../../../lib/naylaSystemCatalog';
 import {
-  cancelGpuJobForUser,
   getGpuJobStatusForUser,
   startComputeGpuJob,
 } from '../../../lib/gpu/orchestrator';

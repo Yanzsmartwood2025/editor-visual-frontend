@@ -1181,7 +1181,7 @@ export const cancelGpuJobForUser = async ({
   const claimed = await updateGpuJobIfStatus(job.id, job.status, {
     status: 'cleanup_pending',
     error_message: 'Cancelación solicitada. Nayla está destruyendo la GPU temporal…',
-    lease_expires_at: new Date(Date.now() - 1000).toISOString(),
+    lease_expires_at: new Date(Date.now() + 60_000).toISOString(),
     metadata: {
       ...job.metadata,
       cancelRequested: true,
