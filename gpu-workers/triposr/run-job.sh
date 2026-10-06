@@ -136,7 +136,7 @@ report_progress 18 "Preparando entorno 3D · descargando torchmcubes fijado"
 git clone -q --no-checkout https://github.com/tatsy/torchmcubes.git "$TORCHMCUBES_DIR"
 git -C "$TORCHMCUBES_DIR" checkout -q --detach "$TORCHMCUBES_COMMIT"
 
-PATCHER_URL="https://raw.githubusercontent.com/Yanzsmartwood2025/editor-visual-frontend/main/gpu-workers/triposr/patch_torchmcubes_cxx20.py"
+PATCHER_URL="https://raw.githubusercontent.com/Yanzsmartwood2025/editor-visual-frontend/aff81e0b5423065e23d33b7fce76b20740a902b8/gpu-workers/triposr/patch_torchmcubes_cxx20.py"
 curl --fail --location --silent --show-error "$PATCHER_URL" --output "$WORKDIR/patch_torchmcubes_cxx20.py"
 python "$WORKDIR/patch_torchmcubes_cxx20.py" "$TORCHMCUBES_DIR/cxx/helper_math.h"
 
