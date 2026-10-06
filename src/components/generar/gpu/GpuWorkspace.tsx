@@ -22,6 +22,7 @@ function GpuResumeCard({
   const [job, setJob] = React.useState<any>(null);
   const [loading, setLoading] = React.useState(true);
   const [canceling, setCanceling] = React.useState(false);
+  const [cancelError, setCancelError] = React.useState('');
   const presentation = job ? getGpuResumePresentation(job) : null;
 
   React.useEffect(() => {
@@ -67,6 +68,7 @@ function GpuResumeCard({
     if (!job || !session || canceling) return;
     if (!window.confirm('¿Cancelar el trabajo y destruir la GPU ahora? Se perderá el progreso que no se haya guardado.')) return;
     setCanceling(true);
+    setCancelError('');
     try {
       const response = await fetch('/api/gpu/jobs/cancel', {
         method: 'POST',
@@ -74,7 +76,10 @@ function GpuResumeCard({
         body: JSON.stringify({ jobId: job.id, confirmDestroy: true }),
       });
       const payload = await response.json().catch(() => ({}));
-      if (response.ok && payload?.job) setJob(payload.job);
+      if (!response.ok || !payload?.job) throw new Error(payload?.error || 'No se pudo cancelar el trabajo GPU.');
+      setJob(payload.job);
+    } catch (error: any) {
+      setCancelError(error?.message || 'No se pudo cancelar el trabajo GPU.');
     } finally { setCanceling(false); }
   };
 
@@ -84,73 +89,9 @@ function GpuResumeCard({
       {presentation && job ? (
         <>
           <div>{(job.gpuName || 'GPU 3D') + ' · ' + (job.progress?.percent ?? 0) + '% · ' + (job.status === 'cleanup_pending' ? 'Retirando la máquina' : (job.progress?.stage || job.status))}</div>
-          {job.hourlyPrice != null && <small>{'Tarifa mostrada: ~
-  id: GenerarModule;
-  label: string;
-  description: string;
-  ready: boolean;
-}> = [
-  { id: 'imagen', label: 'IMAGEN', description: 'Modelos de imagen dedicados', ready: false },
-  { id: 'video', label: 'VIDEO', description: 'Imagen en movimiento · GPU', ready: true },
-  { id: 'audio', label: 'AUDIO', description: 'Voz y procesamiento', ready: false },
-  { id: 'musica', label: 'MÚSICA', description: 'ACE-Step dedicado', ready: true },
-  { id: '3d', label: '3D', description: 'Imagen → 3D · TripoSR', ready: true },
-];
-
-export default function GpuWorkspace({
-  activeModule,
-  onModule,
-  context,
-}: {
-  activeModule: GenerarModule | null;
-  onModule: (module: GenerarModule | null) => void;
-  context: GenerarModuleContext;
-}) {
-  if (!activeModule) {
-    return (
-      <div className="generar-module-grid">
-        {context.session?.accessToken && <GpuResumeCard session={context.session} onReturn={() => onModule('3d')} />}
-        {moduleMeta.map((item) => (
-          <button
-            key={item.id}
-            type="button"
-            className="generar-module-button glass-glow-button"
-            onClick={() => onModule(item.id)}
-          >
-            <span className="generar-choice-icon"><GenerarIcon name={item.id} /></span>
-            <span className="generar-module-copy">
-              <strong>{item.label}</strong>
-              <span>{item.description}</span>
-              <em className={item.ready ? 'ready' : ''}>{item.ready ? 'ACTIVO' : 'PENDIENTE'}</em>
-            </span>
-          </button>
-        ))}
-      </div>
-    );
-  }
-
-  const Active = modules[activeModule] as React.LazyExoticComponent<React.ComponentType<GenerarModuleProps>>;
-
-  return (
-    <div className="generar-module-shell">
-      <div className="generar-module-toolbar">
-        <button
-          type="button"
-          className="generar-back-button glass-glow-button"
-          aria-label="Volver a GPU"
-          onClick={() => onModule(null)}
-        >
-          ← GPU
-        </button>
-      </div>
-      <Suspense fallback={<div className="generar-loading">Cargando…</div>}>
-        <Active key={`${activeModule}:${context.projectId}:${context.threadId}`} context={context} />
-      </Suspense>
-    </div>
-  );
-}
- + Number(job.hourlyPrice).toFixed(3) + '/h'}</small>}
+          {job.hourlyPrice != null && <small>{'Tarifa horaria: ' + Number(job.hourlyPrice).toFixed(3) + ' USD por hora'}</small>}
           {job.error && <small>{job.error}</small>}
+          {cancelError && <small role="alert">{cancelError}</small>}
           <div style={{ display: 'flex', gap: 9, flexWrap: 'wrap' }}>
             <button type="button" className="generar-secondary-action glass-glow-button" onClick={onReturn}>{presentation.action}</button>
             {presentation.canCancel && <button type="button" className="generar-secondary-action glass-glow-button" disabled={canceling} onClick={() => void cancel()}>{canceling ? 'CANCELANDO…' : 'CANCELAR Y DESTRUIR'}</button>}
@@ -188,6 +129,7 @@ export default function GpuWorkspace({
   if (!activeModule) {
     return (
       <div className="generar-module-grid">
+        {context.session?.accessToken && <GpuResumeCard session={context.session} onReturn={() => onModule('3d')} />}
         {moduleMeta.map((item) => (
           <button
             key={item.id}
