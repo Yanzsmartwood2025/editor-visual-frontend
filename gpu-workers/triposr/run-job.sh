@@ -107,7 +107,7 @@ report_progress 8 "GPU lista; leyendo la imagen"
 report_progress 18 "Preparando entorno 3D · actualizando paquetes del sistema"
 apt-get update -qq
 report_progress 18 "Preparando entorno 3D · instalando bibliotecas del sistema"
-DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends   git curl build-essential libgl1 libglib2.0-0
+DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends git curl build-essential libgl1 libglib2.0-0
 rm -rf /var/lib/apt/lists/*
 
 mkdir -p "$WORKDIR/TripoSR"
@@ -121,11 +121,15 @@ git checkout -q --detach FETCH_HEAD
 report_progress 18 "Preparando entorno 3D · preparando herramientas Python"
 python -m pip install --no-cache-dir --upgrade "setuptools>=69" wheel
 
-# TripoSR's requirements file installs torchmcubes from GitHub. Build it
-# separately, against the PyTorch/CUDA already present in the worker image.
 grep -F -v "git+https://github.com/tatsy/torchmcubes.git" requirements.txt > "$WORKDIR/requirements-base.txt"
 report_progress 18 "Preparando entorno 3D · instalando dependencias Python de TripoSR"
 python -m pip install --no-cache-dir -r "$WORKDIR/requirements-base.txt"
+
+# Modern rembg releases do not install an ONNX Runtime backend by default.
+# TripoSR imports rembg at process start, so without this the worker exits
+# immediately before model initialization.
+report_progress 18 "Preparando entorno 3D · instalando backend ONNX para recorte de fondo"
+python -m pip install --no-cache-dir onnxruntime
 
 report_progress 18 "Preparando entorno 3D · preparando extractor de malla torchmcubes"
 python -m pip install --no-cache-dir scikit-build-core pybind11 cmake ninja
@@ -138,8 +142,6 @@ git -C "$TORCHMCUBES_DIR" checkout -q --detach "$TORCHMCUBES_COMMIT"
 
 PATCHER_URL="https://raw.githubusercontent.com/Yanzsmartwood2025/editor-visual-frontend/96239830bf4a545e645c4f2b709e0094a0e83792/gpu-workers/triposr/patch_torchmcubes_cxx20.py"
 curl --fail --location --silent --show-error "$PATCHER_URL" --output "$WORKDIR/patch_torchmcubes_cxx20.py"
-# TripoSR inference stays on CUDA. Only marching cubes and grid interpolation
-# use torchmcubes' upstream CPU fallback, avoiding fragile nvcc compilation.
 python - "$TORCHMCUBES_DIR" <<'CPU_BUILD'
 from pathlib import Path
 import re
@@ -152,10 +154,7 @@ for relative in ("CMakeLists.txt", "cxx/CMakeLists.txt"):
     patched, count = re.subn(r"(?m)^([ \t]*)if\s*\(\s*CMAKE_CUDA_COMPILER\s*\)", r"\1if (FALSE) # Nayla CPU mesh extension", source)
     if count != 1:
         raise SystemExit("Unrecognized pinned torchmcubes CMake layout: " + relative)
-    path.write_text(
-        patched,
-        encoding="utf-8",
-    )
+    path.write_text(patched, encoding="utf-8")
 CPU_BUILD
 
 report_progress 18 "Preparando extractor de malla CPU; reconstrucción en GPU"
@@ -166,23 +165,54 @@ if ! CMAKE_BUILD_PARALLEL_LEVEL=2 MAX_JOBS=2 python -m pip install --no-cache-di
   exit 31
 fi
 python - <<'MESH_CHECK'
+import onnxruntime
+import rembg
 import torch
 import torchmcubes
 
 assert not torchmcubes.HAS_CUDA, "Mesh backend must use the tested CPU fallback"
 volume = torch.zeros((8, 8, 8), dtype=torch.float32)
-volume[2:6, 2:6, 2:6] = 1
+volume[2:6,2:6,2:6] = 1
 vertices, faces = torchmcubes.marching_cubes(volume, 0.5)
 assert vertices.numel() > 0 and faces.numel() > 0, "Mesh backend produced no surface"
 assert torch.cuda.is_available(), "TripoSR inference requires a working GPU"
 print("CPU mesh backend ready; CUDA inference ready", torch.__version__)
+print("rembg runtime ready", onnxruntime.__version__)
 MESH_CHECK
 report_progress 36 "Cargando el modelo de reconstrucción"
 
-curl --fail --location --silent --show-error   "$INPUT_URL"   --output "$WORKDIR/input"
+curl --fail --location --silent --show-error "$INPUT_URL" --output "$WORKDIR/input"
 
 report_progress 48 "Reconstruyendo el muñeco en 3D"
-python run.py "$WORKDIR/input"   --output-dir "$WORKDIR/output"   --model-save-format glb   --mc-resolution 256
+TRIPOSR_RUN_LOG="$WORKDIR/triposr-run.log"
+if ! python run.py "$WORKDIR/input" --output-dir "$WORKDIR/output" --model-save-format glb --mc-resolution 256 >"$TRIPOSR_RUN_LOG" 2>&1; then
+  python - "$TRIPOSR_RUN_LOG" "$WORKDIR/triposr-run-diagnostic.txt" <<'RUN_DIAGNOSTIC'
+from pathlib import Path
+import re
+import sys
+
+source = Path(sys.argv[1]).read_text(encoding="utf-8", errors="replace")
+source = re.sub(r"\x1b\[[0-9;]*m", "", source)
+source = re.sub(r"(https?://[^?\s]+)\?\S+", r"\1?<redacted>", source)
+lines = [line.rstrip() for line in source.splitlines() if line.strip()]
+tail = "\n".join(lines[-40:])
+Path(sys.argv[2]).write_text(tail[-1800:], encoding="utf-8")
+RUN_DIAGNOSTIC
+  TRIPOSR_SHORT_ERROR="$(python - "$WORKDIR/triposr-run-diagnostic.txt" <<'SHORT_ERROR'
+from pathlib import Path
+import re
+import sys
+
+text = Path(sys.argv[1]).read_text(encoding="utf-8", errors="replace")
+lines = [re.sub(r"\s+", " ", line).strip() for line in text.splitlines() if line.strip()]
+message = lines[-1] if lines else "fallo al iniciar la reconstrucción"
+print(message[:92])
+SHORT_ERROR
+)"
+  report_progress 48 "Fallo TripoSR · $TRIPOSR_SHORT_ERROR"
+  echo "TripoSR reconstruction failed; diagnostic saved" >&2
+  exit 32
+fi
 report_progress 78 "Modelo base creado; aplicando color y movimiento"
 
 MODEL_PATH="$(find "$WORKDIR/output" -type f -name 'mesh.glb' -print -quit)"
@@ -196,6 +226,5 @@ curl --fail --location --silent --show-error "$POSTPROCESS_URL" --output "$WORKD
 python "$WORKDIR/postprocess_glb.py" "$MODEL_PATH" "$WORKDIR/output/final.glb" --color "$BASE_COLOR" --motion "$MOTION_PRESET"
 MODEL_PATH="$WORKDIR/output/final.glb"
 report_progress 90 "Subiendo el GLB final a Cloudflare"
-curl --fail --silent --show-error   --request PUT   --header "Content-Type: $OUTPUT_TYPE"   --upload-file "$MODEL_PATH"   "$OUTPUT_URL"
+curl --fail --silent --show-error --request PUT --header "Content-Type: $OUTPUT_TYPE" --upload-file "$MODEL_PATH" "$OUTPUT_URL"
 report_progress 96 "Cloudflare recibió el modelo; verificando entrega"
-
