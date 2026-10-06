@@ -136,18 +136,46 @@ report_progress 18 "Preparando entorno 3D · descargando torchmcubes fijado"
 git clone -q --no-checkout https://github.com/tatsy/torchmcubes.git "$TORCHMCUBES_DIR"
 git -C "$TORCHMCUBES_DIR" checkout -q --detach "$TORCHMCUBES_COMMIT"
 
-PATCHER_URL="https://raw.githubusercontent.com/Yanzsmartwood2025/editor-visual-frontend/aff81e0b5423065e23d33b7fce76b20740a902b8/gpu-workers/triposr/patch_torchmcubes_cxx20.py"
+PATCHER_URL="https://raw.githubusercontent.com/Yanzsmartwood2025/editor-visual-frontend/96239830bf4a545e645c4f2b709e0094a0e83792/gpu-workers/triposr/patch_torchmcubes_cxx20.py"
 curl --fail --location --silent --show-error "$PATCHER_URL" --output "$WORKDIR/patch_torchmcubes_cxx20.py"
-python "$WORKDIR/patch_torchmcubes_cxx20.py" "$TORCHMCUBES_DIR/cxx/helper_math.h"
+# TripoSR inference stays on CUDA. Only marching cubes and grid interpolation
+# use torchmcubes' upstream CPU fallback, avoiding fragile nvcc compilation.
+python - "$TORCHMCUBES_DIR" <<'CPU_BUILD'
+from pathlib import Path
+import sys
 
-report_progress 18 "Preparando entorno 3D · compilando torchmcubes con PyTorch y CUDA"
+root = Path(sys.argv[1])
+for relative in ("CMakeLists.txt", "cxx/CMakeLists.txt"):
+    path = root / relative
+    source = path.read_text(encoding="utf-8")
+    marker = "if (CMAKE_CUDA_COMPILER)"
+    if source.count(marker) != 1:
+        raise SystemExit("Unrecognized pinned torchmcubes CMake layout: " + relative)
+    path.write_text(
+        source.replace(marker, "if (FALSE) # Nayla CPU mesh extension"),
+        encoding="utf-8",
+    )
+CPU_BUILD
+
+report_progress 18 "Preparando extractor de malla CPU; reconstrucción en GPU"
 TORCHMCUBES_BUILD_LOG="$WORKDIR/torchmcubes-build.log"
-if ! MAX_JOBS=2 python -m pip install --no-cache-dir --no-build-isolation "$TORCHMCUBES_DIR" >"$TORCHMCUBES_BUILD_LOG" 2>&1; then
+if ! CMAKE_BUILD_PARALLEL_LEVEL=2 MAX_JOBS=2 python -m pip install --no-cache-dir --no-build-isolation "$TORCHMCUBES_DIR" >"$TORCHMCUBES_BUILD_LOG" 2>&1; then
   python "$WORKDIR/patch_torchmcubes_cxx20.py" --diagnostic "$TORCHMCUBES_BUILD_LOG" >"$WORKDIR/torchmcubes-build-diagnostic.txt"
-  echo "torchmcubes CUDA build failed; sanitized diagnostic saved" >&2
+  echo "torchmcubes CPU build failed; sanitized diagnostic saved" >&2
   exit 31
 fi
-python -c "import torch, torchmcubes; print('torch', torch.__version__, 'torchmcubes ready')"
+python - <<'MESH_CHECK'
+import torch
+import torchmcubes
+
+assert not torchmcubes.HAS_CUDA, "Mesh backend must use the tested CPU fallback"
+volume = torch.zeros((8, 8, 8), dtype=torch.float32)
+volume[2:6, 2:6, 2:6] = 1
+vertices, faces = torchmcubes.marching_cubes(volume, 0.5)
+assert vertices.numel() > 0 and faces.numel() > 0, "Mesh backend produced no surface"
+assert torch.cuda.is_available(), "TripoSR inference requires a working GPU"
+print("CPU mesh backend ready; CUDA inference ready", torch.__version__)
+MESH_CHECK
 report_progress 36 "Cargando el modelo de reconstrucción"
 
 curl --fail --location --silent --show-error   "$INPUT_URL"   --output "$WORKDIR/input"
