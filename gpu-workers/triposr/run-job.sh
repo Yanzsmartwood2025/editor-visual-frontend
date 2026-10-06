@@ -121,13 +121,11 @@ git checkout -q --detach FETCH_HEAD
 report_progress 18 "Preparando entorno 3D · preparando herramientas Python"
 python -m pip install --no-cache-dir --upgrade "setuptools>=69" wheel
 
-# TripoSR's requirements file installs torchmcubes from GitHub. Build it
-# separately, against the PyTorch/CUDA already present in the worker image.
 grep -F -v "git+https://github.com/tatsy/torchmcubes.git" requirements.txt > "$WORKDIR/requirements-base.txt"
 report_progress 18 "Preparando entorno 3D · instalando dependencias Python de TripoSR"
 python -m pip install --no-cache-dir -r "$WORKDIR/requirements-base.txt"
 
-# Modern rembg releases no longer install an ONNX Runtime backend by default.
+# Modern rembg releases do not install an ONNX Runtime backend by default.
 # TripoSR imports rembg at process start, so without this the worker exits
 # immediately before model initialization.
 report_progress 18 "Preparando entorno 3D · instalando backend ONNX para recorte de fondo"
@@ -144,8 +142,6 @@ git -C "$TORCHMCUBES_DIR" checkout -q --detach "$TORCHMCUBES_COMMIT"
 
 PATCHER_URL="https://raw.githubusercontent.com/Yanzsmartwood2025/editor-visual-frontend/96239830bf4a545e645c4f2b709e0094a0e83792/gpu-workers/triposr/patch_torchmcubes_cxx20.py"
 curl --fail --location --silent --show-error "$PATCHER_URL" --output "$WORKDIR/patch_torchmcubes_cxx20.py"
-# TripoSR inference stays on CUDA. Only marching cubes and grid interpolation
-# use torchmcubes' upstream CPU fallback, avoiding fragile nvcc compilation.
 python - "$TORCHMCUBES_DIR" <<'CPU_BUILD'
 from pathlib import Path
 import re
@@ -202,6 +198,18 @@ lines = [line.rstrip() for line in source.splitlines() if line.strip()]
 tail = "\n".join(lines[-40:])
 Path(sys.argv[2]).write_text(tail[-1800:], encoding="utf-8")
 RUN_DIAGNOSTIC
+  TRIPOSR_SHORT_ERROR="$(python - "$WORKDIR/triposr-run-diagnostic.txt" <<'SHORT_ERROR'
+from pathlib import Path
+import re
+import sys
+
+text = Path(sys.argv[1]).read_text(encoding="utf-8", errors="replace")
+lines = [re.sub(r"\s+", " ", line).strip() for line in text.splitlines() if line.strip()]
+message = lines[-1] if lines else "fallo al iniciar la reconstrucción"
+print(message[:92])
+SHORT_ERROR
+)"
+  report_progress 48 "Fallo TripoSR · $TRIPOSR_SHORT_ERROR"
   echo "TripoSR reconstruction failed; diagnostic saved" >&2
   exit 32
 fi
