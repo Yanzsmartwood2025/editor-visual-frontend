@@ -29,7 +29,7 @@ import type { GpuWorkload } from '../../lib/gpu/profiles';
 import { createMediaJobPlan } from '../../lib/mediaJobs';
 import { createR2PresignedGetUrl } from '../../lib/r2';
 import { canStartGpuCompute, getNaylaExecutionPolicyPrompt } from '../../lib/naylaExecutionPolicy';
-import { assistantRequestsPlanConfirmation, isUniversalNaylaConfirmation } from '../../lib/naylaPlanConfirmation';
+import { assistantRequestsPlanConfirmation, isExplicitNaylaVideoRequest, isUniversalNaylaConfirmation } from '../../lib/naylaPlanConfirmation';
 import {
   getRequestedVisualCount,
   hasNaturalProjectPhotoReference,
@@ -144,7 +144,10 @@ const hasExplicitPlanConfirmation = (
   message: string,
   history: Array<{ role: 'user' | 'assistant'; content: string }>
 ) => {
-  if (!hasPriorNaylaPlan(history)) return false;
+  // A clear "haz el video" instruction is itself permission to prepare a
+  // reviewable video plan when the user has already uploaded their files.
+  // Generic "Dale" still requires an earlier proposal to avoid accidental actions.
+  if (!hasPriorNaylaPlan(history) && !isExplicitNaylaVideoRequest(message)) return false;
 
   const text = normalizePlanningText(message);
   if (!text) return false;
