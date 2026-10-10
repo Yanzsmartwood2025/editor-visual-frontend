@@ -21,6 +21,13 @@ describe('Nayla natural plan confirmation wording', () => {
     expect(isUniversalNaylaConfirmation('Me parece bien')).toBe(true);
   });
 
+  it('recognizes actual 8-photo workflow: recommendations followed by a video creation command', () => {
+    expect(assistantRequestsPlanConfirmation('Recomendaciones rápidas para avanzar: transiciones, ritmo y tipografía.')).toBe(true);
+    expect(isUniversalNaylaConfirmation('OK. Puedes continuar haz el video')).toBe(true);
+    expect(isUniversalNaylaConfirmation('Haz el video')).toBe(true);
+    expect(isUniversalNaylaConfirmation('No hagas el video')).toBe(false);
+  });
+
   it('does not treat an ordinary descriptive reply as a confirmation request', () => {
     expect(
       assistantRequestsPlanConfirmation(
