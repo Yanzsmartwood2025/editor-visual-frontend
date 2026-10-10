@@ -29,7 +29,7 @@ import type { GpuWorkload } from '../../lib/gpu/profiles';
 import { createMediaJobPlan } from '../../lib/mediaJobs';
 import { createR2PresignedGetUrl } from '../../lib/r2';
 import { canStartGpuCompute, getNaylaExecutionPolicyPrompt } from '../../lib/naylaExecutionPolicy';
-import { assistantRequestsPlanConfirmation, isUniversalNaylaConfirmation } from '../../lib/naylaPlanConfirmation';
+import { assistantRequestsPlanConfirmation, isExplicitNaylaVideoRequest, isUniversalNaylaConfirmation } from '../../lib/naylaPlanConfirmation';
 import {
   getRequestedVisualCount,
   hasNaturalProjectPhotoReference,
@@ -144,7 +144,10 @@ const hasExplicitPlanConfirmation = (
   message: string,
   history: Array<{ role: 'user' | 'assistant'; content: string }>
 ) => {
-  if (!hasPriorNaylaPlan(history)) return false;
+  // A clear "haz el video" instruction is itself permission to prepare a
+  // reviewable video plan when the user has already uploaded their files.
+  // Generic "Dale" still requires an earlier proposal to avoid accidental actions.
+  if (!hasPriorNaylaPlan(history) && !isExplicitNaylaVideoRequest(message)) return false;
 
   const text = normalizePlanningText(message);
   if (!text) return false;
@@ -805,8 +808,22 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       .filter((item) => !isBarePlanConfirmation(item.content))
       .map((item) => `${item.role}: ${item.content}`)
       .join('\n\n');
+    // Keep the latest literal BLOQUE 1..N source in the confirmed prompt even after
+    // multiple "Dale" turns push the original attachment message out of the short window.
+    // Only the user's original wording may become on-screen subtitles.
+    const literalSubtitleSource = executionConfirmed
+      ? [...effectiveHistory].reverse().find((item) =>
+          item.role === 'user' && /\bBLOQUE\s+1\b/i.test(item.content) && /\bBLOQUE\s+2\b/i.test(item.content)
+        )?.content || ''
+      : '';
     const activePlanningContext = executionConfirmed
-      ? [recentPlanningConversation, `user: ${message}`].filter(Boolean).join('\n\n')
+      ? [
+          literalSubtitleSource && !recentPlanningConversation.includes(literalSubtitleSource)
+            ? `TEXTO LITERAL ORIGINAL PARA SUBTÍTULOS (no incluir encabezados):\n${literalSubtitleSource}`
+            : '',
+          recentPlanningConversation,
+          `user: ${message}`,
+        ].filter(Boolean).join('\n\n')
       : message;
     const intentMatches = findNaylaCapabilityMatches(activePlanningContext);
 
