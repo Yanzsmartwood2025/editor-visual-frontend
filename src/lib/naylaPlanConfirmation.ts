@@ -39,6 +39,14 @@ export const assistantRequestsPlanConfirmation = (value: string) => {
 };
 
 
+export const isExplicitNaylaVideoRequest = (value: string) => {
+  const text = normalize(value);
+  return (
+    !/\bno\s+(?:haz|crea|genera|renderiza|produce|exporta|arma)\b/.test(text) &&
+    /\b(?:haz|crea|genera|renderiza|produce|exporta|arma)\s+(?:ya\s+)?(?:(?:el|este|un|mi)\s+)?(?:video|montaje)\b/.test(text)
+  );
+};
+
 export const isUniversalNaylaConfirmation = (value: string) => {
   const text = normalize(value);
   if (!text) return false;
@@ -46,7 +54,6 @@ export const isUniversalNaylaConfirmation = (value: string) => {
   return (
     /^(si|si dale|si envia|si envialo|si envialos|envia|envialo|envialos|mandalo|mandalos|si me parece bien|me parece bien|si esta bien|esta bien|asi esta bien|asi queda bien|queda bien|ok|okay|dale|adelante|listo|perfecto|correcto|hazlo|procede|confirmo|acepto|continua|continua con el plan|sigue|sigue con el plan|adelante con el plan)$/.test(text) ||
     /\b(hazlo|procede|ejecuta|ejecuta el plan|continua con el plan|sigue con el plan|aplica el plan|confirmo|acepto|adelante con el plan|manda adelante|envialo|me parece bien|asi esta bien|asi queda bien)\b/.test(text) ||
-    (!/\bno\s+(?:crea|genera|renderiza|produce|exporta|arma)\b/.test(text) &&
-      /\b(?:haz|crea|genera|renderiza|produce|exporta|arma)\s+(?:ya\s+)?(?:(?:el|este|un|mi)\s+)?(?:video|montaje)\b/.test(text))
+    isExplicitNaylaVideoRequest(value)
   );
 };
