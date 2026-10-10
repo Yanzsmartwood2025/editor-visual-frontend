@@ -805,8 +805,22 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       .filter((item) => !isBarePlanConfirmation(item.content))
       .map((item) => `${item.role}: ${item.content}`)
       .join('\n\n');
+    // Keep the latest literal BLOQUE 1..N source in the confirmed prompt even after
+    // multiple "Dale" turns push the original attachment message out of the short window.
+    // Only the user's original wording may become on-screen subtitles.
+    const literalSubtitleSource = executionConfirmed
+      ? [...effectiveHistory].reverse().find((item) =>
+          item.role === 'user' && /\bBLOQUE\s+1\b/i.test(item.content) && /\bBLOQUE\s+2\b/i.test(item.content)
+        )?.content || ''
+      : '';
     const activePlanningContext = executionConfirmed
-      ? [recentPlanningConversation, `user: ${message}`].filter(Boolean).join('\n\n')
+      ? [
+          literalSubtitleSource && !recentPlanningConversation.includes(literalSubtitleSource)
+            ? `TEXTO LITERAL ORIGINAL PARA SUBTÍTULOS (no incluir encabezados):\n${literalSubtitleSource}`
+            : '',
+          recentPlanningConversation,
+          `user: ${message}`,
+        ].filter(Boolean).join('\n\n')
       : message;
     const intentMatches = findNaylaCapabilityMatches(activePlanningContext);
 
