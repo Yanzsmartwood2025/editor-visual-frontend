@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { assistantRequestsPlanConfirmation, isUniversalNaylaConfirmation } from '../lib/naylaPlanConfirmation';
+import { assistantRequestsPlanConfirmation, isExplicitNaylaVideoRequest, isUniversalNaylaConfirmation } from '../lib/naylaPlanConfirmation';
 
 describe('Nayla natural plan confirmation wording', () => {
   it('recognizes the wording shown to the user before a Dale reply', () => {
@@ -25,6 +25,9 @@ describe('Nayla natural plan confirmation wording', () => {
     expect(assistantRequestsPlanConfirmation('Recomendaciones rápidas para avanzar: transiciones, ritmo y tipografía.')).toBe(true);
     expect(isUniversalNaylaConfirmation('OK. Puedes continuar haz el video')).toBe(true);
     expect(isUniversalNaylaConfirmation('Haz el video')).toBe(true);
+    expect(isExplicitNaylaVideoRequest('Crea un video')).toBe(true);
+    expect(isExplicitNaylaVideoRequest('Dale')).toBe(false);
+    expect(isExplicitNaylaVideoRequest('No haz el video')).toBe(false);
     expect(isUniversalNaylaConfirmation('No hagas el video')).toBe(false);
   });
 
