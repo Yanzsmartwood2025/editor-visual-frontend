@@ -19,14 +19,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     await requireFirebaseUser(req);
     const title = typeof req.body?.title === 'string' ? req.body.title : 'Error del navegador';
     const message = typeof req.body?.message === 'string' ? req.body.message : 'Error no controlado';
+    const controlledTest = req.body?.test === true;
 
     await recordDiagnosticEvent({
       source: 'sentry',
       service: 'sentry',
-      status: 'error',
-      severity: 'error',
-      title,
-      message,
+      status: controlledTest ? 'ok' : 'error',
+      severity: controlledTest ? 'info' : 'error',
+      title: controlledTest ? 'Sentry conectado' : title,
+      message: controlledTest ? 'La prueba controlada llegó correctamente a Sentry y al panel en vivo.' : message,
       details: {
         ...cleanDetails(req.body?.details),
         mirroredFromBrowser: true,
