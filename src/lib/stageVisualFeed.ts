@@ -1,6 +1,7 @@
 import {isStageStockTopic,STAGE_STOCK_TOPICS,validateStageStockClips,type StageStockClip,type StageStockTopic} from './stageVisualCatalog';
 
 type RecordValue = Record<string, any>;
+function mediaHost(url:unknown){try{return new URL(typeof url==='string'?url:'').hostname;}catch{return null;}}
 /** Full HD variants only; 4K files are deliberately excluded from the stage decoder. */
 export function selectStageVideo(files:RecordValue[]):RecordValue|undefined {
   return files.filter(file=>Number(file.width)>=1920&&Number(file.height)>=1080&&Number(file.width)<=2560&&Number(file.height)<=1440&&Number(file.width)>Number(file.height)&&
@@ -8,15 +9,18 @@ export function selectStageVideo(files:RecordValue[]):RecordValue|undefined {
     .sort((a,b)=>Number(a.width)*Number(a.height)-Number(b.width)*Number(b.height))[0];
 }
 async function readJson(url:string,headers?:Record<string,string>):Promise<RecordValue>{
-  const response=await fetch(url,{headers,signal:AbortSignal.timeout(8000),redirect:'error'});
-  if(!response.ok)throw Error('Media search unavailable');
+  const response=await fetch(url,{headers,signal:AbortSignal.timeout(5000),redirect:'error'});
+  if(!response.ok)throw Object.assign(Error(`Media search unavailable: ${response.status}`),{status:response.status});
   return response.json();
 }
 async function searchPexels(topic:StageStockTopic,page:number):Promise<StageStockClip[]>{
   const key=process.env.PEXELS_API_KEY?.trim();if(!key)return [];
   const query=STAGE_STOCK_TOPICS.find(([id])=>id===topic)![2];
   const params=new URLSearchParams({query,per_page:'20',page:String(page),orientation:'landscape',size:'medium'});
-  let data=await readJson(`https://api.pexels.com/v1/videos/search?${params}`,{Authorization:key});
+  let data=await readJson(`https://api.pexels.com/v1/videos/search?${params}`,{Authorization:key}).catch(error=>{
+    if(page<=1||error?.status!==400)throw error;
+    params.set('page','1');return readJson(`https://api.pexels.com/v1/videos/search?${params}`,{Authorization:key});
+  });
   if(page>1&&(!Array.isArray(data.videos)||!data.videos.length)){params.set('page','1');data=await readJson(`https://api.pexels.com/v1/videos/search?${params}`,{Authorization:key});}
   return (Array.isArray(data.videos)?data.videos:[]).map((video:RecordValue)=>{
     const file=selectStageVideo(Array.isArray(video.video_files)?video.video_files:[]);
@@ -28,7 +32,10 @@ async function searchPixabay(topic:StageStockTopic,page:number):Promise<StageSto
   const key=process.env.PIXABAY_API_KEY?.trim();if(!key)return [];
   const query=STAGE_STOCK_TOPICS.find(([id])=>id===topic)![2];
   const params=new URLSearchParams({key,q:query,per_page:'20',page:String(page),safesearch:'true'});
-  let data=await readJson(`https://pixabay.com/api/videos/?${params}`);
+  let data=await readJson(`https://pixabay.com/api/videos/?${params}`).catch(error=>{
+    if(page<=1||error?.status!==400)throw error;
+    params.set('page','1');return readJson(`https://pixabay.com/api/videos/?${params}`);
+  });
   if(page>1&&(!Array.isArray(data.hits)||!data.hits.length)){params.set('page','1');data=await readJson(`https://pixabay.com/api/videos/?${params}`);}
   return (Array.isArray(data.hits)?data.hits:[]).map((video:RecordValue)=>{
     const file=selectStageVideo(Object.values(video.videos||{}) as RecordValue[]);
@@ -41,6 +48,7 @@ export async function fetchStageVisualFeed(topic:StageStockTopic,page=1){
   if(!isStageStockTopic(topic)||!Number.isInteger(page)||page<1||page>5)throw Error('Invalid stage topic');
   const batches=await Promise.allSettled([searchPexels(topic,page),searchPixabay(topic,page)]);
   const sources=batches.map(result=>result.status==='fulfilled'?validateStageStockClips(result.value):[]);
+  console.info('[stage-feed]',JSON.stringify({topic,configured:[!!process.env.PEXELS_API_KEY?.trim(),!!process.env.PIXABAY_API_KEY?.trim()],sources:batches.map((result,index)=>result.status==='fulfilled'?{candidates:result.value.length,accepted:sources[index].length,sample:result.value.slice(0,2).map(clip=>({width:clip.width,height:clip.height,duration:clip.duration,host:mediaHost(clip.url)}))}:{error:result.reason instanceof Error?result.reason.message:'unavailable'})}));
   const videos:StageStockClip[]=[];
   for(let i=0;i<20;i++)for(const source of sources)if(source[i])videos.push(source[i]);
   if(!videos.length)throw Error('No usable stage videos');

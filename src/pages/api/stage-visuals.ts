@@ -21,5 +21,8 @@ export default async function handler(req:NextApiRequest,res:NextApiResponse){
     // One stable page per day; callers cannot generate unlimited cache keys.
     const page=1+Math.floor(Date.now()/86400000)%5;
     return res.status(200).json(await cachedFeed(topic,page));
-  }catch{return res.status(503).json({error:'No pude traer nuevos fondos ahora. Los anteriores siguen disponibles.'});}
+  }catch(error){
+    console.warn('[stage-feed]',error instanceof Error?error.message:'unavailable');
+    return res.status(503).json({error:'No pude traer nuevos fondos ahora. Los anteriores siguen disponibles.'});
+  }
 }
