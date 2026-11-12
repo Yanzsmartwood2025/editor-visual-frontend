@@ -1,4 +1,4 @@
-import {isStageStockTopic,STAGE_STOCK_TOPICS,validateStageStockClips,type StageStockClip,type StageStockTopic} from './stageVisualCatalog';
+import {isStageStockTopic,STAGE_STOCK_TOPICS,STAGE_STOCK_MAX_PAGE,validateStageStockClips,type StageStockClip,type StageStockTopic} from './stageVisualCatalog';
 
 type RecordValue = Record<string, any>;
 function mediaHost(url:unknown){try{return new URL(typeof url==='string'?url:'').hostname;}catch{return null;}}
@@ -45,12 +45,12 @@ async function searchPixabay(topic:StageStockTopic,page:number):Promise<StageSto
 }
 /** Both sources run, even if the first already has enough results. No media is downloaded. */
 export async function fetchStageVisualFeed(topic:StageStockTopic,page=1){
-  if(!isStageStockTopic(topic)||!Number.isInteger(page)||page<1||page>5)throw Error('Invalid stage topic');
+  if(!isStageStockTopic(topic)||!Number.isInteger(page)||page<1||page>STAGE_STOCK_MAX_PAGE)throw Error('Invalid stage topic');
   const batches=await Promise.allSettled([searchPexels(topic,page),searchPixabay(topic,page)]);
   const sources=batches.map(result=>result.status==='fulfilled'?validateStageStockClips(result.value):[]);
   console.info('[stage-feed]',JSON.stringify({topic,configured:[!!process.env.PEXELS_API_KEY?.trim(),!!process.env.PIXABAY_API_KEY?.trim()],sources:batches.map((result,index)=>result.status==='fulfilled'?{candidates:result.value.length,accepted:sources[index].length,sample:result.value.slice(0,2).map(clip=>({width:clip.width,height:clip.height,duration:clip.duration,host:mediaHost(clip.url)}))}:{error:result.reason instanceof Error?result.reason.message:'unavailable'})}));
   const videos:StageStockClip[]=[];
   for(let i=0;i<20;i++)for(const source of sources)if(source[i])videos.push(source[i]);
   if(!videos.length)throw Error('No usable stage videos');
-  return {version:1,topic,videos:videos.slice(0,24),expiresAt:Date.now()+24*60*60*1000};
+  return {version:2,topic,page,videos:videos.slice(0,24),expiresAt:Date.now()+24*60*60*1000};
 }

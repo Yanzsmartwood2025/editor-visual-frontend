@@ -6,6 +6,13 @@ const original={...process.env};
 afterEach(()=>{process.env={...original};vi.unstubAllGlobals();});
 const file={width:1920,height:1080,file_type:'video/mp4',link:'https://videos.pexels.com/video-files/1/demo.mp4'};
 describe('curated concert feed',()=>{
+  it('paginates both sources and bounds cache pages instead of returning one fixed daily batch',async()=>{
+    process.env.PEXELS_API_KEY='px';process.env.PIXABAY_API_KEY='pb';
+    const urls:string[]=[];vi.stubGlobal('fetch',vi.fn(async(url:string)=>{urls.push(url);return Response.json(url.includes('pexels.com')?{videos:[{id:2,duration:20,url:'https://www.pexels.com/video/2/',video_files:[file]}]}:{hits:[{id:3,duration:15,pageURL:'https://pixabay.com/videos/3/',videos:{large:{width:1920,height:1080,url:'https://cdn.pixabay.com/video/3.mp4'}}}]});}));
+    const result=await fetchStageVisualFeed('rain',2);expect(result.page).toBe(2);expect(result.videos).toHaveLength(2);
+    expect(urls.every(url=>new URL(url).searchParams.get('page')==='2')).toBe(true);
+    await expect(fetchStageVisualFeed('rain',26)).rejects.toThrow();expect(urls).toHaveLength(2);
+  });
   it('calls both sources and returns interleaved Full HD MP4s without downloading files',async()=>{
     process.env.PEXELS_API_KEY='test-px';process.env.PIXABAY_API_KEY='test-pb';
     const urls:string[]=[];
