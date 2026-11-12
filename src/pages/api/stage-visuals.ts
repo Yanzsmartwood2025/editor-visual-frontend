@@ -9,7 +9,12 @@ const cachedFeed=unstable_cache(fetchStageVisualFeed,['stage-visuals-v1'],{reval
 export default async function handler(req:NextApiRequest,res:NextApiResponse){
   res.setHeader('Cache-Control','private, no-store');
   if(req.method!=='GET'){res.setHeader('Allow','GET');return res.status(405).json({error:'No pude abrir estos fondos.'});}
-  if(!await verifyStageVisualIdentity(req.headers['x-vercel-trusted-oidc-idp-token']))return res.status(401).json({error:'No pude autorizar los fondos.'});
+  const authorization=req.headers.authorization;
+  const token=authorization?.startsWith('Bearer ')?authorization.slice(7):req.headers['x-vercel-trusted-oidc-idp-token'];
+  let identityFailure='rejected';
+  if(!await verifyStageVisualIdentity(token,Date.now(),reason=>{identityFailure=reason;})){
+    res.setHeader('X-Stage-Identity',identityFailure);return res.status(401).json({error:'No pude autorizar los fondos.'});
+  }
   const topic=req.query.topic;
   if(!isStageStockTopic(topic)||Object.keys(req.query).some(key=>key!=='topic'))return res.status(400).json({error:'Elige un tema disponible.'});
   try{
