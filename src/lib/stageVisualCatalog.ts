@@ -24,7 +24,17 @@ export const STAGE_STOCK_TOPICS = [
   ['ink', 'Colores y líquidos', 'ink water'],
   ['fireworks', 'Fuegos artificiales', 'fireworks'],
   ['technology', 'Tecnología', 'technology'],
+  ['rain', 'Lluvia', 'rain'],
+  ['lightning', 'Rayos', 'lightning'],
+  ['storms', 'Tormentas', 'thunderstorm'],
+  ['field-night', 'Noches en el campo', 'countryside night'],
 ] as const;
+export const STAGE_STOCK_MAX_PAGE=25;
+export function parseStageStockPage(value:unknown):number|null {
+  if(value===null||value===undefined)return 1;
+  if(typeof value!=='string'||!/^\d{1,2}$/.test(value))return null;
+  const page=Number(value);return page>=1&&page<=STAGE_STOCK_MAX_PAGE?page:null;
+}
 export type StageStockTopic = typeof STAGE_STOCK_TOPICS[number][0];
 export type StageStockClip = {
   id:string; url:string; width:number; height:number; duration:number;
