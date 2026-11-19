@@ -28,6 +28,16 @@ export const STAGE_STOCK_TOPICS = [
   ['lightning', 'Rayos', 'lightning'],
   ['storms', 'Tormentas', 'thunderstorm'],
   ['field-night', 'Noches en el campo', 'countryside night'],
+  ['smoke', 'Humo envolvente', 'smoke black background'],
+  ['mist', 'Niebla en movimiento', 'mist forest'],
+  ['embers', 'Brasas y chispas', 'fire embers dark'],
+  ['jellyfish', 'Medusas luminosas', 'jellyfish underwater'],
+  ['coral', 'Arrecifes y peces', 'coral reef fish'],
+  ['whales', 'Ballenas bajo el agua', 'whale underwater'],
+  ['turtles', 'Tortugas marinas', 'sea turtle underwater'],
+  ['raindrops', 'Gotas de lluvia', 'rain drops dark'],
+  ['storm-clouds', 'Nubes eléctricas', 'storm clouds lightning'],
+  ['ocean-surface', 'Luz bajo las olas', 'underwater sunlight'],
 ] as const;
 export const STAGE_STOCK_MAX_PAGE=25;
 export function parseStageStockPage(value:unknown):number|null {
