@@ -81,7 +81,7 @@ export function createVideoCartesiaPool({
           body: JSON.stringify({
             model_id: 'sonic-3.6',
             transcript: text.trim(),
-            voice: { mode: 'id', id: voice },
+            voice,
             language,
             output_format: { container: 'wav', encoding: 'pcm_s16le', sample_rate: 44100 },
           }),
