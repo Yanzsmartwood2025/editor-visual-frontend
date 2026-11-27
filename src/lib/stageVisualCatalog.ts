@@ -1,5 +1,7 @@
 /** Shared with Nayla's curated feed. Keys bound the API cache; no arbitrary searches. */
 export const STAGE_STOCK_TOPICS = [
+  ['black-hole', 'Agujeros negros', 'black hole equirectangular'],
+  ['universe', 'Universo', 'universe equirectangular'],
   ['galaxies', 'Galaxias y nebulosas', 'galaxy'],
   ['planets', 'Planetas y estrellas', 'planets'],
   ['abstract', 'Animaciones abstractas', 'abstract'],
@@ -48,7 +50,7 @@ export function parseStageStockPage(value:unknown):number|null {
 export type StageStockTopic = typeof STAGE_STOCK_TOPICS[number][0];
 export type StageStockClip = {
   id:string; url:string; width:number; height:number; duration:number;
-  author:string; sourceUrl:string; licenseUrl:string;
+  projection?:'equirectangular-360'; author:string; sourceUrl:string; licenseUrl:string;
 };
 export function isStageStockTopic(value:unknown):value is StageStockTopic {
   return STAGE_STOCK_TOPICS.some(([id])=>id===value);
