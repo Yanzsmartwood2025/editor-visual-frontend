@@ -5,7 +5,7 @@ import {verifyStageVisualIdentity} from '../../../lib/stageVisualIdentity';
 
 export const runtime='nodejs';
 // App Router supplies the persistent incremental-cache context on Vercel.
-const cachedFeed=unstable_cache(fetchStageVisualFeed,['stage-visuals-v2'],{revalidate:86400});
+const cachedFeed=unstable_cache(fetchStageVisualFeed,['stage-visuals-v3'],{revalidate:3600});
 const privateHeaders={'Cache-Control':'private, no-store'};
 export async function GET(request:Request){
   const authorization=request.headers.get('authorization');
@@ -16,7 +16,9 @@ export async function GET(request:Request){
   const page=parseStageStockPage(params.get('page'));
   if(!isStageStockTopic(topic)||page===null||[...params.keys()].some(key=>!['topic','page'].includes(key)))return Response.json({error:'Elige un tema disponible.'},{status:400,headers:privateHeaders});
   try{
-    return Response.json(await cachedFeed(topic,page),{headers:privateHeaders});
+    const cached=await cachedFeed(topic,page);
+    const feed=cached.expiresAt>Date.now()?cached:await fetchStageVisualFeed(topic,page);
+    return Response.json(feed,{headers:privateHeaders});
   }catch(error){
     console.warn('[stage-feed]',error instanceof Error?error.message:'unavailable');
     return Response.json({error:'No pude traer nuevos fondos ahora. Los anteriores siguen disponibles.'},{status:503,headers:privateHeaders});
