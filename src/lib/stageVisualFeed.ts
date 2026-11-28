@@ -1,6 +1,9 @@
 import {isStageStockTopic,STAGE_STOCK_TOPICS,STAGE_STOCK_MAX_PAGE,validateStageStockClips,type StageStockClip,type StageStockTopic} from './stageVisualCatalog';
 
 type RecordValue = Record<string, any>;
+function sphericalMetadata(description:unknown):{projection?:'equirectangular-360'} {
+  return typeof description==='string'&&/\bequirectangular\b/i.test(description)?{projection:'equirectangular-360'}:{};
+}
 function mediaHost(url:unknown){try{return new URL(typeof url==='string'?url:'').hostname;}catch{return null;}}
 /** Full HD variants only; 4K files are deliberately excluded from the stage decoder. */
 export function selectStageVideo(files:RecordValue[]):RecordValue|undefined {
@@ -24,7 +27,7 @@ async function searchPexels(topic:StageStockTopic,page:number):Promise<StageStoc
   if(page>1&&(!Array.isArray(data.videos)||!data.videos.length)){params.set('page','1');data=await readJson(`https://api.pexels.com/v1/videos/search?${params}`,{Authorization:key});}
   return (Array.isArray(data.videos)?data.videos:[]).map((video:RecordValue)=>{
     const file=selectStageVideo(Array.isArray(video.video_files)?video.video_files:[]);
-    return {id:`px:${video.id}`,url:file?.link,width:Number(file?.width),height:Number(file?.height),duration:Number(video.duration),
+    return {...sphericalMetadata(video.url?.split('/').at(-2)),id:`px:${video.id}`,url:file?.link,width:Number(file?.width),height:Number(file?.height),duration:Number(video.duration),
       author:String(video.user?.name||'Autor del fondo').slice(0,160),sourceUrl:video.url,licenseUrl:'https://www.pexels.com/license/'};
   });
 }
@@ -39,7 +42,7 @@ async function searchPixabay(topic:StageStockTopic,page:number):Promise<StageSto
   if(page>1&&(!Array.isArray(data.hits)||!data.hits.length)){params.set('page','1');data=await readJson(`https://pixabay.com/api/videos/?${params}`);}
   return (Array.isArray(data.hits)?data.hits:[]).map((video:RecordValue)=>{
     const file=selectStageVideo(Object.values(video.videos||{}) as RecordValue[]);
-    return {id:`pb:${video.id}`,url:file?.url,width:Number(file?.width),height:Number(file?.height),duration:Number(video.duration),
+    return {...sphericalMetadata(video.tags),id:`pb:${video.id}`,url:file?.url,width:Number(file?.width),height:Number(file?.height),duration:Number(video.duration),
       author:String(video.user||'Autor del fondo').slice(0,160),sourceUrl:video.pageURL,licenseUrl:'https://pixabay.com/service/license-summary/'};
   });
 }
